@@ -141,6 +141,14 @@ def _ollama_handler(state: FakeOllamaState):
         def log_message(self, *a):
             pass
 
+        def do_GET(self):
+            data = json.dumps({"version": "0.35.1"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             state.requests.append(body)

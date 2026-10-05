@@ -12,6 +12,7 @@ Códigos de saída: 0 todos os limites atingidos · 1 algum limite não atingido
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 import time
@@ -100,16 +101,16 @@ def render_markdown(report: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     a = build_parser().parse_args(argv)
     data = fidelity.load_cases(a.cases)
-    profiles = a.profile or sorted({c["profile"] for c in data["cases"]})
-    versions = _versions(a.version, profiles)
-    models = a.model or [compiler.DEFAULT_MODEL]
-    seeds = [int(s) for s in a.seeds.split(",")] if a.seeds else data["seeds"]
-    cases = [c for c in data["cases"] if c["profile"] in profiles]
+    cases = [c for c in data["cases"] if not a.profile or c["profile"] in a.profile]
     if a.case:
         cases = [c for c in cases if c["id"] in a.case]
     if not cases:
         _log("nenhum caso selecionado")
         return 2
+    profiles = sorted({c["profile"] for c in cases})
+    versions = _versions(a.version, profiles)
+    models = a.model or [compiler.DEFAULT_MODEL]
+    seeds = [int(s) for s in a.seeds.split(",")] if a.seeds else data["seeds"]
 
     import requests
 
@@ -127,6 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         "ollama_version": ollama_version,
         "groups": [],
     }
+    failed = False
     for model in models:
         for profile in profiles:
             for version in versions[profile]:
@@ -139,10 +141,15 @@ def main(argv: list[str] | None = None) -> int:
                             )
                         except compiler.CompilerError as e:
                             _log(f"erro em {case['id']}: {e}")
-                            return 2
+                            failed = True
+                            break
                         mark = "ok " if r.passed else "FALHA"
                         _log(f"{mark} {model} {profile}@{version} {r.case_id} s{seed} {r.seconds}s")
                         results.append(r)
+                    if failed:
+                        break
+                if failed:
+                    break
                 summary = fidelity.summarize(results, data["thresholds"])
                 report["groups"].append(
                     {
@@ -154,12 +161,33 @@ def main(argv: list[str] | None = None) -> int:
                     }
                 )
                 _log(f"== {model} {profile}@{version}: {json.dumps(summary, ensure_ascii=False)}")
+                _write(report, a.out)  # parcial: uma queda depois não perde o que já rodou
+            if failed:
+                break
+        _unload(a.ollama, model)  # libera a memória antes do próximo modelo
+        if failed:
+            break
 
-    a.out.parent.mkdir(parents=True, exist_ok=True)
-    a.out.with_suffix(".json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    a.out.with_suffix(".md").write_text(render_markdown(report))
+    _write(report, a.out)
     _log(f"relatório: {a.out.with_suffix('.md')}")
+    if failed:
+        return 2
     return 0 if all(g["summary"]["passed"] for g in report["groups"]) else 1
+
+
+def _write(report: dict, out: Path) -> None:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.with_suffix(".json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    out.with_suffix(".md").write_text(render_markdown(report))
+
+
+def _unload(ollama_url: str, model: str) -> None:
+    import requests
+
+    with contextlib.suppress(requests.RequestException):
+        requests.post(
+            f"{ollama_url}/api/generate", json={"model": model, "keep_alive": 0}, timeout=60
+        )
 
 
 if __name__ == "__main__":

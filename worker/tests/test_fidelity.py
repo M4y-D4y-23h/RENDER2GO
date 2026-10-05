@@ -1,3 +1,5 @@
+import json
+
 from gpu2go_worker import compiler, fidelity
 
 CASE = {
@@ -73,3 +75,19 @@ def test_cases_file_is_valid_and_sfw_policy_is_explicit():
         for c in data["cases"]
         if not c.get("expect_refused")
     )
+
+
+def test_eval_cli_writes_reports(fake_ollama, tmp_path):
+    from gpu2go_worker import cli_eval
+
+    fake_ollama.response = GOOD
+    out = tmp_path / "rel"
+    code = cli_eval.main(
+        ["--ollama", fake_ollama.url, "--case", "i2v-numero", "--seeds", "1", "--out", str(out)]
+    )
+    assert code == 1  # a resposta falsa não fala em palmas: limite não atingido
+    report = json.loads(out.with_suffix(".json").read_text())
+    (group,) = report["groups"]
+    assert group["profile"] == "i2v" and group["summary"]["runs"] == 1
+    assert "i2v-numero" in out.with_suffix(".md").read_text()
+    assert fake_ollama.requests[-1]["keep_alive"] == 0  # modelo descarregado no fim
