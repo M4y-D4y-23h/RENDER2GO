@@ -85,7 +85,7 @@ Entregue ─► C9 canal de denúncia ─► remoção em até 48 h + hash bloqu
 | **C3** Origem e dono do ativo | Backend | O ativo é do usuário e tem origem `gerado`/`quadro_extraido` | Recusa |
 | **C4** CSAM no ativo | Backend | Hash contra bancos conhecidos + classificador de CSAM inédito | Seção 6 |
 | **C5** Idade e celebridade no ativo | Backend | Detecção de rostos, idade estimada, reconhecimento de celebridades | Recusa; idade em dúvida → bloquear |
-| **C6** `REFUSED` | Worker | Saída do compilador | Recusa (sinal fraco, mas conta) |
+| **C6** `REFUSED` | Worker | Saída do compilador. No teste real da Etapa 1, um pedido com o presidente do Brasil **não** gerou `REFUSED` (doc 01, item 20) | Recusa (sinal fraco, mas conta) |
 | **C7** C1 + C2 no prompt em inglês | Worker (C1) e backend (C2, no retorno) | O compilador pode introduzir termos | Recusa, sem entrega |
 | **C8** Saída | Backend, sobre quadros de amostra (~1 por segundo + primeiro e último) | CSAM (classificador + hash do vídeo), idade estimada de cada rosto, celebridades | Seção 6 ou recusa |
 | **C9** Denúncia | Formulário público | Qualquer pessoa denuncia um conteúdo | Seção 7 |

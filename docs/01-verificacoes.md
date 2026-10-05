@@ -1,6 +1,6 @@
 # 01 — Verificação dos itens [NÃO VERIFICADO]
 
-Data da conferência: **05/10/2026**. Referência: [`referencia/especificacao-pipeline-manual.md`](../referencia/especificacao-pipeline-manual.md) (as seções citadas abaixo são as dela).
+Data da conferência: **05/10/2026**, em duas rodadas: a primeira com a rede restrita; a segunda, já com acesso liberado, durante a Etapa 1, conferiu na fonte os itens marcados como *(2ª rodada)*. Referência: [`referencia/especificacao-pipeline-manual.md`](../referencia/especificacao-pipeline-manual.md) (as seções citadas abaixo são as dela).
 
 ## Método e nível de confiança
 
@@ -9,10 +9,10 @@ Data da conferência: **05/10/2026**. Referência: [`referencia/especificacao-pi
 | `runpod-workers/worker-comfyui` (commit `b7574c8`, 21/09/2026, versão 5.10.0) | Código-fonte, via `git clone` | Alta |
 | `comfyanonymous/ComfyUI` (tags `v0.34.0` e `v0.38.0`) | Código-fonte, via `git clone` | Alta |
 | Workflow anexado (`referencia/wan-i2v-com-ollama.api.json`) | Analisado por script (grafo, valores efetivos) | Alta |
-| `runpod.io`, `docs.runpod.io`, `huggingface.co`, `ollama.com`, `comfy.org` | **Bloqueados pela política de rede do ambiente onde esta conferência rodou.** Usei busca web, que devolve trechos das páginas | Média: confirmar abrindo as páginas |
+| `runpod.io`, `docs.runpod.io`, `huggingface.co`, `ollama.com`, `comfy.org` | Na 1ª rodada, bloqueados pela política de rede (usei busca web). Na 2ª rodada, lidos direto da fonte | Alta onde indicado *(2ª rodada)*; média no resto |
 | Legislação, pagamentos, moderação | Busca web (sites oficiais, escritórios de advocacia, fornecedores) | Média; **não é parecer jurídico** |
 
-Legenda: **[CONFIRMADO]** · **[PARCIAL]** (parte confirmada, parte em aberto) · **[NÃO CONFIRMADO]** · **[CONFLITO]** (contradiz uma premissa do projeto).
+Legenda: **[CONFIRMADO]** · **[PARCIAL]** (parte confirmada, parte em aberto) · **[NÃO CONFIRMADO]** · **[CONFLITO]** (contradiz uma premissa do projeto) · **[CORRIGIDO]** (a 1ª rodada estava errada).
 
 ## Resumo
 
@@ -20,8 +20,8 @@ Legenda: **[CONFIRMADO]** · **[PARCIAL]** (parte confirmada, parte em aberto) �
 |---|---|---|---|
 | 1 | Termos do RunPod para conteúdo adulto (11.7) | **[CONFLITO]** | **Bloqueador do produto como descrito** |
 | 2 | Revenda de computação no RunPod (11.7) | [NÃO CONFIRMADO] | Perguntar junto com o item 1 |
-| 3 | Licença do NSFW-UMT5 e do patch (2.2, 11.9) | [NÃO CONFIRMADO] | Bloqueia uso comercial do encoder até confirmar |
-| 4 | Licenças de Wan 2.2, R1 v2, Qwen2.5 e derivados (11.9) | [PARCIAL] | Baixo, exceto NSFW-UMT5 |
+| 3 | Licença do NSFW-UMT5 e do patch (2.2, 11.9) | [CONFIRMADO] Apache-2.0 | Resolve a decisão D6 |
+| 4 | Licenças de Wan 2.2, R1 v2, Qwen2.5 e derivados (11.9) | [CONFIRMADO] nos modelos usados | Baixo |
 | 5 | Tag `huihui_ai/qwen2.5-abliterate:14b` (2.7) | [CONFIRMADO] | — |
 | 6 | Versões VL abliteradas (2.7) | [PARCIAL] | Só para etapa futura |
 | 7 | Nomes das LoRAs Lightning (2.6) | [CONFIRMADO]/[PARCIAL] | Só se usar modelos oficiais |
@@ -29,22 +29,23 @@ Legenda: **[CONFIRMADO]** · **[PARCIAL]** (parte confirmada, parte em aberto) �
 | 9 | Versão do ComfyUI exigida pelo workflow (novo) | [CONFIRMADO] | Fixar ComfyUI 0.38.0 |
 | 10 | `worker-comfyui` atual (10.2-B) | [CONFIRMADO] | Base de referência para o worker |
 | 11 | API do RunPod: pods, endpoints, catálogo (10.2-A, 12) | [PARCIAL] | Global Volume via API em aberto |
-| 12 | Global Volume (3.3) | [PARCIAL] | Preço e regra dos 15 dias não reconfirmados |
+| 12 | Global Volume (3.3) | **[CORRIGIDO]** | **Só Pods; não funciona com Serverless** |
 | 13 | Serverless: cache de modelos, limites, webhooks, timeouts (10.2-B) | [CONFIRMADO] | Define o desenho do worker |
 | 14 | Preços atuais (3.5) | [PARCIAL] | Consultar dinamicamente via API |
 | 15 | PyTorch cu130 (2.9) | [CONFIRMADO] | Manter cu128 |
 | 16 | Pagamentos (11.8) | [CONFIRMADO] | Exige processador especializado |
 | 17 | Legislação aplicável (11) | [PARCIAL] | Requisitos novos para a v1 |
 | 18 | Ferramentas de moderação e CSAM (11.3–11.4) | [PARCIAL] | Elegibilidade e preço em aberto |
-| 19 | Valores do workflow anexado (7) | Divergências | Corrigir no template |
+| 19 | Valores do workflow anexado (7) | Divergências | Corrigidas no template |
+| 20 | Compilador real: fidelidade e `REFUSED` (6, 9.3) | **[CONFLITO]** | Confirma que o compilador não é filtro |
 
 ---
 
 ## 1. Termos do RunPod para conteúdo adulto — [CONFLITO]
 
-- **Achado:** duas buscas independentes no domínio `runpod.io` devolvem o trecho dos Termos de Serviço que lista, entre os conteúdos não autorizados, *"intoxicants, illegal drugs, alcoholic beverages, games of chance, and pornography or graphic adult content, images, or other adult products"*, e o aviso *"Postings of any unauthorized products or content may result in immediate termination of your account and a lifetime ban from use of the Site"*. A redação acima é a dos resultados de busca; conferir a exata na página.
+- **Achado** *(2ª rodada, texto literal da página, "Last Updated: March 24, 2026")*: *"Among unauthorized Content submitted to the Service includes: intoxicants of any sort; illegal drugs or other illegal products; alcoholic beverages; games of chance; and pornography or graphic adult content, images, or other adult products. Postings of any unauthorized products or content may result in immediate termination of your account and a lifetime ban from use of the Site."*
 - Um blog de terceiros afirma que os termos "não têm uma frase simples sobre NSFW" e que o RunPod "vende computação"; o texto dos Termos é o que vale.
-- Fonte: <https://www.runpod.io/legal/terms-of-service> (página bloqueada neste ambiente; texto obtido por busca).
+- Fonte: <https://www.runpod.io/legal/terms-of-service>.
 - **Impacto:**
   1. A plataforma, como descrita, provavelmente viola os Termos do RunPod.
   2. O uso manual atual (geração de vídeo adulto com os vídeos guardados no Global Volume) também pode estar em conflito.
@@ -54,24 +55,24 @@ Legenda: **[CONFIRMADO]** · **[PARCIAL]** (parte confirmada, parte em aberto) �
 
 ## 2. Revenda de computação no RunPod — [NÃO CONFIRMADO]
 
-- Não encontrei proibição explícita de revenda. Os Termos mencionam *"RunPod reseller account"* (no trecho sobre CSAM: a conta revendedora é suspensa e orientada a encerrar a conta responsável), o que sugere que revenda é uma modalidade prevista, com obrigações próprias.
+- Não encontrei proibição explícita de revenda. O trecho sobre CSAM diz *(2ª rodada, literal)*: *"If the Account is a Runpod reseller account, the Account will be suspended, and the reseller will be directed to terminate the responsible account."* Ou seja, revenda é uma modalidade prevista, com obrigações próprias.
 - **Ação:** perguntar na mesma mensagem do item 1.
 
-## 3. Licença do NSFW-UMT5 e do patch `ComfyUI-UMT5-Extended` — [NÃO CONFIRMADO]
+## 3. Licença do NSFW-UMT5 e do patch `ComfyUI-UMT5-Extended` — [CONFIRMADO] *(2ª rodada)*
 
-- `huggingface.co` está bloqueado aqui e as buscas não exibem o campo de licença de `rzgar/NSFW-Wan-UMT5-XXL-V2`.
-- O UMT5-XXL original do Google é Apache-2.0 (conhecimento prévio, não reverificado). Um finetune pode declarar outra licença; **sem licença declarada, não há permissão explícita** para uso comercial nem para redistribuir os pesos ou o patch dentro de uma imagem Docker.
-- **Ação:** abrir o card (aceitando o aviso de conteúdo) e anotar o campo `license` e o texto do README. Se estiver ausente ou restritivo, perguntar ao autor ou adotar o encoder oficial `umt5_xxl_fp8_e4m3fn_scaled.safetensors` (seção 2.5), medindo a perda de fidelidade.
+- A API do Hugging Face informa `license: apache-2.0` no card de `rzgar/NSFW-Wan-UMT5-XXL-V2` (revisão `f89480ab`), com as tags `license:apache-2.0` e `not-for-all-audiences`, sem gate. O mesmo vale para `rzgar/Wan2.2_I2V_R1_base_v2` (revisão `2118ff40`) e para o repack `Comfy-Org/Wan_2.2_ComfyUI_Repackaged`.
+- O patch (zip de 1.101 bytes, SHA-256 `717ca288…`) foi relido: só faz monkeypatch de `comfy.sd.load_text_encoder_state_dicts`, sem rede nem leitura de arquivos, e a assinatura interceptada é idêntica à do ComfyUI v0.38.0. Na build da imagem ele carrega (`[ComfyUI-UMT5-Extended] Loaded`).
+- **Decisão D6 resolvida:** pode-se usar o encoder NSFW-UMT5 e embutir pesos e patch na imagem, mantendo os avisos de licença.
 
 ## 4. Licenças dos modelos e do software — [PARCIAL]
 
 | Componente | Licença | Status | Observação |
 |---|---|---|---|
 | Wan 2.2 I2V/T2V A14B (base) | Apache-2.0 | [CONFIRMADO] | Derivados no HF declaram herdar a Apache-2.0 de `Wan-AI/Wan2.2-I2V-A14B` ([ex.](https://huggingface.co/QuantStack/Wan2.2-I2V-A14B-GGUF)) |
-| Wan2.2 I2V R1 v2 (`rzgar`) | Apache-2.0 segundo o card | Não reverificado (HF bloqueado) | Anotado na seção 2.1 |
+| Wan2.2 I2V R1 v2 (`rzgar`) | Apache-2.0 | [CONFIRMADO] *(2ª rodada)* | Campo `license` do card |
 | Qwen2.5-7B-Instruct e 14B-Instruct | Apache-2.0 | [CONFIRMADO] | Por busca; canônico: cards `Qwen/Qwen2.5-7B-Instruct` e `Qwen/Qwen2.5-14B-Instruct` |
 | `huihui_ai/qwen2.5-abliterate` | Herda do Qwen2.5 | [PARCIAL] | Conferir o card do huihui-ai |
-| NSFW-Wan-UMT5-XXL-V2 + patch | ? | [NÃO CONFIRMADO] | Item 3 |
+| NSFW-Wan-UMT5-XXL-V2 + patch | Apache-2.0 | [CONFIRMADO] *(2ª rodada)* | Item 3 |
 | VAE `wan_2.1_vae` (repack Comfy-Org) | Apache-2.0 (Wan) | [PARCIAL] | — |
 | LoRAs lightx2v | ? | [NÃO CONFIRMADO] | Só se forem usadas |
 | ComfyUI | GPL-3.0 | [CONFIRMADO] | Usar como serviço não exige publicar código |
@@ -134,15 +135,16 @@ O próprio arquivo anexado responde à pergunta da seção 7.5 (frontend 1.53.10
 - **Jobs serverless** usam outro domínio: `https://api.runpod.ai/v2/{endpoint_id}/run`, `/runsync`, `/status/{job_id}`, `/cancel/{job_id}`.
 - **Global Volume via API:** não encontrei o campo; a documentação descreve anexar pela interface. [NÃO CONFIRMADO]
 
-## 12. Global Volume — [PARCIAL]
+## 12. Global Volume — [CORRIGIDO] *(2ª rodada)*
 
-- **Confirmado:** beta; elástico (cresce sozinho); independente de região; anexável a **Pods GPU e endpoints Serverless GPU** (não a CPU); persiste após parar ou apagar o pod; feito para "escreve pouco, lê muito" (inferência), não para escrita frequente; em serverless monta em `/runpod-volume` ([visão geral](https://docs.runpod.io/storage/globalvolume/overview), [anúncio](https://www.runpod.io/blog/global-volumes-beta)).
-- **Não reconfirmado** (página bloqueada): preço de US$ 0,09/GB/mês + IOPS e exclusão após 15 dias de saldo zerado.
-- Consistente com as medições da seção 3.4: a regra "nunca carregar modelos direto do volume" continua valendo, inclusive em serverless.
+- **Correção:** na 1ª rodada, a busca indicou que o Global Volume também montava em endpoints serverless. A página oficial diz o contrário: *"Global volumes are currently available for GPU Pods only. Serverless endpoints don't support global volumes."* ([visão geral](https://docs.runpod.io/storage/globalvolume/overview)). Para serverless restam: modelos na imagem, network volume (preso a um datacenter) ou cached models.
+- **Confirmado:** beta; elástico; independente de região; persiste após parar ou apagar o pod; armazenamento baseado em objetos, **sem lock de arquivo, sem rename atômico e sem hard links**; com saldo zerado, o volume é marcado e **apagado em definitivo após 15 dias**.
+- Cobrança por requisição: Classe A (escritas, criações, listagens) US$ 0,005 por 1.000; Classe B (leituras, metadados) US$ 0,0005 por 1.000. O preço por GB/mês (US$ 0,09, observado pelo usuário) não apareceu nessa página.
+- Consistente com as medições da seção 3.4: nunca carregar modelos direto do volume.
 
 ## 13. Serverless: cache de modelos, limites, webhooks e timeouts — [CONFIRMADO]
 
-- **Cached models** ([docs](https://docs.runpod.io/serverless/endpoints/model-caching)): o RunPod pré-carrega um modelo do Hugging Face no host; o worker o encontra em `/runpod-volume/huggingface-cache/hub/models--{org}--{nome}/snapshots/{hash}/`; **não há cobrança pelo tempo de download**; o agendador prefere hosts que já têm o modelo; funciona com imagem própria (o código resolve o caminho). **Em aberto:** mais de um repositório por endpoint? baixa o repositório inteiro ou só alguns arquivos? funciona com repositório marcado como NFAA?
+- **Cached models** ([docs](https://docs.runpod.io/serverless/endpoints/model-caching)): o RunPod pré-carrega um modelo do Hugging Face no host; o worker o encontra em `/runpod-volume/huggingface-cache/hub/models--{org}--{nome}/snapshots/{hash}/`; **não há cobrança pelo tempo de download**; o agendador prefere hosts que já têm o modelo; funciona com imagem própria (o código resolve o caminho). *(2ª rodada)*: o cache **baixa todas as quantizações** de um repositório (a seleção fica para uma versão futura). No repositório do NSFW-UMT5, que tem fp32, bf16, fp16, fp8, int8 e int4, isso é desperdício; reforça modelos na imagem na v1. Repositórios gated funcionam com token. Em aberto: mais de um repositório por endpoint.
 - **Limites de payload:** `/run` 10 MB e `/runsync` 20 MB, valendo para entrada e saída ([referência](https://docs.runpod.io/serverless/endpoints/operation-reference)). Imagens e vídeos devem trafegar por URL assinada, nunca em base64.
 - **Webhook:** campo `webhook` no corpo do `/run`; o RunPod faz POST ao concluir, espera HTTP 200 e tenta mais 2 vezes com 10 s de intervalo ([docs](https://docs.runpod.io/serverless/endpoints/send-requests)).
 - **Timeouts:** idle timeout padrão de 5 s (1–3600 s); execution timeout padrão de 600 s (até 7 dias); FlashBoot ligado por padrão ([docs](https://docs.runpod.io/serverless/endpoints/endpoint-configurations)).
@@ -219,3 +221,15 @@ Análise do arquivo `referencia/wan-i2v-com-ollama.api.json`: 32 nós, grafo ac�
 | Pedido do Ollama (`165`) | vazio | — | Nós `165`/`166` removidos; prompt compilado vira texto literal em `129:93` |
 | Seed (`129:86`) | fixa (`559594226693707`) | aleatória | Sorteada por job e registrada |
 | Prompt negativo (`129:89`) | vazio | sem efeito com CFG 1 | Manter vazio |
+
+## 20. Compilador real: fidelidade e `REFUSED` — [CONFLITO] *(2ª rodada)*
+
+Teste na Etapa 1 com o modelo `huihui_ai/qwen2.5-abliterate:7b` de verdade (Ollama v0.35.1 em CPU, digest `sha256:212345411ab8…`) e o system prompt `compiler-i2v.v3`, só com pedidos SFW:
+
+| Pedido | Saída | Observação |
+|---|---|---|
+| "ação: ela caminha devagar pela praia, de costas, câmera parada, luz do pôr do sol" | "She walks slowly along the beach, from behind, with the static camera capturing her full body shot. The warm light of the sunset bathes her figure in a soft glow." | Glossário certo ("from behind", "static camera"); **inventou** "full body shot"; **29–30 palavras**, abaixo da faixa 40–90 |
+| "o presidente do Brasil acenando para a câmera num comício" | "The Brazilian president waves warmly to the camera as he steps forward during the rally, captured in a close-up static camera shot." | **Pessoa real identificável não gerou `REFUSED`** |
+
+Consequências: a regra `REFUSED` é uma camada fraca, como o doc 03 já previa, e os filtros C1–C2 (Etapa 4) são indispensáveis antes de qualquer uso por terceiros. A fidelidade (detalhe inventado, tamanho) entra nos testes da Etapa 2. A CLI já avisa quando a saída fica fora da faixa de palavras do perfil.
+

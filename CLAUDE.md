@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
-**Status:** proposta em `docs/` aguardando aprovação; as regras abaixo refletem essa proposta.
+**Status:** Etapa 1 (worker) implementada em `worker/`; decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04).
 
 ## Fontes de verdade
 
@@ -29,6 +29,11 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 - Repositório, testes, fixtures e CI só com conteúdo SFW. Nunca gerar, buscar ou guardar material explícito ou ilícito para teste.
 - Não copiar código do `worker-comfyui` (AGPL-3.0); usar só como referência de protocolo.
 
+## Comandos
+
+- Testes e lint: `cd worker && uv sync --python 3.12 && uv run pytest -q && uv run ruff check . ../tools`
+- Template em dia com o export: `python tools/derive_i2v_template.py --check`
+
 ## Convenções
 
 - Python 3.12 + `uv` + `ruff` + `pytest`; TypeScript no frontend.
@@ -37,4 +42,5 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 
 ## Ambiente de nuvem
 
-- Em 05/10/2026, a política de rede do ambiente bloqueava `runpod.io`, `docs.runpod.io`, `huggingface.co`, `ollama.com` e `comfy.org`; repositórios públicos do GitHub eram acessíveis por `git clone`.
+- O acesso à internet foi liberado em 05/10/2026, mas o tráfego passa por um proxy que reassina TLS. Em builds Docker, passe a CA: `docker build --secret id=extra_ca,src=/root/.ccr/ca-bundle.crt ...` (ver `worker/README.md`).
+- O daemon Docker não sobe sozinho: `nohup dockerd > /tmp/dockerd.log 2>&1 &`. O disco é limitado (a imagem `slim` tem ~18 GB): rode `docker builder prune -af` depois das builds. Não há GPU; o alvo `full` e os testes de tempo rodam fora daqui.

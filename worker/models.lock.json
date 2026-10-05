@@ -1,0 +1,44 @@
+{
+  "_comment": "Modelos do worker. bytes conferem com a seção 2 da especificação; sha256 é o OID LFS do Hugging Face na revisão fixada (consultado em 05/10/2026). Destino relativo a COMFYUI_DIR/models.",
+  "sets": {
+    "i2v_r1v2": ["wan22_i2v_r1v2_high", "wan22_i2v_r1v2_low", "nsfw_umt5_xxl_v2_fp8", "wan21_vae"]
+  },
+  "models": {
+    "wan22_i2v_r1v2_high": {
+      "repo": "rzgar/Wan2.2_I2V_R1_base_v2",
+      "revision": "2118ff4037ab196834f6d36185a197ef3a7a3754",
+      "path": "Wan2.2_I2V_High_R1_n54w_v2.safetensors",
+      "dest": "diffusion_models/Wan2.2_I2V_High_R1_n54w_v2.safetensors",
+      "bytes": 14803879958,
+      "sha256": "2e048f2e0977dce05098886ca1d171569c622897e94fc549b433f64ed98a13f4",
+      "license": "apache-2.0"
+    },
+    "wan22_i2v_r1v2_low": {
+      "repo": "rzgar/Wan2.2_I2V_R1_base_v2",
+      "revision": "2118ff4037ab196834f6d36185a197ef3a7a3754",
+      "path": "Wan2.2_I2V_Low_R1_n54w_v2.safetensors",
+      "dest": "diffusion_models/Wan2.2_I2V_Low_R1_n54w_v2.safetensors",
+      "bytes": 14803879958,
+      "sha256": "08fe6e276550d80928f9d016a7a9c67f3aa6444aff4d92a52d1879fefe586e7c",
+      "license": "apache-2.0"
+    },
+    "nsfw_umt5_xxl_v2_fp8": {
+      "repo": "rzgar/NSFW-Wan-UMT5-XXL-V2",
+      "revision": "f89480ab2f3ed3da9561ca886a0f2cc25f90bd94",
+      "path": "encoders/nsfw_wan_umt5_xxl_v2_fp8_e4m3fn_scaled.safetensors",
+      "dest": "text_encoders/nsfw_wan_umt5_xxl_v2_fp8_e4m3fn_scaled.safetensors",
+      "bytes": 6741537445,
+      "sha256": "8da6e259cfeb986dcff327364146089711c989c546d81cedd70c3e87e9cfee26",
+      "license": "apache-2.0"
+    },
+    "wan21_vae": {
+      "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "revision": "ee6f4a40737a995bf5818954cfce6d59443b0f04",
+      "path": "split_files/vae/wan_2.1_vae.safetensors",
+      "dest": "vae/wan_2.1_vae.safetensors",
+      "bytes": 253815318,
+      "sha256": "2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b",
+      "license": "apache-2.0"
+    }
+  }
+}

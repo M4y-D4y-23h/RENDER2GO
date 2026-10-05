@@ -1,0 +1,60 @@
+name: worker
+
+on:
+  push:
+    paths:
+      - "worker/**"
+      - "tools/**"
+      - "referencia/**"
+      - ".github/workflows/worker.yml"
+  pull_request:
+    paths:
+      - "worker/**"
+      - "tools/**"
+      - "referencia/**"
+      - ".github/workflows/worker.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: worker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.17"
+      - run: uv sync --python 3.12
+      - run: uv run ruff check . ../tools
+      - run: uv run ruff format --check . ../tools
+      - run: uv run pytest -q
+      - name: Template derivado em dia com o export de referência
+        run: uv run python ../tools/derive_i2v_template.py --check
+
+  build-slim:
+    # Sem GPU: confere que a imagem monta, que o ComfyUI importa os nós, que o patch UMT5
+    # carrega e que o template valida contra o /object_info do ComfyUI v0.38.0.
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Liberar disco (a imagem slim tem ~18 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+          df -h /
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build do alvo slim (sem o modelo do compilador)
+        run: >
+          docker buildx build
+          --file worker/Dockerfile
+          --target slim
+          --build-arg WITH_COMPILER_MODEL=0
+          --output type=cacheonly
+          worker

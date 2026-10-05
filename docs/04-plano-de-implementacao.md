@@ -30,12 +30,14 @@ Etapa 1 (imagem + script) ─► Etapa 2 (templates, T2V) ─► Etapa 3 (server
 | D3 | Mercado inicial | Só Brasil |
 | D4 | Fornecedores de verificação de idade, moderação e pagamentos | Pedir propostas confirmando que atendem o setor adulto |
 | D5 | Advogado(a) de direito digital | Contratar antes da Etapa 5 |
-| D6 | Encoder de texto | Confirmar a licença do NSFW-UMT5; sem permissão, usar o encoder oficial |
+| D6 | Encoder de texto | **Resolvida:** o NSFW-UMT5 é Apache-2.0 (doc 01, item 3) |
 | D7 | Arquitetura | Opção B (serverless) com worker agnóstico (doc 02) |
 
 As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SFW.
 
 ## Etapa 1 — Imagem do worker e script de envio (ponto de partida pedido)
+
+> **Status (05/10/2026): implementada**, ver [`worker/README.md`](../worker/README.md). Verificado sem GPU: build do alvo `slim` com teste de fumaça; patch UMT5 carregando; template validado contra o `/object_info` do ComfyUI 0.38.0 real; entrypoint subindo Ollama e ComfyUI; `submit_workflow.py` contra o ComfyUI real (upload aceito, única recusa = os 4 modelos ausentes) e com o compilador real (doc 01, item 20); 42 testes. **Falta, porque exige GPU:** build do alvo `full` (~37 GB de download) e os critérios de tempo (≤ ~40 s numa RTX 4090, compilação < 3 s). Passos para isso no README do worker.
 
 **Objetivo:** reproduzir o `start.sh` numa imagem Docker sem nenhuma instalação em runtime, e ter um script que envia o workflow em formato API ao ComfyUI e devolve o MP4.
 

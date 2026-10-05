@@ -1,0 +1,48 @@
+# Dependências de runtime da imagem do worker (Python 3.12, linux x86_64).
+# Gere o lock com: worker/scripts/lock-requirements.sh
+#
+# PyTorch +cu128: roda com driver >= 570. Não usar as wheels CUDA 13 do PyPI
+# (exigem driver >= 580). 2.8.0 é a versão testada no pipeline manual.
+torch==2.8.0+cu128
+torchvision==0.23.0+cu128
+torchaudio==2.8.0+cu128
+
+# requirements.txt do ComfyUI v0.38.0 (sem o comfyui_manager, fora da produção)
+comfyui-frontend-package==1.53.6
+comfyui-workflow-templates==0.11.70
+comfyui-embedded-docs==0.5.12
+torchsde
+numpy>=1.25.0
+einops
+transformers>=4.50.3,<5
+tokenizers>=0.13.3
+sentencepiece
+safetensors>=0.4.2
+aiohttp>=3.11.8
+yarl>=1.18.0
+pyyaml
+Pillow
+scipy
+tqdm
+psutil
+alembic
+SQLAlchemy>=2.0.0
+filelock
+av>=17.0.0
+comfy-kitchen==0.2.36
+comfy-aimdo==0.5.5
+requests
+simpleeval>=1.0.0
+blake3
+kornia>=0.7.1
+spandrel
+pydantic~=2.0
+pydantic-settings~=2.0
+PyOpenGL>=3.1.8
+comfy-angle
+
+# huggingface-hub 1.x quebra o ComfyUI na subida (mesmo pin do worker-comfyui)
+huggingface-hub<1.0
+
+# Pacote gpu2go_worker
+websocket-client

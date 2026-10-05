@@ -1,0 +1,38 @@
+{
+  "_comment": "Contrato do template i2v_r1v2.v1.api.json (derivado por tools/derive_i2v_template.py). Ver docs/02-arquitetura.md, seção 6.",
+  "template": "i2v_r1v2",
+  "version": 1,
+  "comfyui": "0.38.0",
+  "params": {
+    "image": {"node": "97", "input": "image", "type": "str", "required": true},
+    "prompt_en": {"node": "129:93", "input": "text", "type": "str", "required": true, "max_len": 2000},
+    "width": {"node": "129:98", "input": "width", "type": "int", "default": 640, "min": 256, "max": 1280, "multiple_of": 16},
+    "height": {"node": "129:98", "input": "height", "type": "int", "default": 640, "min": 256, "max": 1280, "multiple_of": 16},
+    "duration_s": {"node": "129:161", "input": "value", "type": "int", "default": 5, "min": 3, "max": 7, "as_float": true},
+    "seed": {"node": "129:86", "input": "noise_seed", "type": "int", "required": true, "min": 0, "max": 18446744073709551615},
+    "filename_prefix": {"node": "108", "input": "filename_prefix", "type": "str", "default": "video/gpu2go", "max_len": 120}
+  },
+  "constraints": {
+    "max_area": 921600
+  },
+  "fixed": {
+    "129:131.value": true,
+    "129:118.value": 4,
+    "129:122.value": 1,
+    "129:124.value": 2,
+    "129:162.value": 16,
+    "129:89.text": "",
+    "129:95.unet_name": "Wan2.2_I2V_High_R1_n54w_v2.safetensors",
+    "129:96.unet_name": "Wan2.2_I2V_Low_R1_n54w_v2.safetensors",
+    "129:84.clip_name": "nsfw_wan_umt5_xxl_v2_fp8_e4m3fn_scaled.safetensors",
+    "129:84.type": "wan",
+    "129:90.vae_name": "wan_2.1_vae.safetensors",
+    "129:163.expression": "floor (a * b + 1)"
+  },
+  "forbidden_classes": [
+    "OllamaGenerateV2",
+    "OllamaConnectivityV2",
+    "LoraLoaderModelOnly",
+    "LoraLoader"
+  ]
+}
