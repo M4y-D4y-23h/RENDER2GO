@@ -152,7 +152,8 @@ def run_case(
         output, refused, seconds, n = "REFUSED", True, 0.0, 0
     except compiler.CompilerOutputError as e:
         output, refused, seconds, n = f"<{e}>", False, 0.0, 0
-    checks, failures = check(case, text_in, output, refused, spec["words"], n)
+    words = compiler.word_range(profile, version)
+    checks, failures = check(case, text_in, output, refused, words, n)
     if output.startswith("<"):
         checks["format"] = False
         failures.insert(0, output.strip("<>"))

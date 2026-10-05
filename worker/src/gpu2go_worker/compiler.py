@@ -29,11 +29,14 @@ PROFILES: dict[str, dict] = {
         "version": 3,
         "options": {"temperature": 0.3, "num_ctx": 4096},
         "words": (40, 90),
+        # faixa própria de cada versão do prompt (o padrão é "words")
+        "words_by_version": {5: (15, 60)},
     },
     "t2v": {
         "version": 2,
         "options": {"temperature": 0.3, "num_ctx": 4096},
         "words": (80, 130),
+        "words_by_version": {3: (50, 110)},
     },
 }
 
@@ -84,6 +87,11 @@ def prompt_path(profile: str, version: int | None = None) -> Path:
     except KeyError:
         raise CompilerError(f"perfil desconhecido: {profile!r}") from None
     return PROMPTS_DIR / f"compiler-{profile}.v{version or spec['version']}.txt"
+
+
+def word_range(profile: str, version: int | None = None) -> tuple[int, int]:
+    spec = PROFILES[profile]
+    return spec.get("words_by_version", {}).get(version or spec["version"], spec["words"])
 
 
 def system_prompt(profile: str, version: int | None = None) -> str:
@@ -174,7 +182,7 @@ def compile_prompt(
         model=model,
         seconds=seconds,
         word_count=len(compiled.split()),
-        word_range=spec["words"],
+        word_range=word_range(profile, version),
         compiled=compiled,
         attempts=attempt,
     )
