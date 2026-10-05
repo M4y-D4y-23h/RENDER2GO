@@ -1,7 +1,28 @@
 {
-  "_comment": "Modelos do worker. bytes conferem com a seção 2 da especificação; sha256 é o OID LFS do Hugging Face na revisão fixada (consultado em 05/10/2026). Destino relativo a COMFYUI_DIR/models.",
+  "_comment": "Modelos do worker. bytes conferem com a seção 2 da especificação; sha256 é o OID LFS do Hugging Face na revisão fixada (consultado em 05/10/2026). Destino relativo a COMFYUI_DIR/models. Os conjuntos t2v_* são só para o bake-off do T2V (docs/adr/0001); as LoRAs Lightning T2V v1.1 da Comfy-Org têm o mesmo SHA-256 dos arquivos de lightx2v/Wan2.2-Lightning (Seko-V1.1).",
   "sets": {
-    "i2v_r1v2": ["wan22_i2v_r1v2_high", "wan22_i2v_r1v2_low", "nsfw_umt5_xxl_v2_fp8", "wan21_vae"]
+    "i2v_r1v2": [
+      "wan22_i2v_r1v2_high",
+      "wan22_i2v_r1v2_low",
+      "nsfw_umt5_xxl_v2_fp8",
+      "wan21_vae"
+    ],
+    "t2v_a14b_q6k": [
+      "wan22_t2v_a14b_high_q6k",
+      "wan22_t2v_a14b_low_q6k",
+      "lightning_t2v_v11_high",
+      "lightning_t2v_v11_low",
+      "nsfw_umt5_xxl_v2_fp8",
+      "wan21_vae"
+    ],
+    "t2v_a14b_fp8": [
+      "wan22_t2v_a14b_high_fp8",
+      "wan22_t2v_a14b_low_fp8",
+      "lightning_t2v_v11_high",
+      "lightning_t2v_v11_low",
+      "nsfw_umt5_xxl_v2_fp8",
+      "wan21_vae"
+    ]
   },
   "models": {
     "wan22_i2v_r1v2_high": {
@@ -38,6 +59,60 @@
       "dest": "vae/wan_2.1_vae.safetensors",
       "bytes": 253815318,
       "sha256": "2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b",
+      "license": "apache-2.0"
+    },
+    "wan22_t2v_a14b_high_q6k": {
+      "repo": "QuantStack/Wan2.2-T2V-A14B-GGUF",
+      "revision": "73eafba53a1a8f29254e4c77f92e74ea27d7cd6f",
+      "path": "HighNoise/Wan2.2-T2V-A14B-HighNoise-Q6_K.gguf",
+      "dest": "diffusion_models/Wan2.2-T2V-A14B-HighNoise-Q6_K.gguf",
+      "bytes": 12002013696,
+      "sha256": "504340d1d4eb9c754a824861234cedb5519155c125aa8dbb4c170716d899cd3b",
+      "license": "apache-2.0"
+    },
+    "wan22_t2v_a14b_low_q6k": {
+      "repo": "QuantStack/Wan2.2-T2V-A14B-GGUF",
+      "revision": "73eafba53a1a8f29254e4c77f92e74ea27d7cd6f",
+      "path": "LowNoise/Wan2.2-T2V-A14B-LowNoise-Q6_K.gguf",
+      "dest": "diffusion_models/Wan2.2-T2V-A14B-LowNoise-Q6_K.gguf",
+      "bytes": 12002013696,
+      "sha256": "db35061810049f77f571198d6a7bab422dec94fe0bf016b145b5cfc03eaaf661",
+      "license": "apache-2.0"
+    },
+    "wan22_t2v_a14b_high_fp8": {
+      "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "revision": "ee6f4a40737a995bf5818954cfce6d59443b0f04",
+      "path": "split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+      "dest": "diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+      "bytes": 14293923632,
+      "sha256": "cad711ae211c8b23455ec68cd6a190a33a3d874234a77eb57266d73f8f0e6c9f",
+      "license": "apache-2.0"
+    },
+    "wan22_t2v_a14b_low_fp8": {
+      "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "revision": "ee6f4a40737a995bf5818954cfce6d59443b0f04",
+      "path": "split_files/diffusion_models/wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+      "dest": "diffusion_models/wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+      "bytes": 14293923632,
+      "sha256": "e71b96d7c82e638694c5e7fb98fac4bfb0e4ddc5fbbb4b1df40da8f0f1278a97",
+      "license": "apache-2.0"
+    },
+    "lightning_t2v_v11_high": {
+      "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "revision": "ee6f4a40737a995bf5818954cfce6d59443b0f04",
+      "path": "split_files/loras/wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors",
+      "dest": "loras/wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors",
+      "bytes": 1226977424,
+      "sha256": "698321cb86bd30c4af06c9b84e656a1048c8cb54e06d50694536fb5de37fde41",
+      "license": "apache-2.0"
+    },
+    "lightning_t2v_v11_low": {
+      "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "revision": "ee6f4a40737a995bf5818954cfce6d59443b0f04",
+      "path": "split_files/loras/wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors",
+      "dest": "loras/wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors",
+      "bytes": 1226977424,
+      "sha256": "ec95216e614b3c132c11bfb387b11feedf62163150ccc9068bca8a189771e75a",
       "license": "apache-2.0"
     }
   }

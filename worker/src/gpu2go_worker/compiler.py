@@ -22,12 +22,18 @@ from gpu2go_worker import WORKER_DIR
 PROMPTS_DIR = Path(os.environ.get("GPU2GO_PROMPTS_DIR", WORKER_DIR / "prompts"))
 DEFAULT_MODEL = "huihui_ai/qwen2.5-abliterate:7b"
 
+# `version` é a versão em produção; o arquivo é `compiler-<perfil>.v<versão>.txt`.
+# Versões anteriores continuam no diretório para comparação (tools/eval_compiler.py).
 PROFILES: dict[str, dict] = {
     "i2v": {
         "version": 3,
-        "file": "compiler-i2v.v3.txt",
         "options": {"temperature": 0.3, "num_ctx": 4096},
         "words": (40, 90),
+    },
+    "t2v": {
+        "version": 2,
+        "options": {"temperature": 0.3, "num_ctx": 4096},
+        "words": (80, 130),
     },
 }
 
@@ -40,15 +46,27 @@ class CompilerRefused(CompilerError):
     pass
 
 
+class CompilerOutputError(CompilerError):
+    """Saída fora do formato (vazia ou com texto fora do inglês) depois das tentativas."""
+
+
+# O Qwen às vezes muda para chinês no meio do parágrafo (visto no teste de fidelidade).
+NON_ENGLISH = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0400-\u04ff]")
+
+
 @dataclass(frozen=True)
 class CompileResult:
     prompt: str
+    """Prompt final: texto compilado + termos dos presets."""
     profile: str
     version: int
     model: str
     seconds: float
     word_count: int
+    """Palavras do texto compilado pelo LLM (sem os termos dos presets)."""
     word_range: tuple[int, int]
+    compiled: str = ""
+    attempts: int = 1
 
     @property
     def word_count_ok(self) -> bool:
@@ -60,12 +78,19 @@ class CompileResult:
         return f"{self.profile}@{self.version}"
 
 
-def system_prompt(profile: str) -> str:
+def prompt_path(profile: str, version: int | None = None) -> Path:
     try:
         spec = PROFILES[profile]
     except KeyError:
         raise CompilerError(f"perfil desconhecido: {profile!r}") from None
-    return (PROMPTS_DIR / spec["file"]).read_text().strip()
+    return PROMPTS_DIR / f"compiler-{profile}.v{version or spec['version']}.txt"
+
+
+def system_prompt(profile: str, version: int | None = None) -> str:
+    path = prompt_path(profile, version)
+    if not path.is_file():
+        raise CompilerError(f"prompt inexistente: {path.name}")
+    return path.read_text().strip()
 
 
 def _keep_alive(value: str | int) -> str | int:
@@ -90,39 +115,66 @@ def compile_prompt(
     model: str = DEFAULT_MODEL,
     keep_alive: str | int = 0,
     timeout: float = 180.0,
+    version: int | None = None,
+    seed: int | None = None,
+    suffix: str = "",
+    attempts: int = 2,
 ) -> CompileResult:
+    """Compila o pedido; `suffix` (termos dos presets) é anexado sem passar pelo LLM.
+
+    Saída vazia ou com texto fora do inglês é refeita (seed + 1) até `attempts` vezes.
+    """
     if not text_pt.strip():
         raise CompilerError("pedido vazio")
     spec = PROFILES.get(profile)
     if spec is None:
         raise CompilerError(f"perfil desconhecido: {profile!r}")
+    version = version or spec["version"]
+    options = dict(spec["options"])
+    if seed is not None:
+        options["seed"] = seed
     payload = {
         "model": model,
-        "system": system_prompt(profile),
+        "system": system_prompt(profile, version),
         "prompt": text_pt.strip(),
         "stream": False,
-        "options": spec["options"],
+        "options": options,
         "keep_alive": _keep_alive(keep_alive),
     }
     t0 = time.monotonic()
-    try:
-        r = requests.post(f"{ollama_url.rstrip('/')}/api/generate", json=payload, timeout=timeout)
-        r.raise_for_status()
-    except requests.RequestException as e:
-        raise CompilerError(f"Ollama inacessível ou com erro em {ollama_url}: {e}") from e
-    raw = r.json().get("response", "")
+    problem = ""
+    for attempt in range(1, attempts + 1):  # noqa: B007 (usado depois do laço)
+        try:
+            r = requests.post(
+                f"{ollama_url.rstrip('/')}/api/generate", json=payload, timeout=timeout
+            )
+            r.raise_for_status()
+        except requests.RequestException as e:
+            raise CompilerError(f"Ollama inacessível ou com erro em {ollama_url}: {e}") from e
+        raw = r.json().get("response", "")
+        if is_refusal(raw):
+            raise CompilerRefused("o compilador recusou o pedido (REFUSED)")
+        compiled = normalize(raw)
+        if not compiled:
+            problem = "o compilador devolveu texto vazio"
+        elif NON_ENGLISH.search(compiled):
+            problem = "o compilador devolveu texto fora do inglês"
+        else:
+            break
+        if "seed" in options:
+            options["seed"] += 1
+    else:
+        raise CompilerOutputError(f"{problem} ({attempts} tentativas)")
     seconds = time.monotonic() - t0
-    if is_refusal(raw):
-        raise CompilerRefused("o compilador recusou o pedido (REFUSED)")
-    prompt = normalize(raw)
-    if not prompt:
-        raise CompilerError("o compilador devolveu texto vazio")
+    prompt = f"{compiled} {suffix.strip()}".strip()
     return CompileResult(
         prompt=prompt,
         profile=profile,
-        version=spec["version"],
+        version=version,
         model=model,
         seconds=seconds,
-        word_count=len(prompt.split()),
+        word_count=len(compiled.split()),
         word_range=spec["words"],
+        compiled=compiled,
+        attempts=attempt,
     )

@@ -1,0 +1,90 @@
+{
+  "_comment": "Candidato T2V do bake-off: Wan 2.2 T2V A14B fp8 + Lightning T2V v1.1 (gerado por tools/build_t2v_templates.py).",
+  "template": "t2v_a14b_fp8_lightning",
+  "version": 1,
+  "comfyui": "0.38.0",
+  "params": {
+    "prompt_en": {
+      "node": "129:93",
+      "input": "text",
+      "type": "str",
+      "required": true,
+      "max_len": 2000
+    },
+    "width": {
+      "node": "129:98",
+      "input": "width",
+      "type": "int",
+      "default": 640,
+      "min": 256,
+      "max": 1280,
+      "multiple_of": 16
+    },
+    "height": {
+      "node": "129:98",
+      "input": "height",
+      "type": "int",
+      "default": 640,
+      "min": 256,
+      "max": 1280,
+      "multiple_of": 16
+    },
+    "duration_s": {
+      "node": "129:161",
+      "input": "value",
+      "type": "int",
+      "default": 5,
+      "min": 3,
+      "max": 7,
+      "as_float": true
+    },
+    "seed": {
+      "node": "129:86",
+      "input": "noise_seed",
+      "type": "int",
+      "required": true,
+      "min": 0,
+      "max": 18446744073709551615
+    },
+    "filename_prefix": {
+      "node": "108",
+      "input": "filename_prefix",
+      "type": "str",
+      "default": "video/gpu2go",
+      "max_len": 120
+    }
+  },
+  "constraints": {
+    "max_area": 921600
+  },
+  "fixed": {
+    "129:162.value": 16,
+    "129:89.text": "",
+    "129:84.clip_name": "nsfw_wan_umt5_xxl_v2_fp8_e4m3fn_scaled.safetensors",
+    "129:84.type": "wan",
+    "129:90.vae_name": "wan_2.1_vae.safetensors",
+    "129:163.expression": "floor (a * b + 1)",
+    "129:95.unet_name": "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+    "129:96.unet_name": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+    "129:201.lora_name": "wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors",
+    "129:202.lora_name": "wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors",
+    "129:201.strength_model": 1.0,
+    "129:202.strength_model": 1.0,
+    "129:86.steps": 4,
+    "129:85.steps": 4,
+    "129:86.cfg": 1.0,
+    "129:85.cfg": 1.0,
+    "129:86.end_at_step": 2,
+    "129:85.start_at_step": 2,
+    "129:104.shift": 5.000000000000001,
+    "129:103.shift": 5.000000000000001
+  },
+  "forbidden_classes": [
+    "OllamaGenerateV2",
+    "OllamaConnectivityV2",
+    "LoraLoader"
+  ],
+  "experimental": true,
+  "model_set": "t2v_a14b_fp8",
+  "extra_custom_nodes": []
+}

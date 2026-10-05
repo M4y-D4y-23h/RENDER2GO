@@ -36,3 +36,38 @@ def test_empty_and_unreachable():
         c.compile_prompt("  ")
     with pytest.raises(c.CompilerError, match="inacessível"):
         c.compile_prompt("x", ollama_url="http://127.0.0.1:9", timeout=2)
+
+
+def test_versions_and_t2v_profile(fake_ollama):
+    assert c.prompt_path("i2v", 3).name == "compiler-i2v.v3.txt"
+    for profile in c.PROFILES:
+        text = c.system_prompt(profile)
+        assert "REFUSED" in text and "static camera" in text  # regra e glossário em todos
+    r = c.compile_prompt("um gato dorme", profile="t2v", ollama_url=fake_ollama.url, seed=3)
+    assert r.ref == f"t2v@{c.PROFILES['t2v']['version']}" and r.word_range == (80, 130)
+    assert fake_ollama.requests[0]["options"]["seed"] == 3
+    with pytest.raises(c.CompilerError, match="inexistente"):
+        c.compile_prompt("x", ollama_url=fake_ollama.url, version=99)
+
+
+def test_suffix_is_appended_verbatim_and_not_counted(fake_ollama):
+    fake_ollama.response = "He waves slowly."
+    r = c.compile_prompt(
+        "x", ollama_url=fake_ollama.url, suffix='Static camera, "rear view, from behind".'
+    )
+    assert r.prompt == 'He waves slowly. Static camera, "rear view, from behind".'
+    assert r.compiled == "He waves slowly." and r.word_count == 3
+
+
+def test_non_english_output_is_retried_with_next_seed(fake_ollama):
+    fake_ollama.queue = ["She walks, 她的步伐自然。"]
+    r = c.compile_prompt("x", ollama_url=fake_ollama.url, seed=10)
+    assert r.attempts == 2 and r.prompt == fake_ollama.response
+    assert [q["options"]["seed"] for q in fake_ollama.requests] == [10, 11]
+
+
+def test_non_english_output_fails_after_attempts(fake_ollama):
+    fake_ollama.response = "Она идёт."
+    with pytest.raises(c.CompilerOutputError, match="fora do inglês"):
+        c.compile_prompt("x", ollama_url=fake_ollama.url, attempts=2)
+    assert len(fake_ollama.requests) == 2

@@ -1,7 +1,10 @@
 import hashlib
 import json
+import shutil
+import subprocess
 
-from conftest import FAKE_MP4, I2V_TEMPLATE
+import pytest
+from conftest import FAKE_MP4, I2V_TEMPLATE, T2V_TEMPLATES
 
 from gpu2go_worker import cli_submit
 
@@ -142,3 +145,104 @@ def test_unreachable_comfy(sfw_image, tmp_path, capsys):
         str(tmp_path / "v.mp4"),
     )
     assert code == cli_submit.EXIT_UNREACHABLE
+
+
+def test_presets_compose_input_and_append_terms(
+    fake_comfy, fake_ollama, sfw_image, tmp_path, capsys
+):
+    code, res = _run(
+        capsys,
+        "--comfy",
+        fake_comfy.url,
+        "--ollama",
+        fake_ollama.url,
+        "--image",
+        str(sfw_image),
+        "--text-pt",
+        "ela caminha pela areia",
+        "--preset",
+        "camera=parada-corpo-inteiro-costas",
+        "--preset",
+        "luz=por-do-sol",
+        "--out",
+        str(tmp_path / "v.mp4"),
+    )
+    assert code == 0, res
+    assert fake_ollama.requests[0]["prompt"].startswith("ação: ela caminha pela areia\n")
+    text = next(iter(fake_comfy.prompts.values()))["129:93"]["inputs"]["text"]
+    assert text.endswith(
+        "Static camera, full body shot, rear view, from behind. "
+        "Golden hour sunlight, long soft shadows."
+    )
+    assert res["presets"] == {
+        "version": 1,
+        "camera": "parada-corpo-inteiro-costas",
+        "luz": "por-do-sol",
+    }
+
+
+def test_preset_errors(fake_comfy, sfw_image, tmp_path, capsys):
+    base = ["--comfy", fake_comfy.url, "--image", str(sfw_image), "--out", str(tmp_path / "v.mp4")]
+    code, res = _run(capsys, *base, "--prompt-en", "x", "--preset", "camera=parada")
+    assert code == 2 and "exige --text-pt" in res["error"]
+    code, res = _run(capsys, *base, "--text-pt", "x", "--preset", "camera=drone")
+    assert code == 2 and "opção desconhecida" in res["error"]
+    assert not fake_comfy.prompts
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg ausente")
+def test_continue_from_uses_last_frame(fake_comfy, tmp_path, capsys):
+    clip = tmp_path / "anterior.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=16",
+            "-frames:v",
+            "17",
+            "-pix_fmt",
+            "yuv420p",
+            str(clip),
+        ],
+        check=True,
+    )
+    code, res = _run(
+        capsys,
+        "--comfy",
+        fake_comfy.url,
+        "--continue-from",
+        str(clip),
+        "--prompt-en",
+        "The camera keeps still.",
+        "--out",
+        str(tmp_path / "v.mp4"),
+    )
+    assert code == 0, res
+    assert res["continued_from"] == str(clip)
+    (uploaded,) = fake_comfy.uploads.values()
+    assert uploaded.startswith(b"\x89PNG")
+
+
+def test_t2v_template_without_image(fake_comfy, fake_ollama, sfw_image, tmp_path, capsys):
+    tpl = str(T2V_TEMPLATES[0])
+    args = [
+        "--comfy",
+        fake_comfy.url,
+        "--ollama",
+        fake_ollama.url,
+        "--out",
+        str(tmp_path / "v.mp4"),
+    ]
+    code = cli_submit.main(
+        ["--template", tpl, "--no-ws", *args, "--image", str(sfw_image), "--prompt-en", "x"]
+    )
+    assert code == 2 and "não usa imagem" in json.loads(capsys.readouterr().out)["error"]
+    code = cli_submit.main(["--template", tpl, "--no-ws", *args, "--text-pt", "um gato dorme"])
+    res = json.loads(capsys.readouterr().out)
+    assert code == 0, res
+    assert res["compiler"] == "t2v@2" and not fake_comfy.uploads

@@ -1,0 +1,5 @@
+# Só para o alvo bakeoff do Dockerfile (ComfyUI-GGUF). Instalado com --no-deps: as
+# dependências do gguf (numpy, pyyaml, requests, tqdm) já estão no requirements.lock.
+gguf==0.19.0 \
+    --hash=sha256:70bcd10edfe697fb2dad6e40af2234b9d8ece9a41a99761405121ebda1c3c1cd \
+    --hash=sha256:dbadcd6cc7ccd44256f2229fe7c2dff5e8aa5cf0612ab987fd2b1a57e428923f

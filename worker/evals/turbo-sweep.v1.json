@@ -1,0 +1,22 @@
+{
+  "_comment": "Qualidade do turbo no I2V R1 v2 (doc 04, Etapa 2; especificação, seção 12). Muda os valores fixos do contrato só neste experimento. Com CFG > 1 o prompt negativo passa a agir e cada passo roda duas vezes (tempo ~2x). Rodar com: python tools/experiment.py worker/evals/turbo-sweep.v1.json --image <foto SFW de uma pessoa> --out saida/turbo",
+  "name": "Turbo do I2V R1 v2 v1",
+  "description": "Base 4 passos/CFG 1/troca no 2 × 8 passos (troca no 4) × CFG 1,5 e 2. Pergunta: há mais movimento e aderência sem cores estouradas, e a que custo de tempo?",
+  "image_required": true,
+  "image_hint": "foto SFW de uma pessoa, de corpo inteiro, 640x640 (pode ser o último quadro de um vídeo do bake-off: python -m gpu2go_worker.video last-frame ...)",
+  "params": {"width": 640, "height": 640, "duration_s": 5},
+  "seeds": [11, 22],
+  "variants": [
+    {"name": "4p-cfg1", "template": "workflows/i2v_r1v2.v1.api.json", "notes": "produção"},
+    {"name": "8p-cfg1", "template": "workflows/i2v_r1v2.v1.api.json", "overrides": {"129:118.value": 8, "129:124.value": 4}},
+    {"name": "4p-cfg1.5", "template": "workflows/i2v_r1v2.v1.api.json", "overrides": {"129:122.value": 1.5}},
+    {"name": "4p-cfg2", "template": "workflows/i2v_r1v2.v1.api.json", "overrides": {"129:122.value": 2.0}},
+    {"name": "8p-cfg1.5", "template": "workflows/i2v_r1v2.v1.api.json", "overrides": {"129:118.value": 8, "129:124.value": 4, "129:122.value": 1.5}}
+  ],
+  "prompts": [
+    {"id": "vira-e-caminha", "en": "The person slowly turns around and walks away from the camera with steady, relaxed steps, arms swinging naturally, continuing until the end of the clip. Static camera."},
+    {"id": "acena", "en": "The person raises both arms above the head and waves energetically from side to side, then lowers the arms and claps twice. Static camera."},
+    {"id": "vento", "en": "A strong wind blows across the scene; the person's hair and clothes flutter and ripple while they turn their head to look around. Static camera."},
+    {"id": "orbita", "en": "The person stands still and breathes calmly while the camera slowly orbits around them, revealing their side and back. Full body shot."}
+  ]
+}

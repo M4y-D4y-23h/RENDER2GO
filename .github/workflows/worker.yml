@@ -30,12 +30,16 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.8.17"
+      - name: ffmpeg (testes de continuar vídeo)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - run: uv sync --python 3.12
       - run: uv run ruff check . ../tools
       - run: uv run ruff format --check . ../tools
       - run: uv run pytest -q
       - name: Template derivado em dia com o export de referência
         run: uv run python ../tools/derive_i2v_template.py --check
+      - name: Templates T2V candidatos em dia com o I2V
+        run: uv run python ../tools/build_t2v_templates.py --check
 
   build-slim:
     # Sem GPU: confere que a imagem monta, que o ComfyUI importa os nós, que o patch UMT5
@@ -55,6 +59,14 @@ jobs:
           docker buildx build
           --file worker/Dockerfile
           --target slim
+          --build-arg WITH_COMPILER_MODEL=0
+          --output type=cacheonly
+          worker
+      - name: Build do alvo bakeoff (ComfyUI-GGUF; valida os templates T2V candidatos)
+        run: >
+          docker buildx build
+          --file worker/Dockerfile
+          --target bakeoff
           --build-arg WITH_COMPILER_MODEL=0
           --output type=cacheonly
           worker

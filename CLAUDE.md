@@ -1,13 +1,13 @@
 # CLAUDE.md
 
 Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
-**Status:** Etapa 1 (worker) implementada em `worker/`; decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04).
+**Status:** Etapas 1 e 2 implementadas em `worker/` (a parte da Etapa 2 que exige GPU, bake-off do T2V e turbo, tem as ferramentas prontas e roda fora daqui); decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04).
 
 ## Fontes de verdade
 
 - `referencia/especificacao-pipeline-manual.md`: pipeline manual testado. Não editar.
 - `referencia/wan-i2v-com-ollama.api.json`: workflow exportado. Não editar; os templates derivados ficam em `worker/workflows/`.
-- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/`.
+- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, proposto).
 
 ## Regras técnicas (mudar só com ADR)
 
@@ -20,6 +20,8 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 - PyTorch `+cu128` (driver ≥ 570); não usar as wheels CUDA 13 do PyPI.
 - Nos workers, ComfyUI e Ollama só em `127.0.0.1`; nenhuma porta exposta.
 - Payload de job sem binário: imagens e vídeos trafegam por URL assinada.
+- Termos dos presets são anexados ao prompt pelo código, nunca reescritos pelo LLM. Prompt do compilador novo = arquivo novo (`compiler-<perfil>.v<N>.txt`) + rodada de fidelidade.
+- Templates candidatos ficam em `worker/workflows/experimental/` (gerados por `tools/build_t2v_templates.py`); só vão para `worker/workflows/` com ADR aceito.
 
 ## Regras de segurança (inegociáveis)
 
@@ -33,6 +35,8 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 
 - Testes e lint: `cd worker && uv sync --python 3.12 && uv run pytest -q && uv run ruff check . ../tools`
 - Template em dia com o export: `python tools/derive_i2v_template.py --check`
+- Candidatos T2V em dia: `python tools/build_t2v_templates.py --check`
+- Fidelidade do compilador (precisa de Ollama): `python tools/eval_compiler.py --out saida/fid` (ver `worker/README.md`)
 
 ## Convenções
 
@@ -44,3 +48,4 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 
 - O acesso à internet foi liberado em 05/10/2026, mas o tráfego passa por um proxy que reassina TLS. Em builds Docker, passe a CA: `docker build --secret id=extra_ca,src=/root/.ccr/ca-bundle.crt ...` (ver `worker/README.md`).
 - O daemon Docker não sobe sozinho: `nohup dockerd > /tmp/dockerd.log 2>&1 &`. O disco é limitado (a imagem `slim` tem ~18 GB): rode `docker builder prune -af` depois das builds. Não há GPU; o alvo `full` e os testes de tempo rodam fora daqui.
+- Para a rodada de fidelidade sem GPU: Ollama v0.35.1 em CPU (release conferido por SHA-256, precisa de `zstd`), ~5–15 s por caso no 7B com cache de prefixo.

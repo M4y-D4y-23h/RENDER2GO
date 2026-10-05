@@ -1,0 +1,20 @@
+{
+  "_comment": "Bake-off do T2V (doc 04, Etapa 2; docs/adr/0001). Prompts já em inglês para tirar o compilador da comparação. Tudo SFW. Rodar com: python tools/experiment.py worker/evals/t2v-bakeoff.v1.json --out saida/bakeoff",
+  "name": "Bake-off T2V v1",
+  "description": "R1 v2 sem imagem × Wan 2.2 T2V A14B (GGUF Q6_K e fp8) com Lightning T2V v1.1. Critérios: aderência ao prompt, qualidade do movimento, artefatos (planilha ratings.csv), tempo, VRAM e GB extras de modelos.",
+  "params": {"width": 832, "height": 480, "duration_s": 5},
+  "seeds": [101, 202],
+  "variants": [
+    {"name": "r1v2-sem-imagem", "template": "workflows/experimental/t2v_r1v2_noimg.v1.api.json", "notes": "sem modelos extras"},
+    {"name": "a14b-q6k-lightning", "template": "workflows/experimental/t2v_a14b_q6k_lightning.v1.api.json", "notes": "exige o alvo bakeoff (ComfyUI-GGUF)"},
+    {"name": "a14b-fp8-lightning", "template": "workflows/experimental/t2v_a14b_fp8_lightning.v1.api.json", "notes": "nós nativos"}
+  ],
+  "prompts": [
+    {"id": "chuva-noite", "en": "A woman in a bright yellow raincoat walks away from the camera along a narrow city street during heavy rain at night, her steps steady and unhurried. Raindrops bounce off the wet cobblestones and puddles reflect the orange glow of the street lamps. The camera follows behind her at a constant distance in a medium shot, rear view. Cinematic, realistic, shallow depth of field."},
+    {"id": "cavalo-praia", "en": "A white horse gallops along the edge of the sea on an empty sandy beach, its mane and tail flowing, hooves splashing through shallow water. The camera tracks alongside it in a side view, keeping pace. Late afternoon golden sunlight, long shadows on the wet sand. Realistic, natural colors."},
+    {"id": "maos-argila", "en": "Close-up of a potter's hands shaping wet grey clay on a spinning pottery wheel. The fingers press gently into the clay, raising the walls of a small bowl as it turns. Water glistens on the clay and the knuckles. Static camera, soft daylight from a window, shallow depth of field."},
+    {"id": "xadrez-parque", "en": "Two older men play chess at a stone table in a city park. One of them slowly lifts his queen and moves it across the board, then leans back with his arms crossed while the other man studies the board, rubbing his chin. Static camera, medium shot, dappled sunlight through the trees, natural colors."},
+    {"id": "placa-neon", "en": "A neon sign reading \"BAR DO ZÉ\" flickers on and off above the door of a small bar on an empty street at night. Pink and blue light spills onto the wet pavement. Static camera, front view, cinematic, light mist in the air."},
+    {"id": "floresta-aerea", "en": "A slow aerial dolly forward over a dense pine forest covered in low morning mist at sunrise. The tops of the trees pass beneath the camera as the soft orange light rises behind distant mountains. Wide shot, high angle, calm and smooth camera motion, realistic."}
+  ]
+}

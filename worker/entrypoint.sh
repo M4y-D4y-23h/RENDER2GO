@@ -4,7 +4,7 @@
 #
 # Variáveis:
 #   MODE              pod (padrão) | serverless (Etapa 3)
-#   MODEL_SET         conjunto do models.lock.json (padrão: i2v_r1v2)
+#   MODEL_SET         conjuntos do models.lock.json, separados por vírgula (padrão: i2v_r1v2)
 #   MODELS_FROM_DIR   copiar modelos deste diretório (ex.: /workspace/models) se faltarem
 #   MODELS_FETCH=1    baixar do Hugging Face os modelos que faltarem
 #   VERIFY_SHA=1      conferir SHA-256 na cópia/download (padrão: só bytes)
@@ -51,7 +51,8 @@ if [[ "${SKIP_GPU_CHECK:-0}" != "1" ]]; then
 fi
 
 # 2. Modelos: sempre no disco local, nunca lidos direto do volume ---------------------
-fetch_args=("$MODEL_SET" --models-dir "$COMFY_DIR/models")
+IFS=, read -ra model_sets <<< "$MODEL_SET"
+fetch_args=("${model_sets[@]}" --models-dir "$COMFY_DIR/models")
 [[ "${VERIFY_SHA:-0}" == "1" ]] || fetch_args+=(--no-sha)
 if ! python -m gpu2go_worker.models "${fetch_args[@]}" --check-only >/dev/null 2>&1; then
   if [[ -n "${MODELS_FROM_DIR:-}" ]]; then

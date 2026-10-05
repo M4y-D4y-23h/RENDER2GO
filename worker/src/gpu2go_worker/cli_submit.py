@@ -3,6 +3,11 @@
 Fluxo: [compila o pedido no Ollama] → envia a imagem (/upload/image) → preenche o
 template pelo contrato → POST /prompt → acompanha /ws → /history → /view → grava o MP4.
 
+Presets (--preset camera=parada-corpo-inteiro-costas): o pedido vira a entrada rotulada
+e os termos em inglês do preset são anexados ao prompt sem passar pelo LLM.
+Continuar vídeo (--continue-from clipe.mp4): o último quadro do clipe vira a imagem de
+entrada; junte os clipes depois com `python -m gpu2go_worker.video concat`.
+
 Códigos de saída:
   0 sucesso · 2 parâmetro inválido · 3 recusado pelo compilador
   4 erro do ComfyUI (validação ou execução) · 5 serviço inacessível
@@ -15,11 +20,12 @@ import hashlib
 import json
 import secrets
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
 
-from gpu2go_worker import compiler
+from gpu2go_worker import compiler, presets, video
 from gpu2go_worker import template as tpl_mod
 from gpu2go_worker.comfy_client import (
     ComfyClient,
@@ -55,12 +61,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--comfy", default="http://127.0.0.1:8188", help="URL do ComfyUI")
     p.add_argument("--template", type=Path, required=True, help="arquivo .api.json")
-    p.add_argument("--image", type=Path, help="imagem de entrada (I2V)")
+    img = p.add_mutually_exclusive_group()
+    img.add_argument("--image", type=Path, help="imagem de entrada (I2V)")
+    img.add_argument(
+        "--continue-from", type=Path, help="clipe anterior: o último quadro vira a imagem"
+    )
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--text-pt", help="pedido em português (passa pelo compilador)")
     src.add_argument("--prompt-en", help="prompt já em inglês (pula o compilador)")
     p.add_argument("--ollama", default="http://127.0.0.1:11434", help="URL do Ollama")
-    p.add_argument("--profile", default="i2v", choices=sorted(compiler.PROFILES))
+    p.add_argument(
+        "--profile",
+        choices=sorted(compiler.PROFILES),
+        help="perfil do compilador; padrão: i2v se o template pede imagem, senão t2v",
+    )
+    p.add_argument(
+        "--preset",
+        action="append",
+        default=[],
+        metavar="CATEGORIA=OPÇÃO",
+        help="preset de cena (repetível), ex.: camera=parada, luz=neon; exige --text-pt",
+    )
     p.add_argument("--model", default=compiler.DEFAULT_MODEL, help="modelo do compilador")
     p.add_argument("--keep-alive", default="0", help="keep_alive do Ollama (0, 10m...)")
     p.add_argument("--width", type=int)
@@ -98,10 +119,35 @@ def run(a: argparse.Namespace) -> tuple[int, dict]:
         if value is not None:
             params[name] = value
 
-    if "image" in template.contract["params"]:
+    needs_image = "image" in template.contract["params"]
+    profile = a.profile or ("i2v" if needs_image else "t2v")
+    if needs_image:
+        if a.continue_from is not None:
+            try:
+                a.image = video.last_frame(
+                    a.continue_from, Path(tempfile.mkdtemp(prefix="gpu2go_")) / "continuacao.png"
+                )
+            except video.VideoError as e:
+                return EXIT_PARAM, {**result, "error": f"--continue-from: {e}"}
+            result["continued_from"] = str(a.continue_from)
         if a.image is None or not a.image.is_file():
-            return EXIT_PARAM, {**result, "error": "este template exige --image com um arquivo"}
+            return EXIT_PARAM, {
+                **result,
+                "error": "este template exige --image ou --continue-from com um arquivo",
+            }
         params["image"] = "placeholder"  # valida o resto antes de compilar e enviar
+    elif a.image is not None or a.continue_from is not None:
+        return EXIT_PARAM, {**result, "error": f"o template {template.ref} não usa imagem"}
+
+    composed = None
+    if a.preset:
+        if a.text_pt is None:
+            return EXIT_PARAM, {**result, "error": "--preset exige --text-pt"}
+        try:
+            composed = presets.compose(profile, a.text_pt, presets.parse_selections(a.preset))
+        except presets.PresetError as e:
+            return EXIT_PARAM, {**result, "error": str(e)}
+        result["presets"] = {"version": composed.version, **composed.selections}
 
     params["prompt_en"] = a.prompt_en or "placeholder"
     try:
@@ -113,11 +159,12 @@ def run(a: argparse.Namespace) -> tuple[int, dict]:
         _log("compilando o pedido...")
         try:
             comp = compiler.compile_prompt(
-                a.text_pt,
-                profile=a.profile,
+                composed.text if composed else a.text_pt,
+                profile=profile,
                 ollama_url=a.ollama,
                 model=a.model,
                 keep_alive=a.keep_alive,
+                suffix=composed.suffix if composed else "",
             )
         except compiler.CompilerRefused as e:
             return EXIT_REFUSED, {**result, "status": "refused", "error": str(e)}

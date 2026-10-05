@@ -90,7 +90,7 @@ Legenda: **[CONFIRMADO]** · **[PARCIAL]** (parte confirmada, parte em aberto) �
 - Empacotamento oficial no registro do Ollama: não confirmado.
 - Um compilador que enxerga a imagem pode melhorar a fidelidade, mas **não serve como filtro de segurança** (ver doc 03).
 
-## 7. Nomes das LoRAs Lightning — [CONFIRMADO]/[PARCIAL]
+## 7. Nomes das LoRAs Lightning — [CONFIRMADO]
 
 Repositório `Comfy-Org/Wan_2.2_ComfyUI_Repackaged`, pasta `split_files/loras/`:
 
@@ -99,7 +99,9 @@ Repositório `Comfy-Org/Wan_2.2_ComfyUI_Repackaged`, pasta `split_files/loras/`:
 | I2V oficial, high noise | `wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors` | [CONFIRMADO] |
 | I2V oficial, low noise | `wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors` | [CONFIRMADO] (já citada na seção 2.5) |
 | T2V oficial, high noise | `wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors` (renomeada de `Wan2.2_T2V_A14B_4steps_lora_rank64_Seko_high_noise_V1.1.safetensors`) | [CONFIRMADO] |
-| T2V oficial, low noise | `wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors` | [PARCIAL]: inferido pelo padrão; confirmar |
+| T2V oficial, low noise | `wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors` | [CONFIRMADO] (05/10/2026, API do Hugging Face) |
+
+Conferência de 05/10/2026 (Etapa 2): os dois arquivos T2V v1.1 da Comfy-Org têm 1.226.977.424 bytes e o **mesmo SHA-256** dos originais `high_noise_model.safetensors` e `low_noise_model.safetensors` da pasta `Wan2.2-T2V-A14B-4steps-lora-rank64-Seko-V1.1` de [`lightx2v/Wan2.2-Lightning`](https://huggingface.co/lightx2v/Wan2.2-Lightning) (Apache-2.0). O mesmo repositório tem versões mais novas (`Seko-V2.0`, `250928`), fora do bake-off. O workflow de referência do lightx2v para a v1.1 usa força 1,0, 4 passos, troca no passo 2, CFG 1, shift 5, euler/simple. Os GGUF Q6_K do T2V (`QuantStack/Wan2.2-T2V-A14B-GGUF`) conferem com os 12.002.013.696 bytes da especificação. Tudo registrado no `worker/models.lock.json`.
 
 Fontes: [comfy.org — T2V v1.1 high](https://comfy.org/p/supported-models/wan2-2-t2v-lightx2v-4steps-lora-v1-1-high-noise.md), [comfy.org — I2V v1 high](https://comfy.org/p/supported-models/wan2-2-i2v-lightx2v-4steps-lora-v1-high-noise.md). Continuam **proibidas com o R1 v2**.
 

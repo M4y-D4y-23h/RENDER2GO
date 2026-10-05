@@ -5,6 +5,7 @@
 #
 #   docker build -f worker/Dockerfile --target slim -t gpu2go-worker:slim worker
 #   docker build -f worker/Dockerfile --target full -t gpu2go-worker:full worker
+#   docker build -f worker/Dockerfile --target bakeoff -t gpu2go-worker:bakeoff worker
 #
 # Alvos:
 #   runtime  sistema + Python + PyTorch cu128 + ComfyUI v0.38.0 + patch UMT5 + Ollama
@@ -96,6 +97,7 @@ COPY src /opt/gpu2go/worker/src
 COPY scripts /opt/gpu2go/worker/scripts
 COPY workflows /opt/gpu2go/worker/workflows
 COPY prompts /opt/gpu2go/worker/prompts
+COPY presets /opt/gpu2go/worker/presets
 RUN chmod +x /opt/gpu2go/worker/entrypoint.sh
 
 # Teste de fumaça (CPU, sem GPU): o ComfyUI importa todos os nós, o patch UMT5 carrega,
@@ -143,3 +145,29 @@ RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /
     && python -m gpu2go_worker.models wan22_i2v_r1v2_high --models-dir "${COMFY_DIR}/models"
 RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /usr/local/lib/gpu2go/ca-env.sh \
     && python -m gpu2go_worker.models wan22_i2v_r1v2_low --models-dir "${COMFY_DIR}/models"
+
+# ---------------------------------------------------------------------------------------
+# Só para o bake-off do T2V (docs/adr/0001): slim + ComfyUI-GGUF. Os modelos entram em
+# runtime (MODEL_SET=i2v_r1v2,t2v_a14b_q6k,t2v_a14b_fp8 com MODELS_FROM_DIR ou
+# MODELS_FETCH=1), para não gerar uma imagem de ~70 GB para um experimento.
+FROM slim AS bakeoff
+
+ARG COMFYUI_GGUF_COMMIT=6ea2651e7df66d7585f6ffee804b20e92fb38b8a
+
+COPY requirements-bakeoff.lock /tmp/requirements-bakeoff.lock
+RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /usr/local/lib/gpu2go/ca-env.sh \
+    && uv pip install --no-cache --no-deps --require-hashes -r /tmp/requirements-bakeoff.lock \
+        --index-url https://pypi.org/simple \
+    && rm /tmp/requirements-bakeoff.lock \
+    && git clone https://github.com/city96/ComfyUI-GGUF.git "${COMFY_DIR}/custom_nodes/ComfyUI-GGUF" \
+    && git -C "${COMFY_DIR}/custom_nodes/ComfyUI-GGUF" checkout -q "${COMFYUI_GGUF_COMMIT}" \
+    && rm -rf "${COMFY_DIR}/custom_nodes/ComfyUI-GGUF/.git"
+
+RUN cd "${COMFY_DIR}" \
+    && (python main.py --cpu --listen 127.0.0.1 --port 8188 > /tmp/comfy.log 2>&1 &) \
+    && for i in $(seq 1 120); do curl -fsS -o /dev/null http://127.0.0.1:8188/system_stats && break; sleep 1; done \
+    && python -m gpu2go_worker.template --comfy http://127.0.0.1:8188 \
+        /opt/gpu2go/worker/workflows/*.api.json /opt/gpu2go/worker/workflows/experimental/*.api.json \
+    || (tail -50 /tmp/comfy.log; exit 1)
+
+ENV MODEL_SET=i2v_r1v2,t2v_a14b_q6k

@@ -12,6 +12,9 @@ dependencies = [
 gpu2go-submit = "gpu2go_worker.cli_submit:main"
 gpu2go-fetch-models = "gpu2go_worker.models:main"
 gpu2go-validate-template = "gpu2go_worker.template:main"
+gpu2go-eval-compiler = "gpu2go_worker.cli_eval:main"
+gpu2go-experiment = "gpu2go_worker.experiment:main"
+gpu2go-video = "gpu2go_worker.video:main"
 
 [dependency-groups]
 dev = [

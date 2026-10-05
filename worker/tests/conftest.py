@@ -19,6 +19,7 @@ import pytest
 
 WORKER = Path(__file__).resolve().parents[1]
 I2V_TEMPLATE = WORKER / "workflows" / "i2v_r1v2.v1.api.json"
+T2V_TEMPLATES = sorted((WORKER / "workflows" / "experimental").glob("*.api.json"))
 FAKE_MP4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
 
 
@@ -132,6 +133,7 @@ class FakeOllamaState:
             "naturally, in a medium shot. Static camera, soft daylight."
         )
         self.requests: list[dict] = []
+        self.queue: list[str] = []  # respostas em sequência; depois volta a `response`
 
 
 def _ollama_handler(state: FakeOllamaState):
@@ -142,9 +144,8 @@ def _ollama_handler(state: FakeOllamaState):
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             state.requests.append(body)
-            data = json.dumps(
-                {"model": body["model"], "response": state.response, "done": True}
-            ).encode()
+            text = state.queue.pop(0) if state.queue else state.response
+            data = json.dumps({"model": body["model"], "response": text, "done": True}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
