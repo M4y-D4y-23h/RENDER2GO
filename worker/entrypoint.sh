@@ -14,6 +14,8 @@
 #   PUBLIC_KEY        chave SSH pública: liga o sshd no modo pod
 #   SKIP_GPU_CHECK=1  pular a checagem de GPU (só testes sem GPU)
 #   COMFY_EXTRA_ARGS  argumentos extras do ComfyUI (ex.: --cpu em testes sem GPU)
+#   COMFY_GPUS        modo pod: um ComfyUI por GPU, nas portas COMFY_PORT, +1, +2...
+#                     (número ou "auto" = todas as GPUs; padrão 1; serverless usa sempre 1)
 #   AUTO_TERMINATE_HOURS  modo pod no RunPod: o pod se encerra depois de N horas (0 = nunca)
 #   TERMINATE_ON_BAD_GPU  modo pod no RunPod: encerra o pod se a GPU falhar (padrão: 1)
 #   GPU2GO_SAFETY, GPU2GO_ALLOWED_URL_HOSTS  obrigatórias no serverless (ver jobs.py)
@@ -25,6 +27,7 @@ COMFY_DIR="${COMFY_DIR:-/opt/comfyui}"
 COMFY_LISTEN="${COMFY_LISTEN:-127.0.0.1}"
 COMFY_PORT="${COMFY_PORT:-8188}"
 RESERVE_VRAM_GB="${RESERVE_VRAM_GB:-6}"
+COMFY_GPUS="${COMFY_GPUS:-1}"
 WORKER_DIR="${GPU2GO_WORKER_DIR:-/opt/gpu2go/worker}"
 export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
 export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-0}"
@@ -45,6 +48,12 @@ case "$MODE" in
   pod|serverless) ;;
   *) die "MODE desconhecido: $MODE" ;;
 esac
+if [[ "$COMFY_GPUS" == "auto" ]]; then
+  COMFY_GPUS=$(nvidia-smi -L 2>/dev/null | grep -c "^GPU" || true)
+  [[ "$COMFY_GPUS" -ge 1 ]] || COMFY_GPUS=1
+fi
+[[ "$COMFY_GPUS" =~ ^[1-9][0-9]*$ ]] || die "COMFY_GPUS inválido: $COMFY_GPUS"
+[[ "$MODE" == "serverless" ]] && COMFY_GPUS=1  # o handler fala com um ComfyUI só
 
 # 0. Desligamento automático no RunPod (o RunPod injeta RUNPOD_POD_ID e RUNPOD_API_KEY) ---
 DEADMAN_PID=""
@@ -105,17 +114,25 @@ setsid ollama serve > >(sed -u 's/^/[ollama] /') 2>&1 &
 OLLAMA_PID=$!
 wait_http "http://$OLLAMA_HOST/api/version" 60 "Ollama"
 
-# 5. ComfyUI -----------------------------------------------------------------------------
-log "subindo o ComfyUI em $COMFY_LISTEN:$COMFY_PORT (--reserve-vram $RESERVE_VRAM_GB)"
+# 5. ComfyUI: um processo por GPU (CUDA_VISIBLE_DEVICES), portas consecutivas -----------
+COMFY_PIDS=()
 cd "$COMFY_DIR"
-setsid python main.py \
-  --listen "$COMFY_LISTEN" --port "$COMFY_PORT" \
-  --reserve-vram "$RESERVE_VRAM_GB" \
-  --disable-metadata --disable-auto-launch \
-  ${COMFY_EXTRA_ARGS:-} \
-  > >(sed -u 's/^/[comfyui] /') 2>&1 &
-COMFY_PID=$!
-wait_http "http://127.0.0.1:$COMFY_PORT/system_stats" 300 "ComfyUI"
+for ((g = 0; g < COMFY_GPUS; g++)); do
+  port=$((COMFY_PORT + g))
+  log "subindo o ComfyUI na GPU $g em $COMFY_LISTEN:$port (--reserve-vram $RESERVE_VRAM_GB)"
+  gpu_env=()  # com uma GPU, respeita o CUDA_VISIBLE_DEVICES do host
+  ((COMFY_GPUS > 1)) && gpu_env=("CUDA_VISIBLE_DEVICES=$g")
+  env "${gpu_env[@]}" setsid python main.py \
+    --listen "$COMFY_LISTEN" --port "$port" \
+    --reserve-vram "$RESERVE_VRAM_GB" \
+    --disable-metadata --disable-auto-launch \
+    ${COMFY_EXTRA_ARGS:-} \
+    > >(sed -u "s/^/[comfyui:$g] /") 2>&1 &
+  COMFY_PIDS+=($!)
+done
+for ((g = 0; g < COMFY_GPUS; g++)); do
+  wait_http "http://127.0.0.1:$((COMFY_PORT + g))/system_stats" 300 "ComfyUI da GPU $g"
+done
 log "pronto"
 
 HANDLER_PID=""
@@ -125,11 +142,11 @@ if [[ "$MODE" == "serverless" ]]; then
   HANDLER_PID=$!
 fi
 
-# 6. Supervisão: se um dos dois cair, derruba o outro e sai com erro ----------------------
-trap 'kill -TERM "$OLLAMA_PID" "$COMFY_PID" $HANDLER_PID $DEADMAN_PID 2>/dev/null || true' TERM INT
+# 6. Supervisão: se um serviço cair, derruba os outros e sai com erro   ----------------------
+trap 'kill -TERM "$OLLAMA_PID" "${COMFY_PIDS[@]}" $HANDLER_PID $DEADMAN_PID 2>/dev/null || true' TERM INT
 set +e
-wait -n "$OLLAMA_PID" "$COMFY_PID" $HANDLER_PID
+wait -n "$OLLAMA_PID" "${COMFY_PIDS[@]}" $HANDLER_PID
 status=$?
-kill -TERM "$OLLAMA_PID" "$COMFY_PID" $HANDLER_PID $DEADMAN_PID 2>/dev/null
+kill -TERM "$OLLAMA_PID" "${COMFY_PIDS[@]}" $HANDLER_PID $DEADMAN_PID 2>/dev/null
 wait
 die "um dos serviços terminou (código $status)"

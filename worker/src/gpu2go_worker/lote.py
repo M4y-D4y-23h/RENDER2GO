@@ -13,9 +13,11 @@ Fluxo principal (lotes de 50+ fotos, docs/05):
   horizontal. Assim o corte é o menor possível.
 - `--qualidade rapida` (padrão, medida) ou `alta` (área máxima do contrato, ainda sem
   medição de tempo e de VRAM).
-- Cada `--comfy` é uma GPU (pod, pelo túnel SSH: o ComfyUI só escuta em 127.0.0.1). Cada
-  uma recebe `--fila` vídeos ao mesmo tempo (padrão 2): enquanto um renderiza, o próximo
-  já está na fila do ComfyUI e a GPU não fica parada esperando envio ou download.
+- Cada `--comfy` é uma GPU (pod, pelo túnel SSH: o ComfyUI só escuta em 127.0.0.1).
+  Num pod com várias GPUs (`COMFY_GPUS=auto` no entrypoint), `--gpus N` usa as N.
+  Paralelismo de verdade é uma GPU por vídeo: dois vídeos na mesma GPU não saem mais
+  rápido (medido em 06/10: fila 1 e fila 2 deram ~80 s por vídeo). `--fila 2` só ajuda
+  quando o envio e o download são lentos (túnel, rede distante).
 
 Planilha (opcional, para pedidos diferentes por foto): `pedidos.csv` com as colunas
 foto, receita, acao, formato, duracao, variacoes, consentimento (só `foto` e `receita`
@@ -618,7 +620,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         help="URL do ComfyUI de cada GPU (repetível); padrão: http://127.0.0.1:8188",
     )
-    p.add_argument("--fila", type=int, default=2, help="vídeos por GPU ao mesmo tempo (1 a 4)")
+    p.add_argument(
+        "--gpus",
+        type=int,
+        help="pod com N GPUs (COMFY_GPUS=N): usa as portas 8188 a 8188+N-1 deste pod",
+    )
+    p.add_argument("--fila", type=int, default=1, help="vídeos por GPU ao mesmo tempo (1 a 4)")
     p.add_argument("--ollama", default="http://127.0.0.1:11434", help="URL do Ollama")
     p.add_argument("--template", type=Path, default=I2V_TEMPLATE, help="template I2V")
     p.add_argument("--model", default=compiler.DEFAULT_MODEL, help="modelo do compilador")
@@ -629,6 +636,12 @@ def build_parser() -> argparse.ArgumentParser:
 def parse(argv: list[str] | None = None) -> Namespace:
     p = build_parser()
     a = p.parse_args(argv)
+    if a.gpus is not None:
+        if a.comfy:
+            p.error("use --gpus ou --comfy, não os dois")
+        if not 1 <= a.gpus <= 16:
+            p.error("--gpus: de 1 a 16")
+        a.comfy = [f"http://127.0.0.1:{8188 + i}" for i in range(a.gpus)]
     a.comfy = a.comfy or ["http://127.0.0.1:8188"]
     if len(set(a.comfy)) != len(a.comfy):
         p.error("--comfy repetido")

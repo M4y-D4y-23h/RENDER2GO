@@ -245,3 +245,10 @@ def test_failed_video_is_reported_and_retried_next_run(pasta, tmp_path):
     assert lote.executar(a, submit, _compile_falso(chamadas)) == lote.EXIT_OK
     assert len(chamadas) == 1  # o prompt veio do lote.json
     assert [r["status"] for r in _relatorio(tmp_path)] == ["ok"] * 3
+
+
+def test_gpus_shortcut_uses_consecutive_ports(tmp_path):
+    a = lote.parse([str(tmp_path), "--saida", "s", "--prompt", "x", "--gpus", "3"])
+    assert a.comfy == [f"http://127.0.0.1:{p}" for p in (8188, 8189, 8190)] and a.fila == 1
+    with pytest.raises(SystemExit):
+        lote.parse([str(tmp_path), "--saida", "s", "--prompt", "x", "--gpus", "2", "--comfy", "u"])
