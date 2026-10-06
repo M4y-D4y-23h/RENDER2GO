@@ -38,6 +38,7 @@ import csv
 import hashlib
 import json
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -50,7 +51,7 @@ from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
-from gpu2go_worker import WORKER_DIR, cli_submit, compiler, presets
+from gpu2go_worker import WORKER_DIR, cli_submit, compiler, preparo, presets
 
 RECEITAS_FILE = WORKER_DIR / "presets" / "receitas.v1.json"
 I2V_TEMPLATE = WORKER_DIR / "workflows" / "i2v_r1v2.v1.api.json"
@@ -77,6 +78,7 @@ COLUNAS_RELATORIO = [
     "gpu",
     "status",
     "segundos",
+    "aviso",
     "erro",
 ]
 EXIT_OK, EXIT_FALHA, EXIT_PEDIDO, EXIT_RECUSADO, EXIT_INACESSIVEL = 0, 1, 2, 3, 5
@@ -345,6 +347,7 @@ def compilar(
             model=a.model,
             keep_alive=0,  # libera a VRAM do Ollama antes dos renders
             suffix=composed.suffix,
+            camera_preset=composed.camera,
         )
         _log(f"  prompt ({comp.word_count} palavras): {comp.prompt}")
         feitos[t.pedido] = {
@@ -357,7 +360,9 @@ def compilar(
     return prompts
 
 
-def _args(t: Tarefa, prompt_en: str, out: Path, comfy: str, a: Namespace) -> Namespace:
+def _args(
+    t: Tarefa, prompt_en: str, out: Path, comfy: str, a: Namespace, foto: Path | None = None
+) -> Namespace:
     return cli_submit.build_parser().parse_args(
         [
             "--comfy",
@@ -365,7 +370,7 @@ def _args(t: Tarefa, prompt_en: str, out: Path, comfy: str, a: Namespace) -> Nam
             "--template",
             str(a.template),
             "--image",
-            str(t.foto),
+            str(foto or t.foto),
             "--prompt-en",
             prompt_en,
             "--width",
@@ -395,7 +400,9 @@ class Execucao:
         self.total = self.feitos = self.falhas = 0
         self.inacessiveis: set[str] = set()
 
-    def _registrar(self, t: Tarefa, gpu: str, code: int, res: dict, segundos: float) -> None:
+    def _registrar(
+        self, t: Tarefa, gpu: str, code: int, res: dict, segundos: float, aviso: str = ""
+    ) -> None:
         ok = code == cli_submit.EXIT_OK
         row: dict[str, Any] = {
             "arquivo": t.arquivo,
@@ -410,6 +417,7 @@ class Execucao:
             "gpu": gpu,
             "status": "ok" if ok else "erro",
             "segundos": round(segundos, 1),
+            "aviso": aviso,
             "erro": "" if ok else str(res.get("error", ""))[:300],
         }
         with self.lock:
@@ -421,6 +429,8 @@ class Execucao:
             _log(f"{progresso}: {row['status']} ({gpu}, {segundos:.0f} s)")
             if not ok:
                 _log(f"  {row['erro']}")
+            if aviso:
+                _log(f"  aviso: {aviso}")
 
     def _trabalhar(self, gpu: str) -> None:
         while gpu not in self.inacessiveis:
@@ -431,7 +441,17 @@ class Execucao:
             destino = self.a.saida / t.arquivo
             parcial = destino.with_name(f"{destino.stem}.parcial.mp4")
             t0 = time.monotonic()
-            code, res = self.submit(_args(t, self.prompts[t.pedido], parcial, gpu, self.a))
+            foto, aviso = t.foto, ""
+            if self.a.preparo:
+                try:
+                    prep = preparo.preparar(
+                        t.foto, t.width, t.height, self.a.saida / ".preparo" / f"{destino.stem}.png"
+                    )
+                except preparo.PreparoError as e:
+                    self._registrar(t, gpu, cli_submit.EXIT_PARAM, {"error": str(e)}, 0.0)
+                    continue
+                foto, aviso = prep.path, prep.aviso
+            code, res = self.submit(_args(t, self.prompts[t.pedido], parcial, gpu, self.a, foto))
             if code == cli_submit.EXIT_UNREACHABLE:
                 parcial.unlink(missing_ok=True)
                 self.fila.put(t)  # outra GPU pega
@@ -442,9 +462,19 @@ class Execucao:
                 return
             if code == cli_submit.EXIT_OK:
                 parcial.replace(destino)
+                if self.a.conferencia:
+                    try:
+                        preparo.folha(
+                            foto,
+                            destino,
+                            self.a.saida / "conferencia" / f"{destino.stem}.jpg",
+                            16 * t.duracao + 1,
+                        )
+                    except (OSError, subprocess.CalledProcessError) as e:
+                        aviso = f"{aviso}; sem folha de conferência ({e})".lstrip("; ")
             else:
                 parcial.unlink(missing_ok=True)
-            self._registrar(t, gpu, code, res, time.monotonic() - t0)
+            self._registrar(t, gpu, code, res, time.monotonic() - t0, aviso)
 
     def rodar(self, tarefas: list[Tarefa]) -> int:
         for t in tarefas:
@@ -570,6 +600,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="as pessoas das fotos autorizaram por escrito (receitas com pessoa)",
     )
     p.add_argument("--subpastas", action="store_true", help="inclui as fotos das subpastas")
+    p.add_argument(
+        "--sem-preparo",
+        dest="preparo",
+        action="store_false",
+        help="envia a foto original (sem corte e redimensionamento Lanczos)",
+    )
+    p.add_argument(
+        "--sem-conferencia",
+        dest="conferencia",
+        action="store_false",
+        help="não gera as folhas de conferência (foto + 3 quadros)",
+    )
     p.add_argument("--conferir", action="store_true", help="só confere e lista os vídeos")
     p.add_argument(
         "--comfy",

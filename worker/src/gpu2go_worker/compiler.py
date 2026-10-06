@@ -56,6 +56,19 @@ class CompilerOutputError(CompilerError):
 
 # O Qwen às vezes muda para chinês no meio do parágrafo (visto no teste de fidelidade).
 NON_ENGLISH = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0400-\u04ff]")
+# O 7B escreve "Static camera." mesmo com preset de movimento (rodada de 06/10/2026), o que
+# contradiz os termos do preset. Com preset de câmera, essas frases saem pelo código.
+STATIC_CAMERA = re.compile(
+    r"static camera|still camera|camera (?:remains|stays|is|holds) "
+    r"(?:still|static|stationary|steady|fixed)",
+    re.IGNORECASE,
+)
+
+
+def drop_static_camera(text: str) -> str:
+    """Remove as frases que dizem que a câmera fica parada."""
+    frases = re.split(r"(?<=[.!?])\s+", text.strip())
+    return " ".join(f for f in frases if not STATIC_CAMERA.search(f)).strip()
 
 
 @dataclass(frozen=True)
@@ -128,10 +141,13 @@ def compile_prompt(
     seed: int | None = None,
     suffix: str = "",
     attempts: int = 2,
+    camera_preset: bool = False,
 ) -> CompileResult:
     """Compila o pedido; `suffix` (termos dos presets) é anexado sem passar pelo LLM.
 
     Saída vazia ou com texto fora do inglês é refeita (seed + 1) até `attempts` vezes.
+    `camera_preset`: há preset de câmera, então as frases de "câmera parada" escritas pelo
+    LLM são removidas (contradiriam o preset).
     """
     if not text_pt.strip():
         raise CompilerError("pedido vazio")
@@ -164,6 +180,8 @@ def compile_prompt(
         if is_refusal(raw):
             raise CompilerRefused("o compilador recusou o pedido (REFUSED)")
         compiled = normalize(raw)
+        if camera_preset:  # a câmera vem do preset, palavra por palavra
+            compiled = drop_static_camera(compiled)
         if not compiled:
             problem = "o compilador devolveu texto vazio"
         elif NON_ENGLISH.search(compiled):

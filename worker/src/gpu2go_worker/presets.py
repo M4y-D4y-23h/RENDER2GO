@@ -41,6 +41,11 @@ class Composed:
     selections: dict[str, str]
     version: int
 
+    @property
+    def camera(self) -> bool:
+        """Há preset de câmera (a câmera não deve vir do LLM)."""
+        return "camera" in self.selections
+
 
 @lru_cache(maxsize=4)
 def load(path: str | Path = PRESETS_FILE) -> dict[str, Any]:

@@ -146,6 +146,7 @@ def run_case(
             version=version,
             seed=seed,
             suffix=suffix,
+            camera_preset=bool((case.get("presets") or {}).get("camera")),
         )
         output, refused, seconds, n = r.prompt, False, r.seconds, r.word_count
     except compiler.CompilerRefused:

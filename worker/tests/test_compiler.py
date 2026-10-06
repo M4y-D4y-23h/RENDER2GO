@@ -71,3 +71,26 @@ def test_non_english_output_fails_after_attempts(fake_ollama):
     with pytest.raises(c.CompilerOutputError, match="fora do inglês"):
         c.compile_prompt("x", ollama_url=fake_ollama.url, attempts=2)
     assert len(fake_ollama.requests) == 2
+
+
+def test_static_camera_sentences_are_dropped_only_with_camera_preset():
+    from gpu2go_worker import compiler as c
+
+    texto = (
+        "A slow dolly-in towards the mug. Steam rises gently. Static camera. "
+        "The camera remains still while light shifts."
+    )
+    assert c.drop_static_camera(texto) == "A slow dolly-in towards the mug. Steam rises gently."
+    assert c.drop_static_camera("Steam rises.") == "Steam rises."
+
+
+def test_compile_with_camera_preset_drops_llm_static_camera(fake_ollama):
+    from gpu2go_worker import compiler as c
+
+    fake_ollama.response = "The product turns slowly on the table. Static camera."
+    r = c.compile_prompt(
+        "ação: gira", ollama_url=fake_ollama.url, suffix="Slow orbit.", camera_preset=True
+    )
+    assert r.prompt == "The product turns slowly on the table. Slow orbit."
+    sem = c.compile_prompt("ação: gira", ollama_url=fake_ollama.url, suffix="Slow orbit.")
+    assert "Static camera." in sem.prompt

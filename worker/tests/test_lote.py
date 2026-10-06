@@ -1,4 +1,5 @@
 import csv
+import io
 import json
 import threading
 
@@ -178,6 +179,9 @@ def test_end_to_end_compiles_once_and_resumes(pasta, tmp_path, fake_comfy, fake_
     larguras = sorted(wf["129:98"]["inputs"]["width"] for wf in fake_comfy.prompts.values())
     assert larguras == [480, 640, 832]
     assert [r["status"] for r in _relatorio(tmp_path)] == ["ok"] * 3
+    # a foto chega ao ComfyUI já no tamanho exato do vídeo (preparo com Lanczos)
+    tamanhos = {Image.open(io.BytesIO(b)).size for b in fake_comfy.uploads.values()}
+    assert tamanhos == {(640, 640), (480, 832), (832, 480)}
 
     # rodar de novo: nada é recompilado nem renderizado
     assert lote.executar(a) == lote.EXIT_OK

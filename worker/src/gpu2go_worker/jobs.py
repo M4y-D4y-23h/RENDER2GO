@@ -250,6 +250,7 @@ def _run(inp: dict[str, Any], ctx: Context, workdir: Path, t_total: float) -> di
                 version=comp_in.get("version"),
                 seed=params["seed"] % (2**31),
                 suffix=composed.suffix,
+                camera_preset=composed.camera,
             )
         except compiler.CompilerRefused as e:
             raise _err("REFUSED", f"compilador: {e}") from e

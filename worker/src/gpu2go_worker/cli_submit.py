@@ -165,6 +165,7 @@ def run(a: argparse.Namespace) -> tuple[int, dict]:
                 model=a.model,
                 keep_alive=a.keep_alive,
                 suffix=composed.suffix if composed else "",
+                camera_preset=bool(composed and composed.camera),
             )
         except compiler.CompilerRefused as e:
             return EXIT_REFUSED, {**result, "status": "refused", "error": str(e)}
