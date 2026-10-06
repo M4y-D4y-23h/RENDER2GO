@@ -106,6 +106,7 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 ## Etapa 3 — Serverless em um tier e medições
 
 - **Handler próprio** (`handler_runpod.py`), com o protocolo do doc 02 (seção 4): URLs assinadas, quadros de amostra, erros tipados, idempotência por `job_id`.
+- **Pods como código** (feito antes, a pedido): `tools/runpod_pod.py` sobe o worker em modo `pod` escolhendo community ou secure, com disponibilidade conferida no ato, troca para a próxima opção sem vaga, desligamento automático e autoencerramento quando a GPU tem defeito.
 - **Endpoint como código** (`infra/runpod/`), criado pela API v2: `allowedCudaVersions` a partir de 12.8, execution timeout, idle timeout, FlashBoot.
 - **`tools/bench.py`:** cold start, tempo quente, p50/p95 por resolução e duração, custo por vídeo.
 - Comparar modelos embutidos × cached models e escolher o registry.

@@ -46,6 +46,8 @@ ssh -L 8188:127.0.0.1:8188 root@<host>      # o ComfyUI só escuta em 127.0.0.1
 | Variável | Padrão | Uso |
 |---|---|---|
 | `MODE` | `pod` | `serverless` chega na Etapa 3 |
+| `AUTO_TERMINATE_HOURS` | `0` | No RunPod: o próprio pod se encerra depois de N horas (o `runpod_pod.py subir` usa 3) |
+| `TERMINATE_ON_BAD_GPU` | `1` | No RunPod: encerra o pod se a GPU falhar na checagem |
 | `MODEL_SET` | `i2v_r1v2` | Conjuntos do `models.lock.json`, separados por vírgula (ex.: `i2v_r1v2,t2v_a14b_q6k` no bake-off) |
 | `MODELS_FROM_DIR` | — | Copia os modelos que faltarem deste diretório (ex.: `/workspace/models` do volume), por leitura sequencial, para o disco local |
 | `MODELS_FETCH` | `0` | `1` baixa do Hugging Face os modelos que faltarem |
@@ -57,6 +59,28 @@ ssh -L 8188:127.0.0.1:8188 root@<host>      # o ComfyUI só escuta em 127.0.0.1
 Com a imagem `slim` num pod com o Global Volume montado: `-e MODELS_FROM_DIR=/workspace/models` (~3 min para 37 GB, como no `start.sh`).
 
 O entrypoint confere a GPU com um kernel real, confere ou copia os modelos, sobe o Ollama e o ComfyUI como processos separados e encerra o container se qualquer um dos dois cair.
+
+## Subir um pod no RunPod (community ou secure)
+
+```bash
+# estoque e preço agora, nas duas nuvens (não precisa de chave)
+python tools/runpod_pod.py disponibilidade --gpu "NVIDIA GeForce RTX 4090" --gpu "NVIDIA GeForce RTX 5090"
+
+# cria o pod: tenta community (mais barata) e, sem vaga, secure; depois a próxima GPU
+export RUNPOD_API_KEY=...        # nas configurações do ambiente, nunca no código
+python tools/runpod_pod.py subir --imagem <registry>/gpu2go-worker:full \
+  --gpu "NVIDIA GeForce RTX 4090" --gpu "NVIDIA GeForce RTX 5090" \
+  --nuvem qualquer --auto-encerrar-horas 3
+python tools/runpod_pod.py listar
+python tools/runpod_pod.py encerrar <id>
+```
+
+- `--nuvem community` ou `--nuvem secure` fixa a nuvem; `qualquer` tenta community primeiro.
+- O `stockStatus` (High/Medium/Low) é só um indicativo. A disponibilidade de verdade é decidida no ato da criação: sem vaga, a opção seguinte é tentada. Um pod que não sobe em `--espera` segundos é encerrado antes da próxima tentativa.
+- Só máquinas com CUDA ≥ 12.8 (driver ≥ 570). A única porta é a 22 (SSH); o ComfyUI e o Ollama continuam em 127.0.0.1.
+- **Desligamento automático:** o entrypoint encerra o próprio pod depois de `AUTO_TERMINATE_HOURS`, usando a chave que o RunPod injeta no pod. Se a GPU falhar na checagem (como num host community com `cuInit` quebrado), o pod também se encerra (`TERMINATE_ON_BAD_GPU=1`).
+- Exige a imagem do worker num registry acessível pelo RunPod.
+- Ainda não validado com chave real: a criação via REST e o `podTerminate` feito com a chave do próprio pod. Esse caminho só é confirmado na primeira subida; o `podStop` é a alternativa.
 
 ## Enviar um workflow
 

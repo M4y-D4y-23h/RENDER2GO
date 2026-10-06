@@ -15,6 +15,7 @@ gpu2go-validate-template = "gpu2go_worker.template:main"
 gpu2go-eval-compiler = "gpu2go_worker.cli_eval:main"
 gpu2go-experiment = "gpu2go_worker.experiment:main"
 gpu2go-video = "gpu2go_worker.video:main"
+gpu2go-runpod = "gpu2go_worker.runpod_pods:main"
 
 [dependency-groups]
 dev = [

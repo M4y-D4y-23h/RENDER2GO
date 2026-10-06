@@ -14,6 +14,8 @@
 #   PUBLIC_KEY        chave SSH pública: liga o sshd no modo pod
 #   SKIP_GPU_CHECK=1  pular a checagem de GPU (só testes sem GPU)
 #   COMFY_EXTRA_ARGS  argumentos extras do ComfyUI (ex.: --cpu em testes sem GPU)
+#   AUTO_TERMINATE_HOURS  no RunPod: o próprio pod se encerra depois de N horas (0 = nunca)
+#   TERMINATE_ON_BAD_GPU  no RunPod: encerra o pod se a GPU falhar na checagem (padrão: 1)
 set -euo pipefail
 
 MODE="${MODE:-pod}"
@@ -44,10 +46,28 @@ case "$MODE" in
   *) die "MODE desconhecido: $MODE" ;;
 esac
 
+# 0. Desligamento automático no RunPod (o RunPod injeta RUNPOD_POD_ID e RUNPOD_API_KEY) ---
+DEADMAN_PID=""
+AUTO_TERMINATE_HOURS="${AUTO_TERMINATE_HOURS:-0}"
+[[ "$AUTO_TERMINATE_HOURS" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "AUTO_TERMINATE_HOURS inválido: $AUTO_TERMINATE_HOURS"
+if [[ -n "${RUNPOD_POD_ID:-}" && "$AUTO_TERMINATE_HOURS" != "0" ]]; then
+  secs=$(python -c "print(int(float('$AUTO_TERMINATE_HOURS') * 3600))")
+  log "desligamento automático em $AUTO_TERMINATE_HOURS h"
+  (sleep "$secs" && python -m gpu2go_worker.runpod_pods autoencerrar) &
+  DEADMAN_PID=$!
+fi
+
 # 1. GPU ---------------------------------------------------------------------------
 if [[ "${SKIP_GPU_CHECK:-0}" != "1" ]]; then
   log "checando a GPU..."
-  python "$WORKER_DIR/scripts/gpu_check.py" || die "GPU indisponível (veja a mensagem acima)"
+  if ! python "$WORKER_DIR/scripts/gpu_check.py"; then
+    # máquina com defeito (visto num host community: nvidia-smi ok, cuInit falhando)
+    if [[ -n "${RUNPOD_POD_ID:-}" && "${TERMINATE_ON_BAD_GPU:-1}" == "1" ]]; then
+      log "encerrando o pod para não cobrar por uma GPU que não roda CUDA"
+      python -m gpu2go_worker.runpod_pods autoencerrar || true
+    fi
+    die "GPU indisponível (veja a mensagem acima)"
+  fi
 fi
 
 # 2. Modelos: sempre no disco local, nunca lidos direto do volume ---------------------
@@ -98,10 +118,10 @@ wait_http "http://127.0.0.1:$COMFY_PORT/system_stats" 300 "ComfyUI"
 log "pronto"
 
 # 6. Supervisão: se um dos dois cair, derruba o outro e sai com erro ----------------------
-trap 'kill -TERM "$OLLAMA_PID" "$COMFY_PID" 2>/dev/null || true' TERM INT
+trap 'kill -TERM "$OLLAMA_PID" "$COMFY_PID" $DEADMAN_PID 2>/dev/null || true' TERM INT
 set +e
 wait -n "$OLLAMA_PID" "$COMFY_PID"
 status=$?
-kill -TERM "$OLLAMA_PID" "$COMFY_PID" 2>/dev/null
+kill -TERM "$OLLAMA_PID" "$COMFY_PID" $DEADMAN_PID 2>/dev/null
 wait
 die "um dos serviços terminou (código $status)"
