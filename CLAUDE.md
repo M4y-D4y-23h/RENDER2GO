@@ -52,5 +52,5 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 
 - O acesso à internet foi liberado em 05/10/2026, mas o tráfego passa por um proxy que reassina TLS. Em builds Docker, passe a CA: `docker build --secret id=extra_ca,src=/root/.ccr/ca-bundle.crt ...` (ver `worker/README.md`).
 - O daemon Docker não sobe sozinho: `nohup dockerd > /tmp/dockerd.log 2>&1 &`. O disco é limitado (a imagem `slim` tem ~18 GB): rode `docker builder prune -af` depois das builds. Não há GPU; o alvo `full` e os testes de tempo rodam fora daqui.
-- Testes em GPU: pod no RunPod criado pela API com chave fornecida pelo usuário para a sessão, sempre com desligamento automático e encerrado no fim (ver `worker/evals/gpu-2026-10-05/LEIAME.md`). Não guardar chaves no repositório.
+- Testes em GPU: pod no RunPod criado pela API com chave fornecida pelo usuário para a sessão (credencial Bearer nas configurações do ambiente, para `*.runpod.io` e `*.runpod.ai`, que o proxy inclui nas chamadas; ou a variável `RUNPOD_API_KEY`), sempre com desligamento automático e encerrado no fim (ver `worker/evals/gpu-2026-10-05/LEIAME.md`). Não guardar chaves no repositório.
 - Para a rodada de fidelidade sem GPU: Ollama v0.35.1 em CPU (release conferido por SHA-256, precisa de `zstd`), ~5–15 s por caso no 7B com cache de prefixo.

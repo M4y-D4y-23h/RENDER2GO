@@ -29,7 +29,7 @@ O RunPod monta a imagem direto deste repositório, sem registry próprio. Os Doc
 4. *Deploy Endpoint*. A primeira build baixa ~37 GB de modelos e o PyTorch. O limite é de 30 min para o `docker build` e 160 min no total, e o log da build aparece no console.
 5. Para atualizar depois, crie um **release** no GitHub: o RunPod só reconstrói com um release novo, não a cada push.
 
-**Depois, por aqui** (com `RUNPOD_API_KEY` no ambiente):
+**Depois, por aqui** (com a credencial do RunPod cadastrada no ambiente, ou `RUNPOD_API_KEY`):
 
 ```bash
 # normaliza a configuração do endpoint criado no console (não cria nada nem troca a imagem)

@@ -8,6 +8,8 @@ Comandos (tools/runpod_pod.py):
   autoencerrar     usado pelo entrypoint dentro do pod: encerra o próprio pod
 
 A chave vem só da variável RUNPOD_API_KEY, nunca de argumento nem de arquivo do repositório.
+Sem a variável, as chamadas saem sem chave, para o proxy do ambiente de nuvem incluir a
+credencial cadastrada nas configurações (cabeçalho Authorization nos hosts do RunPod).
 Dentro do pod, o RunPod injeta RUNPOD_API_KEY (restrita ao pod, aceita só na API GraphQL)
 e RUNPOD_POD_ID.
 
@@ -69,14 +71,26 @@ def _log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
 
-def _chave(obrigatoria: bool = True) -> str | None:
-    k = os.environ.get("RUNPOD_API_KEY", "").strip()
-    if obrigatoria and not k:
-        raise RunPodError("defina RUNPOD_API_KEY (nas configurações do ambiente, não no código)")
-    return k or None
+def _chave() -> str:
+    """Chave do ambiente; "" = sem chave aqui (o proxy do ambiente inclui a credencial)."""
+    return os.environ.get("RUNPOD_API_KEY", "").strip()
+
+
+SEM_CHAVE = (
+    "o RunPod recusou a autenticação: cadastre a chave nas configurações do ambiente "
+    "(credencial Bearer para *.runpod.io e *.runpod.ai, ou a variável RUNPOD_API_KEY)"
+)
+
+
+def auth_headers(chave: str | None) -> dict[str, str]:
+    h = {"User-Agent": USER_AGENT}
+    if chave:
+        h["Authorization"] = f"Bearer {chave}"
+    return h
 
 
 def _graphql(query: str, chave: str | None = None, timeout: float = 30) -> dict[str, Any]:
+    # a chave restrita do pod (autoencerrar) só é aceita como parâmetro api_key
     params = {"api_key": chave} if chave else None
     try:
         r = requests.post(
@@ -86,6 +100,8 @@ def _graphql(query: str, chave: str | None = None, timeout: float = 30) -> dict[
             timeout=timeout,
             headers={"User-Agent": USER_AGENT},
         )
+        if r.status_code in (401, 403) and not chave:
+            raise RunPodError(SEM_CHAVE)
         r.raise_for_status()
     except requests.RequestException as e:
         raise RunPodError(f"API GraphQL do RunPod inacessível: {e}") from e
@@ -97,15 +113,14 @@ def _graphql(query: str, chave: str | None = None, timeout: float = 30) -> dict[
 
 def _rest(method: str, path: str, chave: str, body: dict | None = None) -> requests.Response:
     try:
-        return requests.request(
-            method,
-            f"{REST}{path}",
-            json=body,
-            timeout=60,
-            headers={"Authorization": f"Bearer {chave}", "User-Agent": USER_AGENT},
+        r = requests.request(
+            method, f"{REST}{path}", json=body, timeout=60, headers=auth_headers(chave)
         )
     except requests.RequestException as e:
         raise RunPodError(f"API REST do RunPod inacessível: {e}") from e
+    if r.status_code in (401, 403) and not chave:
+        raise RunPodError(SEM_CHAVE)
+    return r
 
 
 def disponibilidade(gpus: list[str]) -> list[dict[str, Any]]:

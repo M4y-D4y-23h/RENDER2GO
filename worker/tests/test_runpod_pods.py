@@ -1,6 +1,7 @@
 import json
 
 import pytest
+import requests
 
 from gpu2go_worker import runpod_pods as rp
 
@@ -132,7 +133,21 @@ def test_self_terminate_falls_back_to_stop(monkeypatch):
     assert rp.autoencerrar() == 1
 
 
-def test_cli_requires_key_from_environment(monkeypatch, capsys):
+def test_without_key_the_proxy_credential_is_used(monkeypatch, capsys):
+    # sem RUNPOD_API_KEY, a chamada sai sem Authorization (o proxy do ambiente inclui)
     monkeypatch.delenv("RUNPOD_API_KEY", raising=False)
+    vistos = []
+
+    def request(method, url, json=None, timeout=None, headers=None):
+        vistos.append(headers)
+        r = requests.Response()
+        r.status_code = 401
+        return r
+
+    monkeypatch.setattr(rp.requests, "request", request)
     assert rp.main(["listar"]) == 2
+    assert "Authorization" not in vistos[0]
     assert "RUNPOD_API_KEY" in capsys.readouterr().err
+    monkeypatch.setenv("RUNPOD_API_KEY", "k")
+    rp.main(["listar"])
+    assert vistos[1]["Authorization"] == "Bearer k"

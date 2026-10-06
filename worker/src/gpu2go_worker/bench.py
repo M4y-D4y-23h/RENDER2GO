@@ -32,7 +32,7 @@ from typing import Any
 
 import requests
 
-from gpu2go_worker.runpod_pods import USER_AGENT, RunPodError, _chave
+from gpu2go_worker.runpod_pods import RunPodError, _chave, auth_headers
 
 API = os.environ.get("RUNPOD_SERVERLESS_API", "https://api.runpod.ai/v2")
 FIM = {"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"}
@@ -53,7 +53,7 @@ def pct(values: list[float], q: float) -> float | None:
 class Client:
     def __init__(self, endpoint_id: str, chave: str, api: str | None = None):
         self.base = f"{(api or API).rstrip('/')}/{endpoint_id}"
-        self.h = {"Authorization": f"Bearer {chave}", "User-Agent": USER_AGENT}
+        self.h = auth_headers(chave)  # sem chave: o proxy do ambiente inclui a credencial
 
     def run(self, inp: dict) -> str:
         r = requests.post(f"{self.base}/run", json={"input": inp}, headers=self.h, timeout=60)
