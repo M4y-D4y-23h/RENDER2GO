@@ -78,8 +78,23 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 
 ## Etapa 2 — Templates, compilador e T2V
 
+> **Status (06/10/2026): implementada e medida numa RTX 4090; dois pontos do aceite pendentes de decisão.** Resultados em [`worker/evals/gpu-2026-10-05/LEIAME.md`](../worker/evals/gpu-2026-10-05/LEIAME.md), [`worker/evals/compiler/RESULTADOS.md`](../worker/evals/compiler/RESULTADOS.md) e no [ADR 0001](adr/0001-modelo-t2v.md).
+>
+> - **Feito:**
+>   - presets (termos anexados pelo código);
+>   - compilador versionado, em produção I2V v5 e T2V v3 no 7B;
+>   - testes de fidelidade, 7B × 14B;
+>   - três templates T2V candidatos e o bake-off (36 vídeos);
+>   - "continuar vídeo", testado na GPU;
+>   - qualidade do turbo: fica 4/1/2, porque 8 passos e CFG 1,5–2 custam até 3,3 vezes o tempo sem ganho medido.
+> - **Aceite:**
+>   - "o template T2V escolhido gera 5 s": os dois A14B geram 5 s sem erro. O R1 v2 sem imagem sai lavado e granulado.
+>   - "ADR registrado": sim, mas segue proposto até as notas humanas cegas decidirem entre Q6_K e fp8.
+>   - "taxa mínima de fidelidade definida e atingida": **definida, não atingida** (melhor resultado: 50% de todos os casos e 88% no caminho do produto sem o limite de palavras). Decisão necessária: ver `RESULTADOS.md`.
+> - **Achado para a Etapa 3:** o I2V levou 56 s quentes na 4090, acima dos ~40 s do aceite da Etapa 1, por causa da troca dos dois modelos na VRAM a cada vídeo.
+
 - **Presets como dados** (`worker/presets/`): ritmo, câmera, enquadramento, luz e estilo, a partir da seção 9.3.
-- **Prompts versionados** (`worker/prompts/`): `compiler-i2v.v3` (o atual) e `compiler-t2v.v2`, com a regra de conteúdo adulto e o glossário de câmera (pendência da seção 12).
+- **Prompts versionados** (`worker/prompts/`): `compiler-i2v.v3` (o do pipeline manual) e `compiler-t2v.v2`, com a regra de conteúdo adulto e o glossário de câmera (pendência da seção 12).
 - **Testes de fidelidade do compilador:** entrada em pt → propriedades esperadas (termo de câmera correto, nada inventado, ordem das ações, texto entre aspas preservado). Comparar 7B × 14B.
 - **Bake-off do T2V:** R1 v2 com imagem em branco × Wan 2.2 T2V A14B (GGUF Q6_K ou fp8) com as LoRAs Lightning T2V v1.1. Critérios: aderência ao prompt, qualidade do movimento, tempo, VRAM e GB a mais na imagem. Decisão registrada em `docs/adr/`.
 - **"Continuar vídeo":** extração do último quadro no worker e encadeamento sem recodificar, com limite de 3 a 4 elos (seção 9.2).

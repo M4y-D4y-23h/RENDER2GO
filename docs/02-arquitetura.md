@@ -208,12 +208,12 @@ Arquivos de 14,8 GB viram camadas enormes: escolher um registry que aceite camad
 
 ## 7. Compilador de prompts
 
-- Os system prompts saem dos Modelfiles e viram **arquivos de texto versionados** (`worker/prompts/compiler-i2v.v3.txt`), enviados a cada chamada pelo campo `system` da API do Ollama, com `temperature 0.3` e `num_ctx 4096`. Não é mais preciso `ollama create`.
+- Os system prompts saem dos Modelfiles e viram **arquivos de texto versionados** (`worker/prompts/compiler-<perfil>.v<N>.txt`; em produção I2V v5 e T2V v3, ver `worker/evals/compiler/RESULTADOS.md`), enviados a cada chamada pelo campo `system` da API do Ollama, com `temperature 0.3` e `num_ctx 4096`. Não é mais preciso `ollama create`.
 - O job indica `profile` e `version`, e a saída registra qual versão foi usada.
-- O backend monta a entrada estruturada da seção 9.3 a partir da ação digitada e dos presets escolhidos.
+- O backend monta a entrada estruturada da seção 9.3 a partir da ação digitada e dos presets escolhidos. Os termos em inglês dos presets são **anexados ao prompt pelo código**, palavra por palavra: no teste, o LLM parafraseava ou contradizia termos de câmera ("de baixo" virou "high angle").
 - Saída: normalizar espaços, exigir um parágrafo dentro da faixa de palavras; `REFUSED` encerra o job como recusado.
 - **O compilador é um modelo abliterado: nunca é camada de segurança.** A regra `Rules: ... REFUSED` continua no prompt (seção 6.3 da especificação), mas quem decide são C1–C2 e C7–C8.
-- Pendências da especificação que entram na Etapa 2: regra de conteúdo adulto e glossário de câmera no perfil T2V; comparação 7B × 14B num conjunto de testes de fidelidade.
+- Etapa 2 (feita): regra de conteúdo adulto e glossário de câmera no perfil T2V; comparação 7B × 14B (o 14B não compensa: ~9 GB de VRAM sem ganho consistente). Saída fora do inglês é refeita uma vez com outra seed.
 
 ## 8. Tiers, estimativa e cobrança
 

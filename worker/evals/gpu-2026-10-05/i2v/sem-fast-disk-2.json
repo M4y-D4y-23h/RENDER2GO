@@ -1,0 +1,26 @@
+{
+  "status": "ok",
+  "timings": {
+    "upload_s": 0.01,
+    "render_s": 56.16,
+    "download_s": 0.0,
+    "total_s": 56.18
+  },
+  "template": "i2v_r1v2@1",
+  "comfyui": "0.38.0",
+  "prompt_en": "The colored bars slide slowly to the left. Static camera.",
+  "params": {
+    "image": "gpu2go_20e66a5dacad4ed4b08e475aaeb4c851.png",
+    "width": 640,
+    "height": 640,
+    "duration_s": 5,
+    "seed": 202,
+    "filename_prefix": "video/gpu2go_39f68f4aeac5"
+  },
+  "prompt_id": "2cb9e1e4-bfc4-4c08-9569-d7d90b2ff6d7",
+  "output": {
+    "path": "/root/out/perf/sem-fast-disk-2.mp4",
+    "bytes": 382958,
+    "sha256": "084407b3d1d2c73e441a9465da5f398dc0e575476e866f1fa73c6ab42ba29e06"
+  }
+}

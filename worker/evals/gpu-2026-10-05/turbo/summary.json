@@ -1,0 +1,52 @@
+{
+  "4p-cfg1": {
+    "template": "i2v_r1v2@1",
+    "ok": 4,
+    "errors": 0,
+    "first_render_s": 62.33,
+    "median_warm_s": 57.38,
+    "vram_peak_gb": 21.46,
+    "extra_model_gb": 0.0,
+    "notes": "produção"
+  },
+  "8p-cfg1": {
+    "template": "i2v_r1v2@1",
+    "ok": 4,
+    "errors": 0,
+    "first_render_s": 100.2,
+    "median_warm_s": 100.18,
+    "vram_peak_gb": 21.48,
+    "extra_model_gb": 0.0,
+    "notes": ""
+  },
+  "4p-cfg1.5": {
+    "template": "i2v_r1v2@1",
+    "ok": 4,
+    "errors": 0,
+    "first_render_s": 101.16,
+    "median_warm_s": 101.09,
+    "vram_peak_gb": 21.48,
+    "extra_model_gb": 0.0,
+    "notes": ""
+  },
+  "4p-cfg2": {
+    "template": "i2v_r1v2@1",
+    "ok": 4,
+    "errors": 0,
+    "first_render_s": 101.0,
+    "median_warm_s": 100.98,
+    "vram_peak_gb": 19.52,
+    "extra_model_gb": 0.0,
+    "notes": ""
+  },
+  "8p-cfg1.5": {
+    "template": "i2v_r1v2@1",
+    "ok": 4,
+    "errors": 0,
+    "first_render_s": 188.09,
+    "median_warm_s": 187.8,
+    "vram_peak_gb": 19.52,
+    "extra_model_gb": 0.0,
+    "notes": ""
+  }
+}

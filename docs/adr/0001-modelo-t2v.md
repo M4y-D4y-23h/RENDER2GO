@@ -1,6 +1,6 @@
 # ADR 0001 — Modelo de texto → vídeo (T2V)
 
-- **Status:** proposto. A decisão depende do bake-off em GPU (não há GPU no ambiente de desenvolvimento). A regra de decisão abaixo foi fixada **antes** das medições, para que o resultado decida e não a preferência de quem olha os vídeos.
+- **Status:** proposto. O bake-off rodou em 05/10/2026 numa RTX 4090 (resultados no fim). Faltam as notas humanas cegas, que decidem entre Q6_K e fp8. A regra de decisão abaixo foi fixada **antes** das medições, para que o resultado decida e não a preferência de quem olha os vídeos.
 - **Data:** 05/10/2026
 - **Etapa:** 2 ([plano](../04-plano-de-implementacao.md))
 
@@ -60,12 +60,30 @@ python tools/experiment.py worker/evals/t2v-bakeoff.v1.json --out saida/bakeoff
 - **Se vencer um A14B:** o T2V ganha uma imagem própria (`full-t2v`) para não pesar o cold start do I2V. Os endpoints de I2V e T2V ficam separados por tier (doc 02, seção 7). Se for o Q6_K, o ComfyUI-GGUF entra na imagem de produção com o commit fixado e revisão do código.
 - Nos dois casos, o critério de aceite da Etapa 2 ("o template T2V escolhido gera 5 s") é conferido pelo próprio bake-off. Este ADR passa a "aceito" com a tabela de resultados preenchida.
 
-## Resultados
+## Resultados (05/10/2026)
 
-_Pendente: preencher com `summary.json` e `scores.json` do bake-off._
+RTX 4090 secure (RunPod), driver 570, 832×480, 5 s, 6 prompts × 2 seeds, todos os 36 vídeos sem erro. Dados em [`worker/evals/gpu-2026-10-05/bakeoff/`](../../worker/evals/gpu-2026-10-05/bakeoff/).
 
-| Variante | Média geral | Aderência | Movimento | Artefatos | Mediana quente (s) | Pico VRAM (GB) | GB extras |
-|---|---|---|---|---|---|---|---|
-| r1v2-sem-imagem | | | | | | | 0 |
-| a14b-q6k-lightning | | | | | | | 26,5 |
-| a14b-fp8-lightning | | | | | | | 31,0 |
+| Variante | Média geral | Aderência | Movimento | Artefatos | Mediana quente (s) | 1º render (s) | Pico VRAM (GB) | GB extras |
+|---|---|---|---|---|---|---|---|---|
+| r1v2-sem-imagem | pendente | | | | 51,9 | 52,0 | 21,07 | 0 |
+| a14b-q6k-lightning | pendente | | | | 77,2 | 82,2 | 19,67 | 26,5 |
+| a14b-fp8-lightning | pendente | | | | 56,5 | 62,6 | 21,54 | 31,0 |
+
+**O que já se vê sem as notas.** Comparei o quadro do meio dos 18 vídeos da seed 101. Isso serve para achar falhas grosseiras e não substitui a avaliação cega.
+
+- O **R1 v2 sem imagem** gera vídeos lavados, granulados e quase sem detalhe nos 6 prompts. O modelo foi treinado para animar uma imagem; sem ela, não monta a cena.
+- O **A14B Q6_K e o fp8** geram cenas nítidas e fiéis, inclusive o texto "BAR DO ZÉ" no letreiro. Com a mesma seed, os dois saem quase iguais.
+
+**Regra 1 (eliminatória) na prática.**
+
+- Os tempos passam.
+- O critério de VRAM, escrito como "até 20 GB de pico", não pode ser aplicado como está: o **I2V de produção**, com o mesmo modelo e `--reserve-vram 4`, também chega a 20,6–21,5 GB (`worker/evals/gpu-2026-10-05/turbo/`). O pico medido é o da placa inteira, depois de o ComfyUI ocupar o que o `--reserve-vram` deixa. Mesmo assim, o Ollama compilou em 3,3 s antes de cada vídeo. O critério precisa ser refeito como "não pior que o I2V de produção", o que deixa as três variantes no páreo. Fica registrado aqui, sem trocar a regra em silêncio.
+
+**Próximo passo.**
+
+1. Dar as notas na página de projeção cega.
+2. Calcular as médias com a chave (`worker/evals/gpu-2026-10-05/chave-cega.json`; não abra antes de terminar as notas).
+3. Aplicar as regras 2 a 4.
+
+Pelas medições, o fp8 tende a vencer o Q6_K pela regra 3: é 27% mais rápido e usa só nós nativos, desde que as notas fiquem a até 0,2 ponto.

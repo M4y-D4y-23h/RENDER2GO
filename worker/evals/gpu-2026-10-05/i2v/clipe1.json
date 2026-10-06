@@ -1,0 +1,35 @@
+{
+  "status": "ok",
+  "timings": {
+    "compile_s": 3.34,
+    "upload_s": 0.01,
+    "render_s": 62.36,
+    "download_s": 0.01,
+    "total_s": 65.72
+  },
+  "template": "i2v_r1v2@1",
+  "comfyui": "0.38.0",
+  "presets": {
+    "version": 1,
+    "camera": "parada"
+  },
+  "compiler": "i2v@3",
+  "warnings": [
+    "prompt com 18 palavras (faixa 40-90)"
+  ],
+  "prompt_en": "The colorful bands slowly glide to the left, and the static camera captures them in a medium shot. Static camera.",
+  "params": {
+    "image": "gpu2go_91c18e009bc44025ac112275ce9cca78.png",
+    "width": 640,
+    "height": 640,
+    "duration_s": 5,
+    "seed": 101,
+    "filename_prefix": "video/gpu2go_f19917eb7c3f"
+  },
+  "prompt_id": "11925688-8e7c-4be7-b704-93b59906d287",
+  "output": {
+    "path": "/root/out/i2v/clipe1.mp4",
+    "bytes": 671134,
+    "sha256": "221e9611a784dd7638ffdade598a62a9224610359453e236c6ed6ed1a9d97485"
+  }
+}

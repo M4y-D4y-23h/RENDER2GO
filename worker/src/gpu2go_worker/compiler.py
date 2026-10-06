@@ -24,16 +24,17 @@ DEFAULT_MODEL = "huihui_ai/qwen2.5-abliterate:7b"
 
 # `version` é a versão em produção; o arquivo é `compiler-<perfil>.v<versão>.txt`.
 # Versões anteriores continuam no diretório para comparação (tools/eval_compiler.py).
+# Escolha das versões em produção: worker/evals/compiler/RESULTADOS.md.
 PROFILES: dict[str, dict] = {
     "i2v": {
-        "version": 3,
+        "version": 5,
         "options": {"temperature": 0.3, "num_ctx": 4096},
         "words": (40, 90),
         # faixa própria de cada versão do prompt (o padrão é "words")
         "words_by_version": {5: (15, 60)},
     },
     "t2v": {
-        "version": 2,
+        "version": 3,
         "options": {"temperature": 0.3, "num_ctx": 4096},
         "words": (80, 130),
         "words_by_version": {3: (50, 110)},

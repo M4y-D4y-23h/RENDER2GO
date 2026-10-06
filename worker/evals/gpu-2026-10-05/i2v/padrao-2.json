@@ -1,0 +1,26 @@
+{
+  "status": "ok",
+  "timings": {
+    "upload_s": 0.01,
+    "render_s": 56.14,
+    "download_s": 0.0,
+    "total_s": 56.16
+  },
+  "template": "i2v_r1v2@1",
+  "comfyui": "0.38.0",
+  "prompt_en": "The colored bars slide slowly to the left. Static camera.",
+  "params": {
+    "image": "gpu2go_b5b81fd64e464693b1be6d899139bac5.png",
+    "width": 640,
+    "height": 640,
+    "duration_s": 5,
+    "seed": 202,
+    "filename_prefix": "video/gpu2go_f3f9d0342d4e"
+  },
+  "prompt_id": "e3dedb32-cbf3-4c62-a519-a18de0e237da",
+  "output": {
+    "path": "/root/out/perf/padrao-2.mp4",
+    "bytes": 382958,
+    "sha256": "084407b3d1d2c73e441a9465da5f398dc0e575476e866f1fa73c6ab42ba29e06"
+  }
+}

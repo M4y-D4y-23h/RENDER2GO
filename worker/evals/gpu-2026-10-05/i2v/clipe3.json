@@ -1,0 +1,27 @@
+{
+  "status": "ok",
+  "timings": {
+    "upload_s": 0.01,
+    "render_s": 56.42,
+    "download_s": 0.01,
+    "total_s": 57.17
+  },
+  "template": "i2v_r1v2@1",
+  "comfyui": "0.38.0",
+  "continued_from": "/root/out/i2v/clipe1.mp4",
+  "prompt_en": "The colored bars keep sliding slowly to the left. Static camera.",
+  "params": {
+    "image": "gpu2go_750676f06f4b4f03a83110a748ce9c0e.png",
+    "width": 640,
+    "height": 640,
+    "duration_s": 5,
+    "seed": 103,
+    "filename_prefix": "video/gpu2go_4c04b91c0f60"
+  },
+  "prompt_id": "4ad696f7-9d4d-474d-943e-62888075b2da",
+  "output": {
+    "path": "/root/out/i2v/clipe3.mp4",
+    "bytes": 724064,
+    "sha256": "0f6a290bf4ca6e7e3e0785f2961ebdea313bfa06248077eb2ff7b043d5198eec"
+  }
+}

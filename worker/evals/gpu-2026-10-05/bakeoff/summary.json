@@ -1,0 +1,32 @@
+{
+  "r1v2-sem-imagem": {
+    "template": "t2v_r1v2_noimg@1",
+    "ok": 12,
+    "errors": 0,
+    "first_render_s": 51.97,
+    "median_warm_s": 51.85,
+    "vram_peak_gb": 21.07,
+    "extra_model_gb": 0.0,
+    "notes": "sem modelos extras"
+  },
+  "a14b-q6k-lightning": {
+    "template": "t2v_a14b_q6k_lightning@1",
+    "ok": 12,
+    "errors": 0,
+    "first_render_s": 82.21,
+    "median_warm_s": 77.23,
+    "vram_peak_gb": 19.67,
+    "extra_model_gb": 26.5,
+    "notes": "exige o alvo bakeoff (ComfyUI-GGUF)"
+  },
+  "a14b-fp8-lightning": {
+    "template": "t2v_a14b_fp8_lightning@1",
+    "ok": 12,
+    "errors": 0,
+    "first_render_s": 62.62,
+    "median_warm_s": 56.52,
+    "vram_peak_gb": 21.54,
+    "extra_model_gb": 31.0,
+    "notes": "nós nativos"
+  }
+}

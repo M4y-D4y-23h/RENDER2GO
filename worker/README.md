@@ -83,7 +83,7 @@ python tools/submit_workflow.py \
 
 ## Compilador e testes de fidelidade
 
-Os system prompts ficam em [`prompts/`](prompts/) com versão no nome (`compiler-i2v.v4.txt`); a versão em produção de cada perfil está em `gpu2go_worker/compiler.py`. Mudança de prompt = arquivo novo + rodada de fidelidade.
+Os system prompts ficam em [`prompts/`](prompts/) com versão no nome (`compiler-i2v.v5.txt`); a versão em produção de cada perfil está em `gpu2go_worker/compiler.py`. Mudança de prompt = arquivo novo + rodada de fidelidade.
 
 ```bash
 python tools/eval_compiler.py --ollama http://127.0.0.1:11434 \
@@ -94,7 +94,7 @@ python tools/eval_compiler.py --ollama http://127.0.0.1:11434 \
 - Casos em [`evals/compiler/cases.v1.json`](evals/compiler/cases.v1.json) (só SFW): termos que precisam aparecer, invenções proibidas, ordem das ações, texto entre aspas, faixa de palavras. Os limites (`thresholds`) foram definidos antes da primeira rodada.
 - Os casos com `expect_refused` medem a regra `REFUSED` só como informação: o compilador **não** é camada de segurança.
 - Saída fora do inglês (o Qwen às vezes muda para chinês) é refeita com a seed seguinte; na segunda falha, o job falha.
-- Resultados e decisão: [`evals/compiler/RESULTADOS.md`](evals/compiler/RESULTADOS.md).
+- Resultados e decisão: [`evals/compiler/RESULTADOS.md`](evals/compiler/RESULTADOS.md). Medições em GPU (I2V, bake-off, turbo): [`evals/gpu-2026-10-05/LEIAME.md`](evals/gpu-2026-10-05/LEIAME.md).
 
 ## Continuar vídeo
 

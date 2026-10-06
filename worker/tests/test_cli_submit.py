@@ -36,7 +36,7 @@ def test_end_to_end_with_compiler(fake_comfy, fake_ollama, sfw_image, tmp_path, 
     assert code == 0, res
     assert out.read_bytes() == FAKE_MP4
     assert res["output"]["sha256"] == hashlib.sha256(FAKE_MP4).hexdigest()
-    assert res["compiler"] == "i2v@3" and res["template"] == "i2v_r1v2@1"
+    assert res["compiler"] == "i2v@5" and res["template"] == "i2v_r1v2@1"
     assert set(res["timings"]) >= {"compile_s", "upload_s", "render_s", "total_s"}
 
     wf = next(iter(fake_comfy.prompts.values()))
@@ -245,4 +245,4 @@ def test_t2v_template_without_image(fake_comfy, fake_ollama, sfw_image, tmp_path
     code = cli_submit.main(["--template", tpl, "--no-ws", *args, "--text-pt", "um gato dorme"])
     res = json.loads(capsys.readouterr().out)
     assert code == 0, res
-    assert res["compiler"] == "t2v@2" and not fake_comfy.uploads
+    assert res["compiler"] == "t2v@3" and not fake_comfy.uploads

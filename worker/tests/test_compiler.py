@@ -10,8 +10,8 @@ def test_compile_sends_versioned_system_prompt(fake_ollama):
     assert "REFUSED" in req["system"]  # a salvaguarda continua no prompt
     assert req["options"] == {"temperature": 0.3, "num_ctx": 4096}
     assert req["keep_alive"] == 0 and req["stream"] is False
-    assert r.ref == "i2v@3" and r.word_count > 10
-    assert not r.word_count_ok  # resposta falsa tem menos de 40 palavras
+    assert r.ref == "i2v@5" and r.word_count > 10
+    assert r.word_range == (15, 60) and r.word_count_ok
 
 
 @pytest.mark.parametrize("out", ["REFUSED", "  refused.", '"REFUSED"', "REFUSED\n"])
@@ -44,7 +44,7 @@ def test_versions_and_t2v_profile(fake_ollama):
         text = c.system_prompt(profile)
         assert "REFUSED" in text and "static camera" in text  # regra e glossário em todos
     r = c.compile_prompt("um gato dorme", profile="t2v", ollama_url=fake_ollama.url, seed=3)
-    assert r.ref == f"t2v@{c.PROFILES['t2v']['version']}" and r.word_range == (80, 130)
+    assert r.ref == f"t2v@{c.PROFILES['t2v']['version']}" and r.word_range == (50, 110)
     assert fake_ollama.requests[0]["options"]["seed"] == 3
     with pytest.raises(c.CompilerError, match="inexistente"):
         c.compile_prompt("x", ollama_url=fake_ollama.url, version=99)

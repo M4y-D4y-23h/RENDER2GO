@@ -1,0 +1,26 @@
+{
+  "status": "ok",
+  "timings": {
+    "upload_s": 0.01,
+    "render_s": 74.18,
+    "download_s": 0.01,
+    "total_s": 74.2
+  },
+  "template": "i2v_r1v2@1",
+  "comfyui": "0.38.0",
+  "prompt_en": "The colored bars slide slowly to the left. Static camera.",
+  "params": {
+    "image": "gpu2go_68e1206decfa482cb4769116161ca056.png",
+    "width": 640,
+    "height": 640,
+    "duration_s": 5,
+    "seed": 203,
+    "filename_prefix": "video/gpu2go_9d0e1f574201"
+  },
+  "prompt_id": "00ace1f0-b58b-40c0-b69d-d4f45e597cd7",
+  "output": {
+    "path": "/root/out/perf/sem-dynamic-vram-3.mp4",
+    "bytes": 356679,
+    "sha256": "b4c3fead77aa263ceee9900d5291b782078b6a4fa37c7ce3be47602b3a867c88"
+  }
+}

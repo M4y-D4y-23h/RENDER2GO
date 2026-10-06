@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
-**Status:** Etapas 1 e 2 implementadas em `worker/` (a parte da Etapa 2 que exige GPU, bake-off do T2V e turbo, tem as ferramentas prontas e roda fora daqui); decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04).
+**Status:** Etapas 1 e 2 implementadas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`); pendentes: notas cegas do bake-off (ADR 0001) e a decisão sobre o critério de fidelidade do compilador (`worker/evals/compiler/RESULTADOS.md`); decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04).
 
 ## Fontes de verdade
 
@@ -12,7 +12,7 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 ## Regras técnicas (mudar só com ADR)
 
 - ComfyUI fixado em **v0.38.0**. Template de workflow e versão do ComfyUI mudam juntos.
-- Wan2.2 I2V R1 v2: **sem LoRA Lightning**; turbo ligado; 4 passos, CFG 1, troca de expert no passo 2.
+- Wan2.2 I2V R1 v2: **sem LoRA Lightning**; turbo ligado; 4 passos, CFG 1, troca de expert no passo 2 (8 passos e CFG 1,5–2 testados na Etapa 2: até 3,3× o tempo sem ganho).
 - Largura e altura múltiplas de 16; duração inteira de 3 a 7 s a 16 fps (16·d + 1 frames).
 - Nunca carregar modelos direto de volume de rede ou de objetos: embutir na imagem ou copiar para o disco local e conferir bytes e SHA-256.
 - Em volumes que não são POSIX (Global Volume): sem `rename` nem `chmod`; `rsync --inplace`; conferir bytes depois de copiar.
@@ -48,4 +48,5 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 
 - O acesso à internet foi liberado em 05/10/2026, mas o tráfego passa por um proxy que reassina TLS. Em builds Docker, passe a CA: `docker build --secret id=extra_ca,src=/root/.ccr/ca-bundle.crt ...` (ver `worker/README.md`).
 - O daemon Docker não sobe sozinho: `nohup dockerd > /tmp/dockerd.log 2>&1 &`. O disco é limitado (a imagem `slim` tem ~18 GB): rode `docker builder prune -af` depois das builds. Não há GPU; o alvo `full` e os testes de tempo rodam fora daqui.
+- Testes em GPU: pod no RunPod criado pela API com chave fornecida pelo usuário para a sessão, sempre com desligamento automático e encerrado no fim (ver `worker/evals/gpu-2026-10-05/LEIAME.md`). Não guardar chaves no repositório.
 - Para a rodada de fidelidade sem GPU: Ollama v0.35.1 em CPU (release conferido por SHA-256, precisa de `zstd`), ~5–15 s por caso no 7B com cache de prefixo.
