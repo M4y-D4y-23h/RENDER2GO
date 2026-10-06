@@ -101,13 +101,44 @@ def apply(tpl: dict, ep: dict, chave: str) -> dict[str, Any]:
     return {"template_id": template["id"], "endpoint_id": endpoint["id"], "name": ep["name"]}
 
 
+def apply_github(tpl: dict, ep: dict, chave: str) -> dict[str, Any]:
+    """Endpoint criado no console pela integração GitHub: ajusta, não cria.
+
+    O RunPod cria o template (e a imagem) a partir do repositório. Aqui só entram a
+    configuração do endpoint e as variáveis de ambiente do template dele; a imagem e o
+    nome do template ficam como o RunPod definiu.
+    """
+    atual = _find("endpoints", ep["name"], chave)
+    if atual is None:
+        raise RunPodError(
+            f"endpoint {ep['name']} não existe: crie-o no console (New Endpoint → Import Git "
+            "Repository, ver infra/runpod/LEIAME.md) e rode de novo"
+        )
+    r = _rest("PATCH", f"/endpoints/{atual['id']}", chave, ep)
+    if not r.ok:
+        raise RunPodError(f"endpoint {ep['name']}: {r.status_code} {r.text[:400]}")
+    template_id = atual.get("templateId") or (atual.get("template") or {}).get("id")
+    if not template_id:
+        raise RunPodError("o endpoint não informou o templateId; ajuste as variáveis no console")
+    r = _rest("PATCH", f"/templates/{template_id}", chave, {"env": tpl["env"]})
+    if not r.ok:
+        raise RunPodError(f"template {template_id}: {r.status_code} {r.text[:400]}")
+    _log(f"endpoint ajustado: {atual['id']} ({ep['name']}); variáveis do template {template_id}")
+    return {"template_id": template_id, "endpoint_id": atual["id"], "name": ep["name"]}
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="gpu2go-endpoint", description=__doc__.split("\n\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
     for nome in ("plan", "apply"):
         s = sub.add_parser(nome)
         s.add_argument("config", type=Path)
-        s.add_argument("--imagem", required=True, help="imagem no registry, com tag fixa")
+        s.add_argument("--imagem", help="imagem no registry, com tag fixa")
+        s.add_argument(
+            "--github",
+            action="store_true",
+            help="endpoint da integração GitHub (criado no console): só ajusta config e env",
+        )
         s.add_argument("--versao", help="GPU2GO_IMAGE_VERSION (padrão: a tag da imagem)")
         s.add_argument("--hosts", help="hosts das URLs assinadas, separados por vírgula")
         s.add_argument(
@@ -132,12 +163,18 @@ def main(argv: list[str] | None = None) -> int:
             _log(f"endpoint {a.nome} apagado")
             return 0
         config = json.loads(a.config.read_text())
-        versao = a.versao or a.imagem.rsplit(":", 1)[-1]
-        tpl, ep = build(config, a.imagem, versao, a.hosts, a.sfw_tests, a.sufixo)
+        if bool(a.imagem) == bool(a.github):
+            raise RunPodError("informe --imagem (registry) ou --github (integração), um dos dois")
+        imagem = a.imagem or "github"
+        versao = a.versao or (a.imagem.rsplit(":", 1)[-1] if a.imagem else None)
+        if not versao:
+            raise RunPodError("com --github, informe --versao (a tag do release no GitHub)")
+        tpl, ep = build(config, imagem, versao, a.hosts, a.sfw_tests, a.sufixo)
         if a.cmd == "plan":
             print(json.dumps({"template": tpl, "endpoint": ep}, ensure_ascii=False, indent=2))
             return 0
-        print(json.dumps(apply(tpl, ep, _chave()), ensure_ascii=False, indent=2))
+        fn = apply_github if a.github else apply
+        print(json.dumps(fn(tpl, ep, _chave()), ensure_ascii=False, indent=2))
         return 0
     except RunPodError as e:
         _log(f"erro: {e}")

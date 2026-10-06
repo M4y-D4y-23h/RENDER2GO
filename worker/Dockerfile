@@ -119,20 +119,8 @@ RUN cd "${COMFY_DIR}" \
     || (tail -50 /tmp/comfy.log; exit 1)
 
 # Modelo do compilador, conferindo o digest da camada de pesos
-RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca <<'EOS'
-set -e
-. /usr/local/lib/gpu2go/ca-env.sh
-if [ "$WITH_COMPILER_MODEL" = "1" ]; then
-  ollama serve > /tmp/ollama.log 2>&1 &
-  OPID=$!
-  for i in $(seq 1 60); do curl -fsS -o /dev/null http://127.0.0.1:11434/api/version && break; sleep 1; done
-  ollama pull "$COMPILER_MODEL"
-  test -f "$OLLAMA_MODELS/blobs/$(echo "$COMPILER_MODEL_DIGEST" | tr : -)"
-  kill "$OPID"
-  wait "$OPID" || true
-  rm -f /tmp/ollama.log
-fi
-EOS
+RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /usr/local/lib/gpu2go/ca-env.sh \
+    && /opt/gpu2go/worker/scripts/pull_compiler_model.sh "$COMPILER_MODEL" "$COMPILER_MODEL_DIGEST"
 
 ENV MODE=pod
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/gpu2go/worker/entrypoint.sh"]

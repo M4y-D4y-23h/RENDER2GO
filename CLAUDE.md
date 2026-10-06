@@ -1,13 +1,13 @@
 # CLAUDE.md
 
 Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
-**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); medições pendentes da hospedagem da imagem (ADR 0002). Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
+**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); imagem montada pelo RunPod a partir do GitHub (ADR 0002, aceito); medições pendentes da primeira build lá. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
 
 ## Fontes de verdade
 
 - `referencia/especificacao-pipeline-manual.md`: pipeline manual testado. Não editar.
 - `referencia/wan-i2v-com-ollama.api.json`: workflow exportado. Não editar; os templates derivados ficam em `worker/workflows/`.
-- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, aceito; 0002: hospedagem da imagem, proposto).
+- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, aceito; 0002: hospedagem da imagem, aceito).
 
 ## Regras técnicas (mudar só com ADR)
 
@@ -37,6 +37,7 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 - Testes e lint: `cd worker && uv sync --python 3.12 && uv run pytest -q && uv run ruff check . ../tools`
 - Template em dia com o export: `python tools/derive_i2v_template.py --check`
 - Candidatos T2V em dia: `python tools/build_t2v_templates.py --check`
+- Dockerfiles do RunPod em dia: `python tools/build_runpod_dockerfiles.py --check` (gerados; nunca editar `infra/runpod/Dockerfile.*` à mão)
 - Endpoint de teste e bench: ver `infra/runpod/LEIAME.md`
 - Fidelidade do compilador (precisa de Ollama): `python tools/eval_compiler.py --out saida/fid` (ver `worker/README.md`)
 

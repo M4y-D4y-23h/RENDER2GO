@@ -1,6 +1,6 @@
 # ADR 0002 — Onde fica a imagem do worker (e os modelos)
 
-- **Status:** proposto. Depende de um teste de envio. Sem isso não dá para medir cold start nem rodar o aceite da Etapa 3.
+- **Status:** **aceito em 06/10/2026: integração GitHub do RunPod** (opção 1), escolhida pelo dono do projeto. Falta a primeira build no RunPod confirmar que o `docker build` cabe nos 30 min. Se não couber, a próxima opção é o Docker Hub (opção 2).
 - **Data:** 06/10/2026
 - **Etapa:** 3 ([plano](../04-plano-de-implementacao.md))
 
@@ -41,7 +41,20 @@ Também conta onde a imagem é montada. Este ambiente de desenvolvimento tem ~30
 
 ## Decisão
 
-Pendente. Proposta:
+**Opção 1.** Implementação:
+
+- `tools/build_runpod_dockerfiles.py` gera `infra/runpod/Dockerfile.i2v` e `Dockerfile.t2v` a partir do `worker/Dockerfile`:
+  - estágio do endpoint por último;
+  - COPY a partir da raiz;
+  - formato clássico (sem `RUN --mount` e sem heredoc; o download do Qwen virou `scripts/pull_compiler_model.sh`);
+  - `MODE=serverless`.
+- `.dockerignore` na raiz, com contexto de ~0,6 MB.
+- `runpod_endpoint.py apply --github` ajusta o endpoint criado no console.
+- Conferido aqui:
+  - o builder clássico aceita os arquivos;
+  - a build com BuildKit chega ao estágio `slim`, com os testes de fumaça.
+
+Plano original, mantido como registro:
 
 1. Testar a opção 1 com o endpoint de teste de I2V.
 2. Se a build passar de 30 min ou falhar, seguir pela opção 2 com uma VM de build temporária.

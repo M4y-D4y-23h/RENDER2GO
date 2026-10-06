@@ -190,3 +190,80 @@ def test_bench_end_to_end(fake_serverless, tmp_path, monkeypatch):
     assert first["discard_output"] is True and first["template"] == "t2v_a14b_fp8_lightning@1"
     assert first["params"]["seed"] != jobs["r2"]["params"]["seed"]
     assert "| 832x480_5s |" in (tmp_path / "out" / "summary.md").read_text()
+
+
+def test_github_mode_only_adjusts_an_existing_endpoint(monkeypatch):
+    store = {"endpoints": [], "templates": [{"id": "tg", "name": "rp-gerado", "imageName": "x"}]}
+    patches = []
+
+    def rest(method, path, chave, body=None):
+        kind = path.strip("/").split("/")[0]
+        if method == "GET":
+            return Resp(200, store[kind])
+        if method == "PATCH":
+            patches.append((path, body))
+            return Resp(200, {"id": path.rsplit("/", 1)[1]})
+        raise AssertionError(f"{method} não deveria ser chamado")
+
+    monkeypatch.setattr(runpod_endpoints, "_rest", rest)
+    tpl, ep = runpod_endpoints.build(_cfg(), "github", "v0.3.0", "s.example", True, "teste")
+    with pytest.raises(runpod_pods.RunPodError, match="console"):
+        runpod_endpoints.apply_github(tpl, ep, "k")
+    store["endpoints"].append({"id": "e9", "name": ep["name"], "templateId": "tg"})
+    out = runpod_endpoints.apply_github(tpl, ep, "k")
+    assert out == {"template_id": "tg", "endpoint_id": "e9", "name": ep["name"]}
+    (p_ep, b_ep), (p_tpl, b_tpl) = patches
+    assert p_ep == "/endpoints/e9" and b_ep["flashboot"] is True
+    assert p_tpl == "/templates/tg" and set(b_tpl) == {"env"}  # a imagem não é tocada
+    assert b_tpl["env"]["GPU2GO_IMAGE_VERSION"] == "v0.3.0"
+
+
+def test_cli_requires_exactly_one_image_source(monkeypatch, capsys):
+    cfg = str(INFRA / "i2v-economico.json")
+    assert (
+        runpod_endpoints.main(["plan", cfg, "--hosts", "h", "--sfw-tests", "--sufixo", "teste"])
+        == 2
+    )
+    assert "um dos dois" in capsys.readouterr().err
+    assert (
+        runpod_endpoints.main(
+            ["plan", cfg, "--github", "--hosts", "h", "--sfw-tests", "--sufixo", "teste"]
+        )
+        == 2
+    )
+    assert (
+        runpod_endpoints.main(
+            [
+                "plan",
+                cfg,
+                "--github",
+                "--versao",
+                "v1",
+                "--hosts",
+                "h",
+                "--sfw-tests",
+                "--sufixo",
+                "teste",
+            ]
+        )
+        == 0
+    )
+
+
+def test_runpod_dockerfiles_in_sync_and_classic():
+    import subprocess
+    import sys
+
+    tool = WORKER.parent / "tools" / "build_runpod_dockerfiles.py"
+    r = subprocess.run([sys.executable, str(tool), "--check"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout
+    for name, last in (("Dockerfile.i2v", "full"), ("Dockerfile.t2v", "full-t2v")):
+        text = (INFRA / name).read_text()
+        assert "--mount" not in text and "<<" not in text  # formato clássico
+        froms = [line.split()[-1] for line in text.splitlines() if line.startswith("FROM ")]
+        assert froms[-1] == last and "bakeoff" not in froms
+        copies = [
+            line for line in text.splitlines() if line.startswith("COPY ") and "--from=" not in line
+        ]
+        assert copies and all(" worker/" in c for c in copies)
+        assert text.rstrip().endswith("ENV MODE=serverless")

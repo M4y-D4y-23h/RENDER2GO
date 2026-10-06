@@ -105,7 +105,7 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 
 ## Etapa 3 — Serverless em um tier e medições
 
-> **Status (06/10/2026): código pronto; medições pendentes da hospedagem da imagem ([ADR 0002](adr/0002-hospedagem-da-imagem.md)).**
+> **Status (06/10/2026): código pronto; hospedagem decidida (integração GitHub do RunPod, [ADR 0002](adr/0002-hospedagem-da-imagem.md)); medições pendentes da primeira build no RunPod.**
 >
 > - **Feito:**
 >   - handler (`gpu2go_worker/jobs.py` + `handler_runpod.py`, `MODE=serverless`), com o protocolo do doc 02: URLs assinadas com lista de hosts, quadros de amostra, erros tipados e idempotência por `job_id`;
@@ -118,7 +118,7 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 >   - 117 testes sem GPU.
 > - **Decidido pela documentação do RunPod:** cached models descartados (um repositório do Hugging Face por endpoint, baixado inteiro). GHCR descartado (10 GB por camada).
 > - **Falta, e depende de você:**
->   1. Escolher a hospedagem da imagem: integração GitHub do RunPod (recomendada para testar primeiro) ou Docker Hub.
+>   1. Criar o endpoint de teste no console do RunPod pela integração GitHub (passo a passo em `infra/runpod/LEIAME.md`).
 >   2. Uma chave do RunPod no ambiente.
 >   3. Um storage com URLs assinadas: uma imagem SFW de entrada para o bench do I2V e, depois, as saídas.
 

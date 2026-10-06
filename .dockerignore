@@ -1,0 +1,14 @@
+# Contexto da integração GitHub do RunPod (infra/runpod/Dockerfile.*), que é a raiz do
+# repositório: só entra o que a imagem copia de worker/.
+*
+!worker/pyproject.toml
+!worker/models.lock.json
+!worker/entrypoint.sh
+!worker/requirements.lock
+!worker/src
+!worker/scripts
+!worker/workflows
+!worker/prompts
+!worker/presets
+**/__pycache__
+**/*.pyc
