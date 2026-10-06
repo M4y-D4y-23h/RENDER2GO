@@ -5,6 +5,7 @@
 #
 #   docker build -f worker/Dockerfile --target slim -t gpu2go-worker:slim worker
 #   docker build -f worker/Dockerfile --target full -t gpu2go-worker:full worker
+#   docker build -f worker/Dockerfile --target full-t2v -t gpu2go-worker:full-t2v worker
 #   docker build -f worker/Dockerfile --target bakeoff -t gpu2go-worker:bakeoff worker
 #
 # Alvos:
@@ -145,6 +146,24 @@ RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /
     && python -m gpu2go_worker.models wan22_i2v_r1v2_high --models-dir "${COMFY_DIR}/models"
 RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /usr/local/lib/gpu2go/ca-env.sh \
     && python -m gpu2go_worker.models wan22_i2v_r1v2_low --models-dir "${COMFY_DIR}/models"
+
+# ---------------------------------------------------------------------------------------
+# T2V de produção (ADR 0001): Wan 2.2 T2V A14B fp8 + Lightning T2V v1.1, imagem separada do
+# I2V para não pesar o cold start dele. Uma camada por arquivo, bytes e SHA-256 conferidos.
+FROM slim AS full-t2v
+
+RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /usr/local/lib/gpu2go/ca-env.sh \
+    && python -m gpu2go_worker.models wan21_vae --models-dir "${COMFY_DIR}/models"
+RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /usr/local/lib/gpu2go/ca-env.sh \
+    && python -m gpu2go_worker.models nsfw_umt5_xxl_v2_fp8 --models-dir "${COMFY_DIR}/models"
+RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /usr/local/lib/gpu2go/ca-env.sh \
+    && python -m gpu2go_worker.models lightning_t2v_v11_high lightning_t2v_v11_low --models-dir "${COMFY_DIR}/models"
+RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /usr/local/lib/gpu2go/ca-env.sh \
+    && python -m gpu2go_worker.models wan22_t2v_a14b_high_fp8 --models-dir "${COMFY_DIR}/models"
+RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /usr/local/lib/gpu2go/ca-env.sh \
+    && python -m gpu2go_worker.models wan22_t2v_a14b_low_fp8 --models-dir "${COMFY_DIR}/models"
+
+ENV MODEL_SET=t2v_a14b_fp8
 
 # ---------------------------------------------------------------------------------------
 # Só para o bake-off do T2V (docs/adr/0001): slim + ComfyUI-GGUF. Os modelos entram em

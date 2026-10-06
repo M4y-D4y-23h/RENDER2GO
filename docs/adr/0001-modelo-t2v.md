@@ -1,6 +1,6 @@
 # ADR 0001 — Modelo de texto → vídeo (T2V)
 
-- **Status:** proposto. O bake-off rodou em 05/10/2026 numa RTX 4090 (resultados no fim). Faltam as notas humanas cegas, que decidem entre Q6_K e fp8. A regra de decisão abaixo foi fixada **antes** das medições, para que o resultado decida e não a preferência de quem olha os vídeos.
+- **Status:** **aceito em 06/10/2026: Wan 2.2 T2V A14B fp8 + Lightning T2V v1.1.** O bake-off rodou em 05/10/2026 numa RTX 4090, com notas humanas cegas (resultados e aplicação da regra no fim). A regra de decisão abaixo foi fixada **antes** das medições, para que o resultado decida e não a preferência de quem olha os vídeos.
 - **Data:** 05/10/2026
 - **Etapa:** 2 ([plano](../04-plano-de-implementacao.md))
 
@@ -66,9 +66,11 @@ RTX 4090 secure (RunPod), driver 570, 832×480, 5 s, 6 prompts × 2 seeds, todos
 
 | Variante | Média geral | Aderência | Movimento | Artefatos | Mediana quente (s) | 1º render (s) | Pico VRAM (GB) | GB extras |
 |---|---|---|---|---|---|---|---|---|
-| r1v2-sem-imagem | pendente | | | | 51,9 | 52,0 | 21,07 | 0 |
-| a14b-q6k-lightning | pendente | | | | 77,2 | 82,2 | 19,67 | 26,5 |
-| a14b-fp8-lightning | pendente | | | | 56,5 | 62,6 | 21,54 | 31,0 |
+| r1v2-sem-imagem | 1,28 | 1,25 | 1,33 | 1,25 | 51,9 | 52,0 | 21,07 | 0 |
+| a14b-q6k-lightning | **4,25** | 4,42 | 4,25 | 4,08 | 77,2 | 82,2 | 19,67 | 26,5 |
+| a14b-fp8-lightning | 3,94 | 4,08 | 4,00 | 3,75 | 56,5 | 62,6 | 21,54 | 31,0 |
+
+Notas de 1 a 5 de um avaliador (o dono do projeto), cegas, nos 36 vídeos (12 por variante), dadas na página de projeção cega. A chave está em `worker/evals/gpu-2026-10-05/chave-cega.json`.
 
 **O que já se vê sem as notas.** Comparei o quadro do meio dos 18 vídeos da seed 101. Isso serve para achar falhas grosseiras e não substitui a avaliação cega.
 
@@ -80,10 +82,19 @@ RTX 4090 secure (RunPod), driver 570, 832×480, 5 s, 6 prompts × 2 seeds, todos
 - Os tempos passam.
 - O critério de VRAM, escrito como "até 20 GB de pico", não pode ser aplicado como está: o **I2V de produção**, com o mesmo modelo e `--reserve-vram 4`, também chega a 20,6–21,5 GB (`worker/evals/gpu-2026-10-05/turbo/`). O pico medido é o da placa inteira, depois de o ComfyUI ocupar o que o `--reserve-vram` deixa. Mesmo assim, o Ollama compilou em 3,3 s antes de cada vídeo. O critério precisa ser refeito como "não pior que o I2V de produção", o que deixa as três variantes no páreo. Fica registrado aqui, sem trocar a regra em silêncio.
 
-**Próximo passo.**
+## Decisão (06/10/2026)
 
-1. Dar as notas na página de projeção cega.
-2. Calcular as médias com a chave (`worker/evals/gpu-2026-10-05/chave-cega.json`; não abra antes de terminar as notas).
-3. Aplicar as regras 2 a 4.
+As regras foram aplicadas como estavam escritas:
 
-Pelas medições, o fp8 tende a vencer o Q6_K pela regra 3: é 27% mais rápido e usa só nós nativos, desde que as notas fiquem a até 0,2 ponto.
+1. **Regra 1:** o **Q6_K cai pelo tempo**, com mediana quente de 77,2 s contra o limite de 60 s. O critério de VRAM foi aplicado como "não pior que o I2V de produção", como explicado acima: o fp8 chegou a 21,54 GB e o I2V a 21,48 GB, iguais dentro do ruído da medição.
+2. **Regra 2:** o R1 v2 sem imagem (1,28) está muito mais de 0,3 ponto abaixo do fp8 (3,94).
+3. **Resultado: fp8.**
+
+O Q6_K teve a melhor nota (+0,31), mas é 37% mais lento e exige o ComfyUI-GGUF. Fica registrado como candidato a uma opção "qualidade máxima" no futuro. Para isso bastaria um tier mais lento ou uma GPU maior, onde o tempo dele caia. A amostra é pequena (um avaliador, 2 seeds), e o próprio dono do projeto aceitou o modelo como opção inicial: modelos mais especializados devem entrar depois.
+
+**Consequências aplicadas:**
+
+- `worker/workflows/t2v_a14b_fp8_lightning.v1` é o template de produção do T2V, gerado pelo `tools/build_t2v_templates.py` (`PRODUCTION`) e validado na imagem slim.
+- O alvo `full-t2v` do Dockerfile embute os modelos do conjunto `t2v_a14b_fp8` (+31,0 GB sobre o encoder e o VAE). Os endpoints de I2V e T2V ficam separados.
+- O ComfyUI-GGUF continua fora da produção. Os conjuntos `t2v_a14b_q6k` e o template do R1 sem imagem ficam em `experimental/`, só para referência.
+- Os 24 GB do GGUF podem sair do volume do pipeline manual.

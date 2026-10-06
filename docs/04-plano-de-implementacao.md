@@ -78,7 +78,7 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 
 ## Etapa 2 — Templates, compilador e T2V
 
-> **Status (06/10/2026): implementada e medida numa RTX 4090; dois pontos do aceite pendentes de decisão.** Resultados em [`worker/evals/gpu-2026-10-05/LEIAME.md`](../worker/evals/gpu-2026-10-05/LEIAME.md), [`worker/evals/compiler/RESULTADOS.md`](../worker/evals/compiler/RESULTADOS.md) e no [ADR 0001](adr/0001-modelo-t2v.md).
+> **Status (06/10/2026): concluída.** Implementada e medida numa RTX 4090. O T2V escolhido pelo ADR 0001 é o A14B fp8 + Lightning, e o compilador atual foi aceito como opção inicial. Resultados em [`worker/evals/gpu-2026-10-05/LEIAME.md`](../worker/evals/gpu-2026-10-05/LEIAME.md), [`worker/evals/compiler/RESULTADOS.md`](../worker/evals/compiler/RESULTADOS.md) e no [ADR 0001](adr/0001-modelo-t2v.md).
 >
 > - **Feito:**
 >   - presets (termos anexados pelo código);
@@ -88,9 +88,9 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 >   - "continuar vídeo", testado na GPU;
 >   - qualidade do turbo: fica 4/1/2, porque 8 passos e CFG 1,5–2 custam até 3,3 vezes o tempo sem ganho medido.
 > - **Aceite:**
->   - "o template T2V escolhido gera 5 s": os dois A14B geram 5 s sem erro. O R1 v2 sem imagem sai lavado e granulado.
->   - "ADR registrado": sim, mas segue proposto até as notas humanas cegas decidirem entre Q6_K e fp8.
->   - "taxa mínima de fidelidade definida e atingida": **definida, não atingida** (melhor resultado: 50% de todos os casos e 88% no caminho do produto sem o limite de palavras). Decisão necessária: ver `RESULTADOS.md`.
+>   - "o template T2V escolhido gera 5 s": sim, o `t2v_a14b_fp8_lightning.v1` gera 5 s em 56,5 s quentes. O R1 v2 sem imagem saiu lavado e granulado (nota 1,28).
+>   - "ADR registrado": aceito. Nas notas cegas, o Q6_K teve 4,25 e o fp8 3,94; o Q6_K caiu pelo limite de tempo da regra fixada antes das medições.
+>   - "taxa mínima de fidelidade definida e atingida": definida e **não atingida** (50% de todos os casos; 88% no caminho do produto sem o limite de palavras). O dono do projeto aceitou o compilador atual como opção inicial; ver `RESULTADOS.md`.
 > - **Achado para a Etapa 3:** o I2V levou 56 s quentes na 4090, acima dos ~40 s do aceite da Etapa 1, por causa da troca dos dois modelos na VRAM a cada vídeo.
 
 - **Presets como dados** (`worker/presets/`): ritmo, câmera, enquadramento, luz e estilo, a partir da seção 9.3.

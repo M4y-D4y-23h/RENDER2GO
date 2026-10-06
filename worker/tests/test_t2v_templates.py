@@ -63,3 +63,13 @@ def test_a14b_lightning_settings():
     wf["129:201"]["inputs"]["strength_model"] = 0.5
     with pytest.raises(t.TemplateError, match="valor fixo"):
         t.validate_structure(wf, tpl.contract)
+
+
+def test_promoted_t2v_matches_its_candidate():
+    prod = t.load(WORKER / "workflows" / "t2v_a14b_fp8_lightning.v1.api.json")
+    cand = t.load(WORKER / "workflows" / "experimental" / "t2v_a14b_fp8_lightning.v1.api.json")
+    assert prod.workflow == cand.workflow
+    assert prod.contract["experimental"] is False and prod.contract["adr"].endswith(
+        "0001-modelo-t2v.md"
+    )
+    assert prod.contract["fixed"] == cand.contract["fixed"]

@@ -1,13 +1,13 @@
 # CLAUDE.md
 
 Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
-**Status:** Etapas 1 e 2 implementadas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`); pendentes: notas cegas do bake-off (ADR 0001) e a decisão sobre o critério de fidelidade do compilador (`worker/evals/compiler/RESULTADOS.md`); decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04).
+**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Próxima: Etapa 3. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
 
 ## Fontes de verdade
 
 - `referencia/especificacao-pipeline-manual.md`: pipeline manual testado. Não editar.
 - `referencia/wan-i2v-com-ollama.api.json`: workflow exportado. Não editar; os templates derivados ficam em `worker/workflows/`.
-- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, proposto).
+- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, aceito).
 
 ## Regras técnicas (mudar só com ADR)
 

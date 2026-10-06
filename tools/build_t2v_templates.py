@@ -2,7 +2,8 @@
 """Gera os templates T2V candidatos do bake-off (docs/adr/0001) a partir do template I2V.
 
 Saída em worker/workflows/experimental/ (fora da validação da imagem slim, que só olha
-worker/workflows/*.api.json). Os três candidatos usam o mesmo encoder, VAE, duração e
+worker/workflows/*.api.json). O candidato escolhido por ADR aceito (PRODUCTION) também
+é gravado em worker/workflows/. Os três candidatos usam o mesmo encoder, VAE, duração e
 saída do I2V de produção:
 
 - t2v_r1v2_noimg: o próprio R1 v2 sem imagem de entrada. Sem `start_image`, o
@@ -30,6 +31,9 @@ WORKFLOWS = ROOT / "worker" / "workflows"
 SOURCE = WORKFLOWS / "i2v_r1v2.v1.api.json"
 SOURCE_CONTRACT = WORKFLOWS / "i2v_r1v2.v1.contract.json"
 OUT = WORKFLOWS / "experimental"
+# Candidatos promovidos a produção por ADR aceito: também gravados em worker/workflows/,
+# com "experimental": false (e então validados pela imagem slim).
+PRODUCTION = {"t2v_a14b_fp8_lightning": "docs/adr/0001-modelo-t2v.md"}
 
 LORAS = {
     "high": "wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors",
@@ -165,8 +169,16 @@ def build() -> dict[str, str]:
         a14b_lightning(wf, contract, "fp8"),
     ):
         stem = f"{c['template']}.v{c['version']}"
-        files[f"{stem}.api.json"] = json.dumps(workflow, indent=2, ensure_ascii=False) + "\n"
-        files[f"{stem}.contract.json"] = json.dumps(c, indent=2, ensure_ascii=False) + "\n"
+        wf_text = json.dumps(workflow, indent=2, ensure_ascii=False) + "\n"
+        files[f"experimental/{stem}.api.json"] = wf_text
+        files[f"experimental/{stem}.contract.json"] = (
+            json.dumps(c, indent=2, ensure_ascii=False) + "\n"
+        )
+        if c["template"] in PRODUCTION:
+            prod = {**c, "experimental": False, "adr": PRODUCTION[c["template"]]}
+            prod["_comment"] = c["_comment"].replace("Candidato T2V do bake-off", "T2V de produção")
+            files[f"{stem}.api.json"] = wf_text
+            files[f"{stem}.contract.json"] = json.dumps(prod, indent=2, ensure_ascii=False) + "\n"
     return files
 
 
@@ -178,18 +190,22 @@ def main() -> int:
     a = p.parse_args()
     files = build()
     stale = [
-        n for n, text in files.items() if not (OUT / n).exists() or (OUT / n).read_text() != text
+        n
+        for n, text in files.items()
+        if not (WORKFLOWS / n).exists() or (WORKFLOWS / n).read_text() != text
     ]
     if a.check:
         for n in stale:
-            print(f"{(OUT / n).relative_to(ROOT)} está desatualizado; rode o script sem --check")
+            print(
+                f"{(WORKFLOWS / n).relative_to(ROOT)} está desatualizado; rode o script sem --check"
+            )
         if not stale:
             print("templates T2V em dia")
         return 1 if stale else 0
-    OUT.mkdir(parents=True, exist_ok=True)
+    OUT.mkdir(parents=True, exist_ok=True)  # worker/workflows/experimental
     for n, text in files.items():
-        (OUT / n).write_text(text)
-        print(f"escrito {(OUT / n).relative_to(ROOT)}")
+        (WORKFLOWS / n).write_text(text)
+        print(f"escrito {(WORKFLOWS / n).relative_to(ROOT)}")
     return 0
 
 

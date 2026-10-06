@@ -37,10 +37,10 @@ Tempo por compilação na RTX 4090: 0,3–0,9 s no 7B e 0,7–1,4 s no 14B, com 
 ## Decisão
 
 - **Em produção:** I2V **v5** e T2V **v3** no 7B (`compiler.PROFILES`). São as melhores versões medidas: no caminho do produto, 88% e 75% de fidelidade sem contar o tamanho do texto, contra 79% e 67% das versões anteriores.
-- **Critério de aceite da Etapa 2 ("taxa mínima definida e atingida"): não atingido.** Para fechá-lo é preciso escolher entre:
+- **Critério de aceite da Etapa 2 ("taxa mínima definida e atingida"): não atingido pelo critério original.** Em 06/10/2026 o dono do projeto decidiu aceitar o compilador atual como opção inicial ("não precisa ficar perfeito"); modelos mais especializados devem entrar depois. As opções que estavam na mesa, mantidas como registro:
   - **(a)** Aceitar um critério restrito ao caminho do produto e à fidelidade, sem o limite de palavras. Nele, o I2V v5 passa (88%) e o T2V v3 não (75%). Antes, vale um teste curto em GPU comparando vídeos com prompt curto e longo, para saber se o tamanho do texto importa para o Wan.
   - **(b)** Manter o critério e testar outro compilador, como uma versão abliterada mais nova do Qwen ou um modelo maior fora da GPU do worker.
-- Os casos e os limites não mudam; versões novas de prompt entram como arquivos novos e passam pela mesma rodada.
+- Os casos e os limites não mudam; versões novas de prompt entram como arquivos novos e passam pela mesma rodada. A opção (a) segue recomendada como próximo passo quando o compilador voltar a ser prioridade.
 
 ## Como reproduzir
 

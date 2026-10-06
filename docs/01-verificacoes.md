@@ -19,7 +19,7 @@ Legenda: **[CONFIRMADO]** · **[PARCIAL]** (parte confirmada, parte em aberto) �
 | # | Item (seção da especificação) | Status | Impacto |
 |---|---|---|---|
 | 1 | Termos do RunPod para conteúdo adulto (11.7) | **[CONFLITO]** | **Bloqueador do produto como descrito** |
-| 2 | Revenda de computação no RunPod (11.7) | [NÃO CONFIRMADO] | Perguntar junto com o item 1 |
+| 2 | Uso comercial e revenda de computação no RunPod (11.7) | [PARCIAL]: cláusula genérica ambígua | Perguntar junto com o item 1 |
 | 3 | Licença do NSFW-UMT5 e do patch (2.2, 11.9) | [CONFIRMADO] Apache-2.0 | Resolve a decisão D6 |
 | 4 | Licenças de Wan 2.2, R1 v2, Qwen2.5 e derivados (11.9) | [CONFIRMADO] nos modelos usados | Baixo |
 | 5 | Tag `huihui_ai/qwen2.5-abliterate:14b` (2.7) | [CONFIRMADO] | — |
@@ -53,7 +53,13 @@ Legenda: **[CONFIRMADO]** · **[PARCIAL]** (parte confirmada, parte em aberto) �
 - **Contexto de mercado:** nenhum grande provedor de GPU pesquisado permite conteúdo adulto de forma explícita. O Vast.ai proíbe conteúdo "obscene" (termo jurídico ambíguo) ([termos](https://vast.ai/terms)); a Atlas Cloud proíbe "adult content" ([AUP](https://www.atlascloud.ai/acceptable-use)).
 - **Ação:** ver Etapa 0 em [`04-plano-de-implementacao.md`](04-plano-de-implementacao.md): ler a cláusula inteira na página oficial, pedir resposta **por escrito** ao RunPod (há um rascunho de mensagem lá) e, enquanto isso, desenvolver e testar só com conteúdo SFW. A arquitetura proposta é agnóstica de provedor justamente por causa deste item.
 
-## 2. Revenda de computação no RunPod — [NÃO CONFIRMADO]
+## 2. Uso comercial e revenda de computação no RunPod — [PARCIAL]
+
+- **Releitura em 06/10/2026** (termos ainda com "Last Updated: March 24, 2026"):
+  - A seção 9 ("Prohibited Activities") diz, literalmente: *"You may not access or use the Site for any purpose other than that for which we make the Site available. The Site may not be used in connection with any commercial endeavors except those that are specifically endorsed or approved by us."*
+  - "Site" é definido como *"the Runpod.io website and its subdomains"*. "Service" inclui o site e o marketplace de GPUs.
+  - A mesma lista proíbe *"License, sell, transfer or commercially exploit the Site"* e *"Use the Service as part of any effort to compete with us"*.
+- **Leitura (não é parecer jurídico):** vender computação para aplicações é o próprio negócio do RunPod, que oferece serverless para produtos em produção. Mesmo assim, a cláusula é genérica e, ao pé da letra, exige aprovação para "commercial endeavors". Junto com o item 1 (conteúdo adulto proibido), isso entra na pergunta por escrito ao RunPod (Etapa 0, D1).
 
 - Não encontrei proibição explícita de revenda. O trecho sobre CSAM diz *(2ª rodada, literal)*: *"If the Account is a Runpod reseller account, the Account will be suspended, and the reseller will be directed to terminate the responsible account."* Ou seja, revenda é uma modalidade prevista, com obrigações próprias.
 - **Ação:** perguntar na mesma mensagem do item 1.
