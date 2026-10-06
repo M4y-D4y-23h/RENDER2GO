@@ -120,7 +120,7 @@ python tools/submit_workflow.py \
 ```
 
 - `--prompt-en "..."` pula o compilador.
-- `--preset camera=parada-corpo-inteiro-costas --preset luz=por-do-sol` (com `--text-pt` só com a ação): os termos em inglês do preset são anexados ao prompt pelo código, palavra por palavra. A lista está em [`presets/presets.v1.json`](presets/presets.v1.json).
+- `--preset camera=parada-corpo-inteiro-costas --preset luz=por-do-sol` (com `--text-pt` só com a ação): os termos em inglês do preset são anexados ao prompt pelo código, palavra por palavra. A lista está em [`presets/presets.v2.json`](presets/presets.v2.json) (a v2 é a v1 inteira, com os mesmos termos, mais opções para divulgação: órbita e aproximação de produto, avanço pelo ambiente, subida, panorâmica, luz aconchegante, estilo comercial).
 - `--continue-from clipe1.mp4` no lugar de `--image`: o último quadro do clipe vira a imagem de entrada (ver "Continuar vídeo").
 - Templates sem imagem (T2V) usam o perfil `t2v` do compilador automaticamente.
 - Parâmetros fora do contrato (`workflows/*.contract.json`) falham antes de qualquer trabalho: dimensões múltiplas de 16, área até 921.600 px, duração inteira de 3 a 7 s (16·d + 1 frames), seed sorteada se omitida.
@@ -155,6 +155,63 @@ python tools/video.py concat saida/clipe1.mp4 saida/clipe2.mp4 -o saida/final.mp
 - O último quadro é extraído sem perda (PNG) e conferido contra a resolução do vídeo.
 - A concatenação usa `-c copy` (sem recodificar) e confere codec, resolução, fps, formato de pixel e o total de quadros. O limite é de 4 clipes: depois disso o personagem e as cores desviam.
 - Cada emenda repete um quadro (1/16 s), porque o 1º quadro do clipe novo é o último do anterior. Tirar esse quadro exigiria recodificar.
+
+## Modo serviço: vídeos de divulgação em lote
+
+Ferramentas do caminho A ([docs/05](../docs/05-analise-de-negocio.md)): vídeos para pequenos negócios a partir das fotos do cliente. Rodam num pod (modo `pod`, ComfyUI e Ollama em `127.0.0.1`), de dentro dele ou por túnel SSH.
+
+**1. Receitas** ([`presets/receitas.v1.json`](presets/receitas.v1.json)): cada uma fixa os presets, uma ação padrão, o formato e a duração.
+
+| Receita | Nicho | Formato padrão |
+|---|---|---|
+| `produto-giro`, `produto-close` | produto | quadrado, vertical |
+| `imovel-sala`, `imovel-fachada` | imóvel | horizontal, vertical |
+| `comida-prato`, `comida-bebida` | comida | vertical |
+| `pessoa-apresentacao` | pessoa (exige `consentimento=sim`) | vertical |
+
+Formatos: `vertical` 480×832 (Reels, Stories, TikTok), `quadrado` 640×640, `horizontal` 832×480.
+
+**Atenção:** nenhuma receita foi testada em GPU. No teste do turbo, pedidos de órbita de câmera não funcionaram bem no I2V (`evals/gpu-2026-10-05/LEIAME.md`). Antes de vender, rode todas num pod com desligamento automático (~US$ 1 a 2) e descarte ou ajuste as que não ficarem boas.
+
+**2. Lote** (`pedidos.csv` na pasta das fotos, separado por `,` ou `;`; só `foto` e `receita` são obrigatórias):
+
+```csv
+foto,receita,acao,formato,duracao,variacoes,consentimento
+caneca.jpg,produto-giro,,,,2,
+sala.jpg,imovel-sala,a câmera avança devagar até a janela,horizontal,6,1,
+dona.jpg,pessoa-apresentacao,,,,1,sim
+```
+
+```bash
+python tools/lote.py clientes/padaria --saida saida/padaria --conferir   # só confere
+python tools/lote.py clientes/padaria --saida saida/padaria
+```
+
+- A planilha inteira é conferida antes do primeiro vídeo: foto fora da pasta ou inexistente, receita, formato, duração (3 a 7 s), variações (1 a 4) e consentimento.
+- Saída: `<linha>-<foto>-<receita>-v<n>.mp4` e `relatorio.csv` (status, seed, tempo, prompt, erro).
+- Rodar de novo continua de onde parou. A seed vem da foto, da receita e da variação, então refazer dá o mesmo vídeo.
+- Se o ComfyUI ou o Ollama cair, o lote para (código 5). Recusa ou erro num vídeo fica no relatório e o lote segue (código 1 no fim).
+
+**3. Acabamento** (ffmpeg, sem GPU; roda em qualquer máquina):
+
+```bash
+python tools/acabamento.py saida/padaria/002-caneca-produto-giro-v1.mp4 saida/padaria/003-sala-imovel-sala-v1.mp4 \
+  --saida entrega/padaria-01.mp4 --logo marca/logo.png --cartao marca/cartao.png \
+  --musica marca/trilha.mp3 --fps 24
+```
+
+- Junta os clipes na ordem, ajustados ao tamanho do primeiro, com faixas e sem cortar.
+- Logo num canto (`--logo-pos`, `--logo-largura`). Cartão final por `--cartao-s` segundos, sem logo por cima.
+- Música com fade, cortada no fim.
+- `--mostrar` imprime o comando do ffmpeg sem rodar.
+
+**Regras do modo serviço:**
+
+- Só fotos enviadas pelo próprio cliente, com direito de uso.
+- Pessoas só com autorização por escrito da pessoa retratada.
+- Música do cliente ou com licença comercial.
+- Só conteúdo SFW.
+- Quem opera vê todas as fotos e todos os vídeos antes da entrega: o compilador não é camada de segurança, e o lote não passa pelos filtros do modo serverless.
 
 ## Experimentos em GPU
 

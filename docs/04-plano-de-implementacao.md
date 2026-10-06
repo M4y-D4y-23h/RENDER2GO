@@ -1,5 +1,7 @@
 # 04 — Plano de implementação em etapas
 
+> **Pausa (06/10/2026):** o dono do projeto escolheu o caminho A do [doc 05](05-analise-de-negocio.md): serviço de marketing com IA para pequenos negócios, com o GPU2GO como ferramenta interna (receitas, lote e acabamento, em `worker/README.md`, seção "Modo serviço"). As Etapas 4 a 6 como app público ficam em pausa até o volume do serviço justificar. As medições da Etapa 3 continuam valendo para o custo do serviço.
+
 ## Princípios
 
 - Cada etapa termina com um entregável verificável e critérios de aceite.

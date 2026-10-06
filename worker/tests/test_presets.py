@@ -18,7 +18,7 @@ def test_compose_labeled_input_and_verbatim_suffix():
     assert c.suffix == (
         "Slow, smooth, continuous motion. Static camera, full body shot, rear view, from behind."
     )
-    assert c.version == 1 and c.selections["camera"] == "parada-corpo-inteiro-costas"
+    assert c.version == 2 and c.selections["camera"] == "parada-corpo-inteiro-costas"
 
 
 def test_t2v_uses_scene_label_and_no_presets_means_no_suffix():
@@ -64,3 +64,13 @@ def test_catalog_has_every_option_once_and_no_quotes_in_terms():
         for cat in cats:
             ids = [o["id"] for o in cat["options"]]
             assert len(ids) == len(set(ids)) and all(o["label"] for o in cat["options"])
+
+
+def test_v2_keeps_every_v1_term_unchanged():
+    # a v2 só acrescenta opções: jobs e casos de fidelidade da v1 continuam idênticos
+    v1 = p.load(p.WORKER_DIR / "presets" / "presets.v1.json")
+    v2 = p.load()
+    assert v2["version"] == 2 and v1["modes"] == v2["modes"]
+    for cat, spec in v1["categories"].items():
+        for opt_id, opt in spec["options"].items():
+            assert v2["categories"][cat]["options"][opt_id] == opt

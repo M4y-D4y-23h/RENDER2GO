@@ -23,7 +23,7 @@ from typing import Any
 
 from gpu2go_worker import WORKER_DIR
 
-PRESETS_FILE = Path(os.environ.get("GPU2GO_PRESETS", WORKER_DIR / "presets" / "presets.v1.json"))
+PRESETS_FILE = Path(os.environ.get("GPU2GO_PRESETS", WORKER_DIR / "presets" / "presets.v2.json"))
 MAX_TEXT_CHARS = 600
 
 

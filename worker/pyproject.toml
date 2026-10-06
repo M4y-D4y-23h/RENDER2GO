@@ -17,6 +17,8 @@ gpu2go-eval-compiler = "gpu2go_worker.cli_eval:main"
 gpu2go-experiment = "gpu2go_worker.experiment:main"
 gpu2go-video = "gpu2go_worker.video:main"
 gpu2go-runpod = "gpu2go_worker.runpod_pods:main"
+gpu2go-lote = "gpu2go_worker.lote:main"
+gpu2go-acabamento = "gpu2go_worker.acabamento:main"
 
 [dependency-groups]
 dev = [

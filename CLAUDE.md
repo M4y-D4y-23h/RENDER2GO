@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
-**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); imagem montada pelo RunPod a partir do GitHub (ADR 0002, aceito); medições pendentes da primeira build lá. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
+**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); imagem montada pelo RunPod a partir do GitHub (ADR 0002, aceito); medições pendentes da primeira build lá. **Caminho escolhido (docs/05): A, serviço de marketing com IA para pequenos negócios**: o GPU2GO é ferramenta interna (presets v2, receitas, `lote.py`, `acabamento.py`); Etapas 4–6 em pausa. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
 
 ## Fontes de verdade
 
@@ -21,7 +21,7 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 - Nos workers, ComfyUI e Ollama só em `127.0.0.1`; nenhuma porta exposta.
 - Payload de job sem binário: imagens e vídeos trafegam por URL assinada, só https e só hosts de `GPU2GO_ALLOWED_URL_HOSTS`.
 - Worker sem filtros C1–C2 não processa jobs (`GPU2GO_SAFETY`); `disabled-sfw-tests` só em endpoints com "teste" no nome.
-- Termos dos presets são anexados ao prompt pelo código, nunca reescritos pelo LLM. Prompt do compilador novo = arquivo novo (`compiler-<perfil>.v<N>.txt`) + rodada de fidelidade.
+- Termos dos presets são anexados ao prompt pelo código, nunca reescritos pelo LLM. Preset novo = arquivo novo (`presets.v<N>.json`) que mantém todos os termos da versão anterior. Prompt do compilador novo = arquivo novo (`compiler-<perfil>.v<N>.txt`) + rodada de fidelidade.
 - Templates candidatos ficam em `worker/workflows/experimental/` (gerados por `tools/build_t2v_templates.py`); só vão para `worker/workflows/` com ADR aceito.
 
 ## Regras de segurança (inegociáveis)
@@ -38,6 +38,7 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 - Template em dia com o export: `python tools/derive_i2v_template.py --check`
 - Candidatos T2V em dia: `python tools/build_t2v_templates.py --check`
 - Dockerfiles do RunPod em dia: `python tools/build_runpod_dockerfiles.py --check` (gerados; nunca editar `infra/runpod/Dockerfile.*` à mão)
+- Modo serviço (lote e acabamento): ver `worker/README.md`, seção "Modo serviço". Receitas ainda sem validação em GPU.
 - Endpoint de teste e bench: ver `infra/runpod/LEIAME.md`
 - Fidelidade do compilador (precisa de Ollama): `python tools/eval_compiler.py --out saida/fid` (ver `worker/README.md`)
 
