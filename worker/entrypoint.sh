@@ -3,7 +3,7 @@
 # aqui; só confere a GPU e os modelos, sobe o Ollama e o ComfyUI e os supervisiona.
 #
 # Variáveis:
-#   MODE              pod (padrão) | serverless (Etapa 3)
+#   MODE              pod (padrão) | serverless (handler do RunPod)
 #   MODEL_SET         conjuntos do models.lock.json, separados por vírgula (padrão: i2v_r1v2)
 #   MODELS_FROM_DIR   copiar modelos deste diretório (ex.: /workspace/models) se faltarem
 #   MODELS_FETCH=1    baixar do Hugging Face os modelos que faltarem
@@ -14,8 +14,9 @@
 #   PUBLIC_KEY        chave SSH pública: liga o sshd no modo pod
 #   SKIP_GPU_CHECK=1  pular a checagem de GPU (só testes sem GPU)
 #   COMFY_EXTRA_ARGS  argumentos extras do ComfyUI (ex.: --cpu em testes sem GPU)
-#   AUTO_TERMINATE_HOURS  no RunPod: o próprio pod se encerra depois de N horas (0 = nunca)
-#   TERMINATE_ON_BAD_GPU  no RunPod: encerra o pod se a GPU falhar na checagem (padrão: 1)
+#   AUTO_TERMINATE_HOURS  modo pod no RunPod: o pod se encerra depois de N horas (0 = nunca)
+#   TERMINATE_ON_BAD_GPU  modo pod no RunPod: encerra o pod se a GPU falhar (padrão: 1)
+#   GPU2GO_SAFETY, GPU2GO_ALLOWED_URL_HOSTS  obrigatórias no serverless (ver jobs.py)
 set -euo pipefail
 
 MODE="${MODE:-pod}"
@@ -41,8 +42,7 @@ wait_http() {  # url, segundos, nome
 }
 
 case "$MODE" in
-  pod) ;;
-  serverless) die "MODE=serverless chega na Etapa 3 (handler próprio); use MODE=pod" ;;
+  pod|serverless) ;;
   *) die "MODE desconhecido: $MODE" ;;
 esac
 
@@ -50,7 +50,7 @@ esac
 DEADMAN_PID=""
 AUTO_TERMINATE_HOURS="${AUTO_TERMINATE_HOURS:-0}"
 [[ "$AUTO_TERMINATE_HOURS" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "AUTO_TERMINATE_HOURS inválido: $AUTO_TERMINATE_HOURS"
-if [[ -n "${RUNPOD_POD_ID:-}" && "$AUTO_TERMINATE_HOURS" != "0" ]]; then
+if [[ "$MODE" == "pod" && -n "${RUNPOD_POD_ID:-}" && "$AUTO_TERMINATE_HOURS" != "0" ]]; then
   secs=$(python -c "print(int(float('$AUTO_TERMINATE_HOURS') * 3600))")
   log "desligamento automático em $AUTO_TERMINATE_HOURS h"
   (sleep "$secs" && python -m gpu2go_worker.runpod_pods autoencerrar) &
@@ -62,7 +62,8 @@ if [[ "${SKIP_GPU_CHECK:-0}" != "1" ]]; then
   log "checando a GPU..."
   if ! python "$WORKER_DIR/scripts/gpu_check.py"; then
     # máquina com defeito (visto num host community: nvidia-smi ok, cuInit falhando)
-    if [[ -n "${RUNPOD_POD_ID:-}" && "${TERMINATE_ON_BAD_GPU:-1}" == "1" ]]; then
+    # (no serverless, basta sair: o RunPod troca o worker)
+    if [[ "$MODE" == "pod" && -n "${RUNPOD_POD_ID:-}" && "${TERMINATE_ON_BAD_GPU:-1}" == "1" ]]; then
       log "encerrando o pod para não cobrar por uma GPU que não roda CUDA"
       python -m gpu2go_worker.runpod_pods autoencerrar || true
     fi
@@ -117,11 +118,18 @@ COMFY_PID=$!
 wait_http "http://127.0.0.1:$COMFY_PORT/system_stats" 300 "ComfyUI"
 log "pronto"
 
+HANDLER_PID=""
+if [[ "$MODE" == "serverless" ]]; then
+  log "subindo o handler do RunPod"
+  setsid python -m gpu2go_worker.handler_runpod > >(sed -u 's/^/[handler] /') 2>&1 &
+  HANDLER_PID=$!
+fi
+
 # 6. Supervisão: se um dos dois cair, derruba o outro e sai com erro ----------------------
-trap 'kill -TERM "$OLLAMA_PID" "$COMFY_PID" $DEADMAN_PID 2>/dev/null || true' TERM INT
+trap 'kill -TERM "$OLLAMA_PID" "$COMFY_PID" $HANDLER_PID $DEADMAN_PID 2>/dev/null || true' TERM INT
 set +e
-wait -n "$OLLAMA_PID" "$COMFY_PID"
+wait -n "$OLLAMA_PID" "$COMFY_PID" $HANDLER_PID
 status=$?
-kill -TERM "$OLLAMA_PID" "$COMFY_PID" $DEADMAN_PID 2>/dev/null
+kill -TERM "$OLLAMA_PID" "$COMFY_PID" $HANDLER_PID $DEADMAN_PID 2>/dev/null
 wait
 die "um dos serviços terminou (código $status)"

@@ -30,6 +30,7 @@ class FakeComfyState:
         self.fail_validation = False
         self.fail_execution = False
         self.history_polls = 0
+        self.video_bytes = FAKE_MP4
 
 
 def _handler(state: FakeComfyState):
@@ -89,9 +90,9 @@ def _handler(state: FakeComfyState):
                 assert q["type"] == ["output"] and q["filename"][0].endswith(".mp4")
                 self.send_response(200)
                 self.send_header("Content-Type", "video/mp4")
-                self.send_header("Content-Length", str(len(FAKE_MP4)))
+                self.send_header("Content-Length", str(len(state.video_bytes)))
                 self.end_headers()
-                self.wfile.write(FAKE_MP4)
+                self.wfile.write(state.video_bytes)
                 return None
             return self._json(404, {})
 

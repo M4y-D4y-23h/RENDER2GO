@@ -94,7 +94,7 @@ A hospedagem de cada peça (backend, storage, CDN) depende de fornecedores que a
 6. Se aprovado: job "pronto", créditos debitados, cliente notificado. Se reprovado: nada é entregue; quarentena e fluxo do doc 03.
 7. O cliente assiste ou baixa por URL assinada de curta duração.
 
-Exemplo de entrada do job (nada de binário no payload; o limite do `/run` é 10 MB):
+Exemplo de entrada do job (nada de binário no payload; o limite do `/run` é 10 MB). Implementado em `worker/src/gpu2go_worker/jobs.py` (Etapa 3):
 
 ```json
 {
@@ -103,9 +103,9 @@ Exemplo de entrada do job (nada de binário no payload; o limite do `/run` é 10
     "mode": "i2v",
     "template": "i2v_r1v2@1",
     "compiler": {
-      "profile": "i2v",
-      "version": 3,
-      "text_pt": "ação: ...\nritmo: \"slow, smooth, continuous motion\"\ncâmera: ...",
+      "action_pt": "ela caminha devagar pela praia",
+      "presets": {"camera": "parada-corpo-inteiro-costas", "luz": "por-do-sol"},
+      "version": 5,
       "keep_alive": "0"
     },
     "params": {"width": 640, "height": 640, "duration_s": 5, "seed": 731942055},
@@ -117,19 +117,32 @@ Exemplo de entrada do job (nada de binário no payload; o limite do `/run` é 10
 }
 ```
 
+- O worker monta a entrada rotulada a partir da ação e dos presets e anexa os termos dos presets ao prompt (`presets.py`). O backend manda só os ids dos presets.
+- `mode`: `i2v` (com `input_image_url`), `continuar` (com `input_video_url`; o worker usa o último quadro) ou `t2v`.
+- `compiler.prompt_en` no lugar de `action_pt` pula o compilador. Os filtros C1–C2 valem nos dois casos.
+- As URLs precisam ser https e de um host listado em `GPU2GO_ALLOWED_URL_HOSTS`. Sem essa lista, nenhuma URL é aceita.
+
 Saída do job:
 
 ```json
 {
   "status": "ok",
+  "job_id": "job_01J9...",
   "compiled_prompt": "...",
   "seed": 731942055,
-  "timings": {"compile_s": 1.8, "render_s": 31.2, "upload_s": 0.9},
-  "versions": {"image": "worker:2026.10.0", "comfyui": "0.38.0", "template": "i2v_r1v2@1", "compiler": "i2v@3"},
-  "output": {"bytes": 2345678, "sha256": "..."},
-  "frames": 7
+  "timings": {"input_s": 0.4, "compile_s": 3.3, "render_s": 56.2, "upload_s": 0.9, "total_s": 61.0},
+  "versions": {"image": "2026.10.1", "comfyui": "0.38.0", "template": "i2v_r1v2@1", "compiler": "i2v@5", "presets": 1},
+  "output": {"bytes": 2345678, "sha256": "...", "uploaded": true},
+  "frames": 7,
+  "worker": {"uptime_s": 312.5, "job_index": 4, "safety": "..."}
 }
 ```
+
+**Erros tipados** (`error.code`, `error.retryable`): `INVALID_INPUT`, `UNSAFE_URL`, `INPUT_INVALID_MEDIA`, `INPUT_DOWNLOAD_FAILED`*, `COMPILER_UNAVAILABLE`*, `COMPILER_OUTPUT`*, `COMFY_UNAVAILABLE`*, `COMFY_VALIDATION`, `COMFY_EXECUTION`*, `TIMEOUT`*, `UPLOAD_FAILED`*, `SAFETY_NOT_CONFIGURED`, `DUPLICATE_IN_PROGRESS`*, `INTERNAL`* (* = pode repetir com o mesmo `job_id`).
+
+- Em erro, o SDK do RunPod marca o job como FAILED e tira `error` da saída. Por isso `error_code` e `retryable` também ficam na saída. Esse comportamento foi conferido com o SDK 1.12.0.
+- `COMFY_UNAVAILABLE` pede um worker novo ao RunPod (`refresh_worker`).
+- Um `job_id` já concluído no mesmo worker devolve o resultado guardado, com `"replayed": true`.
 
 `status` pode ser `ok`, `refused` (compilador ou filtro bloqueou; o motivo vai em `refusal`) ou `error`.
 
@@ -172,11 +185,11 @@ Saída do job:
 | Estratégia | Cold start | Imagem | Trocar modelo | Uso |
 |---|---|---|---|---|
 | Embutidos na imagem | Rápido depois do pull; 1º pull lento em cada host | ~50 GB | Rebuild | **v1** |
-| Cached models do RunPod | Rápido; download não cobrado | ~12 GB | Trocar a referência | Testar na Etapa 3 (há perguntas em aberto no item 13 do doc 01) |
+| Cached models do RunPod | Rápido; download não cobrado | ~12 GB | Trocar a referência | **Descartado** na Etapa 3: um repositório do HF por endpoint, baixado inteiro (ADR 0002) |
 | Volume + cópia para o disco local na subida | +~3 min **cobrados** a cada cold start | ~12 GB | Copiar para o volume | Só modo `pod` |
 | Leitura direta do volume | ~14 min por vídeo (medido) | — | — | **Nunca** |
 
-Arquivos de 14,8 GB viram camadas enormes: escolher um registry que aceite camadas desse tamanho e medir o tempo de pull.
+Arquivos de 14,8 GB viram camadas enormes: escolher um registry que aceite camadas desse tamanho e medir o tempo de pull. O GHCR não aceita (10 GB por camada); as opções estão no ADR 0002.
 
 ### 5.6 Falhas
 

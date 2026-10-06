@@ -105,6 +105,23 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 
 ## Etapa 3 — Serverless em um tier e medições
 
+> **Status (06/10/2026): código pronto; medições pendentes da hospedagem da imagem ([ADR 0002](adr/0002-hospedagem-da-imagem.md)).**
+>
+> - **Feito:**
+>   - handler (`gpu2go_worker/jobs.py` + `handler_runpod.py`, `MODE=serverless`), com o protocolo do doc 02: URLs assinadas com lista de hosts, quadros de amostra, erros tipados e idempotência por `job_id`;
+>   - filtros fail-closed: sem C1–C2 nenhum job roda; o modo de testes SFW é explícito;
+>   - endpoints como código (`infra/runpod/`, `tools/runpod_endpoint.py`);
+>   - `tools/bench.py` (cold start, p50/p95, custo quente e isolado) e os planos de bench (52 jobs de I2V, que cobrem o aceite);
+>   - custo estimado: ~US$ 0,018 por vídeo quente de 5 s na RTX 4090 ([`worker/evals/custos.md`](../worker/evals/custos.md)).
+> - **Conferido:**
+>   - SDK oficial `runpod` 1.12.0 rodando o handler contra o ComfyUI 0.38.0 real em CPU;
+>   - 117 testes sem GPU.
+> - **Decidido pela documentação do RunPod:** cached models descartados (um repositório do Hugging Face por endpoint, baixado inteiro). GHCR descartado (10 GB por camada).
+> - **Falta, e depende de você:**
+>   1. Escolher a hospedagem da imagem: integração GitHub do RunPod (recomendada para testar primeiro) ou Docker Hub.
+>   2. Uma chave do RunPod no ambiente.
+>   3. Um storage com URLs assinadas: uma imagem SFW de entrada para o bench do I2V e, depois, as saídas.
+
 - **Handler próprio** (`handler_runpod.py`), com o protocolo do doc 02 (seção 4): URLs assinadas, quadros de amostra, erros tipados, idempotência por `job_id`.
 - **Pods como código** (feito antes, a pedido): `tools/runpod_pod.py` sobe o worker em modo `pod` escolhendo community ou secure, com disponibilidade conferida no ato, troca para a próxima opção sem vaga, desligamento automático e autoencerramento quando a GPU tem defeito.
 - **Endpoint como código** (`infra/runpod/`), criado pela API v2: `allowedCudaVersions` a partir de 12.8, execution timeout, idle timeout, FlashBoot.

@@ -46,3 +46,6 @@ huggingface-hub<1.0
 
 # Pacote gpu2go_worker
 websocket-client
+
+# Handler do RunPod Serverless (SDK oficial, MIT)
+runpod==1.12.0

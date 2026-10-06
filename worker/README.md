@@ -45,7 +45,7 @@ ssh -L 8188:127.0.0.1:8188 root@<host>      # o ComfyUI só escuta em 127.0.0.1
 
 | Variável | Padrão | Uso |
 |---|---|---|
-| `MODE` | `pod` | `serverless` chega na Etapa 3 |
+| `MODE` | `pod` | `serverless`: sobe o handler do RunPod depois do ComfyUI (ver "Modo serverless") |
 | `AUTO_TERMINATE_HOURS` | `0` | No RunPod: o próprio pod se encerra depois de N horas (o `runpod_pod.py subir` usa 3) |
 | `TERMINATE_ON_BAD_GPU` | `1` | No RunPod: encerra o pod se a GPU falhar na checagem |
 | `MODEL_SET` | `i2v_r1v2` | Conjuntos do `models.lock.json`, separados por vírgula (ex.: `i2v_r1v2,t2v_a14b_q6k` no bake-off) |
@@ -59,6 +59,30 @@ ssh -L 8188:127.0.0.1:8188 root@<host>      # o ComfyUI só escuta em 127.0.0.1
 Com a imagem `slim` num pod com o Global Volume montado: `-e MODELS_FROM_DIR=/workspace/models` (~3 min para 37 GB, como no `start.sh`).
 
 O entrypoint confere a GPU com um kernel real, confere ou copia os modelos, sobe o Ollama e o ComfyUI como processos separados e encerra o container se qualquer um dos dois cair.
+
+## Modo serverless (Etapa 3)
+
+Com `MODE=serverless`, o entrypoint sobe o Ollama e o ComfyUI em 127.0.0.1 e depois o handler (`gpu2go_worker/handler_runpod.py`, SDK oficial `runpod`). O protocolo do job (entrada, saída e erros tipados) está no doc 02, seção 4, e é implementado em `gpu2go_worker/jobs.py`.
+
+| Variável | Obrigatória | Uso |
+|---|---|---|
+| `GPU2GO_SAFETY` | sim | Filtros C1–C2. Sem ela, todo job é recusado (`SAFETY_NOT_CONFIGURED`). `disabled-sfw-tests` só para testes e medições SFW |
+| `GPU2GO_ALLOWED_URL_HOSTS` | sim | Hosts das URLs assinadas (ex.: `storage.exemplo.com,.r2.exemplo.com`). Só https |
+| `GPU2GO_IMAGE_VERSION` | não | Tag da imagem, registrada na saída de cada job |
+| `JOB_TIMEOUT_S` | não | Limite do render (padrão 600) |
+| `GPU2GO_ALLOW_DISCARD_OUTPUT` | não | `1` permite `discard_output` (só no endpoint de teste do bench) |
+
+Para testar o handler localmente, sem GPU (o resultado esperado sem modelos é um erro tipado do ComfyUI):
+
+```bash
+COMFY_PORT=8188 GPU2GO_SAFETY=disabled-sfw-tests GPU2GO_ALLOWED_URL_HOSTS=storage.example \
+GPU2GO_ALLOW_DISCARD_OUTPUT=1 python -m gpu2go_worker.handler_runpod --test_input \
+  '{"input": {"job_id": "j1", "mode": "t2v", "template": "t2v_a14b_fp8_lightning@1",
+   "compiler": {"prompt_en": "A red ball rolls."}, "discard_output": true,
+   "params": {"width": 320, "height": 320, "duration_s": 3, "seed": 42}}}'
+```
+
+Endpoints, bench e custos: [`../infra/runpod/LEIAME.md`](../infra/runpod/LEIAME.md) e [`evals/custos.md`](evals/custos.md).
 
 ## Subir um pod no RunPod (community ou secure)
 
@@ -158,7 +182,7 @@ uv run pytest -q                       # sem GPU: ComfyUI e Ollama falsos; ffmpe
 uv run ruff check . ../tools && uv run ruff format --check . ../tools
 python ../tools/derive_i2v_template.py --check   # template em dia com o export
 python ../tools/build_t2v_templates.py --check   # candidatos T2V em dia com o I2V
-bash scripts/lock-requirements.sh      # regenera requirements.lock
+bash scripts/lock-requirements.sh      # regenera requirements.lock (mantém as versões já fixadas)
 ```
 
 O template de produção é **derivado** de `referencia/wan-i2v-com-ollama.api.json` por `tools/derive_i2v_template.py` (remove os nós do Ollama e troca os valores de teste pelos padrões). Não edite o `.api.json` à mão: mude o script ou o contrato.

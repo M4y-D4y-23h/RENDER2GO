@@ -241,3 +241,19 @@ Teste na Etapa 1 com o modelo `huihui_ai/qwen2.5-abliterate:7b` de verdade (Olla
 
 Consequências: a regra `REFUSED` é uma camada fraca, como o doc 03 já previa, e os filtros C1–C2 (Etapa 4) são indispensáveis antes de qualquer uso por terceiros. A fidelidade (detalhe inventado, tamanho) entra nos testes da Etapa 2. A CLI já avisa quando a saída fica fora da faixa de palavras do perfil.
 
+
+## 21. Serverless e hospedagem da imagem (Etapa 3) — [CONFIRMADO] *(06/10/2026, documentação oficial)*
+
+- **Cached models:** só modelos do Hugging Face; *"Each endpoint is currently limited to one cached model at a time"*; o repositório é baixado inteiro (*"the system currently downloads all quantization versions"*); o download não é cobrado; os arquivos aparecem em `/runpod-volume/huggingface-cache/hub/`. Não serve para o I2V, que usa 3 repositórios, nem para o T2V fp8, no repositório Comfy-Org inteiro. Ver ADR 0002.
+- **API REST:**
+  - `POST /templates` (`isServerless`, `imageName`, `env`, `containerDiskInGb`, `containerRegistryAuthId`…) e `PATCH /templates/{id}`;
+  - `POST /endpoints` (`templateId`, `gpuTypeIds`, `allowedCudaVersions`, `executionTimeoutMs`, `idleTimeout`, `flashboot`, `scalerType`, `workersMin/Max`…) e `PATCH /endpoints/{id}`, que dispara um rolling release.
+  - A listagem (`GET`) não apareceu nas páginas lidas. O `runpod_endpoint.py` a usa e isso só se confirma na primeira execução com chave.
+- **Preços serverless (Flex):** RTX 4090 (24 GB PRO) US$ 1,10/h; RTX 5090 (32 GB PRO) US$ 1,58/h.
+- **SDK `runpod` 1.12.0 (MIT):** quando o handler devolve uma chave `error`, o SDK a tira da saída e marca o job como FAILED (testado em `--test_input`).
+- **Registries:**
+  - GHCR: 10 GB por camada e 10 min por upload.
+  - ECR: 52.000 MiB por camada.
+  - Docker Hub: sem limite por camada documentado.
+  - Integração GitHub do RunPod: imagem ≤ 80 GB, build ≤ 160 min, `docker build` ≤ 30 min, repositório privado aceito.
+- **Cloudflare do RunPod:** recusa o User-Agent padrão do `urllib` (erro 1010); o `requests` e o `curl` passam. A consulta GraphQL de GPUs (`gpuTypes` com `lowestPrice{stockStatus}`) responde sem chave; a introspecção está desligada.

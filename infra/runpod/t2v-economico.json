@@ -1,0 +1,36 @@
+{
+  "_comment": "Endpoint serverless do T2V (ADR 0001, imagem full-t2v) no tier econômico (doc 02, seção 8). Aplicar com: python tools/runpod_endpoint.py apply infra/runpod/t2v-economico.json --imagem <registry>/gpu2go-worker:<versão>. Preço: página de preços do RunPod, Serverless Flex, 24GB PRO (RTX 4090), conferido em 06/10/2026.",
+  "tier": "economico",
+  "price_usd_h": 1.1,
+  "template": {
+    "name": "gpu2go-t2v-economico",
+    "containerDiskInGb": 20,
+    "env": {
+      "MODE": "serverless",
+      "MODEL_SET": "t2v_a14b_fp8",
+      "RESERVE_VRAM_GB": "4",
+      "JOB_TIMEOUT_S": "300",
+      "GPU2GO_SAFETY": "",
+      "GPU2GO_ALLOWED_URL_HOSTS": ""
+    }
+  },
+  "endpoint": {
+    "name": "gpu2go-t2v-economico",
+    "gpuTypeIds": [
+      "NVIDIA GeForce RTX 4090"
+    ],
+    "gpuCount": 1,
+    "allowedCudaVersions": [
+      "12.8",
+      "12.9",
+      "13.0"
+    ],
+    "executionTimeoutMs": 600000,
+    "idleTimeout": 30,
+    "flashboot": true,
+    "scalerType": "QUEUE_DELAY",
+    "scalerValue": 4,
+    "workersMin": 0,
+    "workersMax": 2
+  }
+}

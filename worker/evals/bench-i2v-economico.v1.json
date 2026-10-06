@@ -1,0 +1,17 @@
+{
+  "_comment": "Bench do endpoint I2V econômico (RTX 4090). input_image_url: imagem SFW num host listado em GPU2GO_ALLOWED_URL_HOSTS do endpoint. 4 células x 13 jobs = 52 jobs, cobre o aceite de 50 jobs seguidos.",
+  "name": "I2V econômico (RTX 4090) v1",
+  "mode": "i2v",
+  "template": "i2v_r1v2@1",
+  "compiler": {"action_pt": "a pessoa vira a cabeça devagar e sorri", "presets": {"camera": "parada"}},
+  "input_image_url": "https://SEU-STORAGE/bench/entrada-sfw.png",
+  "cells": [
+    {"width": 640, "height": 640, "duration_s": 5},
+    {"width": 832, "height": 480, "duration_s": 5},
+    {"width": 640, "height": 640, "duration_s": 3},
+    {"width": 832, "height": 480, "duration_s": 7}
+  ],
+  "per_cell": 13,
+  "price_usd_h": 1.10,
+  "idle_timeout_s": 30
+}

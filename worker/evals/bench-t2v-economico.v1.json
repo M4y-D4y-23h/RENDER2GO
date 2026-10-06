@@ -1,0 +1,14 @@
+{
+  "_comment": "Bench do endpoint T2V econômico (RTX 4090, A14B fp8 + Lightning). Sem imagem de entrada.",
+  "name": "T2V econômico (RTX 4090) v1",
+  "mode": "t2v",
+  "template": "t2v_a14b_fp8_lightning@1",
+  "compiler": {"action_pt": "um cavalo branco galopa na praia ao pôr do sol", "presets": {"camera": "parada"}},
+  "cells": [
+    {"width": 832, "height": 480, "duration_s": 5},
+    {"width": 640, "height": 640, "duration_s": 5}
+  ],
+  "per_cell": 10,
+  "price_usd_h": 1.10,
+  "idle_timeout_s": 30
+}

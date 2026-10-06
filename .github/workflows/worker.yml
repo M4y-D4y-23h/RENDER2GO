@@ -6,12 +6,14 @@ on:
       - "worker/**"
       - "tools/**"
       - "referencia/**"
+      - "infra/**"
       - ".github/workflows/worker.yml"
   pull_request:
     paths:
       - "worker/**"
       - "tools/**"
       - "referencia/**"
+      - "infra/**"
       - ".github/workflows/worker.yml"
   workflow_dispatch:
 
