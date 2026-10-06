@@ -20,7 +20,8 @@
 | Flow match | O Wan 2.2 já é flow matching | Movimento garantido: presets, `acabamento --zoom` e, depois, modelo de câmera (seção 5) |
 | BF16 puro | **Não** | Dobra a VRAM sem ganho visível. Hoje: pesos fp8 com cálculo em bf16 |
 | INT8 / GGUF | Só em GPU sem fp8 | Ampere (A40) |
-| Aceleração `--fast` fp8, SageAttention | Provável ganho real | A medir |
+| Aceleração `--fast` fp8 | **Não** | Medido na L40S: ~55 s com e sem |
+| SageAttention | Talvez | A medir (pacote novo, ADR) |
 | Cache em volume de rede | Hoje, não | Download do Hugging Face: ~2 min e grátis. Melhor: imagem com os modelos (ADR 0002) |
 
 ## 2. GPU mais potente e paralelismo
@@ -44,14 +45,12 @@ Para custo baixo, o que importa é o **custo por vídeo** (preço por hora × te
 | RTX 4090 secure | 24 GB | sim | 0,74 | **~80 s (medido)** | **~US$ 0,016** |
 | RTX 4090 community | 24 GB | sim | 0,34 | ~80 s | ~US$ 0,008, mas 3 de 3 hosts com CUDA quebrado |
 | RTX 5090 | 32 GB | sim | 0,69 a 0,99 | *~50–60 s (estimativa)* | *~US$ 0,010–0,016* |
-| L40S | 48 GB | sim | 0,79 a 1,09 | *~50–65 s (estimativa: sem troca de modelo)* | *~US$ 0,011–0,020* |
+| **L40S** | 48 GB | sim | 0,79 a 1,09 | **~55 s (medido)**; alta ~180 s | **~US$ 0,012–0,017** |
 | A40 | 48 GB | **não** (Ampere) | 0,49 | *~120–160 s (estimativa: metade do cálculo de uma 4090)* | *~US$ 0,016–0,022* |
 | H100 SXM | 80 GB | sim | 3,49 | *~25–35 s (estimativa)* | *~US$ 0,024–0,034* |
 
 - **A40 não serve para "velocidade extrema".** É uma geração anterior (Ampere), sem fp8 nativo. Deve ser mais lenta por vídeo que a 4090. Pode compensar pelo preço, mas só medindo.
-- **A L40S é a melhor candidata a "rápida e barata":** 48 GB, fp8 nativo e preço próximo ao da 4090 secure.
-
-O teste está pronto e espera execução (seção 7).
+- **A L40S foi medida** (`worker/evals/gpu-2026-10-06-l40s/`): ~55 s por vídeo, 30% mais rápida que a 4090 secure de hoje, com custo por vídeo igual ou menor. É a **recomendação para lotes**: community quando houver vaga (com o teste de CUDA), secure como reserva.
 
 ## 3. Upscale e limpeza da imagem antes do render
 
@@ -111,15 +110,10 @@ Como garantir "slow pan" e "cinematic zoom":
   - o download do Hugging Face já leva ~2 min e é grátis.
 - **Melhor caminho:** a imagem com os modelos embutidos (ADR 0002), que o RunPod mantém em cache no host. O volume só passa a valer com pods fixos num datacenter.
 
-## 7. Próximo teste em GPU (pronto para rodar)
+## 7. Teste em GPU de 48 GB (feito em 06/10) e o que falta
 
-- **Hardware:** um pod com 2× L40S, com desligamento automático.
-- **Medições:**
-  - tempo e custo por vídeo na L40S, comparados com a 4090;
-  - 2 vídeos simultâneos em 2 GPUs (`COMFY_GPUS=auto`, `lote --gpus 2`);
-  - `--fast fp8_matrix_mult` ligado e desligado;
-  - qualidade alta.
-- **Custo estimado:** ~US$ 1,50.
+- **Feito** numa L40S avulsa: ~55 s por vídeo na rápida, ~180 s na alta e nenhum ganho com `--fast fp8_matrix_mult` (`worker/evals/gpu-2026-10-06-l40s/`). Custo: ~US$ 1,10.
+- **Falta:** 2 vídeos ao mesmo tempo em 2 GPUs. O pod 2× L40S não subiu, e o código está pronto (`COMFY_GPUS=auto`, `lote --gpus 2`).
 
 ## 8. O fluxo desejado, passo a passo
 

@@ -1,0 +1,88 @@
+{
+  "prompts": {
+    "a9f4619f6844a34e": {
+      "acao": "o produto gira devagar sobre a superfície, mostrando os detalhes",
+      "presets": {
+        "version": 2,
+        "camera": "orbita-produto",
+        "estilo": "comercial",
+        "luz": "estudio",
+        "ritmo": "lento"
+      },
+      "prompt_en": "The product slowly rotates on the surface, showcasing its details with smooth, continuous motion. Even studio lighting with soft shadows highlights its form. A slow orbit around the product keeps it centered in the frame throughout. The result has a clean, commercial look with high detail, vibrant natural colors, and sharp focus. Slow, smooth, continuous motion. Slow orbit around the product, product centered in frame. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.",
+      "compilador": "i2v@5"
+    },
+    "7ba9c6544d559d62": {
+      "acao": "a câmera se aproxima do produto, que fica parado, com reflexos suaves na superfície",
+      "presets": {
+        "version": 2,
+        "camera": "aproximacao-produto",
+        "estilo": "comercial",
+        "luz": "estudio",
+        "ritmo": "lento"
+      },
+      "prompt_en": "A slow, smooth, continuous dolly-in toward the product, which remains still, captures the subtle reflections on its surface. Even studio lighting with soft shadows enhances the vibrant, natural colors. The focus is sharp, giving a clean, commercial look. Close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.",
+      "compilador": "i2v@5"
+    },
+    "d0ed6388b1a0fc3d": {
+      "acao": "a câmera avança devagar pelo ambiente vazio e arrumado",
+      "presets": {
+        "version": 2,
+        "camera": "avanco-ambiente",
+        "estilo": "comercial",
+        "luz": "luz-do-dia",
+        "ritmo": "lento"
+      },
+      "prompt_en": "The camera slowly advances through the wide, clean, and vibrant room, capturing the soft natural daylight that highlights the sharp focus and high detail of the setting. Slow, smooth, continuous motion. Slow forward camera movement through the room, wide shot. Soft natural daylight. Clean commercial look, high detail, vibrant natural colors, sharp focus.",
+      "compilador": "i2v@5"
+    },
+    "26801dc9aa5c47e7": {
+      "acao": "a câmera sobe devagar mostrando a fachada, com folhas balançando ao vento",
+      "presets": {
+        "version": 2,
+        "camera": "subida-lenta",
+        "estilo": "comercial",
+        "luz": "por-do-sol",
+        "ritmo": "lento"
+      },
+      "prompt_en": "The camera slowly rises, capturing the facade with the gentle swaying of leaves in the golden hour sunlight, which casts long, soft shadows. The wide shot highlights the vibrant, natural colors with a clean, commercial look and sharp focus. Slow, smooth, continuous motion. Slow upward camera movement, wide shot. Golden hour sunlight, long soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.",
+      "compilador": "i2v@5"
+    },
+    "149e7bacce332da1": {
+      "acao": "vapor sobe do prato quente, a câmera se aproxima devagar",
+      "presets": {
+        "version": 2,
+        "camera": "aproximacao-produto",
+        "estilo": "comercial",
+        "luz": "aconchegante",
+        "ritmo": "lento"
+      },
+      "prompt_en": "Steam rises slowly and smoothly from the warm, inviting plate. The camera slowly dollies in for a close-up. The warm, cozy interior lighting and soft shadows enhance the vibrant, natural colors. The focus is sharp and high detail. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.",
+      "compilador": "i2v@5"
+    },
+    "d9d7dd14a3883f08": {
+      "acao": "bolhas sobem no copo e gotas escorrem pelo vidro",
+      "presets": {
+        "version": 2,
+        "camera": "parada-close",
+        "estilo": "comercial",
+        "luz": "aconchegante",
+        "ritmo": "lento"
+      },
+      "prompt_en": "Bubbles rise slowly and smoothly in the cup, and droplets slide continuously down the glass. The scene is captured in a close-up, with warm, cozy interior lighting and soft shadows. The style is clean and commercial, with high detail, vibrant natural colors, and sharp focus. Slow, smooth, continuous motion. Static camera, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.",
+      "compilador": "i2v@5"
+    },
+    "4a5aa44a09eacb3e": {
+      "acao": "a pessoa sorri, acena para a câmera e gesticula como quem dá boas-vindas",
+      "presets": {
+        "version": 2,
+        "camera": "aproximacao-plano-medio",
+        "estilo": "natural",
+        "luz": "luz-do-dia",
+        "ritmo": "natural"
+      },
+      "prompt_en": "She smiles warmly, waves at the camera, and gestures in a welcoming manner, her movements fluid and natural. Soft natural daylight enhances the realistic, natural color palette. Medium shot, slow dolly-in. Natural pace, fluid motion. Slow dolly-in, medium shot. Soft natural daylight. Realistic, natural colors.",
+      "compilador": "i2v@5"
+    }
+  }
+}

@@ -1,0 +1,58 @@
+NVIDIA L40S, 46068 MiB, 570.195.03
+128
+               total        used        free      shared  buff/cache   available
+Mem:            1511          82         630          12         822        1429
+
+=== A. sobe 1 ComfyUI por GPU (padrão) (21:26:01)
+[gpu2go] checando a GPU...
+[gpu2go] subindo o Ollama em 127.0.0.1:11434
+[gpu2go] subindo o ComfyUI na GPU 0 em 127.0.0.1:8188 (--reserve-vram 6)
+[gpu2go] pronto
+
+=== B. 1 GPU só: 8 receitas, rápida (21:26:30)
+RAM usada 83 GB de 1511
+[1/8] 002-caneca-produto-giro-v1.mp4: ok (http://127.0.0.1:8188, 64 s)
+[2/8] 003-tenis-produto-close-v1.mp4: ok (http://127.0.0.1:8188, 54 s)
+[3/8] 004-perfume-produto-close-v1.mp4: ok (http://127.0.0.1:8188, 54 s)
+[4/8] 005-sala-imovel-sala-v1.mp4: ok (http://127.0.0.1:8188, 55 s)
+[5/8] 006-fachada-imovel-fachada-v1.mp4: ok (http://127.0.0.1:8188, 54 s)
+[6/8] 007-prato-comida-prato-v1.mp4: ok (http://127.0.0.1:8188, 55 s)
+[7/8] 008-bebida-comida-bebida-v1.mp4: ok (http://127.0.0.1:8188, 56 s)
+[8/8] 009-dona-pessoa-apresentacao-v1.mp4: ok (http://127.0.0.1:8188, 56 s)
+fim: 8 ok, 0 com falha, 7.5 min; /root/out/B-1gpu/relatorio.csv
+pico de VRAM B GPU0: 40191 MiB
+RAM usada 116 GB de 1511
+
+=== D. qualidade alta, 2 GPUs: 4 fotos (21:34:30)
+RAM usada 116 GB de 1511
+[1/4] caneca-v1.mp4: ok (http://127.0.0.1:8188, 185 s)
+  aviso: foto pequena (640x640), ampliada 1.5x
+[2/4] dona-v1.mp4: ok (http://127.0.0.1:8188, 179 s)
+  aviso: foto pequena (480x832), ampliada 1.5x
+[3/4] perfume-v1.mp4: ok (http://127.0.0.1:8188, 181 s)
+  aviso: foto pequena (480x832), ampliada 1.5x
+[4/4] sala-v1.mp4: ok (http://127.0.0.1:8188, 178 s)
+  aviso: foto pequena (832x480), ampliada 1.5x
+fim: 4 ok, 0 com falha, 12.1 min; /root/out/D-alta/relatorio.csv
+pico de VRAM D GPU0: 43615 MiB
+RAM usada 121 GB de 1511
+
+=== E. --fast fp8_matrix_mult: 8 receitas, 2 GPUs (21:46:38)
+[gpu2go] checando a GPU...
+[gpu2go] subindo o Ollama em 127.0.0.1:11434
+[gpu2go] subindo o ComfyUI na GPU 0 em 127.0.0.1:8188 (--reserve-vram 6)
+[gpu2go] pronto
+RAM usada 82 GB de 1511
+[1/8] 002-caneca-produto-giro-v1.mp4: ok (http://127.0.0.1:8188, 73 s)
+[2/8] 003-tenis-produto-close-v1.mp4: ok (http://127.0.0.1:8188, 54 s)
+[3/8] 004-perfume-produto-close-v1.mp4: ok (http://127.0.0.1:8188, 53 s)
+[4/8] 005-sala-imovel-sala-v1.mp4: ok (http://127.0.0.1:8188, 54 s)
+[5/8] 006-fachada-imovel-fachada-v1.mp4: ok (http://127.0.0.1:8188, 55 s)
+[6/8] 007-prato-comida-prato-v1.mp4: ok (http://127.0.0.1:8188, 55 s)
+[7/8] 008-bebida-comida-bebida-v1.mp4: ok (http://127.0.0.1:8188, 55 s)
+[8/8] 009-dona-pessoa-apresentacao-v1.mp4: ok (http://127.0.0.1:8188, 56 s)
+fim: 8 ok, 0 com falha, 7.6 min; /root/out/E-fast/relatorio.csv
+pico de VRAM E GPU0: 40191 MiB
+RAM usada 118 GB de 1511
+
+=== FIM (21:55:09)
