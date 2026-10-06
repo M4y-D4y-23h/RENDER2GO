@@ -190,6 +190,9 @@ O que o lote faz para ganhar tempo de GPU:
 - **Mantém a GPU ocupada:** cada GPU recebe `--fila 2` vídeos de cada vez, então o próximo já está na fila do ComfyUI quando o atual termina.
 - **Usa várias GPUs:** o `--comfy` é repetível. Se uma GPU cair, os vídeos dela voltam para a fila das outras.
 - **Escolhe o formato pela proporção de cada foto** (`--formato auto`, com a rotação do EXIF do celular aplicada): vertical, quadrado ou horizontal. O ComfyUI corta a foto no centro, e assim o corte é o menor possível.
+- **Preparo da foto** (padrão; `--sem-preparo` desliga): rotação do EXIF, corte central e Lanczos no tamanho exato do render. Foto pequena vira aviso no relatório.
+- **Folha de conferência** por vídeo em `conferencia/` (foto + 3 quadros), para revisar o lote em minutos. Nenhuma métrica automática testada pegou a mudança de cor do perfume (rodada de 06/10).
+- **Pod com várias GPUs:** `COMFY_GPUS=auto` no entrypoint sobe um ComfyUI por GPU; `--gpus N` usa as N. Dois vídeos na mesma GPU não saem mais rápido; a fila padrão é 1.
 - **Qualidade:** `--qualidade rapida` (padrão; 480×832, 640×640, 832×480; ~56 s por vídeo de 5 s na 4090) ou `alta` (720×1280, 960×960, 1280×720, a área máxima do template; **ainda sem medição** de tempo e de VRAM).
 
 Também:
@@ -211,6 +214,7 @@ python tools/acabamento.py saida/padaria/002-caneca-produto-giro-v1.mp4 saida/pa
 - Junta os clipes na ordem, ajustados ao tamanho do primeiro, com faixas e sem cortar.
 - Logo num canto (`--logo-pos`, `--logo-largura`). Cartão final por `--cartao-s` segundos, sem logo por cima.
 - Música com fade, cortada no fim.
+- `--interpolar` (16 → 32 fps por estimativa de movimento, ~20 s de CPU por clipe), `--altura 1280` (Lanczos) e `--zoom` (zoom lento até 8%, garante movimento quando o modelo deixa a cena parada).
 - `--mostrar` imprime o comando do ffmpeg sem rodar.
 
 **Regras do modo serviço:**
