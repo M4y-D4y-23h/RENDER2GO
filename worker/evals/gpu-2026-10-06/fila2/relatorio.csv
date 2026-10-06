@@ -1,0 +1,4 @@
+arquivo,foto,receita,variacao,formato,width,height,duracao,seed,gpu,status,segundos,erro
+caneca-v1.mp4,caneca.png,produto-close,1,quadrado,640,640,5,2326067240448129,http://127.0.0.1:8188,ok,81.7,
+perfume-v1.mp4,perfume.png,produto-close,1,vertical,480,832,5,987566140940773,http://127.0.0.1:8188,ok,160.1,
+tenis-v1.mp4,tenis.png,produto-close,1,quadrado,640,640,5,2275358921886067,http://127.0.0.1:8188,ok,157.9,

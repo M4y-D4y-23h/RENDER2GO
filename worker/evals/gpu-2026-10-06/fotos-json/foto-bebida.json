@@ -1,0 +1,24 @@
+{
+  "status": "ok",
+  "timings": {
+    "render_s": 47.8,
+    "download_s": 0.0,
+    "total_s": 47.81
+  },
+  "template": "t2v_a14b_fp8_lightning@1",
+  "comfyui": "0.38.0",
+  "prompt_en": "Food photo of a tall glass of iced lemonade with ice cubes and a lemon slice on a cafe table, condensation on the glass, warm light, static camera.",
+  "params": {
+    "width": 480,
+    "height": 832,
+    "duration_s": 3,
+    "seed": 707,
+    "filename_prefix": "video/gpu2go_7be9b5bff34b"
+  },
+  "prompt_id": "3f87686d-e04b-49d7-a791-f8b520766cd4",
+  "output": {
+    "path": "/root/out/foto-bida.mp4",
+    "bytes": 168033,
+    "sha256": "10fcfad147710eeee2e4dca98fc7621a1413a9ac7f7685730fb971d47ff8d53d"
+  }
+}

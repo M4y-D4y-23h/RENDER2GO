@@ -1,0 +1,24 @@
+{
+  "status": "ok",
+  "timings": {
+    "render_s": 47.77,
+    "download_s": 0.0,
+    "total_s": 47.78
+  },
+  "template": "t2v_a14b_fp8_lightning@1",
+  "comfyui": "0.38.0",
+  "prompt_en": "Exterior photo of a small modern two-story house facade with a garden and trees, late afternoon sun, real estate photography, static camera.",
+  "params": {
+    "width": 480,
+    "height": 832,
+    "duration_s": 3,
+    "seed": 705,
+    "filename_prefix": "video/gpu2go_58209b5a2bdd"
+  },
+  "prompt_id": "b6cf98df-e2de-4104-b341-771936cacf9d",
+  "output": {
+    "path": "/root/out/foto-chada.mp4",
+    "bytes": 388861,
+    "sha256": "380b6721ebda7cf7cb3f10178129565bfc6e144daa820c379ac6ab998fc7d491"
+  }
+}

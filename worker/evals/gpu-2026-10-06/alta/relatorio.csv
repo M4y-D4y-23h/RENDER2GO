@@ -1,0 +1,3 @@
+arquivo,foto,receita,variacao,formato,width,height,duracao,seed,gpu,status,segundos,erro
+perfume-v1.mp4,perfume.png,produto-close,1,vertical,720,1280,5,987566140940773,http://127.0.0.1:8188,ok,212.8,
+sala-v1.mp4,sala.png,produto-close,1,horizontal,1280,720,5,108079365847299,http://127.0.0.1:8188,ok,213.1,

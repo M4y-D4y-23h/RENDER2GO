@@ -38,7 +38,7 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 - Template em dia com o export: `python tools/derive_i2v_template.py --check`
 - Candidatos T2V em dia: `python tools/build_t2v_templates.py --check`
 - Dockerfiles do RunPod em dia: `python tools/build_runpod_dockerfiles.py --check` (gerados; nunca editar `infra/runpod/Dockerfile.*` à mão)
-- Modo serviço (lote e acabamento): ver `worker/README.md`, seção "Modo serviço". Receitas ainda sem validação em GPU.
+- Modo serviço (lote e acabamento): ver `worker/README.md`, seção "Modo serviço". Receitas medidas em GPU em 06/10 (`worker/evals/gpu-2026-10-06/`): 6 de 8 aproveitáveis (perfume mudou de cor, fachada parada); compilador acrescenta "Static camera" (corrigir no v6).
 - Endpoint de teste e bench: ver `infra/runpod/LEIAME.md`
 - Fidelidade do compilador (precisa de Ollama): `python tools/eval_compiler.py --out saida/fid` (ver `worker/README.md`)
 

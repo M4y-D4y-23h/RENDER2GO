@@ -77,25 +77,24 @@ O dono do projeto definiu o caminho: **geração em lote**.
 - O público são clientes que valorizam produtividade: lojas com catálogo, imobiliárias, restaurantes com cardápio.
 - **É aqui que o projeto ganha das ferramentas grandes** (seção 4): custo por vídeo em volume e nenhum trabalho foto a foto.
 
-Conta de um lote de 50 fotos (I2V, 5 s, qualidade rápida, RTX 4090 em pod):
+Conta de um lote de 50 fotos (I2V, 5 s, qualidade rápida, RTX 4090 secure a US$ 0,74/h). Tempo medido em 06/10/2026: **~80 s por vídeo** (`worker/evals/gpu-2026-10-06/`).
 
 | | 1 pod | 4 pods |
 |---|---|---|
-| Render (~56 s por vídeo) | ~47 min | ~12 min |
-| Subida dos pods (estimada, sem medição) | ~5 a 10 min | ~5 a 10 min em cada um |
-| Custo de GPU (pod a ~US$ 0,6 a 0,7/h) | ~US$ 0,6 a 0,7 | ~US$ 0,7 a 1,0 |
-| **Custo por vídeo** | **~US$ 0,013 (≈ R$ 0,07)** | **~US$ 0,02** |
+| Render | ~67 min | ~17 min |
+| Subida dos pods (estimada) | ~10 min | ~10 min em cada um |
+| Custo de GPU | ~US$ 0,95 | ~US$ 1,30 |
+| **Custo por vídeo** | **~US$ 0,019 (≈ R$ 0,10)** | **~US$ 0,026 (≈ R$ 0,14)** |
 
-Mais pods custam quase o mesmo e entregam 4× mais rápido. O que pesa é a subida de cada pod. Com o pacote de R$ 149 a 249 por 8 vídeos, ou cobrando R$ 2 a 5 por vídeo em lotes grandes, a margem sobre a GPU passa de 95%.
+- **Qualidade alta** (720p): ~213 s por vídeo, 2,7× o custo.
+- Com 4 pods, o lote sai 4× mais rápido por ~35% a mais.
+- Cobrando R$ 2 a 5 por vídeo, a GPU fica abaixo de 7% do preço.
 
 O que já existe: `tools/lote.py` (seção "Modo serviço" do `worker/README.md`).
 
 O que falta, em ordem:
 
-1. **Medir em GPU:**
-   - as receitas;
-   - a qualidade `alta` (tempo e VRAM);
-   - a vazão por dólar de RTX 4090, RTX 5090 e GPUs de 48 GB. Na 4090, parte dos 56 s é a troca dos dois modelos na VRAM a cada vídeo; numa GPU de 48 GB os dois cabem juntos.
+1. **Medir em GPU:** receitas e qualidade alta foram medidas em 06/10 (6 de 8 receitas aproveitáveis; perfume mudou de cor e fachada ficou parada; ver o LEIAME da rodada). Falta comparar a vazão por dólar com GPUs de 48 GB, onde os dois modelos cabem juntos. Hoje não havia vaga, ou o pod não subiu.
 2. **Lote na nuvem com um comando:**
    - sobe N pods (community ou secure, conferindo o estoque na hora);
    - abre os túneis e distribui as fotos;

@@ -1,0 +1,16 @@
+{
+  "prompts": {
+    "4f235e912095709a": {
+      "acao": "a câmera se aproxima devagar do produto",
+      "presets": {
+        "version": 2,
+        "camera": "aproximacao-produto",
+        "estilo": "comercial",
+        "luz": "estudio",
+        "ritmo": "lento"
+      },
+      "prompt_en": "The camera slowly dollies in toward the product, filling the frame with a close-up. Even studio lighting with soft shadows enhances the vibrant, natural colors. The focus is sharp and high detail. Static camera. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.",
+      "compilador": "i2v@5"
+    }
+  }
+}

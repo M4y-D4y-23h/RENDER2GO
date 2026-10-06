@@ -1,0 +1,24 @@
+{
+  "status": "ok",
+  "timings": {
+    "render_s": 48.61,
+    "download_s": 0.0,
+    "total_s": 48.62
+  },
+  "template": "t2v_a14b_fp8_lightning@1",
+  "comfyui": "0.38.0",
+  "prompt_en": "Product photo of a single white running sneaker on a light gray pedestal, soft studio light, plain light background, sharp focus, static camera.",
+  "params": {
+    "width": 640,
+    "height": 640,
+    "duration_s": 3,
+    "seed": 702,
+    "filename_prefix": "video/gpu2go_65976b82ce80"
+  },
+  "prompt_id": "e5b3f977-952e-4d0b-8d3b-feb99956a7a2",
+  "output": {
+    "path": "/root/out/foto-nis.mp4",
+    "bytes": 292524,
+    "sha256": "cb084da36b62e33ea1f6b344befb5fab3cbf202ac5d16dac91b22c0607eb69f0"
+  }
+}

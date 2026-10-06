@@ -1,0 +1,24 @@
+{
+  "status": "ok",
+  "timings": {
+    "render_s": 60.09,
+    "download_s": 0.0,
+    "total_s": 60.1
+  },
+  "template": "t2v_a14b_fp8_lightning@1",
+  "comfyui": "0.38.0",
+  "prompt_en": "Product photo of a white ceramic coffee mug with steam on a light wooden table, soft studio light, clean beige background, sharp focus, static camera.",
+  "params": {
+    "width": 640,
+    "height": 640,
+    "duration_s": 3,
+    "seed": 701,
+    "filename_prefix": "video/gpu2go_5defcb987c95"
+  },
+  "prompt_id": "cb8a4c3f-59ad-4f2e-99e0-3b744760d487",
+  "output": {
+    "path": "/root/out/foto-caneca.mp4",
+    "bytes": 160632,
+    "sha256": "4e0792fd52da9032243798652da4716f7369b7d59f36847ae24448e7ed4b2b27"
+  }
+}

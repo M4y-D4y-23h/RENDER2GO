@@ -1,0 +1,16 @@
+{
+  "prompts": {
+    "4f74ef6324928808": {
+      "acao": "a câmera se aproxima devagar",
+      "presets": {
+        "version": 2,
+        "camera": "aproximacao-plano-medio",
+        "estilo": "comercial",
+        "luz": "estudio",
+        "ritmo": "lento"
+      },
+      "prompt_en": "The camera slowly dollies in, keeping a medium shot. Even studio lighting with soft shadows enhances the clean commercial look, presenting vibrant natural colors and sharp focus. Static camera. Slow, smooth, continuous motion. Slow dolly-in, medium shot. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.",
+      "compilador": "i2v@5"
+    }
+  }
+}

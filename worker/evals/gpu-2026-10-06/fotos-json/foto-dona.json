@@ -1,0 +1,24 @@
+{
+  "status": "ok",
+  "timings": {
+    "render_s": 55.09,
+    "download_s": 0.0,
+    "total_s": 55.1
+  },
+  "template": "t2v_a14b_fp8_lightning@1",
+  "comfyui": "0.38.0",
+  "prompt_en": "Photo of a smiling adult woman wearing a green apron standing behind the counter of a small bakery, facing the camera, medium shot, daylight, static camera.",
+  "params": {
+    "width": 480,
+    "height": 832,
+    "duration_s": 3,
+    "seed": 708,
+    "filename_prefix": "video/gpu2go_81c0624dfb1f"
+  },
+  "prompt_id": "90db94e7-f349-4e69-af09-729e72e42031",
+  "output": {
+    "path": "/root/out/foto-dona.mp4",
+    "bytes": 209928,
+    "sha256": "1b8beb691387d58e1f490cfbcbcbfbb608048b8f6acfea8ee749790caaabf360"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "status": "ok",
+  "timings": {
+    "render_s": 47.45,
+    "download_s": 0.0,
+    "total_s": 47.46
+  },
+  "template": "t2v_a14b_fp8_lightning@1",
+  "comfyui": "0.38.0",
+  "prompt_en": "Food photo of a plate of pasta with tomato sauce and basil on a rustic restaurant table, warm light, shallow depth of field, static camera.",
+  "params": {
+    "width": 480,
+    "height": 832,
+    "duration_s": 3,
+    "seed": 706,
+    "filename_prefix": "video/gpu2go_e84c491f2c47"
+  },
+  "prompt_id": "2f6af28a-b1e3-417b-bf6c-614ec6207401",
+  "output": {
+    "path": "/root/out/foto-ato.mp4",
+    "bytes": 294919,
+    "sha256": "8018fd8b920433e6a9924739dfed138722e633a89813a33677def1725cdd2fb8"
+  }
+}

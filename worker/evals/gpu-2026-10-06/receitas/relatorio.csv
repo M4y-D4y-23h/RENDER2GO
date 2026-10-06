@@ -1,0 +1,9 @@
+arquivo,foto,receita,variacao,formato,width,height,duracao,seed,gpu,status,segundos,erro
+002-caneca-produto-giro-v1.mp4,caneca.png,produto-giro,1,quadrado,640,640,5,6478199886721935,http://127.0.0.1:8188,ok,163.2,
+003-tenis-produto-close-v1.mp4,tenis.png,produto-close,1,vertical,480,832,5,4184267006135059,http://127.0.0.1:8188,ok,83.5,
+004-perfume-produto-close-v1.mp4,perfume.png,produto-close,1,vertical,480,832,5,5522314014576471,http://127.0.0.1:8188,ok,158.1,
+005-sala-imovel-sala-v1.mp4,sala.png,imovel-sala,1,horizontal,832,480,5,3103278176824110,http://127.0.0.1:8188,ok,157.4,
+006-fachada-imovel-fachada-v1.mp4,fachada.png,imovel-fachada,1,vertical,480,832,5,1460509186305124,http://127.0.0.1:8188,ok,158.5,
+007-prato-comida-prato-v1.mp4,prato.png,comida-prato,1,vertical,480,832,5,7855431559672428,http://127.0.0.1:8188,ok,159.3,
+008-bebida-comida-bebida-v1.mp4,bebida.png,comida-bebida,1,vertical,480,832,5,2548416870224896,http://127.0.0.1:8188,ok,159.3,
+009-dona-pessoa-apresentacao-v1.mp4,dona.png,pessoa-apresentacao,1,vertical,480,832,5,2033055507913282,http://127.0.0.1:8188,ok,159.2,
