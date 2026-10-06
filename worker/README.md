@@ -173,24 +173,32 @@ Formatos: `vertical` 480×832 (Reels, Stories, TikTok), `quadrado` 640×640, `ho
 
 **Atenção:** nenhuma receita foi testada em GPU. No teste do turbo, pedidos de órbita de câmera não funcionaram bem no I2V (`evals/gpu-2026-10-05/LEIAME.md`). Antes de vender, rode todas num pod com desligamento automático (~US$ 1 a 2) e descarte ou ajuste as que não ficarem boas.
 
-**2. Lote** (`pedidos.csv` na pasta das fotos, separado por `,` ou `;`; só `foto` e `receita` são obrigatórias):
-
-```csv
-foto,receita,acao,formato,duracao,variacoes,consentimento
-caneca.jpg,produto-giro,,,,2,
-sala.jpg,imovel-sala,a câmera avança devagar até a janela,horizontal,6,1,
-dona.jpg,pessoa-apresentacao,,,,1,sim
-```
+**2. Lote** (o fluxo principal: uma pasta de fotos, um pedido só, um vídeo por foto):
 
 ```bash
-python tools/lote.py clientes/padaria --saida saida/padaria --conferir   # só confere
-python tools/lote.py clientes/padaria --saida saida/padaria
+# confere tudo e lista os vídeos, sem GPU
+python tools/lote.py fotos/loja --saida saida/loja --prompt "a câmera se aproxima devagar do produto" \
+  --receita produto-close --conferir
+# duas GPUs (dois pods, cada um pelo seu túnel SSH)
+python tools/lote.py fotos/loja --saida saida/loja --prompt "a câmera se aproxima devagar do produto" \
+  --receita produto-close --comfy http://127.0.0.1:18188 --comfy http://127.0.0.1:28188
 ```
 
-- A planilha inteira é conferida antes do primeiro vídeo: foto fora da pasta ou inexistente, receita, formato, duração (3 a 7 s), variações (1 a 4) e consentimento.
-- Saída: `<linha>-<foto>-<receita>-v<n>.mp4` e `relatorio.csv` (status, seed, tempo, prompt, erro).
-- Rodar de novo continua de onde parou. A seed vem da foto, da receita e da variação, então refazer dá o mesmo vídeo.
-- Se o ComfyUI ou o Ollama cair, o lote para (código 5). Recusa ou erro num vídeo fica no relatório e o lote segue (código 1 no fim).
+O que o lote faz para ganhar tempo de GPU:
+
+- **Compila o pedido uma vez** para o lote inteiro e libera a VRAM do Ollama antes dos renders. São ~3 s a menos por vídeo, e todas as fotos recebem exatamente o mesmo prompt.
+- **Mantém a GPU ocupada:** cada GPU recebe `--fila 2` vídeos de cada vez, então o próximo já está na fila do ComfyUI quando o atual termina.
+- **Usa várias GPUs:** o `--comfy` é repetível. Se uma GPU cair, os vídeos dela voltam para a fila das outras.
+- **Escolhe o formato pela proporção de cada foto** (`--formato auto`, com a rotação do EXIF do celular aplicada): vertical, quadrado ou horizontal. O ComfyUI corta a foto no centro, e assim o corte é o menor possível.
+- **Qualidade:** `--qualidade rapida` (padrão; 480×832, 640×640, 832×480; ~56 s por vídeo de 5 s na 4090) ou `alta` (720×1280, 960×960, 1280×720, a área máxima do template; **ainda sem medição** de tempo e de VRAM).
+
+Também:
+
+- Tudo é conferido antes do primeiro vídeo: fotos ilegíveis, receita, presets (`--preset camera=parada` troca um preset da receita), duração, variações e consentimento (`--consentimento`, obrigatório nas receitas com pessoa).
+- Saída: `<foto>-v<n>.mp4`, `relatorio.csv` (status, GPU, tempo, erro) e `lote.json` (o prompt compilado).
+- Rodar de novo continua de onde parou e refaz só o que falhou, com a mesma seed e o mesmo prompt.
+- Códigos de saída: `0` tudo pronto, `1` algum vídeo falhou, `2` pedido inválido, `3` recusado pelo compilador, `5` nenhuma GPU acessível.
+- Pedidos diferentes por foto: sem `--prompt`, o lote lê `pedidos.csv` da pasta, com as colunas `foto,receita,acao,formato,duracao,variacoes,consentimento` (só `foto` e `receita` obrigatórias; separador `,` ou `;`).
 
 **3. Acabamento** (ffmpeg, sem GPU; roda em qualquer máquina):
 

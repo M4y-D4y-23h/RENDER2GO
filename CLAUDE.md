@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
-**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); imagem montada pelo RunPod a partir do GitHub (ADR 0002, aceito); medições pendentes da primeira build lá. **Caminho escolhido (docs/05): A, serviço de marketing com IA para pequenos negócios**: o GPU2GO é ferramenta interna (presets v2, receitas, `lote.py`, `acabamento.py`); Etapas 4–6 em pausa. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
+**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); imagem montada pelo RunPod a partir do GitHub (ADR 0002, aceito); medições pendentes da primeira build lá. **Caminho escolhido (docs/05): A, serviço de marketing com IA para pequenos negócios**: foco em **lotes de 50+ fotos com um pedido só**, renderizados em vários pods (docs/05, seção 5.1; `lote.py`, `acabamento.py`, presets v2, receitas); Etapas 4–6 em pausa. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
 
 ## Fontes de verdade
 

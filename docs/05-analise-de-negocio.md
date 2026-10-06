@@ -69,6 +69,41 @@ Onde o projeto ganha:
   - parcerias com social medias e agências, que revendem os vídeos.
 - **O que fica em pausa:** Etapas 4 a 6 como app público (contas, créditos, pagamentos, PWA). Só voltam se o volume do serviço justificar automatizar o atendimento.
 
+### 5.1 Foco do produto (ajuste de 06/10/2026): lotes de 50+ fotos
+
+O dono do projeto definiu o caminho: **geração em lote**.
+
+- O cliente escolhe várias fotos ou uma pasta e escreve um pedido só. A ferramenta gera um vídeo por foto, com a melhor qualidade que der no menor tempo, usando pods.
+- O público são clientes que valorizam produtividade: lojas com catálogo, imobiliárias, restaurantes com cardápio.
+- **É aqui que o projeto ganha das ferramentas grandes** (seção 4): custo por vídeo em volume e nenhum trabalho foto a foto.
+
+Conta de um lote de 50 fotos (I2V, 5 s, qualidade rápida, RTX 4090 em pod):
+
+| | 1 pod | 4 pods |
+|---|---|---|
+| Render (~56 s por vídeo) | ~47 min | ~12 min |
+| Subida dos pods (estimada, sem medição) | ~5 a 10 min | ~5 a 10 min em cada um |
+| Custo de GPU (pod a ~US$ 0,6 a 0,7/h) | ~US$ 0,6 a 0,7 | ~US$ 0,7 a 1,0 |
+| **Custo por vídeo** | **~US$ 0,013 (≈ R$ 0,07)** | **~US$ 0,02** |
+
+Mais pods custam quase o mesmo e entregam 4× mais rápido. O que pesa é a subida de cada pod. Com o pacote de R$ 149 a 249 por 8 vídeos, ou cobrando R$ 2 a 5 por vídeo em lotes grandes, a margem sobre a GPU passa de 95%.
+
+O que já existe: `tools/lote.py` (seção "Modo serviço" do `worker/README.md`).
+
+O que falta, em ordem:
+
+1. **Medir em GPU:**
+   - as receitas;
+   - a qualidade `alta` (tempo e VRAM);
+   - a vazão por dólar de RTX 4090, RTX 5090 e GPUs de 48 GB. Na 4090, parte dos 56 s é a troca dos dois modelos na VRAM a cada vídeo; numa GPU de 48 GB os dois cabem juntos.
+2. **Lote na nuvem com um comando:**
+   - sobe N pods (community ou secure, conferindo o estoque na hora);
+   - abre os túneis e distribui as fotos;
+   - baixa os vídeos e encerra os pods, com desligamento automático por segurança.
+3. **Tela para o cliente:** escolher a pasta ou as fotos no celular ou no computador, escrever o pedido, acompanhar e baixar tudo num .zip.
+   - Exige conta, pagamento e verificação das fotos enviadas: Etapas 4 a 6, em versão enxuta e só SFW.
+   - Até lá, o lote roda como serviço operado por você.
+
 ## 6. Vender o projeto inteiro agora? Não
 
 - Comprador paga por receita e usuários. Sem clientes, o projeto vale perto do custo de refazer, e boa parte do código usa componentes abertos.

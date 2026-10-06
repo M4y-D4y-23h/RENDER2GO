@@ -1,161 +1,243 @@
 import csv
-import shutil
+import json
+import threading
 
 import pytest
 from conftest import I2V_TEMPLATE, WORKER
+from PIL import Image
 
-from gpu2go_worker import cli_submit, lote, presets
+from gpu2go_worker import cli_submit, compiler, lote, presets
 
 PADRAO = WORKER.parent / "fixtures" / "sfw" / "padrao-teste-640.png"
+
+
+def _foto(path, size):
+    # padrão de teste SFW redimensionado (a proporção decide o formato)
+    with Image.open(PADRAO) as im:
+        im.convert("RGB").resize(size).save(path)
+    return path
 
 
 @pytest.fixture
 def pasta(tmp_path):
     d = tmp_path / "cliente"
     d.mkdir()
-    for nome in ("caneca.png", "sala.png", "dona.png"):
-        shutil.copy(PADRAO, d / nome)
+    _foto(d / "caneca.jpg", (600, 600))
+    _foto(d / "vitrine.jpg", (900, 1600))
+    _foto(d / "fachada.png", (1600, 900))
+    (d / "notas.txt").write_text("ignorado")
     return d
 
 
-def _pedidos(pasta, texto, sep=","):
-    (pasta / "pedidos.csv").write_text(texto.replace(",", sep), encoding="utf-8")
-    return pasta / "pedidos.csv"
+def _args(pasta, tmp_path, *extra, comfy=("http://127.0.0.1:9",)):
+    argv = [str(pasta), "--saida", str(tmp_path / "saida"), "--template", str(I2V_TEMPLATE)]
+    for c in comfy:
+        argv += ["--comfy", c]
+    return lote.parse([*argv, *extra])
+
+
+def _compile_falso(chamadas):
+    def compile_fn(text, **kw):
+        chamadas.append(text)
+        prompt = f"The product sits still while the camera slowly moves in. {kw['suffix']}"
+        return compiler.CompileResult(
+            prompt=prompt,
+            profile="i2v",
+            version=5,
+            model="falso",
+            seconds=0.1,
+            word_count=10,
+            word_range=(15, 60),
+            compiled=prompt,
+            attempts=1,
+        )
+
+    return compile_fn
+
+
+def _relatorio(tmp_path):
+    with (tmp_path / "saida" / "relatorio.csv").open(encoding="utf-8") as f:
+        return list(csv.DictReader(f))
 
 
 def test_shipped_recipes_are_valid_and_use_v2_presets():
     data = lote.load_receitas()
     assert data["presets_version"] == presets.load()["version"] == 2
-    assert {"produto-giro", "imovel-sala", "comida-prato", "pessoa-apresentacao"} <= set(
-        data["receitas"]
-    )
     assert data["receitas"]["pessoa-apresentacao"]["exige_consentimento"] is True
     for f in data["formatos"].values():
-        assert f["width"] % 16 == 0 and f["height"] % 16 == 0
+        for q in lote.QUALIDADES:
+            w, h = f[q]["width"], f[q]["height"]
+            assert w % 16 == 0 and h % 16 == 0 and w * h <= 921_600
 
 
-def test_plan_expands_variations_with_defaults_and_stable_seeds(pasta):
-    p = _pedidos(
-        pasta,
-        "foto,receita,acao,formato,duracao,variacoes\n"
-        "caneca.png,produto-giro,,,,2\n"
-        "sala.png,imovel-sala,a câmera avança pela sala,vertical,6,\n",
-        sep=";",
-    )
-    plano = lote.planejar(pasta, p)
+def test_folder_plan_auto_format_and_quality(pasta, tmp_path):
+    a = _args(pasta, tmp_path, "--prompt", "a câmera se aproxima devagar", "--variacoes", "2")
+    plano = lote.planejar(a)
     assert plano.erros == []
-    a, b, c = plano.tarefas
-    assert (a.arquivo, b.arquivo) == (
+    por_nome = {t.arquivo: t for t in plano.tarefas}
+    assert sorted(por_nome) == [
+        "caneca-v1.mp4",
+        "caneca-v2.mp4",
+        "fachada-v1.mp4",
+        "fachada-v2.mp4",
+        "vitrine-v1.mp4",
+        "vitrine-v2.mp4",
+    ]
+    assert (por_nome["caneca-v1.mp4"].width, por_nome["caneca-v1.mp4"].height) == (640, 640)
+    assert por_nome["vitrine-v1.mp4"].formato == "vertical"
+    assert por_nome["fachada-v1.mp4"].formato == "horizontal"
+    assert len({t.pedido for t in plano.tarefas}) == 1  # um prompt para o lote todo
+    assert por_nome["caneca-v1.mp4"].seed != por_nome["caneca-v2.mp4"].seed
+    alta = lote.planejar(_args(pasta, tmp_path, "--prompt", "x", "--qualidade", "alta"))
+    assert {(t.width, t.height) for t in alta.tarefas} == {(960, 960), (720, 1280), (1280, 720)}
+
+
+def test_exif_rotation_counts_for_the_format(tmp_path):
+    foto = tmp_path / "girada.jpg"
+    with Image.open(PADRAO) as im:
+        exif = Image.Exif()
+        exif[lote.EXIF_ORIENTATION] = 6  # celular deitado: o ComfyUI gira na leitura
+        im.convert("RGB").resize((1600, 900)).save(foto, exif=exif)
+    assert lote.formato_auto(foto) == "vertical"
+
+
+def test_folder_errors_before_any_gpu_time(pasta, tmp_path):
+    (pasta / "quebrada.jpg").write_bytes(b"nao e imagem")
+    a = _args(pasta, tmp_path, "--prompt", "x", "--receita", "pessoa-apresentacao")
+    erros = "\n".join(lote.planejar(a).erros)
+    assert "quebrada.jpg: imagem ilegível" in erros
+    assert "caneca.jpg: a receita pessoa-apresentacao exige consentimento" in erros
+    ok = _args(
+        pasta, tmp_path, "--prompt", "x", "--receita", "pessoa-apresentacao", "--consentimento"
+    )
+    assert [e for e in lote.planejar(ok).erros if "consentimento" in e] == []
+    vazia = tmp_path / "vazia"
+    vazia.mkdir()
+    assert "nenhuma foto" in lote.planejar(_args(vazia, tmp_path, "--prompt", "x")).erros[0]
+    drone = lote.planejar(_args(pasta, tmp_path, "--prompt", "x", "--preset", "camera=drone"))
+    assert "opção desconhecida: camera=drone" in drone.erros[0]
+
+
+def test_name_collisions_and_subfolders(tmp_path):
+    d = tmp_path / "f"
+    (d / "sub").mkdir(parents=True)
+    for nome in ("a.jpg", "a.png", "sub/a.jpg"):
+        _foto(d / nome, (300, 300))
+    a = _args(d, tmp_path, "--prompt", "x", "--subpastas")
+    assert sorted(t.arquivo for t in lote.planejar(a).tarefas) == [
+        "a-jpg-v1.mp4",
+        "a-png-v1.mp4",
+        "sub__a-v1.mp4",
+    ]
+
+
+def test_sheet_mode_still_works(pasta, tmp_path):
+    (pasta / "pedidos.csv").write_text(
+        "foto;receita;acao;formato;duracao;variacoes\n"
+        "caneca.jpg;produto-giro;;;;2\n"
+        "../fora.jpg;produto-giro;;;;\n"
+        "vitrine.jpg;comida-bebida;;auto;9;\n",
+        encoding="utf-8",
+    )
+    plano = lote.planejar(_args(pasta, tmp_path))
+    assert "linha 3: foto '../fora.jpg' fora da pasta" in plano.erros
+    assert "linha 4: foto 'vitrine.jpg': duracao 9: de 3 a 7 segundos" in plano.erros
+    assert [t.arquivo for t in plano.tarefas] == [
         "002-caneca-produto-giro-v1.mp4",
         "002-caneca-produto-giro-v2.mp4",
-    )
-    assert (a.width, a.height, a.duracao) == (640, 640, 5) and a.seed != b.seed
-    assert a.selections["camera"] == "orbita-produto"
-    assert (c.width, c.height, c.duracao, c.acao) == (480, 832, 6, "a câmera avança pela sala")
-    assert lote.planejar(pasta, p).tarefas[0].seed == a.seed  # refazer dá a mesma seed
+    ]
 
 
-def test_plan_reports_every_error_before_any_gpu_time(pasta):
-    p = _pedidos(
-        pasta,
-        "foto,receita,formato,duracao,variacoes,consentimento\n"
-        "../fora.png,produto-giro,,,,\n"
-        "nao-existe.png,produto-giro,,,,\n"
-        "caneca.png,drone-voando,,,,\n"
-        "caneca.png,produto-giro,cinema,9,7,\n"
-        "dona.png,pessoa-apresentacao,,,,\n"
-        "dona.png,pessoa-apresentacao,,,,sim\n",
-    )
-    plano = lote.planejar(pasta, p)
-    texto = "\n".join(plano.erros)
-    for trecho in (
-        "linha 2: foto '../fora.png' fora da pasta",
-        "linha 3: foto 'nao-existe.png' não encontrada",
-        "linha 4: receita desconhecida",
-        "linha 5: formato 'cinema'",
-        "linha 5: duracao 9",
-        "linha 5: variacoes 7",
-        "linha 6: a receita pessoa-apresentacao exige consentimento=sim",
-    ):
-        assert trecho in texto
-    assert "linha 7" not in texto  # com consentimento passa
+def test_cli_requires_prompt_or_sheet(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        lote.parse([str(tmp_path), "--saida", str(tmp_path / "s")])
+    assert "--prompt" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        lote.parse([str(tmp_path), "--saida", "s", "--prompt", "x", "--comfy", "u", "--comfy", "u"])
 
 
-def test_missing_columns_and_same_photo_twice(pasta):
-    assert (
-        "faltam as colunas" in lote.planejar(pasta, _pedidos(pasta, "foto\ncaneca.png\n")).erros[0]
-    )
-    p = _pedidos(pasta, "foto,receita\ncaneca.png,produto-giro\ncaneca.png,produto-giro\n")
-    plano = lote.planejar(pasta, p)
-    assert plano.erros == [] and len({t.arquivo for t in plano.tarefas}) == 2
-
-
-def _args(pasta, tmp_path, comfy="http://127.0.0.1:9", ollama="http://127.0.0.1:9"):
-    a = lote.build_parser().parse_args(
-        [
-            str(pasta),
-            "--saida",
-            str(tmp_path / "saida"),
-            "--comfy",
-            comfy,
-            "--ollama",
-            ollama,
-            "--template",
-            str(I2V_TEMPLATE),
-        ]
-    )
-    a.pedidos = pasta / "pedidos.csv"
-    return a
-
-
-def test_invalid_sheet_stops_before_submitting(pasta, tmp_path):
-    _pedidos(pasta, "foto,receita\ncaneca.png,drone\n")
-
-    def submit(_):
-        raise AssertionError("não deveria enviar nada")
-
-    assert lote.executar(_args(pasta, tmp_path), submit) == lote.EXIT_PLANILHA
-    assert not (tmp_path / "saida").exists()
-
-
-def test_end_to_end_with_fake_services_and_resume(pasta, tmp_path, fake_comfy, fake_ollama):
-    _pedidos(pasta, "foto,receita,variacoes\ncaneca.png,produto-giro,2\nsala.png,imovel-sala,1\n")
-    a = _args(pasta, tmp_path, fake_comfy.url, fake_ollama.url)
+def test_end_to_end_compiles_once_and_resumes(pasta, tmp_path, fake_comfy, fake_ollama):
+    a = _args(pasta, tmp_path, "--prompt", "a câmera se aproxima devagar", comfy=(fake_comfy.url,))
+    a.ollama = fake_ollama.url
     assert lote.executar(a) == lote.EXIT_OK
     saida = tmp_path / "saida"
     assert sorted(p.name for p in saida.glob("*.mp4")) == [
-        "002-caneca-produto-giro-v1.mp4",
-        "002-caneca-produto-giro-v2.mp4",
-        "003-sala-imovel-sala-v1.mp4",
+        "caneca-v1.mp4",
+        "fachada-v1.mp4",
+        "vitrine-v1.mp4",
     ]
-    rows = list(csv.DictReader((saida / "relatorio.csv").open(encoding="utf-8")))
-    assert [r["status"] for r in rows] == ["ok"] * 3
-    # termos do preset anexados pelo código, palavra por palavra
-    assert rows[0]["prompt_en"].endswith(
+    assert len(fake_ollama.requests) == 1  # um pedido, uma compilação
+    assert fake_ollama.requests[0]["keep_alive"] == 0
+    estado = json.loads((saida / "lote.json").read_text())
+    (pedido,) = estado["prompts"].values()
+    assert pedido["prompt_en"].endswith(
         "Clean commercial look, high detail, vibrant natural colors, sharp focus."
     )
-    assert "Slow orbit around the product" in rows[0]["prompt_en"]
-    workflows = list(fake_comfy.prompts.values())
-    assert len(workflows) == 3 and len(fake_comfy.uploads) == 3
+    textos = {wf["129:93"]["inputs"]["text"] for wf in fake_comfy.prompts.values()}
+    assert textos == {pedido["prompt_en"]}
+    larguras = sorted(wf["129:98"]["inputs"]["width"] for wf in fake_comfy.prompts.values())
+    assert larguras == [480, 640, 832]
+    assert [r["status"] for r in _relatorio(tmp_path)] == ["ok"] * 3
 
-    # rodar de novo não refaz nada
+    # rodar de novo: nada é recompilado nem renderizado
     assert lote.executar(a) == lote.EXIT_OK
-    assert len(fake_comfy.prompts) == 3
+    assert len(fake_comfy.prompts) == 3 and len(fake_ollama.requests) == 1
 
 
-def test_failures_are_recorded_and_unreachable_stops(pasta, tmp_path):
-    _pedidos(pasta, "foto,receita,variacoes\ncaneca.png,produto-giro,3\n")
-    codes = [cli_submit.EXIT_REFUSED, cli_submit.EXIT_UNREACHABLE]
-    calls = []
+def test_work_is_spread_over_gpus_and_survives_one_going_down(pasta, tmp_path):
+    a = _args(pasta, tmp_path, "--prompt", "x", "--variacoes", "4", comfy=("gpu-a", "gpu-b"))
+    usadas, lock = [], threading.Lock()
 
     def submit(args):
-        calls.append(args)
-        code = codes.pop(0)
-        return code, {"status": "error", "error": f"falha {code}"}
+        with lock:
+            usadas.append(args.comfy)
+        if args.comfy == "gpu-b":
+            return cli_submit.EXIT_UNREACHABLE, {"error": "caiu"}
+        args.out.write_bytes(b"mp4")
+        return cli_submit.EXIT_OK, {"status": "ok"}
 
-    assert lote.executar(_args(pasta, tmp_path), submit) == lote.EXIT_INACESSIVEL
-    assert len(calls) == 2  # parou no serviço inacessível
-    assert calls[0].width == 640 and calls[0].preset and calls[0].keep_alive == "0"
-    rows = list(csv.DictReader((tmp_path / "saida" / "relatorio.csv").open(encoding="utf-8")))
-    assert [r["status"] for r in rows] == ["recusado", "erro"]
-    assert not list((tmp_path / "saida").glob("*.mp4"))
+    assert lote.executar(a, submit, _compile_falso([])) == lote.EXIT_OK
+    rows = _relatorio(tmp_path)
+    assert len(rows) == 12 and {r["gpu"] for r in rows} == {"gpu-a"}
+    assert "gpu-b" in usadas  # tentou, caiu, e as tarefas voltaram para a fila
+    assert len(list((tmp_path / "saida").glob("*.mp4"))) == 12
+    assert not list((tmp_path / "saida").glob("*.parcial.mp4"))
+
+
+def test_all_gpus_down_keeps_pending_for_next_run(pasta, tmp_path):
+    a = _args(pasta, tmp_path, "--prompt", "x")
+
+    def submit(args):
+        return cli_submit.EXIT_UNREACHABLE, {"error": "sem pod"}
+
+    assert lote.executar(a, submit, _compile_falso([])) == lote.EXIT_INACESSIVEL
+    assert not (tmp_path / "saida" / "relatorio.csv").exists()
+
+
+def test_refusal_stops_before_rendering(pasta, tmp_path):
+    def recusa(*_, **__):
+        raise compiler.CompilerRefused("REFUSED")
+
+    def submit(_):
+        raise AssertionError("não deveria renderizar")
+
+    assert lote.executar(_args(pasta, tmp_path, "--prompt", "x"), submit, recusa) == 3
+
+
+def test_failed_video_is_reported_and_retried_next_run(pasta, tmp_path):
+    a = _args(pasta, tmp_path, "--prompt", "x", "--fila", "1")
+    falhar = {"caneca"}
+
+    def submit(args):
+        if any(args.out.name.startswith(n) for n in falhar):
+            return cli_submit.EXIT_COMFY, {"error": "CUDA out of memory"}
+        args.out.write_bytes(b"mp4")
+        return cli_submit.EXIT_OK, {}
+
+    chamadas = []
+    assert lote.executar(a, submit, _compile_falso(chamadas)) == lote.EXIT_FALHA
+    assert {r["arquivo"]: r["status"] for r in _relatorio(tmp_path)}["caneca-v1.mp4"] == "erro"
+    falhar.clear()
+    assert lote.executar(a, submit, _compile_falso(chamadas)) == lote.EXIT_OK
+    assert len(chamadas) == 1  # o prompt veio do lote.json
+    assert [r["status"] for r in _relatorio(tmp_path)] == ["ok"] * 3
