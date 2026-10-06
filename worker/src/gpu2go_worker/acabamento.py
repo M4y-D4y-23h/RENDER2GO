@@ -10,8 +10,15 @@
 - Cartão final: uma imagem (contato, endereço, oferta) que fica `--cartao-s` segundos.
 - Música: o arquivo enviado pelo cliente ou com licença de uso comercial. Entra e sai
   suave (fade) e é cortada no fim do vídeo.
-- `--fps 24` ou `30`: os vídeos do Wan têm 16 fps. Alguns apps aceitam melhor 24 ou 30;
-  os quadros são repetidos, não interpolados, então o movimento não fica mais suave.
+- `--fps 24` ou `30`: os vídeos do Wan têm 16 fps. Sem `--interpolar`, os quadros são
+  repetidos e o movimento não fica mais suave.
+- `--interpolar`: cria os quadros intermediários por estimativa de movimento (ffmpeg
+  `minterpolate`, CPU, ~20 s por clipe de 5 s): 16 → 32 fps, ou o `--fps` pedido. É bem
+  mais barato que renderizar mais quadros na GPU.
+- `--altura 1280` (ou 1920): amplia a saída com Lanczos. Não cria detalhe novo como uma
+  ampliação com IA, mas entrega no tamanho que as redes esperam, sem custo de GPU.
+- `--zoom`: zoom lento e contínuo no centro (até 8%, "cinematic zoom"). Garante movimento
+  de câmera quando o modelo deixa a cena parada (ex.: fachada, rodada de 06/10/2026).
 
 Exige `ffmpeg` e `ffprobe` no PATH.
 """
@@ -48,6 +55,9 @@ class Opcoes:
     volume: float = 0.8
     fps: int | None = None
     crf: int = 18
+    interpolar: bool = False
+    altura: int | None = None
+    zoom: bool = False
 
 
 def _confere(entradas: list[Path], saida: Path, o: Opcoes) -> None:
@@ -77,6 +87,11 @@ def _confere(entradas: list[Path], saida: Path, o: Opcoes) -> None:
         raise AcabamentoError("volume: de 0 a 2")
     if o.fps is not None and not 8 <= o.fps <= 60:
         raise AcabamentoError("fps: de 8 a 60")
+    if o.altura is not None and (not 240 <= o.altura <= 2160 or o.altura % 2):
+        raise AcabamentoError("altura: par, de 240 a 2160")
+
+
+ZOOM_MAX = 1.08
 
 
 def _fit(w: int, h: int, fps: str) -> str:
@@ -86,13 +101,33 @@ def _fit(w: int, h: int, fps: str) -> str:
     )
 
 
+def _clipe(w: int, h: int, fps: str, info: video.VideoInfo, o: Opcoes) -> str:
+    """Filtro de um clipe: tamanho, zoom opcional e fps (repetindo ou interpolando)."""
+    partes = [
+        f"scale={w}:{h}:force_original_aspect_ratio=decrease",
+        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1",
+    ]
+    if o.zoom:
+        passo = (ZOOM_MAX - 1) / max(1, info.frames - 1)
+        partes.append(
+            f"zoompan=z='min(zoom+{passo:.6f},{ZOOM_MAX})':d=1"
+            f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={info.fps}"
+        )
+    if o.interpolar:
+        partes.append(f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1")
+    else:
+        partes.append(f"fps={fps}")
+    return ",".join([*partes, "format=yuv420p"])
+
+
 def comando(
     entradas: list[Path], infos: list[video.VideoInfo], saida: Path, o: Opcoes
 ) -> tuple[list[str], float]:
     """Linha de comando do ffmpeg e duração final em segundos (sem executar nada)."""
     _confere(entradas, saida, o)
     w, h = infos[0].width, infos[0].height
-    fps = str(o.fps) if o.fps else str(infos[0].fps)
+    base_fps = infos[0].fps * 2 if o.interpolar else infos[0].fps
+    fps = str(o.fps) if o.fps else str(base_fps)
     total = sum(i.duration_s for i in infos) + (o.cartao_s if o.cartao else 0.0)
     total = round(total, 3)
 
@@ -100,7 +135,7 @@ def comando(
     for e in entradas:
         cmd += ["-i", str(e)]
     n = len(entradas)
-    filtros = [f"[{i}:v]{_fit(w, h, fps)}[v{i}]" for i in range(n)]
+    filtros = [f"[{i}:v]{_clipe(w, h, fps, infos[i], o)}[v{i}]" for i in range(n)]
     filtros.append("".join(f"[v{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[base]")
     atual, idx = "base", n
 
@@ -119,6 +154,10 @@ def comando(
         filtros.append(f"[{idx}:v]{_fit(w, h, fps)}[cartao]")
         filtros.append(f"[{atual}][cartao]concat=n=2:v=1:a=0[comcartao]")
         atual, idx = "comcartao", idx + 1
+
+    if o.altura and o.altura != h:
+        filtros.append(f"[{atual}]scale=-2:{o.altura}:flags=lanczos,setsar=1[final]")
+        atual = "final"
 
     mapas = ["-map", f"[{atual}]"]
     audio: list[str] = []
@@ -168,6 +207,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--volume", type=float, default=0.8, help="volume da música (padrão 0,8)")
     p.add_argument("--fps", type=int, help="fps da saída; padrão: o do primeiro clipe")
     p.add_argument("--crf", type=int, default=18, help="qualidade do H.264 (menor = melhor)")
+    p.add_argument(
+        "--interpolar", action="store_true", help="cria quadros intermediários (16 → 32 fps)"
+    )
+    p.add_argument("--altura", type=int, help="altura final em pixels, ex.: 1280 ou 1920")
+    p.add_argument("--zoom", action="store_true", help="zoom lento e contínuo (até 8%%)")
     p.add_argument("--mostrar", action="store_true", help="só mostra o comando do ffmpeg")
     return p
 
@@ -184,6 +228,9 @@ def main(argv: list[str] | None = None) -> int:
         volume=a.volume,
         fps=a.fps,
         crf=a.crf,
+        interpolar=a.interpolar,
+        altura=a.altura,
+        zoom=a.zoom,
     )
     try:
         if a.mostrar:

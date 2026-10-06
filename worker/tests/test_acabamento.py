@@ -96,3 +96,23 @@ def test_cli_only_clips(tmp_path, capsys):
     assert video.probe(tmp_path / "f.mp4").frames == 66
     assert ac.main([str(a), "--saida", str(tmp_path / "f.mov")]) == 2
     assert ".mp4" in capsys.readouterr().err
+
+
+@com_ffmpeg
+def test_interpolate_zoom_and_upscale(tmp_path):
+    a = _clip(tmp_path / "a.mp4", size="240x416", frames=33)
+    o = ac.Opcoes(interpolar=True, zoom=True, altura=832)
+    info = ac.acabar([a], tmp_path / "f.mp4", o)
+    assert (info.width, info.height, info.fps) == (480, 832, Fraction(32))
+    assert abs(info.duration_s - 33 / 16) < 0.1
+    assert info.frames >= 62  # ~2× os 33 quadros (o minterpolate não repete o último)
+
+
+def test_zoom_and_scale_in_command(tmp_path):
+    cmd, _ = ac.comando(
+        [tmp_path / "a.mp4"], [_info()], tmp_path / "f.mp4", ac.Opcoes(zoom=True, altura=1280)
+    )
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "zoompan=z='min(zoom+0.001000,1.08)'" in fc and "scale=-2:1280:flags=lanczos" in fc
+    with pytest.raises(ac.AcabamentoError, match="altura"):
+        ac.comando([tmp_path / "a.mp4"], [_info()], tmp_path / "f.mp4", ac.Opcoes(altura=1281))
