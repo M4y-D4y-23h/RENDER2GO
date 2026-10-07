@@ -92,6 +92,8 @@ SUBSTITUTOS = 2  # pods trocados por pod pedido, no máximo
 ESPERA_VAGA_S = 60  # sem vaga: espera antes da próxima tentativa
 CACHE = Path(os.environ.get("GPU2GO_CACHE", Path.home() / ".cache" / "gpu2go"))
 MEMORIA_DIAS = 7  # datacenter lento fica de fora por esse tempo
+RESERVA_SALDO_USD = 1.0  # nunca gastar o saldo da conta até o fim
+MIN_POD_S = 15 * 60  # se o saldo/orçamento não pagam nem isso, não sobe
 ESPERA_SERVICOS_S = 600
 FOTOS_POR_GPU = 2
 ESTADO = ".nuvem"
@@ -282,6 +284,13 @@ class RunPod:
 
     def encerrar(self, pod_id: str) -> None:
         runpod_pods.encerrar(pod_id, self.chave)
+
+    def saldo(self) -> float | None:
+        try:
+            d = runpod_pods._graphql("{ myself { clientBalance } }", self.chave)
+            return float(d["myself"]["clientBalance"])
+        except (runpod_pods.RunPodError, KeyError, TypeError, ValueError):
+            return None
 
     def _datacentros_bons(self, gpu: str) -> list[str]:
         """Datacenters com estoque dessa GPU, menos os lentos lembrados (vazio = qualquer um)."""
@@ -1023,8 +1032,30 @@ def main(
         _log("cancelado (use --sim para não perguntar)")
         return EXIT_SEM_GPU
     a.repo_tgz = empacotar_repo(a.saida / ESTADO / "repo.tgz")
-    # desligamento automático: 2× a estimativa + 20 min, no máximo 2 h (regra do projeto)
-    deadman_s = int(min(MAX_POD_S, 2 * est.minutos * 60 + 1200))
+    # Desligamento automático por pod: o menor entre
+    #   2 h (regra do projeto), 2× a estimativa + 20 min,
+    #   o que o orçamento paga (com 20% de folga) e o que o saldo da conta paga (menos a reserva).
+    # Pod caro para cedo; pod barato pode ir até as 2 h.
+    custo_h = usd_h * a.gpus_por_pod * min(a.pods, len(fotos))
+    limites = {
+        "regra de 2 h": MAX_POD_S,
+        "estimativa": 2 * est.minutos * 60 + 1200,
+        "orçamento": a.orcamento_usd * 1.2 / custo_h * 3600,
+    }
+    saldo = provedor.saldo() if hasattr(provedor, "saldo") else None
+    if saldo is not None:
+        disponivel = saldo - max(RESERVA_SALDO_USD, 0.1 * saldo)
+        limites["saldo da conta"] = max(0.0, disponivel) / custo_h * 3600
+        _log(f"saldo da conta: US$ {saldo:.2f} (reserva US$ {saldo - disponivel:.2f})")
+        if est.usd > disponivel:
+            _log(f"estimativa (US$ {est.usd:.2f}) passa do saldo disponível; adicione créditos")
+            return EXIT_SEM_GPU
+    motivo, deadman = min(limites.items(), key=lambda kv: kv[1])
+    deadman_s = int(deadman)
+    if deadman_s < MIN_POD_S:
+        _log(f"limite de tempo curto demais ({deadman_s // 60} min, por {motivo}); nada criado")
+        return EXIT_SEM_GPU
+    _log(f"desligamento automático de cada pod em {deadman_s // 60} min (limite: {motivo})")
     if est.minutos * 60 > MAX_POD_S - MARGEM_S:
         _log(
             f"AVISO: ~{est.minutos:.0f} min passa do limite de 2 h por pod; o que não couber "

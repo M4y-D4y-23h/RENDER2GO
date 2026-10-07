@@ -318,3 +318,13 @@ def test_accepted_datacenters_come_from_the_api_error(monkeypatch):
     monkeypatch.setattr(runpod_pods, "_chave", lambda: "k")
     monkeypatch.setattr(runpod_pods, "_rest", lambda *a, **k: R())
     assert ln.RunPod()._datacentros_aceitos() == {"EU-RO-1", "US-NC-1", "US-KS-2"}
+
+
+def test_shutdown_follows_cost_and_account_balance(pasta, tmp_path, sem_git, capsys):
+    class Pobre(Provedor):
+        def saldo(self):
+            return 1.1  # só US$ 0,10 disponíveis depois da reserva
+
+    prov = Pobre()
+    assert ln.main(_argv(pasta, tmp_path / "s"), provedor=prov) == ln.EXIT_SEM_GPU
+    assert prov.criados == [] and "passa do saldo" in capsys.readouterr().err
