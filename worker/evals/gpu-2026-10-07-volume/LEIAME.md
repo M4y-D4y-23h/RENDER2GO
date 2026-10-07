@@ -28,3 +28,10 @@
   - cópia de modelo corrompida no volume: detectada pelo SHA-256, baixada de novo e regravada;
   - ambiente corrompido: detectado, reinstalado e regravado.
 - **Custo da rodada:** ~US$ 0,28 em pods, mais o volume.
+
+## Enchimento do espelho no R2 (`pod3-enche-espelho-r2.log`)
+
+Depois que o volume foi apagado, um lote de 2 fotos encheu o espelho dos modelos no R2: 36,6 GB enviados pelo pod em partes de 512 MB, em ~6 min (~100 MB/s), enquanto renderizava. Lote inteiro: 9,7 min e ~US$ 0,33; espelho com 4 de 4 modelos no fim.
+
+- **Custo de fazer só uma vez:** o envio disputa o disco com o carregamento dos modelos, e o render saiu a 43 s por vídeo (o normal é ~12 s, vídeos de 3 s). Só acontece no lote que enche o espelho.
+- **Instalação:** levou 151 s nesse host, contra 91 s antes. O download da origem foi mais lento lá.

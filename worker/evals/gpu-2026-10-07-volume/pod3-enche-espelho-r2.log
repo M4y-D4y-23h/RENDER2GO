@@ -1,0 +1,19 @@
+20:10:24 2 foto(s), 2 vídeo(s) em 1 GPU(s) (NVIDIA RTX PRO 6000 Blackwell Server Edition, ~12 s por vídeo): ~5 min e ~US$ 0.19 (US$ 2.09/h por GPU; subida de ~5 min incluída)
+20:10:26 espelho (R2): 0 de 4 modelo(s); o 1º pod envia os 4 que faltam
+20:10:26 saldo da conta: US$ 7.44 (reserva US$ 1.00)
+20:10:26 desligamento automático de cada pod em 30 min (limite: estimativa)
+20:10:27 evitando datacenters lentos: EUR-IS-2
+20:10:29 pod xar78ti9sktkqq (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) criado, US$ 2.09/h; esperando o agente...
+20:11:07 pod xar78ti9sktkqq (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): rede 238.8 MB/s
+20:11:07 pod xar78ti9sktkqq (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): agente, CUDA e rede ok; instalando o worker (~1–3 min)
+20:13:52 pod xar78ti9sktkqq (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): enviando 4 modelo(s) ao espelho (R2) em segundo plano
+20:13:53 pod xar78ti9sktkqq (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): tempos da instalação: apt 23 | modelos_volume 23 | ambiente_instalado 79 | modelos_download 103 | compilador 104 | modelos_conferidos 151 | pronto 151 | guardado 151
+20:14:15 pod xar78ti9sktkqq (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): pronto (1 GPU)
+20:16:35 [1/2] bebida-v1.mp4: ok (xar78ti9sktkqq)
+20:16:36 [2/2] caneca-v1.mp4: ok (xar78ti9sktkqq)
+20:16:36 pod xar78ti9sktkqq (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~43 s de GPU por vídeo (medido: ~12 s)
+20:16:36 pod xar78ti9sktkqq (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): 43 s por vídeo, esperado ~12 s: servidor lento
+20:16:36 pod xar78ti9sktkqq (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): terminando de gravar o cache (volume/espelho)
+20:20:05 espelho (R2): nsfw_wan_umt5_xxl_v2_fp8_e4m3fn_scaled.safetensors, wan_2.1_vae.safetensors, Wan2.2_I2V_High_R1_n54w_v2.safetensors, Wan2.2_I2V_Low_R1_n54w_v2.safetensors enviado(s)
+20:20:06 pod xar78ti9sktkqq (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) encerrado (fim do trabalho)
+20:20:06 fim em 9.7 min; custo estimado dos pods ~US$ 0.33; relatório em entrega-esp-1/relatorio.csv
