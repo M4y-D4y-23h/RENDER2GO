@@ -763,8 +763,10 @@ class Orquestrador:
             _, txt = pod.agente.exec(f"cat {r.raiz}/espelho-resultado.json", 30)
             with self.lock:
                 feitos = esp.concluir(json.loads(txt))
-            _log(f"espelho (R2): {', '.join(feitos) or 'nada'} enviado(s)"
-                 + (f"; AVISO: {esp.erro}" if esp.erro else ""))
+            _log(
+                f"espelho (R2): {', '.join(feitos) or 'nada'} enviado(s)"
+                + (f"; AVISO: {esp.erro}" if esp.erro else "")
+            )
         except (ArmazenamentoError, NuvemError, OSError, ValueError) as e:
             _log(f"AVISO: espelho incompleto ({e}); o próximo lote completa")
             with self.lock:
@@ -1065,8 +1067,10 @@ def preparar_espelho() -> Espelho | None:
         _log(f"AVISO: espelho (R2) inacessível, seguindo só com a origem: {e}")
         return None
     falta = len(esp.faltando())
-    _log(f"espelho (R2): {len(esp.presentes)} de {len(esp.modelos)} modelo(s)"
-         + (f"; o 1º pod envia os {falta} que faltam" if falta else ""))
+    _log(
+        f"espelho (R2): {len(esp.presentes)} de {len(esp.modelos)} modelo(s)"
+        + (f"; o 1º pod envia os {falta} que faltam" if falta else "")
+    )
     return esp
 
 
@@ -1229,11 +1233,14 @@ def main(
     if a.pods == "auto":
         a.pods, motivo = escolher_pods(n_videos, n_pacotes, a.gpus_por_pod, s_video, a.prazo)
         opcoes = sorted({1, 2, 4, 8, a.pods} & set(range(1, min(MAX_PODS_AUTO, n_pacotes) + 1)))
-        _log(f"pods automáticos: {a.pods} ({motivo}); outras opções (--pods N): " + "; ".join(
-            f"{n}: ~{e.minutos:.0f} min, ~US$ {e.usd:.2f}"
-            for n in opcoes
-            if (e := estimar(n_videos, n, a.gpus_por_pod, s_video, usd_h * a.gpus_por_pod))
-        ))
+        _log(
+            f"pods automáticos: {a.pods} ({motivo}); outras opções (--pods N): "
+            + "; ".join(
+                f"{n}: ~{e.minutos:.0f} min, ~US$ {e.usd:.2f}"
+                for n in opcoes
+                if (e := estimar(n_videos, n, a.gpus_por_pod, s_video, usd_h * a.gpus_por_pod))
+            )
+        )
     else:
         a.pods = int(a.pods)
     est = estimar(

@@ -24,8 +24,11 @@ s3_local = pytest.mark.skipif(not S3, reason="sem S3 local (GPU2GO_TESTE_S3)")
 
 def _s3() -> Armazenamento:
     return Armazenamento(
-        S3, os.environ.get("GPU2GO_TESTE_S3_BUCKET", "gpu2go"),
-        os.environ["GPU2GO_TESTE_S3_CHAVE"], os.environ["GPU2GO_TESTE_S3_SEGREDO"], "us-east-1",
+        S3,
+        os.environ.get("GPU2GO_TESTE_S3_BUCKET", "gpu2go"),
+        os.environ["GPU2GO_TESTE_S3_CHAVE"],
+        os.environ["GPU2GO_TESTE_S3_SEGREDO"],
+        "us-east-1",
     )
 
 
@@ -40,7 +43,12 @@ def modelos_pequenos(tmp_path, monkeypatch):
         (pasta / dest).parent.mkdir(parents=True, exist_ok=True)
         (pasta / dest).write_bytes(dados)
         entradas[nome] = models.ModelEntry(
-            name=nome, repo="x/y", revision="r", path=dest, dest=dest, bytes=len(dados),
+            name=nome,
+            repo="x/y",
+            revision="r",
+            path=dest,
+            dest=dest,
+            bytes=len(dados),
             sha256=hashlib.sha256(dados).hexdigest(),
         )
     monkeypatch.setattr(esp_mod.models, "load_lock", lambda: ({"i2v_r1v2": ["a", "b"]}, entradas))
@@ -107,7 +115,9 @@ def test_pod_uploader_fills_the_mirror_and_signed_urls_download_it(modelos_peque
     res = tmp_path / "res.json"
     out = subprocess.run(
         [sys.executable, str(WORKER / "scripts" / "espelhar.py"), str(plano), str(res)],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     ).stdout
     assert "ESPELHADO" in out
     assert sorted(e.concluir(json.loads(res.read_text()))) == sorted(

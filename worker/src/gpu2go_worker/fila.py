@@ -195,8 +195,13 @@ class WorkerFila:
                 media.check_image(foto)
                 t = self._tarefa(job, foto)
                 prep = preparo.preparar(foto, t.width, t.height, pasta / "preparada.png")
-            except (media.MediaError, media.UnsafeUrl, preparo.PreparoError, FilaError,
-                    lote.LoteError) as e:
+            except (
+                media.MediaError,
+                media.UnsafeUrl,
+                preparo.PreparoError,
+                FilaError,
+                lote.LoteError,
+            ) as e:
                 repetir = isinstance(e, media.MediaError) and getattr(e, "retryable", False)
                 self.api.concluir(jid, "erro", erro=str(e)[:500], repetir=repetir)
                 return True
@@ -204,13 +209,15 @@ class WorkerFila:
             args = lote._args(t, job["prompt_en"], video, comfy, self.cfg, prep.path)
             code, res = self.submit(args)
             if code == cli_submit.EXIT_UNREACHABLE:
-                self.api.concluir(jid, "erro", erro=f"GPU inacessível: {res.get('error')}",
-                                  repetir=True)
+                self.api.concluir(
+                    jid, "erro", erro=f"GPU inacessível: {res.get('error')}", repetir=True
+                )
                 return False
             if code != cli_submit.EXIT_OK or not video.is_file():
                 repetir = code in (cli_submit.EXIT_COMFY,)
-                self.api.concluir(jid, "erro", erro=str(res.get("error", code))[:500],
-                                  repetir=repetir)
+                self.api.concluir(
+                    jid, "erro", erro=str(res.get("error", code))[:500], repetir=repetir
+                )
                 return True
             try:  # o vídeo é dessa foto? só envia se for
                 sim = conferencia.confere(prep.path, video)
@@ -229,14 +236,20 @@ class WorkerFila:
                 self.api.concluir(jid, "erro", erro=str(e)[:500], repetir=True)
                 return True
             status = self.api.concluir(
-                jid, "ok", segundos=round(time.monotonic() - t0, 1), similaridade=round(sim, 4),
-                bytes_video=video.stat().st_size, aviso=aviso or None,
+                jid,
+                "ok",
+                segundos=round(time.monotonic() - t0, 1),
+                similaridade=round(sim, 4),
+                bytes_video=video.stat().st_size,
+                aviso=aviso or None,
             )
         with self.lock:
             self.feitos += status == "ok"
             self.falhas += status != "ok"
-        _log(f"{job['arquivo']} (lote {job['lote']}): {status}, similaridade {sim:.3f}, "
-             f"{time.monotonic() - t0:.0f} s")
+        _log(
+            f"{job['arquivo']} (lote {job['lote']}): {status}, similaridade {sim:.3f}, "
+            f"{time.monotonic() - t0:.0f} s"
+        )
         return True
 
     def processar(self, job: dict, comfy: str) -> bool:
@@ -279,8 +292,10 @@ class WorkerFila:
                 self.ultimo_job = time.monotonic()
 
     def rodar(self) -> int:
-        _log(f"{len(self.cfg.comfy)} GPU(s); filtros {self.filtros.mode}; sai após "
-             f"{self.cfg.ocioso_s:.0f} s sem jobs")
+        _log(
+            f"{len(self.cfg.comfy)} GPU(s); filtros {self.filtros.mode}; sai após "
+            f"{self.cfg.ocioso_s:.0f} s sem jobs"
+        )
         ts = [threading.Thread(target=self._laco, args=(c,), daemon=True) for c in self.cfg.comfy]
         for t in ts:
             t.start()

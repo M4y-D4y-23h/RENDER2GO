@@ -190,10 +190,13 @@ def test_first_pod_fills_the_r2_mirror_and_next_lot_gets_signed_urls(
     from gpu2go_worker import espelho as esp_mod
 
     pasta_modelos, entradas = modelos_pequenos.__wrapped__(tmp_path, monkeypatch)
-    for k, v in {"ENDPOINT": os.environ["GPU2GO_TESTE_S3"], "BUCKET": "gpu2go",
-                 "ACCESS_KEY_ID": os.environ["GPU2GO_TESTE_S3_CHAVE"],
-                 "SECRET_ACCESS_KEY": os.environ["GPU2GO_TESTE_S3_SEGREDO"],
-                 "REGION": "us-east-1"}.items():
+    for k, v in {
+        "ENDPOINT": os.environ["GPU2GO_TESTE_S3"],
+        "BUCKET": "gpu2go",
+        "ACCESS_KEY_ID": os.environ["GPU2GO_TESTE_S3_CHAVE"],
+        "SECRET_ACCESS_KEY": os.environ["GPU2GO_TESTE_S3_SEGREDO"],
+        "REGION": "us-east-1",
+    }.items():
         monkeypatch.setenv(f"GPU2GO_R2_{k}", v)
     s3 = esp_mod.Armazenamento.do_ambiente()
     for m in entradas.values():

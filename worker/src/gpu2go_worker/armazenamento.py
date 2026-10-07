@@ -50,12 +50,19 @@ class Armazenamento:
     @classmethod
     def do_ambiente(cls, prefixo: str = "GPU2GO_R2_") -> Armazenamento | None:
         """GPU2GO_R2_ENDPOINT, _BUCKET, _ACCESS_KEY_ID e _SECRET_ACCESS_KEY; None se faltar."""
-        v = {k: os.environ.get(prefixo + k, "").strip() for k in
-             ("ENDPOINT", "BUCKET", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")}
+        v = {
+            k: os.environ.get(prefixo + k, "").strip()
+            for k in ("ENDPOINT", "BUCKET", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY")
+        }
         if not all(v.values()):
             return None
-        return cls(v["ENDPOINT"].rstrip("/"), v["BUCKET"], v["ACCESS_KEY_ID"],
-                   v["SECRET_ACCESS_KEY"], os.environ.get(prefixo + "REGION", "auto") or "auto")
+        return cls(
+            v["ENDPOINT"].rstrip("/"),
+            v["BUCKET"],
+            v["ACCESS_KEY_ID"],
+            v["SECRET_ACCESS_KEY"],
+            os.environ.get(prefixo + "REGION", "auto") or "auto",
+        )
 
     # -- assinatura ------------------------------------------------------------------------
 
@@ -112,16 +119,25 @@ class Armazenamento:
             **(extra or {}),
         }
         query = "&".join(f"{_q(k)}={_q(v)}" for k, v in sorted(params.items()))
-        canonico = "\n".join([
-            metodo, caminho, query,
-            "".join(f"{k}:{cabecalhos[k]}\n" for k in sorted(cabecalhos)),
-            assinados, SEM_CORPO,
-        ])
+        canonico = "\n".join(
+            [
+                metodo,
+                caminho,
+                query,
+                "".join(f"{k}:{cabecalhos[k]}\n" for k in sorted(cabecalhos)),
+                assinados,
+                SEM_CORPO,
+            ]
+        )
         _, assinatura = self._assinatura(data, canonico)
         return f"{esquema}://{host}{caminho}?{query}&X-Amz-Signature={assinatura}"
 
     def _chamar(
-        self, metodo: str, chave: str, query: dict[str, str], corpo: bytes = b"",
+        self,
+        metodo: str,
+        chave: str,
+        query: dict[str, str],
+        corpo: bytes = b"",
         timeout: float = 60,
     ) -> bytes:
         """Chamada assinada no cabeçalho (só quem tem as chaves)."""
@@ -131,14 +147,20 @@ class Armazenamento:
         cabecalhos = {"host": host, "x-amz-content-sha256": sha, "x-amz-date": data}
         assinados = ";".join(sorted(cabecalhos))
         qs = "&".join(f"{_q(k)}={_q(v)}" for k, v in sorted(query.items()))
-        canonico = "\n".join([
-            metodo, caminho, qs,
-            "".join(f"{k}:{cabecalhos[k]}\n" for k in sorted(cabecalhos)),
-            assinados, sha,
-        ])
+        canonico = "\n".join(
+            [
+                metodo,
+                caminho,
+                qs,
+                "".join(f"{k}:{cabecalhos[k]}\n" for k in sorted(cabecalhos)),
+                assinados,
+                sha,
+            ]
+        )
         escopo, assinatura = self._assinatura(data, canonico)
         req = urllib.request.Request(
-            f"{esquema}://{host}{caminho}" + (f"?{qs}" if qs else ""), data=corpo or None,
+            f"{esquema}://{host}{caminho}" + (f"?{qs}" if qs else ""),
+            data=corpo or None,
             method=metodo,
         )
         for k, v in cabecalhos.items():
@@ -153,9 +175,7 @@ class Armazenamento:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
-            raise ArmazenamentoError(
-                f"{metodo} {chave}: HTTP {e.code} {e.read()[:200]!r}"
-            ) from e
+            raise ArmazenamentoError(f"{metodo} {chave}: HTTP {e.code} {e.read()[:200]!r}") from e
         except OSError as e:
             raise ArmazenamentoError(f"{metodo} {chave}: {e}") from e
 

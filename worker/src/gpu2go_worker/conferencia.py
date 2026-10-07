@@ -33,9 +33,21 @@ def _vetor(im: Image.Image, tamanho: tuple[int, int]) -> list[float]:
 
 def quadro0(video: Path, destino: Path) -> Path:
     r = subprocess.run(
-        ["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", str(video), "-vframes", "1",
-         str(destino)],
-        capture_output=True, text=True, timeout=120,
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(video),
+            "-vframes",
+            "1",
+            str(destino),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     if r.returncode != 0 or not destino.is_file():
         raise ConferenciaError(f"não extraiu o 1º quadro de {video.name}: {r.stderr[-200:]}")

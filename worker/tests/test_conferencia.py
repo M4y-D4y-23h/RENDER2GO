@@ -24,9 +24,23 @@ def _foto(path, cor, forma):
 def _video_de(foto, destino):
     # "vídeo I2V" sintético: começa na foto e aproxima devagar
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-loop", "1", "-i", str(foto), "-vf",
-         "zoompan=z='1+0.004*on':d=33:s=640x480:fps=16", "-frames:v", "33", "-pix_fmt", "yuv420p",
-         str(destino)],
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-loop",
+            "1",
+            "-i",
+            str(foto),
+            "-vf",
+            "zoompan=z='1+0.004*on':d=33:s=640x480:fps=16",
+            "-frames:v",
+            "33",
+            "-pix_fmt",
+            "yuv420p",
+            str(destino),
+        ],
         check=True,
     )
     return destino
