@@ -300,10 +300,22 @@ class RunPod:
             for g in dc.get("gpuAvailability") or []
             if g.get("gpuTypeId") == gpu and g.get("available")
         ]
-        bons = [dc for dc in com_gpu if dc not in lentos]
+        aceitos = self._datacentros_aceitos()
+        bons = [dc for dc in com_gpu if dc not in lentos and (not aceitos or dc in aceitos)]
         if lentos & set(com_gpu):
             _log(f"evitando datacenters lentos: {', '.join(sorted(lentos & set(com_gpu)))}")
         return bons
+
+    def _datacentros_aceitos(self) -> set[str]:
+        """IDs que a API REST aceita em dataCenterIds (lista fixa, menor que a do GraphQL).
+
+        A API devolve a lista na mensagem de erro de um ID inválido; consultada uma vez."""
+        if not hasattr(self, "_aceitos"):
+            corpo = {"name": "x", "imageName": "x", "gpuTypeIds": ["x"], "dataCenterIds": ["?"]}
+            r = runpod_pods._rest("POST", "/pods", self.chave, corpo)
+            m = re.search(r"dataCenterIds/items/enum: value must be one of ([^\"\]]+)", r.text)
+            self._aceitos = set(re.findall(r"'([A-Z0-9-]+)'", m.group(1))) if m else set()
+        return self._aceitos
 
     def _datacentro_do_pod(self, pod_id: str) -> str | None:
         q = f'{{ pod(input:{{podId:"{pod_id}"}}) {{ machine {{ dataCenterId }} }} }}'

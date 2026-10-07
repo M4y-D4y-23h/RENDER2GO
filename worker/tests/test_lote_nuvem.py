@@ -305,3 +305,16 @@ def test_entrypoint_supports_several_comfyui_per_gpu():
     assert subprocess.run(["bash", "-n", str(ep)]).returncode == 0
     texto = ep.read_text()
     assert "COMFY_POR_GPU" in texto and "N_COMFY=$((COMFY_GPUS * COMFY_POR_GPU))" in texto
+
+
+def test_accepted_datacenters_come_from_the_api_error(monkeypatch):
+    class R:
+        status_code = 400
+        text = (
+            '[{"problems":["At /pods/properties/dataCenterIds/items/enum: value must be one of '
+            "'EU-RO-1', 'US-NC-1', 'US-KS-2'\"]}]"
+        )
+
+    monkeypatch.setattr(runpod_pods, "_chave", lambda: "k")
+    monkeypatch.setattr(runpod_pods, "_rest", lambda *a, **k: R())
+    assert ln.RunPod()._datacentros_aceitos() == {"EU-RO-1", "US-NC-1", "US-KS-2"}
