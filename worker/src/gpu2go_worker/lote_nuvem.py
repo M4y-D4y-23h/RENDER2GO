@@ -105,7 +105,7 @@ class Agente:
 
     url: str
     token: str
-    tentativas: int = 3
+    tentativas: int = 6
 
     def _req(self, method: str, rota: str, **kw) -> requests.Response:
         erro: Exception | None = None
@@ -121,9 +121,14 @@ class Agente:
                 )
                 if r.status_code == 403:
                     raise AgenteError("token recusado pelo agente")
-                if r.status_code < 500:
+                # O agente sempre responde JSON nos erros. 404/5xx sem JSON vêm do proxy do
+                # RunPod (visto em 07/10: 404 vazio logo depois do pod ficar pronto): repete.
+                do_agente = r.status_code < 400 or r.headers.get("Content-Type", "").startswith(
+                    "application/json"
+                )
+                if do_agente and r.status_code < 500:
                     return r
-                erro = AgenteError(f"{rota}: HTTP {r.status_code}")
+                erro = AgenteError(f"{rota}: HTTP {r.status_code} (proxy)")
             except requests.RequestException as e:
                 erro = e
             time.sleep(2 * (i + 1))
