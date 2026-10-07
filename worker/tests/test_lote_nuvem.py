@@ -179,7 +179,7 @@ def test_estimate_and_simulation(pasta, tmp_path, capsys):
     assert "5 foto(s), 5 vídeo(s) em 1 GPU(s)" in err and "~28 s por vídeo" in err
     e = ln.estimar(50, 4, 1, 55, 0.79)
     assert e.gpus == 4 and round(e.minutos) == round((12 * 60 + 50 * 55 / 4) / 60)
-    assert ln.segundos_por_video("NVIDIA L40S", "alta", 7) == 180 * 7 / 5
+    assert ln.segundos_por_video("NVIDIA L40S", "alta", 7) == pytest.approx(180 * 1.4**1.6)
 
 
 def test_agent_rejects_wrong_token(tmp_path):

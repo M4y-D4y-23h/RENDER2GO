@@ -61,12 +61,12 @@ REPO = WORKER_DIR.parent
 EXIT_OK, EXIT_FALHA, EXIT_PEDIDO, EXIT_RECUSADO, EXIT_SEM_GPU, EXIT_PENDENTE = 0, 1, 2, 3, 4, 5
 # Segundos por vídeo de 5 s medidos (worker/evals/gpu-2026-10-06*); o resto usa o pior caso.
 MEDIDO_S = {
-    # alta na RTX PRO 6000 ainda sem medição: proporção da L40S (180 × 28/55)
-    "NVIDIA RTX PRO 6000 Blackwell Server Edition": {"rapida": 28, "alta": 92},
+    "NVIDIA RTX PRO 6000 Blackwell Server Edition": {"rapida": 28, "alta": 93},
     "NVIDIA L40S": {"rapida": 55, "alta": 180},
     "NVIDIA GeForce RTX 4090": {"rapida": 80, "alta": 213},
 }
 PIOR_S = {"rapida": 80, "alta": 213}
+EXPOENTE_DURACAO = 1.6  # 160 s / 93 s para 7 s / 5 s (720p, RTX PRO 6000)
 # Ordem padrão (07/10/2026), sempre na nuvem secure: RTX PRO 6000 (medida: ~28 s, mesmo custo
 # por vídeo da L40S e metade do tempo); L40S (~55 s); L40 e RTX 6000 Ada (mesmo chip da L40S,
 # ~metade do cálculo de IA; sem medição, usam o pior caso); RTX 4090 por último (troca modelo).
@@ -470,7 +470,8 @@ def args_lote(a: Namespace) -> list[str]:
 
 def segundos_por_video(gpu: str, qualidade: str, duracao: int) -> float:
     base = MEDIDO_S.get(gpu, PIOR_S)[qualidade]
-    return base * duracao / 5
+    # o tempo cresce mais rápido que a duração: 7 s levaram 1,72× os 5 s (RTX PRO 6000, 07/10)
+    return base * (duracao / 5) ** EXPOENTE_DURACAO
 
 
 @dataclass
