@@ -83,7 +83,14 @@ SUBIDA_S = 12 * 60  # agente + instalação + modelos + serviços (medido: 8–1
 MAX_POD_S = 2 * 3600
 MARGEM_S = 10 * 60
 ESPERA_AGENTE_S = 600
-ESPERA_INSTALACAO_S = 1800
+# 37 GB a 40 MB/s (o mínimo aceito) ≈ 15 min; o normal é 4–7 min. Passou disso, troca o pod.
+ESPERA_INSTALACAO_S = 18 * 60
+# Pod com vazão pior que LENTO × o medido para a GPU é trocado (servidor lento ou com defeito).
+LENTO = 1.6
+FOLGA_S = 15  # tolerância fixa por vídeo (envio, download, carga do 1º vídeo)
+SUBSTITUTOS = 2  # pods trocados por pod pedido, no máximo
+CACHE = Path(os.environ.get("GPU2GO_CACHE", Path.home() / ".cache" / "gpu2go"))
+MEMORIA_DIAS = 7  # datacenter lento fica de fora por esse tempo
 ESPERA_SERVICOS_S = 600
 FOTOS_POR_GPU = 2
 ESTADO = ".nuvem"
@@ -102,6 +109,10 @@ class NuvemError(Exception):
 
 class AgenteError(NuvemError):
     pass
+
+
+class PodLento(NuvemError):
+    """O pod funciona, mas rende abaixo do esperado: é trocado por outro."""
 
 
 @dataclass
@@ -182,6 +193,8 @@ class PodInfo:
     usd_h: float
     descricao: str
     gpus: int
+    gpu: str = ""
+    datacentro: str | None = None
 
 
 class Provedor(Protocol):
@@ -192,6 +205,34 @@ class Provedor(Protocol):
     ) -> PodInfo: ...
 
     def encerrar(self, pod_id: str) -> None: ...
+
+
+def _memoria_path() -> Path:
+    return CACHE / "datacentros.json"
+
+
+def lembrar_datacentro(dc: str | None, mbs: float | None, motivo: str = "") -> None:
+    """Anota a rede de um datacenter (aqui, na máquina de quem roda o comando)."""
+    if not dc:
+        return
+    path = _memoria_path()
+    try:
+        dados = json.loads(path.read_text()) if path.is_file() else {}
+    except (OSError, json.JSONDecodeError):
+        dados = {}
+    dados[dc] = {"mbs": mbs, "quando": time.time(), "motivo": motivo}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dados, indent=1, ensure_ascii=False))
+
+
+def datacentros_lentos() -> set[str]:
+    path = _memoria_path()
+    try:
+        dados = json.loads(path.read_text()) if path.is_file() else {}
+    except (OSError, json.JSONDecodeError):
+        return set()
+    limite = time.time() - MEMORIA_DIAS * 86400
+    return {dc for dc, d in dados.items() if d.get("quando", 0) > limite and d.get("motivo")}
 
 
 AGENTE_CMD = 'echo "$AGENT_B64" | base64 -d > /agente.py && exec python3 /agente.py'
@@ -218,8 +259,9 @@ class RunPod:
             corpo = runpod_pods.corpo_pod(opcao, self.IMAGEM, nome, 120, env, ["8888/http"])
             corpo["gpuCount"] = gpus
             corpo["dockerStartCmd"] = ["bash", "-c", AGENTE_CMD]
-            if self.datacentros:
-                corpo["dataCenterIds"] = self.datacentros
+            dcs = self.datacentros or self._datacentros_bons(opcao.gpu)
+            if dcs:
+                corpo["dataCenterIds"] = dcs
             try:
                 pod = runpod_pods.criar(opcao, corpo, self.chave)
             except runpod_pods.SemVaga:
@@ -232,11 +274,44 @@ class RunPod:
                 usd_h=float(pod.get("costPerHr") or 0),
                 descricao=str(opcao),
                 gpus=gpus,
+                gpu=opcao.gpu,
+                datacentro=self._datacentro_do_pod(pod["id"]),
             )
         raise runpod_pods.SemVaga("; ".join(tentativas) or "nenhuma opção")
 
     def encerrar(self, pod_id: str) -> None:
         runpod_pods.encerrar(pod_id, self.chave)
+
+    def _datacentros_bons(self, gpu: str) -> list[str]:
+        """Datacenters com estoque dessa GPU, menos os lentos lembrados (vazio = qualquer um)."""
+        lentos = datacentros_lentos()
+        if not lentos:
+            return []
+        try:
+            d = runpod_pods._graphql(
+                "{ dataCenters { id gpuAvailability { gpuTypeId available } } }", self.chave
+            )
+        except runpod_pods.RunPodError:
+            return []
+        com_gpu = [
+            dc["id"]
+            for dc in d.get("dataCenters") or []
+            for g in dc.get("gpuAvailability") or []
+            if g.get("gpuTypeId") == gpu and g.get("available")
+        ]
+        bons = [dc for dc in com_gpu if dc not in lentos]
+        if lentos & set(com_gpu):
+            _log(f"evitando datacenters lentos: {', '.join(sorted(lentos & set(com_gpu)))}")
+        return bons
+
+    def _datacentro_do_pod(self, pod_id: str) -> str | None:
+        q = f'{{ pod(input:{{podId:"{pod_id}"}}) {{ machine {{ dataCenterId }} }} }}'
+        try:
+            return (
+                (runpod_pods._graphql(q, self.chave).get("pod") or {}).get("machine") or {}
+            ).get("dataCenterId")
+        except runpod_pods.RunPodError:
+            return None
 
 
 # --- comandos no pod ------------------------------------------------------------------
@@ -410,6 +485,8 @@ class Pod:
     agente: Agente
     criado: float = field(default_factory=time.monotonic)
     vivo: bool = True
+    fim: float | None = None
+    vazao: list[float] = field(default_factory=list)
 
     @property
     def nome(self) -> str:
@@ -429,6 +506,7 @@ class Orquestrador:
         self.compilando = threading.Lock()
         self.lote_json: Path = a.saida / ESTADO / "lote.json"
         self.recusado = False
+        self.parar = threading.Event()
         self.rel_path = a.saida / lote.RELATORIO
         self.relatorio = lote._ler_relatorio(self.rel_path)
         self.acab = ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) // 2))
@@ -446,7 +524,7 @@ class Orquestrador:
         with self.lock:
             if not pod.vivo:
                 return
-            pod.vivo = False
+            pod.vivo, pod.fim = False, time.monotonic()
         try:
             self.provedor.encerrar(pod.info.id)
             _log(f"pod {pod.nome} encerrado ({motivo})")
@@ -480,6 +558,8 @@ class Orquestrador:
             self._instalar(pod)
         except (NuvemError, OSError) as e:
             _log(f"pod {pod.nome} descartado: {e}")
+            if "tempo esgotado" in str(e):
+                lembrar_datacentro(pod.info.datacentro, None, f"instalação lenta: {e}")
             self._encerrar(pod, "falhou na subida")
             return None
         return pod
@@ -498,8 +578,12 @@ class Orquestrador:
                 raise NuvemError(problema)
             _, out = ag.exec(REDE.format(url=url_teste_rede()), 60)
             problema = rede_ok(out)
+            m = re.search(r"rede ([\d.]+)", out)
+            lembrar_datacentro(
+                pod.info.datacentro, float(m.group(1)) if m else None, problema or ""
+            )
             if problema:
-                raise NuvemError(problema)
+                raise NuvemError(f"{problema} (datacenter {pod.info.datacentro or '?'})")
             _log(f"pod {pod.nome}: {out.strip()} MB/s")
         _log(f"pod {pod.nome}: agente, CUDA e rede ok; instalando o worker (~6–10 min)")
         ag.put(self.a.repo_tgz, f"{r.raiz}/repo.tgz")
@@ -511,7 +595,9 @@ class Orquestrador:
         if not estado.startswith("PRONTO"):
             _, log = ag.exec(f"tail -5 {r.raiz}/bootstrap.log {r.raiz}/*.log 2>/dev/null", 30)
             raise NuvemError(f"instalação: {estado.strip()} | {log[-300:]}")
-        ag.bg(r.servicos, f"{r.raiz}/servicos.log")
+        ag.bg(
+            f"export COMFY_POR_GPU={self.a.comfy_por_gpu}; {r.servicos}", f"{r.raiz}/servicos.log"
+        )
         self._esperar(
             pod,
             f"grep -q 'gpu2go\\] ERRO' {r.raiz}/servicos.log && echo ERRO; "
@@ -563,9 +649,9 @@ class Orquestrador:
         for f in pacote:
             ag.put(f.preparada, f"{d}/fotos/{f.nome}.png")
         ag.put(self.lote_json, f"{d}/saida/lote.json")
-        cmd = shlex.join(
-            ["--saida", f"{d}/saida", "--gpus", str(pod.info.gpus), *args_lote(self.a)]
-        )
+        instancias = pod.info.gpus * self.a.comfy_por_gpu
+        cmd = shlex.join(["--saida", f"{d}/saida", "--gpus", str(instancias), *args_lote(self.a)])
+        t0 = time.monotonic()
         ag.bg(f"{r.lote} {d}/fotos {cmd}; echo $? > {d}/rc", f"{d}/lote.log")
         # nunca passa do ponto em que ainda dá para baixar antes do desligamento automático
         limite = min(
@@ -579,6 +665,7 @@ class Orquestrador:
             if time.monotonic() > limite:
                 raise NuvemError(f"pacote {n} passou do tempo")
             time.sleep(10)
+        parede = time.monotonic() - t0
         tmp = self.a.saida / ESTADO / f"p{n:04d}-relatorio.csv"
         if not ag.get(f"{d}/saida/{lote.RELATORIO}", tmp):
             _, log = ag.exec(f"tail -20 {d}/lote.log", 30)
@@ -609,6 +696,22 @@ class Orquestrador:
         with self.lock:
             self._gravar_relatorio()
         ag.exec(f"rm -rf {d}", 60)
+        # vazão real deste pod: segundos de GPU por vídeo (já com o paralelismo)
+        ok = sum(1 for row in linhas if row["status"] == "ok")
+        if ok:
+            por_video = parede * pod.info.gpus / ok
+            esperado = segundos_por_video(
+                pod.info.gpu or self.a.opcoes[0].gpu, self.a.qualidade, self._duracao(pacote)
+            )
+            pod.vazao.append(por_video)
+            _log(f"pod {pod.nome}: ~{por_video:.0f} s de GPU por vídeo (medido: ~{esperado:.0f} s)")
+            if por_video > LENTO * esperado + FOLGA_S:
+                raise PodLento(
+                    f"{por_video:.0f} s por vídeo, esperado ~{esperado:.0f} s: servidor lento"
+                )
+
+    def _duracao(self, pacote: list[Foto]) -> int:
+        return pacote[0].tarefas[0].duracao
 
     def _tempo_pacote(self, pod: Pod, pacote: list[Foto]) -> float:
         """Estimativa (s) de um pacote: envio e serviços + vídeos divididos pelas GPUs."""
@@ -632,15 +735,34 @@ class Orquestrador:
         final = self.a.saida / "final" / video.name
         self.acab_futuros.append(self.acab.submit(acabamento.acabar, [video], final, o))
 
+    def gasto(self) -> float:
+        agora = time.monotonic()
+        return sum(p.info.usd_h * ((p.fim or agora) - p.criado) / 3600 for p in self.pods)
+
     def _trabalhar(self, i: int, deadman_s: int) -> None:
-        pod = self._subir_pod(i, deadman_s)
-        if pod is None:
-            return
+        """Um "posto" do lote: sobe um pod; se ele falhar ou for lento, troca por outro."""
+        for tentativa in range(1 + self.a.substitutos):
+            if self.recusado or self.pacotes.empty() or self.parar.is_set():
+                return
+            if tentativa:
+                _log(f"posto {i}: trocando o pod ({tentativa}/{self.a.substitutos})")
+            pod = self._subir_pod(i, deadman_s)
+            if pod is None:
+                continue
+            if self._usar(pod, deadman_s):
+                return  # terminou sem falha (fila vazia ou limite de tempo)
+
+    def _usar(self, pod: Pod, deadman_s: int) -> bool:
+        """Roda pacotes no pod; devolve False se o pod falhou e deve ser trocado."""
         try:
             self._compilar(pod)
             self.prompts_ok.wait()
             n = 0
-            while not self.recusado:
+            while not self.recusado and not self.parar.is_set():
+                if self.gasto() > self.a.orcamento_usd * 1.5:
+                    _log(f"gasto passou de 1,5× o orçamento (US$ {self.gasto():.2f}); parando")
+                    self.parar.set()
+                    break
                 try:
                     pacote = self.pacotes.get_nowait()
                 except queue.Empty:
@@ -655,13 +777,22 @@ class Orquestrador:
                     n = self.n_pacote
                 try:
                     self._rodar_pacote(pod, pacote, n)
+                except PodLento:
+                    raise  # o pacote foi entregue; só o pod sai
                 except (NuvemError, OSError) as e:
                     self.pacotes.put(pacote)  # outro pod pega
                     raise NuvemError(f"pacote {n} devolvido à fila: {e}") from e
+            return True
+        except PodLento as e:
+            _log(f"pod {pod.nome}: {e}")
+            lembrar_datacentro(pod.info.datacentro, None, f"lento: {e}")
+            return False
         except NuvemError as e:
             _log(f"pod {pod.nome}: {e}")
             if self.recusado:
                 self.prompts_ok.set()
+                return True
+            return False
         finally:
             self._encerrar(pod, "fim do trabalho")
 
@@ -680,7 +811,7 @@ class Orquestrador:
         if not pendentes:
             _log("nada a fazer: todos os vídeos já estão prontos")
             return EXIT_OK
-        tam = FOTOS_POR_GPU * self.a.gpus_por_pod
+        tam = FOTOS_POR_GPU * self.a.gpus_por_pod * self.a.comfy_por_gpu
         for i in range(0, len(pendentes), tam):
             self.pacotes.put(pendentes[i : i + tam])
         self.n_pacote = 0
@@ -769,6 +900,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="padrão: secure (decisão de 07/10/2026; hosts community falharam no CUDA)",
     )
     g.add_argument("--gpus-por-pod", type=int, default=1, help="GPUs por pod (1, 2, 4, 8)")
+    g.add_argument(
+        "--comfy-por-gpu",
+        type=int,
+        default=1,
+        help="vídeos ao mesmo tempo em cada GPU (1 a 4; a VRAM é dividida entre eles)",
+    )
+    g.add_argument(
+        "--substitutos",
+        type=int,
+        default=SUBSTITUTOS,
+        help=f"quantas vezes trocar um pod lento ou com defeito (padrão {SUBSTITUTOS})",
+    )
     g.add_argument(
         "--orcamento-usd", type=float, default=5.0, help="não sobe pods se a estimativa passar"
     )
@@ -875,7 +1018,7 @@ def main(
     t0 = time.monotonic()
     orq = Orquestrador(a, fotos, provedor, remoto or Remoto())
     code = orq.rodar(deadman_s)
-    custo = sum(p.info.usd_h * (time.monotonic() - p.criado) / 3600 for p in orq.pods)
+    custo = orq.gasto()
     _log(
         f"fim em {(time.monotonic() - t0) / 60:.1f} min; custo estimado dos pods ~US$ {custo:.2f}; "
         f"relatório em {orq.rel_path}"

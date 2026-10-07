@@ -15,6 +15,8 @@
 #   SKIP_GPU_CHECK=1  pular a checagem de GPU (só testes sem GPU)
 #   COMFY_EXTRA_ARGS  argumentos extras do ComfyUI (ex.: --cpu em testes sem GPU)
 #   COMFY_GPUS        modo pod: um ComfyUI por GPU, nas portas COMFY_PORT, +1, +2...
+#   COMFY_POR_GPU     modo pod: ComfyUIs por GPU (padrão 1). Com 2, a GPU de 96 GB roda dois
+#                     vídeos ao mesmo tempo; cada um ganha metade da VRAM (--reserve-vram)
 #                     (número ou "auto" = todas as GPUs; padrão 1; serverless usa sempre 1)
 #   AUTO_TERMINATE_HOURS  modo pod no RunPod: o pod se encerra depois de N horas
 #                     (padrão e máximo: 2; regra do projeto, nenhum pod sem limite)
@@ -29,6 +31,7 @@ COMFY_LISTEN="${COMFY_LISTEN:-127.0.0.1}"
 COMFY_PORT="${COMFY_PORT:-8188}"
 RESERVE_VRAM_GB="${RESERVE_VRAM_GB:-6}"
 COMFY_GPUS="${COMFY_GPUS:-1}"
+COMFY_POR_GPU="${COMFY_POR_GPU:-1}"
 WORKER_DIR="${GPU2GO_WORKER_DIR:-/opt/gpu2go/worker}"
 export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
 export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-0}"
@@ -54,7 +57,8 @@ if [[ "$COMFY_GPUS" == "auto" ]]; then
   [[ "$COMFY_GPUS" -ge 1 ]] || COMFY_GPUS=1
 fi
 [[ "$COMFY_GPUS" =~ ^[1-9][0-9]*$ ]] || die "COMFY_GPUS inválido: $COMFY_GPUS"
-[[ "$MODE" == "serverless" ]] && COMFY_GPUS=1  # o handler fala com um ComfyUI só
+[[ "$COMFY_POR_GPU" =~ ^[1-4]$ ]] || die "COMFY_POR_GPU inválido: $COMFY_POR_GPU (1 a 4)"
+[[ "$MODE" == "serverless" ]] && COMFY_GPUS=1 && COMFY_POR_GPU=1  # o handler fala com um só
 
 # 0. Desligamento automático no RunPod (o RunPod injeta RUNPOD_POD_ID e RUNPOD_API_KEY) ---
 DEADMAN_PID=""
@@ -120,24 +124,34 @@ setsid ollama serve > >(sed -u 's/^/[ollama] /') 2>&1 &
 OLLAMA_PID=$!
 wait_http "http://$OLLAMA_HOST/api/version" 60 "Ollama"
 
-# 5. ComfyUI: um processo por GPU (CUDA_VISIBLE_DEVICES), portas consecutivas -----------
+# 5. ComfyUI: COMFY_POR_GPU processos por GPU (CUDA_VISIBLE_DEVICES), portas consecutivas ----
+# Com mais de um por GPU, cada processo reserva a VRAM dos outros (--reserve-vram), para os
+# dois não disputarem a memória inteira.
 COMFY_PIDS=()
+N_COMFY=$((COMFY_GPUS * COMFY_POR_GPU))
+reserva=$RESERVE_VRAM_GB
+if ((COMFY_POR_GPU > 1)); then
+  total_gb=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i 0 | awk '{print int($1/1024)}')
+  reserva=$((total_gb * (COMFY_POR_GPU - 1) / COMFY_POR_GPU + RESERVE_VRAM_GB))
+  log "$COMFY_POR_GPU ComfyUI por GPU de ${total_gb} GB: cada um usa até $((total_gb - reserva)) GB"
+fi
 cd "$COMFY_DIR"
-for ((g = 0; g < COMFY_GPUS; g++)); do
-  port=$((COMFY_PORT + g))
-  log "subindo o ComfyUI na GPU $g em $COMFY_LISTEN:$port (--reserve-vram $RESERVE_VRAM_GB)"
+for ((i = 0; i < N_COMFY; i++)); do
+  g=$((i / COMFY_POR_GPU))
+  port=$((COMFY_PORT + i))
+  log "subindo o ComfyUI $i na GPU $g em $COMFY_LISTEN:$port (--reserve-vram $reserva)"
   gpu_env=()  # com uma GPU, respeita o CUDA_VISIBLE_DEVICES do host
   ((COMFY_GPUS > 1)) && gpu_env=("CUDA_VISIBLE_DEVICES=$g")
   env "${gpu_env[@]}" setsid python main.py \
     --listen "$COMFY_LISTEN" --port "$port" \
-    --reserve-vram "$RESERVE_VRAM_GB" \
+    --reserve-vram "$reserva" \
     --disable-metadata --disable-auto-launch \
     ${COMFY_EXTRA_ARGS:-} \
-    > >(sed -u "s/^/[comfyui:$g] /") 2>&1 &
+    > >(sed -u "s/^/[comfyui:$i] /") 2>&1 &
   COMFY_PIDS+=($!)
 done
-for ((g = 0; g < COMFY_GPUS; g++)); do
-  wait_http "http://127.0.0.1:$((COMFY_PORT + g))/system_stats" 300 "ComfyUI da GPU $g"
+for ((i = 0; i < N_COMFY; i++)); do
+  wait_http "http://127.0.0.1:$((COMFY_PORT + i))/system_stats" 300 "ComfyUI $i"
 done
 log "pronto"
 

@@ -96,6 +96,7 @@ def sem_git(monkeypatch, tmp_path):
         return destino
 
     monkeypatch.setattr(ln, "empacotar_repo", falso)
+    monkeypatch.setattr(ln, "CACHE", tmp_path / "cache")
     monkeypatch.setattr(ln, "ESPERA_AGENTE_S", 3)
     monkeypatch.setattr(ln.time, "sleep", lambda s: None if s >= 10 else _dormir(s))
 
@@ -264,3 +265,42 @@ def test_network_check_discards_slow_hosts():
     assert "rede lenta (2.9 MB/s" in ln.rede_ok("rede 2.9")
     assert "sem resposta" in ln.rede_ok("Traceback ...")
     assert ln.url_teste_rede().startswith("https://huggingface.co/")
+
+
+def test_slow_pods_are_replaced_and_their_work_is_kept(
+    pasta, tmp_path, fake_comfy, fake_ollama, sem_git, monkeypatch
+):
+    monkeypatch.setattr(ln, "segundos_por_video", lambda *a: 0.0001)  # todo pod parece lento
+    monkeypatch.setattr(ln, "LENTO", 1.0)
+    monkeypatch.setattr(ln, "FOLGA_S", 0)
+    prov = Provedor()
+    saida = tmp_path / "entrega"
+    code = ln.main(
+        _argv(pasta, saida, "--substitutos", "2"),
+        provedor=prov,
+        remoto=_remoto(tmp_path, fake_comfy.url, fake_ollama.url),
+    )
+    # 5 fotos em pacotes de 2: cada pod entrega um pacote e é trocado (1 + 2 substitutos)
+    assert code == ln.EXIT_OK and len(list(saida.glob("*.mp4"))) == 5
+    assert prov.criados == ["p1", "p2", "p3"] and sorted(prov.encerrados) == prov.criados
+
+
+def test_slow_datacenters_are_remembered_for_a_week(tmp_path, monkeypatch):
+    monkeypatch.setattr(ln, "CACHE", tmp_path)
+    ln.lembrar_datacentro("US-KS-2", 12.0, "rede lenta")
+    ln.lembrar_datacentro("US-NC-1", 329.0, "")
+    ln.lembrar_datacentro(None, 1.0, "sem datacenter: ignorado")
+    assert ln.datacentros_lentos() == {"US-KS-2"}
+    dados = __import__("json").loads((tmp_path / "datacentros.json").read_text())
+    dados["US-KS-2"]["quando"] -= 8 * 86400
+    (tmp_path / "datacentros.json").write_text(__import__("json").dumps(dados))
+    assert ln.datacentros_lentos() == set()
+
+
+def test_entrypoint_supports_several_comfyui_per_gpu():
+    import subprocess
+
+    ep = WORKER / "entrypoint.sh"
+    assert subprocess.run(["bash", "-n", str(ep)]).returncode == 0
+    texto = ep.read_text()
+    assert "COMFY_POR_GPU" in texto and "N_COMFY=$((COMFY_GPUS * COMFY_POR_GPU))" in texto
