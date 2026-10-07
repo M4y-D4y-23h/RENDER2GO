@@ -9,7 +9,12 @@ from gpu2go_servico.db import MAX_TENTATIVAS, BancoError
 def _lote(b, n_fotos=2, variacoes=1):
     cid, token = b.criar_cliente("Padaria Teste")
     fotos = [
-        {"nome": f"f{i}", "tipo": "image/jpeg", "bytes": 100 + i, "chave": f"clientes/{cid}/{{lote}}/entrada/f{i}.jpg"}
+        {
+            "nome": f"f{i}",
+            "tipo": "image/jpeg",
+            "bytes": 100 + i,
+            "chave": f"clientes/{cid}/{{lote}}/entrada/f{i}.jpg",
+        }
         for i in range(n_fotos)
     ]
     lid = b.criar_lote(cid, {"prompt": "a câmera se aproxima"}, fotos)
@@ -109,3 +114,52 @@ def test_concurrent_workers_never_share_a_job(banco):
     for t in ts:
         t.join()
     assert len(pegos) == 20 and len(set(pegos)) == 20
+
+
+def _lote_de(b, nome, n_fotos, plano="pago"):
+    cid, _ = b.criar_cliente(nome, plano=plano)
+    fotos = [
+        {
+            "nome": f"{nome}{i}",
+            "tipo": "image/jpeg",
+            "bytes": 100,
+            "chave": f"clientes/{cid}/{{lote}}/entrada/{i}.jpg",
+        }
+        for i in range(n_fotos)
+    ]
+    lid = b.criar_lote(cid, {"prompt": "a câmera se aproxima", "qualidade": "rapida"}, fotos)
+    _aprovar(b, lid)
+    c = b.reivindicar("compilador")
+    b.definir_prompt(c["lote_id"], "p", "i2v@5")
+    b.concluir(c["id"], "compilador", "ok")
+    return lid
+
+
+def test_queue_interleaves_clients_and_puts_paid_before_trials(banco):
+    a = _lote_de(banco, "a", 3, plano="teste")
+    b = _lote_de(banco, "b", 3, plano="teste")
+    c = _lote_de(banco, "c", 2, plano="teste")
+    ordem = []
+    while (j := banco.reivindicar("w")) is not None:
+        ordem.append(j["lote_id"])
+        banco.concluir(j["id"], "w", "ok")
+    # vídeo 1 de cada cliente antes do vídeo 2 de qualquer um
+    assert ordem[:3] == [a, b, c] and ordem[3:6] == [a, b, c] and ordem[6:] == [a, b]
+
+    t = _lote_de(banco, "t", 2, plano="teste")
+    p = _lote_de(banco, "p", 2, plano="pago")  # chegou depois, mas é pago
+    assert [x["lote_id"] for x in banco.trabalho()] == [p, t]
+    assert banco.reivindicar("w")["lote_id"] == p
+
+
+def test_work_summary_and_verification_fields(banco):
+    lid = _lote_de(banco, "x", 2)
+    (w,) = banco.trabalho()
+    assert (w["lote_id"], w["pendentes"], w["em_andamento"]) == (lid, 2, 0)
+    j = banco.reivindicar("w")
+    banco.concluir(j["id"], "w", "ok", segundos=12.0, similaridade=0.998, bytes_video=12345)
+    feito = next(x for x in banco.jobs(lid) if x["id"] == j["id"])
+    assert feito["similaridade"] == pytest.approx(0.998) and feito["bytes_video"] == 12345
+    assert banco.fotos_total(banco.lote(lid)["cliente_id"]) == 2
+    with pytest.raises(BancoError):
+        banco.criar_cliente("y", plano="vip")

@@ -17,9 +17,7 @@ def test_sigv4_presigned_get_matches_aws_documented_example():
     )
     url = s3.url("GET", "test.txt", 86400, dt.datetime(2013, 5, 24, tzinfo=dt.UTC))
     assert url.startswith("https://examplebucket.s3.amazonaws.com/test.txt?")
-    assert url.endswith(
-        "X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404"
-    )
+    assert url.endswith("X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404")
 
 
 def test_validation():

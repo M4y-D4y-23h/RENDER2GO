@@ -1,4 +1,4 @@
-"""RASCUNHO (em pausa, sem testes ainda): API do serviço (ADR 0003, fase 3). Os bytes nunca passam por aqui: só URLs assinadas.
+"""API do serviço (ADR 0003, fase 3). Os bytes nunca passam por aqui: só URLs assinadas.
 
 Cliente (Authorization: Bearer <token do cliente>):
     GET  /api/receitas                 receitas, formatos e limites
@@ -9,17 +9,20 @@ Cliente (Authorization: Bearer <token do cliente>):
 Aprovação (Bearer <token de administração>), ADR 0004:
     GET  /api/admin/lotes              lotes aguardando aprovação, com miniaturas
     POST /api/admin/lotes/{id}/aprovar | /recusar
+    POST /api/admin/clientes           cadastra um cliente (plano pago ou teste); o token aparece uma vez
 
 Workers (Bearer <token de worker>), sem porta de entrada nos pods (eles puxam):
     POST /api/worker/reivindicar       próximo job, com URLs assinadas e carimbo de aprovação
     POST /api/worker/jobs/{id}/prompt  prompt compilado (passa pelo C1 aqui também)
-    POST /api/worker/jobs/{id}/concluir
+    POST /api/worker/jobs/{id}/concluir  "ok" de render só com o vídeo no armazenamento e a
+                                       conferência do 1º quadro acima do limiar (docs/08)
 
 Páginas: / (cliente) e /aprovar (administração).
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -34,18 +37,20 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
+from gpu2go_worker import conferencia, filtros, lote, presets
 from pydantic import BaseModel, Field
 
 from gpu2go_servico import SERVICO_DIR
 from gpu2go_servico.armazenamento import Armazenamento, chave_entrada, chave_saida
 from gpu2go_servico.db import Banco, BancoError
-from gpu2go_worker import filtros, lote, presets
 
 TIPOS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 MAX_FOTOS_LOTE = 1000
 MAX_BYTES_FOTO = 50 * 1024**2
 URL_ENVIO_S = 3600
 URL_DOWNLOAD_S = 24 * 3600
+# teste gratuito (docs/08): qualidade rápida, vídeos de 3 s, uma variação, até 10 fotos no total
+TESTE = {"qualidade": "rapida", "duracao": 3, "variacoes": 1, "fotos": 10}
 NOME = re.compile(r"[^A-Za-z0-9_-]+")
 WEB = SERVICO_DIR / "web"
 
@@ -69,16 +74,14 @@ class Config:
         segredo = os.environ.get("GPU2GO_SEGREDO_APROVACAO", "")
         if len(segredo) < 32:
             raise SystemExit("GPU2GO_SEGREDO_APROVACAO ausente ou curto (mínimo 32 caracteres)")
+        armazenamento = Armazenamento.do_ambiente()  # GPU2GO_R2_* (mesmas do lote_nuvem)
+        if armazenamento is None:
+            raise SystemExit("faltam GPU2GO_R2_ENDPOINT, _BUCKET, _ACCESS_KEY_ID ou _SECRET_ACCESS_KEY")
         banco = Banco(os.environ["GPU2GO_DB_URL"])
         banco.criar_esquema()
         return cls(
             banco=banco,
-            armazenamento=Armazenamento(
-                os.environ["R2_ENDPOINT"],
-                os.environ["R2_BUCKET"],
-                os.environ["R2_ACCESS_KEY"],
-                os.environ["R2_SECRET_KEY"],
-            ),
+            armazenamento=armazenamento,
             admin_tokens=lista("GPU2GO_ADMIN_TOKENS"),
             worker_tokens=lista("GPU2GO_WORKER_TOKENS"),
             segredo_aprovacao=segredo,
@@ -138,8 +141,24 @@ class ConcluirIn(BaseModel):
     status: str
     segundos: float | None = None
     aviso: str | None = None
-    erro: str | None = None
+    erro: str | None = Field(None, max_length=1000)
     repetir: bool = False
+    similaridade: float | None = None  # 1º quadro × foto (gpu2go_worker.conferencia)
+    bytes_video: int | None = None
+
+
+class RecusaIn(BaseModel):
+    motivo: str = Field(min_length=3, max_length=500)
+
+
+class ReivindicarIn(BaseModel):
+    worker: str = Field(min_length=3, max_length=100)
+
+
+class ClienteIn(BaseModel):
+    nome: str = Field(min_length=2, max_length=120)
+    plano: str = "pago"
+    cota_fotos_dia: int = Field(500, ge=1, le=100_000)
 
 
 def criar_app(cfg: Config | None = None) -> FastAPI:
@@ -194,13 +213,22 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         r = lote.load_receitas()
         return {
             "receitas": [
-                {"id": k, "label": v["label"], "nicho": v["nicho"], "acao": v["acao"],
-                 "exige_consentimento": bool(v.get("exige_consentimento"))}
+                {
+                    "id": k,
+                    "label": v["label"],
+                    "nicho": v["nicho"],
+                    "acao": v["acao"],
+                    "exige_consentimento": bool(v.get("exige_consentimento")),
+                }
                 for k, v in r["receitas"].items()
             ],
             "formatos": ["auto", *r["formatos"]],
             "qualidades": list(lote.QUALIDADES),
-            "limites": {"fotos": MAX_FOTOS_LOTE, "bytes_foto": MAX_BYTES_FOTO, "tipos": list(TIPOS)},
+            "limites": {
+                "fotos": MAX_FOTOS_LOTE,
+                "bytes_foto": MAX_BYTES_FOTO,
+                "tipos": list(TIPOS),
+            },
         }
 
     @app.post("/api/lotes")
@@ -224,6 +252,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(422, str(e)) from e
         if not 1 <= len(body.fotos) <= MAX_FOTOS_LOTE:
             raise HTTPException(422, f"de 1 a {MAX_FOTOS_LOTE} fotos por lote")
+        if cli["plano"] == "teste":
+            pedido_teste = (body.qualidade, body.duracao or TESTE["duracao"], body.variacoes)
+            if pedido_teste != (TESTE["qualidade"], TESTE["duracao"], TESTE["variacoes"]):
+                raise HTTPException(422, "teste gratuito: qualidade rápida, vídeos de 3 s, 1 variação")
+            if c.banco.fotos_total(cli["id"]) + len(body.fotos) > TESTE["fotos"]:
+                raise HTTPException(429, f"o teste gratuito vale para até {TESTE['fotos']} fotos")
+            body.duracao = TESTE["duracao"]
         if c.banco.fotos_hoje(cli["id"]) + len(body.fotos) > cli["cota_fotos_dia"]:
             raise HTTPException(429, f"cota diária de {cli['cota_fotos_dia']} fotos atingida")
         fotos, usados = [], set()
@@ -238,18 +273,27 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 nome, n = f"{base}-{n}", n + 1
             usados.add(nome)
             arq = f"{nome}.{TIPOS[f.tipo]}"
-            fotos.append({"nome": nome, "tipo": f.tipo, "bytes": f.bytes,
-                          "chave": chave_entrada(cli["id"], "{lote}", arq), "original": f.nome})
+            fotos.append(
+                {
+                    "nome": nome,
+                    "tipo": f.tipo,
+                    "bytes": f.bytes,
+                    "chave": chave_entrada(cli["id"], "{lote}", arq),
+                    "original": f.nome,
+                }
+            )
         pedido = body.model_dump(exclude={"fotos"})
         lid = c.banco.criar_lote(cli["id"], pedido, fotos)
         envios = []
         for f in c.banco.fotos(lid):
             original = next(x["original"] for x in fotos if x["nome"] == f["nome"])
-            envios.append({
-                "original": original,
-                "url": c.armazenamento.url("PUT", f["chave"], URL_ENVIO_S, content_type=f["tipo"]),
-                "tipo": f["tipo"],
-            })
+            envios.append(
+                {
+                    "original": original,
+                    "url": c.armazenamento.url("PUT", f["chave"], URL_ENVIO_S, content_type=f["tipo"]),
+                    "tipo": f["tipo"],
+                }
+            )
         return {"lote": lid, "envios": envios, "expira_s": URL_ENVIO_S}
 
     @app.post("/api/lotes/{lote_id}/enviado")
@@ -258,8 +302,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(404, "lote não encontrado")
         fotos = c.banco.fotos(lote_id)
         with ThreadPoolExecutor(max_workers=16) as ex:
-            tamanhos = dict(zip([f["chave"] for f in fotos],
-                                ex.map(lambda f: c.armazenamento.tamanho(f["chave"]), fotos)))
+            tamanhos = dict(
+                zip(
+                    [f["chave"] for f in fotos],
+                    ex.map(lambda f: c.armazenamento.tamanho(f["chave"]), fotos),
+                    strict=False,
+                )
+            )
         try:
             problemas = c.banco.confirmar_envio(lote_id, tamanhos)
         except BancoError as e:
@@ -308,15 +357,16 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         out = []
         for lt in c.banco.lotes(status=status, limite=50):
             fotos = c.banco.fotos(lt["id"])
-            out.append({
-                "lote": lt["id"],
-                "cliente": lt["cliente_id"],
-                "criado": lt["criado"],
-                "pedido": json.loads(lt["pedido"]),
-                "filtro_c1": filtros.avaliar(json.loads(lt["pedido"])["prompt"]).reason,
-                "fotos": [{"nome": f["nome"], "url": c.armazenamento.url("GET", f["chave"], 3600)}
-                          for f in fotos],
-            })
+            out.append(
+                {
+                    "lote": lt["id"],
+                    "cliente": lt["cliente_id"],
+                    "criado": lt["criado"],
+                    "pedido": json.loads(lt["pedido"]),
+                    "filtro_c1": filtros.avaliar(json.loads(lt["pedido"])["prompt"]).reason,
+                    "fotos": [{"nome": f["nome"], "url": c.armazenamento.url("GET", f["chave"], 3600)} for f in fotos],
+                }
+            )
         return out
 
     @app.post("/api/admin/lotes/{lote_id}/aprovar")
@@ -326,8 +376,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(404, "lote não encontrado")
         pedido = json.loads(lt["pedido"])
         tarefas = [
-            {"foto_id": f["id"], "variacao": k, "seed": lote.seed_de(f["nome"], k),
-             "arquivo": f"{f['nome']}-v{k}.mp4"}
+            {
+                "foto_id": f["id"],
+                "variacao": k,
+                "seed": lote.seed_de(f["nome"], k),
+                "arquivo": f"{f['nome']}-v{k}.mp4",
+            }
             for f in c.banco.fotos(lote_id)
             for k in range(1, pedido["variacoes"] + 1)
         ]
@@ -337,8 +391,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(409, str(e)) from e
         return {"lote": lote_id, "status": "aprovado", "videos": len(tarefas)}
 
-    class RecusaIn(BaseModel):
-        motivo: str = Field(min_length=3, max_length=500)
+    @app.post("/api/admin/clientes")
+    def novo_cliente(body: ClienteIn, quem: str = Depends(admin), c: Config = Depends(config)):
+        try:
+            cid, token = c.banco.criar_cliente(body.nome, body.cota_fotos_dia, body.plano)
+        except BancoError as e:
+            raise HTTPException(422, str(e)) from e
+        return {"cliente": cid, "token": token, "aviso": "guarde o token: ele não aparece de novo"}
 
     @app.post("/api/admin/lotes/{lote_id}/recusar")
     def recusar(lote_id: str, body: RecusaIn, quem: str = Depends(admin), c: Config = Depends(config)):
@@ -349,9 +408,6 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         return {"lote": lote_id, "status": "recusado"}
 
     # -- workers --------------------------------------------------------------------------
-
-    class ReivindicarIn(BaseModel):
-        worker: str = Field(min_length=3, max_length=100)
 
     @app.post("/api/worker/reivindicar", dependencies=[Depends(worker_auth)])
     def reivindicar(body: ReivindicarIn, c: Config = Depends(config)):
@@ -378,11 +434,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 "foto_url": c.armazenamento.url("GET", foto["chave"], 3600),
                 "foto_ext": TIPOS[foto["tipo"]],
                 "video_url": c.armazenamento.url(
-                    "PUT", chave_saida(lt["cliente_id"], lt["id"], job["arquivo"]), 3600,
-                    content_type="video/mp4"),
+                    "PUT",
+                    chave_saida(lt["cliente_id"], lt["id"], job["arquivo"]),
+                    3600,
+                    content_type="video/mp4",
+                ),
                 "folha_url": c.armazenamento.url(
-                    "PUT", chave_saida(lt["cliente_id"], lt["id"], f"conferencia/{stem}.jpg"), 3600,
-                    content_type="image/jpeg"),
+                    "PUT",
+                    chave_saida(lt["cliente_id"], lt["id"], f"conferencia/{stem}.jpg"),
+                    3600,
+                    content_type="image/jpeg",
+                ),
             }
         return {"job": out}
 
@@ -399,19 +461,42 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         d = filtros.avaliar(body.prompt_en)
         if not d.allowed:  # C1 também no prompt compilado
             c.banco.concluir(job_id, body.worker, "erro", erro=d.reason)
-            try:
+            with contextlib.suppress(BancoError):  # já recusado ou já em andamento
                 c.banco.recusar(job["lote_id"], "filtro-c1", d.reason)
-            except BancoError:
-                pass
             raise HTTPException(422, d.reason)
         c.banco.definir_prompt(job["lote_id"], body.prompt_en, body.compilador)
         return {"ok": True}
 
     @app.post("/api/worker/jobs/{job_id}/concluir", dependencies=[Depends(worker_auth)])
     def concluir(job_id: str, body: ConcluirIn, c: Config = Depends(config)):
+        job = _do_worker(job_id, body.worker, c)
+        status, erro, repetir = body.status, body.erro, body.repetir
+        if job["tipo"] == "render" and status == "ok":
+            # fail-closed: o vídeo precisa estar no armazenamento, com o tamanho informado, e a
+            # conferência do 1º quadro precisa dizer que ele é dessa foto
+            lt = c.banco.lote(job["lote_id"])
+            chave = chave_saida(lt["cliente_id"], lt["id"], job["arquivo"])
+            tamanho = c.armazenamento.tamanho(chave)
+            problema = None
+            if body.similaridade is None or body.similaridade < conferencia.LIMIAR:
+                problema = f"conferência do 1º quadro reprovada ({body.similaridade})"
+            elif not body.bytes_video or tamanho != body.bytes_video:
+                problema = f"vídeo ausente ou incompleto ({tamanho} de {body.bytes_video} bytes)"
+            if problema:
+                c.armazenamento.apagar(chave)  # nada que não passou chega ao cliente
+                status, erro, repetir = "erro", problema, True
         try:
-            r = c.banco.concluir(job_id, body.worker, body.status, segundos=body.segundos,
-                                 aviso=body.aviso, erro=body.erro, repetir=body.repetir)
+            r = c.banco.concluir(
+                job_id,
+                body.worker,
+                status,
+                segundos=body.segundos,
+                aviso=body.aviso,
+                erro=erro,
+                repetir=repetir,
+                similaridade=body.similaridade,
+                bytes_video=body.bytes_video,
+            )
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
         return {"status": r["status"]}
