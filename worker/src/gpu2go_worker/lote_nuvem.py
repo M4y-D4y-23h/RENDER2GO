@@ -95,6 +95,7 @@ MEMORIA_DIAS = 7  # datacenter lento fica de fora por esse tempo
 RESERVA_SALDO_USD = 1.0  # nunca gastar o saldo da conta até o fim
 MIN_POD_S = 15 * 60  # se o saldo/orçamento não pagam nem isso, não sobe
 ESPERA_SERVICOS_S = 600
+ESPERA_GUARDAR_S = 15 * 60  # pod gravador: prazo para terminar o cache no volume
 FOTOS_POR_GPU = 2
 ESTADO = ".nuvem"
 
@@ -520,6 +521,7 @@ class Pod:
     vivo: bool = True
     fim: float | None = None
     vazao: list[float] = field(default_factory=list)
+    grava_volume: bool = False
 
     @property
     def nome(self) -> str:
@@ -545,6 +547,8 @@ class Orquestrador:
         self.acab = ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) // 2))
         self.acab_futuros: list = []
         self.contador = 0
+        self.gravador: Pod | None = None  # com --volume, só um pod por vez grava o cache
+        self.gravador_pendente = False
 
     # estado em disco, para --limpar depois de uma interrupção
     def _salvar_estado(self) -> None:
@@ -574,15 +578,28 @@ class Orquestrador:
             "DEADMAN_S": str(deadman_s),
             "NVIDIA_DRIVER_CAPABILITIES": "compute,utility",
         }
+        with self.lock:  # o 1º pod (ou o substituto dele) grava o cache no volume
+            grava = bool(getattr(self.a, "volume", None)) and not (
+                self.gravador or self.gravador_pendente
+            )
+            self.gravador_pendente |= grava
+        if grava:
+            env["GPU2GO_VOLUME_GRAVA"] = "1"
         try:
             info = self.provedor.criar(f"gpu2go-lote-{i}", self.a.opcoes, self.a.gpus_por_pod, env)
-        except runpod_pods.SemVaga as e:
-            _log(f"pod {i}: sem GPU disponível ({e})")
+        except (runpod_pods.SemVaga, runpod_pods.RunPodError) as e:
+            if grava:
+                with self.lock:
+                    self.gravador_pendente = False
+            if isinstance(e, runpod_pods.SemVaga):
+                _log(f"pod {i}: sem GPU disponível ({e})")
+            else:
+                _log(f"pod {i}: o RunPod recusou a criação ({e})")
             return None
-        except runpod_pods.RunPodError as e:
-            _log(f"pod {i}: o RunPod recusou a criação ({e})")
-            return None
-        pod = Pod(info, Agente(info.url, info.token))
+        pod = Pod(info, Agente(info.url, info.token), grava_volume=grava)
+        if grava:
+            with self.lock:
+                self.gravador, self.gravador_pendente = pod, False
         with self.lock:
             self.pods.append(pod)
             self._salvar_estado()
@@ -594,6 +611,9 @@ class Orquestrador:
             if "tempo esgotado" in str(e):
                 lembrar_datacentro(pod.info.datacentro, None, f"instalação lenta: {e}")
             self._encerrar(pod, "falhou na subida")
+            with self.lock:  # o substituto passa a gravar o cache
+                if self.gravador is pod:
+                    self.gravador = None
             return None
         return pod
 
@@ -628,6 +648,9 @@ class Orquestrador:
         if not estado.startswith("PRONTO"):
             _, log = ag.exec(f"tail -5 {r.raiz}/bootstrap.log {r.raiz}/*.log 2>/dev/null", 30)
             raise NuvemError(f"instalação: {estado.strip()} | {log[-300:]}")
+        _, tempos = ag.exec(f"cat {r.raiz}/tempos 2>/dev/null", 30)
+        if tempos.strip():  # etapas em s desde o início da instalação (para medir o cache)
+            _log(f"pod {pod.nome}: tempos da instalação: {' | '.join(tempos.strip().splitlines())}")
         ag.bg(
             f"export COMFY_POR_GPU={self.a.comfy_por_gpu}; {r.servicos}", f"{r.raiz}/servicos.log"
         )
@@ -828,7 +851,30 @@ class Orquestrador:
                 return True
             return False
         finally:
+            if pod.grava_volume:
+                self._esperar_guardar(pod)
             self._encerrar(pod, "fim do trabalho")
+
+    def _esperar_guardar(self, pod: Pod) -> None:
+        """O pod que grava o cache no volume só sai depois de terminar (ou do prazo)."""
+        limite = min(
+            time.monotonic() + ESPERA_GUARDAR_S, pod.criado + getattr(self, "deadman_s", 0) - 60
+        )
+        _log(f"pod {pod.nome}: terminando de gravar o cache no volume")
+        while time.monotonic() < limite:
+            try:
+                _, out = pod.agente.exec(f"cat {self.remoto.raiz}/guardado 2>/dev/null", 30)
+            except (NuvemError, OSError):
+                break
+            if "GUARDADO" in out:
+                _log(f"pod {pod.nome}: cache gravado no volume")
+                break
+            time.sleep(15)
+        else:
+            _log(f"pod {pod.nome}: AVISO: o cache não terminou de gravar; o próximo pod completa")
+        with self.lock:
+            if self.gravador is pod:
+                self.gravador = None
 
     def rodar(self, deadman_s: int) -> int:
         self.deadman_s = deadman_s

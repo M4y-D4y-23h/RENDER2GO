@@ -162,6 +162,34 @@ def test_broken_pod_is_terminated_and_others_do_the_work(
     assert "p1" in prov.encerrados and "p2" in prov.encerrados
 
 
+def test_only_one_pod_writes_the_volume_cache_and_waits_for_it(
+    pasta, tmp_path, fake_comfy, fake_ollama, sem_git, monkeypatch, capsys
+):
+    monkeypatch.setattr(ln, "ESPERA_GUARDAR_S", 5)
+    prov = Provedor(quebrados=1)  # p1 (gravador) nunca responde: o substituto herda a gravação
+    remoto = _remoto(tmp_path, fake_comfy.url, fake_ollama.url)
+    remoto.instalar = "echo PRONTO > {raiz}/estado; echo GUARDADO > {raiz}/guardado"
+    code = ln.main(
+        _argv(pasta, tmp_path / "entrega", "--pods", "2", "--volume", "vol1"),
+        provedor=prov,
+        remoto=remoto,
+    )
+    assert code == ln.EXIT_OK
+    grava = [e.get("GPU2GO_VOLUME_GRAVA") for e in prov.envs]
+    assert grava[:2] == ["1", None] and grava.count("1") == 2  # p1 e o substituto dele
+    assert "cache gravado no volume" in capsys.readouterr().err
+
+
+def test_bootstrap_downloads_in_parts_and_caches_the_environment():
+    s = (WORKER / "scripts" / "bootstrap_pod.sh").read_text()
+    assert "aria2c" in s and "-x 8 -s 8" in s and "xargs -r -P 4" in s
+    assert "ambiente-$CHAVE.tar.zst" in s and "requirements.lock" in s
+    # volume não POSIX: sem mv/chmod; o .sha256 do ambiente é escrito por último
+    corpo = s.split("set -uo pipefail", 1)[1]
+    assert " mv " not in corpo and "chmod" not in corpo
+    assert s.index('rsync --inplace $R/ambiente.tar.zst "$AMB"') < s.index('"$AMB.sha256" &&')
+
+
 def test_invalid_request_budget_and_no_gpu_create_nothing(pasta, tmp_path, sem_git):
     prov = Provedor()
     vazia = tmp_path / "vazia"

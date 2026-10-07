@@ -1,35 +1,74 @@
 #!/usr/bin/env bash
 # Monta o worker num pod efêmero a partir de python:3.12-slim (lote_nuvem, ADR 0003 fase 2):
 # mesmas versões e hashes do worker/Dockerfile (lidos de lá), modelos do models.lock.json
-# baixados em paralelo e conferidos por bytes e SHA-256. Enquanto a imagem com os modelos
-# não existe (ADR 0002), isto leva ~6–10 min por pod.
+# baixados em partes (aria2: 8 conexões por arquivo, 4 arquivos por vez) e conferidos por bytes e
+# SHA-256 em paralelo. Sem cache, ~6 min por pod num datacenter bom (medido em 07/10/2026).
 #
 # Uso: bootstrap_pod.sh <repo.tgz> <conjuntos de modelos, ex.: i2v_r1v2>
 # Estado em /root/gpu2go/estado: INSTALANDO → PRONTO | FALHOU <motivo>
+# Tempos por etapa (s desde o início) em /root/gpu2go/tempos.
 #
-# Com GPU2GO_VOLUME=1 (volume de rede do RunPod em /workspace), os modelos e o modelo do
-# compilador ficam em /workspace/gpu2go-cache: o 1º pod baixa e guarda; os seguintes copiam do
-# volume para o disco local (regra: nunca ler modelo direto do volume) e conferem o SHA-256.
-# Volume não POSIX: só rsync --inplace, sem rename nem chmod.
+# Com GPU2GO_VOLUME=1 (volume de rede do RunPod em /workspace), o cache fica em
+# /workspace/gpu2go-cache:
+#   modelos/   arquivos do models.lock (SHA-256 do lock)
+#   ollama/    modelo do compilador (blobs com o SHA-256 no nome)
+#   ambiente/  venv + ComfyUI + Ollama num tar.zst, chaveado pelo requirements.lock e Dockerfile,
+#              com um .sha256 escrito por último (sem ele, o arquivo é ignorado)
+# Tudo é copiado para o disco local e conferido antes do uso (regra: nunca ler modelo direto do
+# volume); cópia ruim é apagada e refeita da origem. Só o pod com GPU2GO_VOLUME_GRAVA=1 grava no
+# volume, e só depois do PRONTO (não atrasa o pod); ao terminar, escreve /root/gpu2go/guardado.
+# Volume não POSIX: só rsync --inplace e cp, sem rename nem chmod.
 set -uo pipefail
 REPO_TGZ=$1 MODEL_SET=${2:-i2v_r1v2}
-EST=/root/gpu2go/estado
-mkdir -p /root/gpu2go && echo INSTALANDO > $EST
-falha() { echo "FALHOU $*" > $EST; echo "FALHOU: $*"; exit 1; }
+R=/root/gpu2go EST=/root/gpu2go/estado
+mkdir -p $R/ok $R/vol && echo INSTALANDO > $EST && : > $R/tempos && rm -f $R/guardado
+T0=$(date +%s)
+marca() { echo "$1 $(( $(date +%s) - T0 ))" >> $R/tempos; }
+falha() { echo "FALHOU $*" > $EST; echo "FALHOU: $*"; echo GUARDADO > $R/guardado; exit 1; }
 export DEBIAN_FRONTEND=noninteractive
 W=/opt/gpu2go/worker COMFY_DIR=/opt/comfyui OLLAMA_MODELS=/opt/ollama/models
-export OLLAMA_MODELS
+export OLLAMA_MODELS R
 
 apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-  git curl ffmpeg zstd unzip ca-certificates procps rsync >/dev/null || falha "apt"
-CACHE=""
-[[ "${GPU2GO_VOLUME:-0}" == "1" && -d /workspace ]] && CACHE=/workspace/gpu2go-cache && mkdir -p $CACHE/modelos $CACHE/ollama
+  git curl ffmpeg zstd unzip ca-certificates procps rsync aria2 >/dev/null || falha "apt"
+marca apt
+CACHE="" GRAVA=0
+if [[ "${GPU2GO_VOLUME:-0}" == "1" && -d /workspace ]]; then
+  CACHE=/workspace/gpu2go-cache
+  mkdir -p $CACHE/modelos $CACHE/ollama $CACHE/ambiente
+  [[ "${GPU2GO_VOLUME_GRAVA:-0}" == "1" ]] && GRAVA=1
+fi
+export CACHE
 mkdir -p /opt/gpu2go && tar -xzf "$REPO_TGZ" -C /opt/gpu2go || falha "repo"
 arg() { sed -n "s/^ARG $1=//p" $W/Dockerfile | head -1; }
+CHAVE=$(cat $W/requirements.lock $W/Dockerfile | sha256sum | cut -c1-16)
+AMB=${CACHE:-/nao-ha}/ambiente/ambiente-$CHAVE.tar.zst
 
-# modelos: lista do lock, 4 downloads em paralelo, com retomada; depois bytes + SHA-256
+# confere bytes e SHA-256; marca em $R/ok. Uso: confere <url> <destino> <bytes> <sha>
+confere() {
+  [ "$(stat -c %s "$2" 2>/dev/null)" = "$3" ] && echo "$4  $2" | sha256sum -c --quiet - \
+    && touch "$R/ok/$(basename "$2")"
+}
+# do volume para o disco local; cópia que não confere é apagada (será baixada)
+copia() {
+  local c="$CACHE/modelos/$(basename "$2")"
+  [[ -f "$c" && "$(stat -c %s "$c")" == "$3" ]] || return 0
+  mkdir -p "$(dirname "$2")"
+  if rsync --inplace "$c" "$2" && confere "$@"; then
+    touch "$R/vol/$(basename "$2")" && echo "do volume: $(basename "$2")"
+  else
+    echo "cópia do volume não confere, baixando de novo: $(basename "$2")" && rm -f "$2"
+  fi
+}
+um() {  # reserva: curl numa conexão só, com retomada
+  mkdir -p "$(dirname "$2")"
+  for _ in 1 2 3 4 5; do curl -fsSL -C - --retry 5 -o "$2" "$1" && return 0; sleep 5; done
+  return 1
+}
+export -f confere copia um
+
 modelos() {
-  python3 - "$MODEL_SET" > /root/gpu2go/modelos.tsv <<'PY' || return 1
+  python3 - "$MODEL_SET" > $R/modelos.tsv <<'PY' || return 1
 import json, sys
 lock = json.load(open("/opt/gpu2go/worker/models.lock.json"))
 nomes = sorted({m for s in sys.argv[1].split(",") for m in lock["sets"][s]})
@@ -38,62 +77,121 @@ for n in nomes:
     url = f"https://huggingface.co/{m['repo']}/resolve/{m['revision']}/{m['path']}"
     print(url, f"/opt/comfyui/models/{m['dest']}", m["bytes"], m["sha256"], sep="\t")
 PY
-  um() {
-    mkdir -p "$(dirname "$2")"
-    for _ in 1 2 3 4 5; do curl -fsSL -C - --retry 5 -o "$2" "$1" && return 0; sleep 5; done
-    return 1
-  }
-  export -f um
-  if [[ -n "$CACHE" ]]; then  # do volume para o disco local, quando o tamanho confere
-    while IFS=$'\t' read -r _ dest bytes _; do
-      c="$CACHE/modelos/$(basename "$dest")"
-      if [[ -f "$c" && "$(stat -c %s "$c")" == "$bytes" ]]; then
-        mkdir -p "$(dirname "$dest")" && rsync --inplace "$c" "$dest" && echo "do volume: $(basename "$dest")"
-      fi
-    done < /root/gpu2go/modelos.tsv
-  fi
-  # baixa só o que faltar ou estiver incompleto
+  [[ -n "$CACHE" ]] && xargs -r -P 4 -L 1 bash -c 'copia "$@"' _ < $R/modelos.tsv
+  while IFS=$'\t' read -r url dest bytes sha; do
+    [[ -f "$R/ok/$(basename "$dest")" ]] || printf '%s\t%s\t%s\t%s\n' "$url" "$dest" "$bytes" "$sha"
+  done < $R/modelos.tsv > $R/falta.tsv
+  marca modelos_volume
+  [[ -s $R/falta.tsv ]] || return 0
+  # em partes: os 2 arquivos de ~15 GB dominam; numa conexão só, a média caía para ~140 MB/s
+  while IFS=$'\t' read -r url dest _ _; do
+    mkdir -p "$(dirname "$dest")"
+    printf '%s\n  dir=%s\n  out=%s\n' "$url" "$(dirname "$dest")" "$(basename "$dest")"
+  done < $R/falta.tsv > $R/aria2.txt
+  aria2c ${SSL_CERT_FILE:+--ca-certificate=$SSL_CERT_FILE} -i $R/aria2.txt -j 4 -x 8 -s 8 -k 64M --file-allocation=none --continue=true \
+    --allow-overwrite=true --auto-file-renaming=false --max-tries=10 --retry-wait=5 \
+    --console-log-level=warn --summary-interval=30 \
+    || echo "aria2 falhou; completando com curl"
   while IFS=$'\t' read -r url dest bytes _; do
-    [[ -f "$dest" && "$(stat -c %s "$dest")" == "$bytes" ]] || printf '%s\t%s\n' "$url" "$dest"
-  done < /root/gpu2go/modelos.tsv | xargs -P 4 -L 1 bash -c 'um "$0" "$1"' || return 1
-  while IFS=$'\t' read -r _ dest bytes sha; do
-    [ "$(stat -c %s "$dest")" = "$bytes" ] || { echo "bytes errados: $dest"; return 1; }
-    echo "$sha  $dest" | sha256sum -c --quiet - || return 1
-    if [[ -n "$CACHE" ]]; then  # guarda no volume para os próximos pods (bytes conferidos)
-      c="$CACHE/modelos/$(basename "$dest")"
-      [[ -f "$c" && "$(stat -c %s "$c")" == "$bytes" ]] || rsync --inplace "$dest" "$c"
-      [ "$(stat -c %s "$c")" = "$bytes" ] || echo "AVISO: cópia no volume incompleta: $c"
-    fi
-  done < /root/gpu2go/modelos.tsv
+    [ "$(stat -c %s "$dest" 2>/dev/null)" = "$bytes" ] || printf '%s\t%s\n' "$url" "$dest"
+  done < $R/falta.tsv | xargs -r -P 4 -L 1 bash -c 'um "$0" "$1"' || return 1
+  marca modelos_download
+  xargs -r -P 4 -L 1 bash -c 'confere "$@" || { echo "bytes ou SHA-256 errados: $1"; exit 255; }' _ \
+    < $R/falta.tsv || return 1
+  marca modelos_conferidos
 }
 
-ambiente() {
+instalar_ambiente() {
+  rm -rf /opt/venv
   pip install -q "uv==$(arg UV_IMAGE | sed 's/.*://')" || return 1
-  export VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH UV_HTTP_TIMEOUT=300
   uv venv -q /opt/venv --python python3.12 || return 1
   uv pip install -q --require-hashes -r $W/requirements.lock \
     --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cu128 \
     --index-strategy unsafe-best-match || return 1
+  rm -rf /opt/comfy-src
   git clone -q --depth 1 --branch "$(arg COMFYUI_REF)" https://github.com/comfyanonymous/ComfyUI.git /opt/comfy-src || return 1
   [ "$(git -C /opt/comfy-src rev-parse HEAD)" = "$(arg COMFYUI_COMMIT)" ] || { echo "commit do ComfyUI"; return 1; }
   mkdir -p $COMFY_DIR && cp -a /opt/comfy-src/. $COMFY_DIR/ && rm -rf /opt/comfy-src
   curl -fsSL -o /tmp/umt5.zip "$(arg UMT5_PATCH_URL)" || return 1
   echo "$(arg UMT5_PATCH_SHA256)  /tmp/umt5.zip" | sha256sum -c --quiet - || return 1
   unzip -qo /tmp/umt5.zip -d $COMFY_DIR/custom_nodes/
-  v=$(arg OLLAMA_VERSION)
+  local v; v=$(arg OLLAMA_VERSION)
   curl -fsSL -o /tmp/ollama.tar.zst "https://github.com/ollama/ollama/releases/download/$v/ollama-linux-amd64.tar.zst" || return 1
   echo "$(arg OLLAMA_SHA256)  /tmp/ollama.tar.zst" | sha256sum -c --quiet - || return 1
   tar --zstd -xf /tmp/ollama.tar.zst -C /usr/local || return 1
+  rm -f /tmp/ollama.tar.zst /tmp/umt5.zip
+}
+
+# ambiente do volume: copia, confere o SHA-256 do .sha256 (escrito por último) e extrai
+ambiente_do_volume() {
+  [[ -n "$CACHE" && -f "$AMB" && -f "$AMB.sha256" ]] || return 1
+  local sha bytes
+  read -r sha bytes < "$AMB.sha256" || return 1
+  [ "$(stat -c %s "$AMB")" = "$bytes" ] || return 1
+  rsync --inplace "$AMB" $R/ambiente.tar.zst || return 1
+  echo "$sha  $R/ambiente.tar.zst" | sha256sum -c --quiet - \
+    || { echo "ambiente do volume não confere"; rm -f $R/ambiente.tar.zst; return 1; }
+  tar --zstd -xf $R/ambiente.tar.zst -C / || return 1
+  rm -f $R/ambiente.tar.zst
+  touch $R/vol/ambiente && echo "ambiente do volume ($CHAVE)"
+}
+
+ambiente() {
+  export VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH UV_HTTP_TIMEOUT=300
+  if ! ambiente_do_volume; then
+    instalar_ambiente || return 1
+    marca ambiente_instalado
+    if [[ $GRAVA == 1 ]]; then  # empacota agora, antes de qualquer serviço escrever no ComfyUI
+      tar -C / -cf - --exclude='opt/comfyui/models/*/*' --exclude='opt/comfyui/output' \
+        --exclude='opt/comfyui/input' --exclude='opt/comfyui/temp' --exclude='opt/comfyui/user' \
+        opt/venv opt/comfyui usr/local/bin/ollama usr/local/lib/ollama \
+        | zstd -q -f -3 -T0 -o $R/ambiente.tar.zst \
+        && echo "$(sha256sum < $R/ambiente.tar.zst | cut -d' ' -f1) $(stat -c %s $R/ambiente.tar.zst)" \
+          > $R/ambiente.tar.zst.sha256 \
+        || { echo "AVISO: não empacotou o ambiente"; rm -f $R/ambiente.tar.zst*; }
+      marca ambiente_empacotado
+    fi
+  else
+    marca ambiente_volume
+  fi
   mkdir -p $OLLAMA_MODELS
-  [[ -n "$CACHE" ]] && rsync -r --inplace $CACHE/ollama/ $OLLAMA_MODELS/  # o pull só confere
+  if [[ -n "$CACHE" ]]; then  # blobs do volume, conferidos pelo SHA-256 do nome; ruim é apagado
+    rsync -r --inplace --size-only $CACHE/ollama/ $OLLAMA_MODELS/
+    find $OLLAMA_MODELS/blobs -name 'sha256-*' 2>/dev/null | xargs -r -P 4 -I{} bash -c \
+      '[ "$(sha256sum < "$1" | cut -d" " -f1)" = "$(basename "$1" | cut -c8-)" ] || { echo "blob ruim: $1"; rm -f "$1"; }' _ {}
+  fi
   bash $W/scripts/pull_compiler_model.sh "$(arg COMPILER_MODEL)" "$(arg COMPILER_MODEL_DIGEST)" || return 1
-  [[ -n "$CACHE" ]] && rsync -r --inplace $OLLAMA_MODELS/ $CACHE/ollama/
+  marca compilador
   /opt/venv/bin/python $W/scripts/gpu_check.py
 }
 
-modelos > /root/gpu2go/modelos.log 2>&1 &
+# depois do PRONTO, no pod gravador: o que falta no volume (tudo já conferido no disco local)
+guardar() {
+  [[ -n "$CACHE" && $GRAVA == 1 ]] || return 0
+  while IFS=$'\t' read -r _ dest bytes _; do
+    [[ -f "$R/vol/$(basename "$dest")" ]] || printf '%s\t%s\n' "$dest" "$bytes"
+  done < $R/modelos.tsv | xargs -r -P 4 -L 1 bash -c \
+    'c="$CACHE/modelos/$(basename "$0")"; rsync --inplace "$0" "$c" && [ "$(stat -c %s "$c")" = "$1" ] && echo "guardado: $c" || echo "AVISO: cópia no volume incompleta: $c"'
+  rsync -r --inplace --size-only $OLLAMA_MODELS/ $CACHE/ollama/
+  if [[ -f $R/ambiente.tar.zst.sha256 ]]; then
+    rm -f "$AMB.sha256"
+    read -r _ bytes < $R/ambiente.tar.zst.sha256
+    if rsync --inplace $R/ambiente.tar.zst "$AMB" && [ "$(stat -c %s "$AMB")" = "$bytes" ]; then
+      cp $R/ambiente.tar.zst.sha256 "$AMB.sha256" && echo "guardado: $AMB"
+      find $CACHE/ambiente -maxdepth 1 -name 'ambiente-*' ! -name "ambiente-$CHAVE*" -delete
+    else
+      echo "AVISO: ambiente no volume incompleto"
+    fi
+  fi
+}
+
+modelos > $R/modelos.log 2>&1 &
 MPID=$!
-ambiente > /root/gpu2go/ambiente.log 2>&1 || { kill $MPID 2>/dev/null; falha "ambiente (ver ambiente.log)"; }
+ambiente > $R/ambiente.log 2>&1 || { kill $MPID 2>/dev/null; falha "ambiente (ver ambiente.log)"; }
 wait $MPID || falha "modelos (ver modelos.log)"
+marca pronto
 echo PRONTO > $EST
 echo PRONTO
+guardar > $R/guardar.log 2>&1
+marca guardado
+echo GUARDADO > $R/guardado
