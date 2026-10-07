@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>GPU2GO · Revisão</title>
+  <link rel="stylesheet" href="/estilo.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-pagina="aprovar">
+  <header>
+    <h1>GPU2GO · revisão dos pedidos</h1>
+    <button id="sair" hidden>Sair</button>
+  </header>
+  <main>
+    <form id="form-token">
+      <label for="token">Token de administração</label>
+      <input id="token" type="password" autocomplete="current-password" required>
+      <button type="submit">Entrar</button>
+    </form>
+
+    <div id="painel" hidden>
+      <p class="fraco">Nada vai para a GPU sem aprovação (ADR 0004). Confira se as fotos e o pedido são apropriados e se pessoas nas fotos têm autorização.</p>
+      <button id="atualizar">Atualizar</button>
+      <p id="msg" class="aviso" hidden></p>
+      <h2>Aguardando revisão</h2>
+      <div id="pendentes"></div>
+
+      <h2>Novo cliente</h2>
+      <form id="form-cliente">
+        <div class="duas">
+          <div>
+            <label for="cliente-nome">Nome</label>
+            <input id="cliente-nome" required minlength="2" maxlength="120">
+          </div>
+          <div>
+            <label for="cliente-plano">Plano</label>
+            <select id="cliente-plano">
+              <option value="teste">Teste gratuito (até 10 fotos, 3 s, rápida)</option>
+              <option value="pago">Pago</option>
+            </select>
+          </div>
+        </div>
+        <label for="cliente-cota">Fotos por dia</label>
+        <input id="cliente-cota" type="number" min="1" max="100000" value="500">
+        <button type="submit">Cadastrar e gerar o código</button>
+        <p id="token-novo" class="aviso" hidden></p>
+      </form>
+    </div>
+  </main>
+</body>
+</html>

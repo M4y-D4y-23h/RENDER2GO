@@ -659,6 +659,9 @@ class Orquestrador:
         return self._subir_pod(i, deadman_s)
 
     def encerrar(self, pod: Pod, motivo: str) -> None:
+        """Encerra; se o pod grava o cache (volume/espelho), espera terminar antes (com prazo)."""
+        if pod.grava_volume and pod.vivo:
+            self._esperar_guardar(pod)
         self._encerrar(pod, motivo)
 
     def _instalar(self, pod: Pod) -> None:

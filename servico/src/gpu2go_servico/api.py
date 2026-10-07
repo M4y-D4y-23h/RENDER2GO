@@ -34,9 +34,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from gpu2go_worker import conferencia, filtros, lote, presets
 from pydantic import BaseModel, Field
 
@@ -201,6 +202,14 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     @app.get("/app.js", include_in_schema=False)
     def js():
         return FileResponse(WEB / "app.js", media_type="text/javascript")
+
+    @app.get("/estilo.css", include_in_schema=False)
+    def css():
+        return FileResponse(WEB / "estilo.css", media_type="text/css")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        return Response(status_code=204)
 
     @app.get("/saude")
     def saude():
@@ -501,14 +510,23 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(409, str(e)) from e
         return {"status": r["status"]}
 
+    def origem_armazenamento() -> str:
+        """Só o armazenamento (R2) além da própria API: fotos sobem e vídeos descem de lá."""
+        cfg = app.state.cfg
+        base = getattr(cfg.armazenamento, "endpoint", None) or getattr(cfg.armazenamento, "base", "")
+        u = urlsplit(base) if cfg else None
+        return f"{u.scheme}://{u.netloc}" if u and u.netloc else ""
+
     @app.middleware("http")
     async def cabecalhos(request: Request, call_next):
         resp = await call_next(request)
+        arm = origem_armazenamento()
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["Referrer-Policy"] = "no-referrer"
+        resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["Content-Security-Policy"] = (
-            "default-src 'self'; img-src 'self' blob: https:; media-src https:; "
-            "connect-src 'self' https:; style-src 'self' 'unsafe-inline'"
+            f"default-src 'self'; img-src 'self' {arm}; media-src {arm}; connect-src 'self' {arm}; "
+            "style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         )
         return resp
 

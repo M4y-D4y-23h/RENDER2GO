@@ -1,0 +1,12 @@
+{
+  "name": "gpu2go-servico-web",
+  "private": true,
+  "description": "Páginas do serviço (cliente e aprovador). Compilar: npm ci && npm run build",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

@@ -6,3 +6,4 @@ __pycache__/
 saida/
 *.part
 servico/.venv/
+node_modules/

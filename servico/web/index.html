@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GPU2GO · Vídeos das suas fotos</title>
+  <link rel="stylesheet" href="/estilo.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-pagina="cliente">
+  <header>
+    <h1>GPU2GO · vídeos das suas fotos</h1>
+    <button id="sair" hidden>Sair</button>
+  </header>
+  <main>
+    <form id="form-token">
+      <label for="token">Seu código de acesso</label>
+      <input id="token" type="password" autocomplete="current-password" required>
+      <p class="fraco">Você recebe o código quando contrata ou pede o teste gratuito. Ele fica guardado só neste navegador.</p>
+      <button type="submit">Entrar</button>
+    </form>
+
+    <div id="painel" hidden>
+      <form id="form-lote">
+        <label>Fotos</label>
+        <div class="escolha">
+          <label class="botao" for="fotos">Escolher fotos</label>
+          <input id="fotos" type="file" multiple accept="image/jpeg,image/png,image/webp">
+          <label class="botao" for="pasta">Escolher uma pasta</label>
+          <input id="pasta" type="file" multiple webkitdirectory>
+          <button type="button" id="limpar">Limpar</button>
+        </div>
+        <p id="contagem" class="fraco"></p>
+
+        <label for="prompt">O que deve acontecer nos vídeos?</label>
+        <textarea id="prompt" required minlength="3" maxlength="600" placeholder="Ex.: a câmera se aproxima devagar do produto"></textarea>
+
+        <div class="duas">
+          <div>
+            <label for="receita">Estilo</label>
+            <select id="receita"></select>
+          </div>
+          <div>
+            <label for="qualidade">Qualidade</label>
+            <select id="qualidade">
+              <option value="rapida">Rápida (prévia, 480p)</option>
+              <option value="alta">Alta (720p)</option>
+            </select>
+          </div>
+        </div>
+        <label for="duracao">Duração</label>
+        <select id="duracao">
+          <option value="">Padrão do estilo</option>
+          <option value="3">3 s</option><option value="4">4 s</option><option value="5">5 s</option>
+          <option value="6">6 s</option><option value="7">7 s</option>
+        </select>
+        <label class="check"><input id="consentimento" type="checkbox"> Tenho autorização por escrito das pessoas que aparecem nas fotos (obrigatório em estilos com pessoas).</label>
+
+        <button type="submit" id="enviar">Enviar pedido</button>
+        <progress id="progresso" hidden></progress>
+      </form>
+      <p id="msg" class="aviso" hidden></p>
+
+      <h2>Seus pedidos</h2>
+      <div id="lotes"></div>
+    </div>
+  </main>
+</body>
+</html>

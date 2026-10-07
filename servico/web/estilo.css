@@ -1,0 +1,57 @@
+/* Páginas do serviço GPU2GO: claras e escuras, celular primeiro. */
+:root {
+  --fundo: #f6f5f2; --cartao: #ffffff; --texto: #1d1d1f; --fraco: #6b6b70; --borda: #e2e0da;
+  --marca: #2f5bd3; --marca-texto: #ffffff; --ok: #1f7a43; --erro: #b3261e; --info: #2f5bd3;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: #141416; --cartao: #1e1e21; --texto: #ececee; --fraco: #a0a0a8; --borda: #2e2e33;
+    --marca: #7b9bff; --marca-texto: #0b0b0d; --ok: #5fcf8d; --erro: #ff8a80; --info: #9db4ff;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--fundo); color: var(--texto);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--borda); background: var(--cartao); }
+header h1 { font-size: 18px; margin: 0; }
+main { max-width: 860px; margin: 0 auto; padding: 16px; }
+h2 { font-size: 17px; margin: 24px 0 8px; }
+form, .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 16px; }
+.cartao { margin: 12px 0; }
+label { display: block; font-weight: 600; margin: 12px 0 4px; }
+label.check { font-weight: 400; display: flex; gap: 8px; align-items: flex-start; }
+input, select, textarea, button { font: inherit; color: inherit; }
+input:not([type=checkbox]):not([type=file]), select, textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 8px; background: var(--fundo);
+}
+textarea { min-height: 80px; resize: vertical; }
+.duas { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .duas { grid-template-columns: 1fr; } }
+button { padding: 10px 16px; border-radius: 8px; border: 1px solid var(--borda); background: var(--fundo); cursor: pointer; }
+button.primario, button[type=submit] { background: var(--marca); color: var(--marca-texto); border-color: var(--marca); font-weight: 600; }
+button:disabled { opacity: .55; cursor: wait; }
+.escolha { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+.escolha label.botao { display: inline-block; margin: 0; font-weight: 500; padding: 10px 14px; border: 1px dashed var(--marca); border-radius: 8px; cursor: pointer; }
+.escolha input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.fraco { color: var(--fraco); font-size: 14px; }
+.aviso { padding: 10px 12px; border-radius: 8px; margin: 12px 0; border: 1px solid currentColor; font-size: 15px; }
+.aviso.ok { color: var(--ok); } .aviso.erro { color: var(--erro); } .aviso.info { color: var(--info); }
+.aviso.token { word-break: break-all; }
+.cab { margin-bottom: 4px; }
+.pedido { margin: 4px 0 8px; }
+.linha { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+progress { width: 100%; max-width: 320px; height: 10px; accent-color: var(--marca); }
+#progresso { display: block; max-width: none; margin-top: 12px; }
+.videos { margin: 8px 0; padding-left: 20px; } .videos a { color: var(--marca); }
+.estado-concluido { border-left: 4px solid var(--ok); }
+.estado-recusado, .estado-concluido_com_falhas { border-left: 4px solid var(--erro); }
+.grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin: 8px 0; }
+.grade img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--borda); }
+.acoes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.acoes input { flex: 1 1 200px; }
+[hidden] { display: none !important; }

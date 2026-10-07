@@ -34,6 +34,16 @@ class Deposito(BaseHTTPRequestHandler):
     def _chave(self):
         return urlsplit(self.path).path.lstrip("/")
 
+    def end_headers(self):  # CORS, como a regra do bucket R2 para o navegador do cliente
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, PUT")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        super().end_headers()
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.end_headers()
+
     def do_PUT(self):
         n = int(self.headers.get("Content-Length", 0))
         self.objetos[self._chave()] = self.rfile.read(n)
