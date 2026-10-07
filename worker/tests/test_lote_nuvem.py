@@ -253,3 +253,10 @@ def test_cuda_check_requires_working_gpus_and_driver_12_8():
     assert "defeito" in ln.cuda_ok("cuInit 0 gpus 1 driver 13000", 2)
     assert "antigo" in ln.cuda_ok("cuInit 0 gpus 1 driver 12040", 1)
     assert "sem resposta" in ln.cuda_ok("bash: python3: not found", 1)
+
+
+def test_network_check_discards_slow_hosts():
+    assert ln.rede_ok("rede 512.3") is None
+    assert "rede lenta (2.9 MB/s" in ln.rede_ok("rede 2.9")
+    assert "sem resposta" in ln.rede_ok("Traceback ...")
+    assert ln.url_teste_rede().startswith("https://huggingface.co/")

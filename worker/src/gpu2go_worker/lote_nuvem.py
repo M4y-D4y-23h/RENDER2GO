@@ -262,6 +262,33 @@ CUINIT = (
     'l.cuDriverGetVersion(ctypes.byref(v));print("cuInit",r,"gpus",n.value,"driver",v.value)\''
 )
 CUDA_MINIMA = 12080  # PyTorch +cu128 exige driver com CUDA ≥ 12.8 (driver ≥ 570)
+# Rede mínima: 37 GB de modelos a 40 MB/s ≈ 15 min. Em 07/10/2026 um host RTX PRO 6000 baixava
+# a 2,9 MB/s (3,5 h só de modelos, além do limite de 2 h do pod); o normal é ~500 MB/s.
+REDE_MINIMA_MBS = 40
+REDE = (
+    "python3 -c 'import time,urllib.request as u;i=time.time();n=0;"
+    'r=u.urlopen(u.Request("{url}",headers={{"User-Agent":"gpu2go"}}),timeout=20)\n'
+    "while time.time()-i<8 and n<2e9:\n b=r.read(1<<22)\n if not b: break\n n+=len(b)\n"
+    'print("rede",round(n/1e6/(time.time()-i),1))\''
+)
+
+
+def url_teste_rede() -> str:
+    """O primeiro modelo do conjunto I2V (a mesma origem dos downloads de verdade)."""
+    from gpu2go_worker import models
+
+    sets, entradas = models.load_lock()
+    return entradas[sets["i2v_r1v2"][0]].url
+
+
+def rede_ok(saida: str) -> str | None:
+    m = re.search(r"rede ([\d.]+)", saida)
+    if not m:
+        return f"teste de rede sem resposta ({saida.strip()[-120:]})"
+    mbs = float(m.group(1))
+    if mbs < REDE_MINIMA_MBS:
+        return f"rede lenta ({mbs:.1f} MB/s; mínimo {REDE_MINIMA_MBS})"
+    return None
 
 
 def cuda_ok(saida: str, gpus: int) -> str | None:
@@ -454,7 +481,12 @@ class Orquestrador:
             problema = cuda_ok(out, pod.info.gpus)
             if problema:
                 raise NuvemError(problema)
-        _log(f"pod {pod.nome}: agente e CUDA ok; instalando o worker (~6–10 min)")
+            _, out = ag.exec(REDE.format(url=url_teste_rede()), 45)
+            problema = rede_ok(out)
+            if problema:
+                raise NuvemError(problema)
+            _log(f"pod {pod.nome}: {out.strip()} MB/s")
+        _log(f"pod {pod.nome}: agente, CUDA e rede ok; instalando o worker (~6–10 min)")
         ag.put(self.a.repo_tgz, f"{r.raiz}/repo.tgz")
         ag.put(WORKER_DIR / "scripts" / "bootstrap_pod.sh", f"{r.raiz}/bootstrap_pod.sh")
         ag.bg(r.instalar.format(raiz=r.raiz), f"{r.raiz}/instalar.log")
