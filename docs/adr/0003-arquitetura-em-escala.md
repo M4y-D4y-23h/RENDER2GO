@@ -1,6 +1,6 @@
 # ADR 0003 — Arquitetura para lotes em escala (pastas grandes, muitos clientes)
 
-- **Status:** proposto (06/10/2026). Decide o dono do projeto. Nada aqui foi implementado além do que está marcado como existente.
+- **Status:** **aceito em 07/10/2026** pelo dono do projeto. Fase 2 implementada (`lote_nuvem.py`, seção "Fase 2 implementada"). Fases 3 e 4 por fazer.
 - **Contexto:** caminho A (docs/05, seção 5.1), com lotes de 50+ fotos e um pedido só. O dono pediu que o sistema já nasça preparado para escalas muito grandes: pastas enormes, muitos pedidos, download e envio de arquivos, armazenamento, sobrecarga e segurança.
 - **Relacionados:** doc 02 (protocolo de jobs por URL assinada, já implementado em `jobs.py` e `media.py`), ADR 0002 (imagem do worker), doc 06 (GPU e custo).
 
@@ -133,9 +133,27 @@ A GPU continua sendo o custo principal, ~US$ 0,016 por vídeo na 4090 secure.
 3. **Fase 3:** R2 + Postgres + API + orquestrador + página de envio. O cliente envia sozinho e recebe o link. Estimativa: 2 a 3 semanas.
 4. **Fase 4:** pool fixo + serverless para picos, imagem por região, painel de custos, cotas e cobrança.
 
+## Fase 2 implementada (07/10/2026)
+
+- **Comando:** `tools/lote_nuvem.py` (`gpu2go-lote-nuvem`). Uso em `worker/README.md`, seção "Lote na nuvem".
+- **Canal de controle dos pods efêmeros:** `pod_agente.py`. É um agente HTTP na porta 8888, atrás do proxy HTTPS do RunPod, com token aleatório de 256 bits por pod e comparação em tempo constante; sem token, a resposta é 403.
+  - É a única porta do pod. ComfyUI e Ollama continuam em 127.0.0.1.
+  - Exceção registrada à regra "nenhuma porta exposta", válida só para estes pods de lote, que vivem minutos e se encerram sozinhos.
+  - SSH foi descartado porque exige IP público e porta TCP por host, o que nem todo pod tem e que o ambiente de desenvolvimento não alcança.
+  - Na fase 3 o canal some: os workers passam a puxar jobs da fila, sem porta de entrada.
+- **Desligamento automático** dentro do agente (`DEADMAN_S`), contado do primeiro segundo do pod: 2× a estimativa + 20 min, no máximo 6 h. Vale mesmo que o orquestrador caia.
+- **Pod com defeito** é descartado na hora:
+  - agente sem resposta em 10 min;
+  - `cuInit` diferente de 0;
+  - instalação ou serviços com erro.
+
+  O trabalho fica com os outros pods.
+- **Instalação:** `scripts/bootstrap_pod.sh` lê versões e hashes do `worker/Dockerfile` e confere os modelos por SHA-256. Leva ~6–10 min por pod, até existir a imagem com modelos (ADR 0002).
+- **Sem armazenamento de objetos ainda:** as fotos saem da máquina de quem roda o comando, preparadas e pequenas, e os vídeos voltam para ela.
+
 ## Decisão pendente
 
-Aprovar as fases 2 e 3 com R2 e Postgres. Alternativas consideradas:
+Fase 3 (R2 + Postgres + API), aprovada em 07/10/2026 junto com este ADR; começa depois de validar a fase 2 com clientes. Alternativas consideradas:
 - **S3 da AWS:** saída paga, cara para entregar vídeo.
 - **Volume de rede do RunPod como armazenamento do cliente:** prende a um datacenter e não tem URL pública assinada.
 - **Fila Redis/SQS desde o início:** peça a mais sem necessidade medida.

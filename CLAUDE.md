@@ -7,7 +7,7 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 
 - `referencia/especificacao-pipeline-manual.md`: pipeline manual testado. Não editar.
 - `referencia/wan-i2v-com-ollama.api.json`: workflow exportado. Não editar; os templates derivados ficam em `worker/workflows/`.
-- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, aceito; 0002: hospedagem da imagem, aceito; 0003: arquitetura em escala, proposto). Qualidade, velocidade e custo dos lotes: `docs/06`.
+- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, aceito; 0002: hospedagem da imagem, aceito; 0003: arquitetura em escala, aceito; fase 2 = `lote_nuvem.py`). Qualidade, velocidade e custo dos lotes: `docs/06`.
 
 ## Regras técnicas (mudar só com ADR)
 
@@ -38,7 +38,7 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 - Template em dia com o export: `python tools/derive_i2v_template.py --check`
 - Candidatos T2V em dia: `python tools/build_t2v_templates.py --check`
 - Dockerfiles do RunPod em dia: `python tools/build_runpod_dockerfiles.py --check` (gerados; nunca editar `infra/runpod/Dockerfile.*` à mão)
-- Modo serviço (lote e acabamento): ver `worker/README.md`, seção "Modo serviço". Receitas medidas em GPU em 06/10 (`worker/evals/gpu-2026-10-06/`): 6 de 8 aproveitáveis (perfume mudou de cor, fachada parada); compilador acrescenta "Static camera" (corrigir no v6).
+- Modo serviço (lote, lote na nuvem e acabamento): ver `worker/README.md`, seção "Modo serviço". Receitas medidas em GPU em 06/10 (`worker/evals/gpu-2026-10-06/`): 6 de 8 aproveitáveis (perfume mudou de cor, fachada parada); compilador acrescenta "Static camera" (corrigir no v6).
 - Endpoint de teste e bench: ver `infra/runpod/LEIAME.md`
 - Fidelidade do compilador (precisa de Ollama): `python tools/eval_compiler.py --out saida/fid` (ver `worker/README.md`)
 

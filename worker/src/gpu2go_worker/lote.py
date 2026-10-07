@@ -542,6 +542,9 @@ def executar(
         _log(f"ERRO no compilador: {e}")
         return EXIT_INACESSIVEL if "inacessível" in str(e) else EXIT_PEDIDO
     est_path.write_text(json.dumps(estado, ensure_ascii=False, indent=2) + "\n")
+    if a.so_compilar:
+        _log(f"prompt(s) em {est_path}")
+        return EXIT_OK
 
     relatorio = _ler_relatorio(rel_path)
 
@@ -615,6 +618,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="não gera as folhas de conferência (foto + 3 quadros)",
     )
     p.add_argument("--conferir", action="store_true", help="só confere e lista os vídeos")
+    p.add_argument(
+        "--so-compilar",
+        action="store_true",
+        help="só compila o(s) pedido(s) em lote.json, sem renderizar (lote_nuvem)",
+    )
     p.add_argument(
         "--comfy",
         action="append",

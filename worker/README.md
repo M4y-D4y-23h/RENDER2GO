@@ -203,6 +203,30 @@ Também:
 - Códigos de saída: `0` tudo pronto, `1` algum vídeo falhou, `2` pedido inválido, `3` recusado pelo compilador, `5` nenhuma GPU acessível.
 - Pedidos diferentes por foto: sem `--prompt`, o lote lê `pedidos.csv` da pasta, com as colunas `foto,receita,acao,formato,duracao,variacoes,consentimento` (só `foto` e `receita` obrigatórias; separador `,` ou `;`).
 
+**2b. Lote na nuvem com um comando** (`tools/lote_nuvem.py`, ADR 0003 fase 2): da pasta local direto para a pasta de entrega, subindo e encerrando os pods sozinho.
+
+```bash
+# só planeja e estima (sem pods)
+python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" --simular
+# 2 pods (L40S, depois RTX 4090; community, depois secure), orçamento máximo US$ 3
+python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" \
+  --receita produto-close --pods 2 --orcamento-usd 3 --interpolar --altura 1280
+# se o processo foi interrompido: encerra os pods registrados
+python tools/lote_nuvem.py --saida entregas/loja --limpar
+```
+
+- **Credencial do RunPod:** a cadastrada no ambiente (proxy) ou `RUNPOD_API_KEY`.
+- **Cada pod:**
+  - nasce com desligamento automático;
+  - passa pelo teste de CUDA e é encerrado na hora se a GPU estiver com defeito ou o agente não responder em 10 min;
+  - instala o worker em ~6–10 min (até existir a imagem com modelos).
+- **Distribuição:** o pedido é compilado uma vez. As fotos vão em pacotes de 2 por GPU, conforme os pods ficam livres, e pod que cai devolve o pacote.
+- **Na pasta de entrega:** cada vídeo chega assim que o pacote termina, com `relatorio.csv` (coluna `pod`) e `conferencia/`. Com `--interpolar`, `--altura` ou `--zoom`, o acabamento vai para `final/`.
+- **Segurança e custo:**
+  - mostra a estimativa de tempo e custo e pede confirmação (`--sim` pula);
+  - recusa se passar de `--orcamento-usd`;
+  - todos os pods são encerrados no fim, em erro ou em Ctrl+C.
+
 **3. Acabamento** (ffmpeg, sem GPU; roda em qualquer máquina):
 
 ```bash
