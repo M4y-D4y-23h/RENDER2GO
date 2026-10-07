@@ -39,6 +39,7 @@ NUVENS = {"community": "COMMUNITY", "secure": "SECURE"}
 # driver >= 570 (PyTorch +cu128): só máquinas com CUDA 12.8 ou mais novo
 # A API REST aceita até 13.0 (enum conferido em 07/10/2026); pedir mais dá HTTP 400.
 CUDA_PERMITIDAS = ["12.8", "12.9", "13.0"]
+MAX_HORAS_POD = 2  # regra do dono do projeto (07/10/2026): nenhum pod ligado mais de 2 h
 SEM_VAGA = (
     "no instances",
     "not available",
@@ -286,8 +287,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument(
         "--auto-encerrar-horas",
         type=float,
-        default=3.0,
-        help="o próprio pod se encerra depois disso (0 desliga; não recomendado)",
+        default=2.0,
+        help="o próprio pod se encerra depois disso (de 0,25 a 2 h; regra do projeto)",
     )
     s.add_argument("--chave-ssh", type=Path, help="chave pública para o túnel (padrão: a da conta)")
     s.add_argument("--env", action="append", default=[], metavar="K=V")
@@ -298,6 +299,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("autoencerrar", help="(dentro do pod) encerra o próprio pod")
     a = p.parse_args(argv)
 
+    if a.cmd == "subir" and not 0.25 <= a.auto_encerrar_horas <= MAX_HORAS_POD:
+        p.error(f"--auto-encerrar-horas: de 0,25 a {MAX_HORAS_POD:g} h (pod nunca fica sem limite)")
     try:
         if a.cmd == "disponibilidade":
             gpus = a.gpu or [

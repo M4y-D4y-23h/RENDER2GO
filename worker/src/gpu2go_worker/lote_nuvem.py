@@ -9,7 +9,8 @@ O que acontece:
    (`preparo`: corte e Lanczos no tamanho do vídeo, ~0,3–1 MB cada) e mostra a estimativa
    de tempo e custo. Sem `--sim`, pede confirmação.
 2. **Sobe os pods** (GPUs na ordem pedida, nuvem secure, conferindo a vaga na hora). Cada pod:
-   - nasce com desligamento automático (`DEADMAN_S`, no agente, contado do 1º segundo);
+   - nasce com desligamento automático (`DEADMAN_S`, no agente, contado do 1º segundo),
+     **no máximo 2 h**. O lote para de mandar pacotes 10 min antes, para baixar tudo;
    - passa por um teste de CUDA (`cuInit`) e é encerrado na hora se a GPU estiver com
      defeito, ou se o agente não responder em 10 min;
    - instala o worker (`scripts/bootstrap_pod.sh`) e sobe um ComfyUI por GPU.
@@ -62,7 +63,20 @@ MEDIDO_S = {
     "NVIDIA GeForce RTX 4090": {"rapida": 80, "alta": 213},
 }
 PIOR_S = {"rapida": 80, "alta": 213}
+# Ordem padrão (decisão de 07/10/2026), sempre na nuvem secure: L40S (medida); L40 e RTX 6000
+# Ada (mesmo chip, 48 GB, ~metade do cálculo de IA da L40S; tempo ainda não medido, usa o
+# pior caso); RTX 4090 por último (24 GB, troca de modelo a cada vídeo).
+GPUS_PADRAO = [
+    "NVIDIA L40S",
+    "NVIDIA L40",
+    "NVIDIA RTX 6000 Ada Generation",
+    "NVIDIA GeForce RTX 4090",
+]
 SUBIDA_S = 12 * 60  # agente + instalação + modelos + serviços (medido: 8–12 min)
+# Regra do dono do projeto (07/10/2026): pod nenhum fica ligado mais de 2 h. O lote para
+# de mandar pacotes a tempo de baixar tudo (MARGEM_S) antes do desligamento automático.
+MAX_POD_S = 2 * 3600
+MARGEM_S = 10 * 60
 ESPERA_AGENTE_S = 600
 ESPERA_INSTALACAO_S = 1800
 ESPERA_SERVICOS_S = 600
@@ -431,9 +445,9 @@ class Orquestrador:
         ag.bg(r.servicos, f"{r.raiz}/servicos.log")
         self._esperar(
             pod,
-            f"grep -c 'gpu2go\\] pronto' {r.raiz}/servicos.log 2>/dev/null; "
-            f"grep -q 'gpu2go\\] ERRO' {r.raiz}/servicos.log && echo ERRO",
-            ("1", "ERRO"),
+            f"grep -q 'gpu2go\\] ERRO' {r.raiz}/servicos.log && echo ERRO; "
+            f"grep -q 'gpu2go\\] pronto' {r.raiz}/servicos.log && echo PRONTO",
+            ("PRONTO",),
             ESPERA_SERVICOS_S,
             falha="ERRO",
         )
@@ -484,9 +498,11 @@ class Orquestrador:
             ["--saida", f"{d}/saida", "--gpus", str(pod.info.gpus), *args_lote(self.a)]
         )
         ag.bg(f"{r.lote} {d}/fotos {cmd}; echo $? > {d}/rc", f"{d}/lote.log")
-        n_videos = sum(len(f.tarefas) for f in pacote)
-        s_video = segundos_por_video(self.a.opcoes[0].gpu, self.a.qualidade, self._duracao(pacote))
-        limite = time.monotonic() + 600 + 3 * n_videos * s_video / pod.info.gpus
+        # nunca passa do ponto em que ainda dá para baixar antes do desligamento automático
+        limite = min(
+            time.monotonic() + 600 + 3 * self._tempo_pacote(pod, pacote),
+            pod.criado + self.deadman_s - MARGEM_S / 2,
+        )
         while True:
             _, rc = ag.exec(f"cat {d}/rc 2>/dev/null", 30)
             if rc.strip():
@@ -525,8 +541,11 @@ class Orquestrador:
             self._gravar_relatorio()
         ag.exec(f"rm -rf {d}", 60)
 
-    def _duracao(self, pacote: list[Foto]) -> int:
-        return pacote[0].tarefas[0].duracao
+    def _tempo_pacote(self, pod: Pod, pacote: list[Foto]) -> float:
+        """Estimativa (s) de um pacote: envio e serviços + vídeos divididos pelas GPUs."""
+        n_videos = sum(len(f.tarefas) for f in pacote)
+        s = segundos_por_video(self.a.opcoes[0].gpu, self.a.qualidade, pacote[0].tarefas[0].duracao)
+        return 120 + n_videos * s / pod.info.gpus
 
     def _gravar_relatorio(self) -> None:
         tmp = self.rel_path.with_suffix(".csv.tmp")
@@ -557,6 +576,11 @@ class Orquestrador:
                     pacote = self.pacotes.get_nowait()
                 except queue.Empty:
                     break
+                vivo_s = time.monotonic() - pod.criado
+                if vivo_s + self._tempo_pacote(pod, pacote) > deadman_s - MARGEM_S:
+                    self.pacotes.put(pacote)
+                    _log(f"pod {pod.nome}: sem tempo seguro antes do limite de 2 h; parando")
+                    break
                 with self.lock:
                     self.n_pacote += 1
                     n = self.n_pacote
@@ -573,6 +597,7 @@ class Orquestrador:
             self._encerrar(pod, "fim do trabalho")
 
     def rodar(self, deadman_s: int) -> int:
+        self.deadman_s = deadman_s
         pendentes = []
         for f in self.fotos:
             prontos = all(
@@ -662,7 +687,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument(
         "--gpu",
         action="append",
-        help="GPU em ordem de preferência (repetível); padrão: L40S, depois RTX 4090 (secure)",
+        help="GPU em ordem de preferência (repetível); padrão: L40S, L40, RTX 6000 Ada, RTX 4090",
     )
     g.add_argument(
         "--nuvem",
@@ -704,7 +729,7 @@ def main(
 ) -> int:
     p = build_parser()
     a = p.parse_args(argv)
-    gpus = a.gpu or ["NVIDIA L40S", "NVIDIA GeForce RTX 4090"]
+    gpus = a.gpu or GPUS_PADRAO
     nuvens = ["community", "secure"] if a.nuvem == "qualquer" else [a.nuvem]
     a.opcoes = [runpod_pods.Opcao(g, n) for g in gpus for n in nuvens]
     a.acabamento = (
@@ -758,8 +783,13 @@ def main(
         _log("cancelado (use --sim para não perguntar)")
         return EXIT_SEM_GPU
     a.repo_tgz = empacotar_repo(a.saida / ESTADO / "repo.tgz")
-    # desligamento automático: 2× a estimativa + 20 min, no máximo 6 h
-    deadman_s = int(min(6 * 3600, 2 * est.minutos * 60 + 1200))
+    # desligamento automático: 2× a estimativa + 20 min, no máximo 2 h (regra do projeto)
+    deadman_s = int(min(MAX_POD_S, 2 * est.minutos * 60 + 1200))
+    if est.minutos * 60 > MAX_POD_S - MARGEM_S:
+        _log(
+            f"AVISO: ~{est.minutos:.0f} min passa do limite de 2 h por pod; o que não couber "
+            "fica pendente (rode de novo) ou use mais --pods"
+        )
     t0 = time.monotonic()
     orq = Orquestrador(a, fotos, provedor, remoto or Remoto())
     code = orq.rodar(deadman_s)

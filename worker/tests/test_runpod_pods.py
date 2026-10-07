@@ -151,3 +151,10 @@ def test_without_key_the_proxy_credential_is_used(monkeypatch, capsys):
     monkeypatch.setenv("RUNPOD_API_KEY", "k")
     rp.main(["listar"])
     assert vistos[1]["Authorization"] == "Bearer k"
+
+
+def test_subir_refuses_pods_without_a_2h_limit(capsys):
+    for horas in ("0", "3"):
+        with pytest.raises(SystemExit):
+            rp.main(["subir", "--gpu", "g", "--imagem", "i", "--auto-encerrar-horas", horas])
+    assert "2 h" in capsys.readouterr().err

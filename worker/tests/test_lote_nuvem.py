@@ -136,7 +136,7 @@ def test_end_to_end_two_pods_compile_once_and_terminate(
     assert tamanhos == {(640, 640), (480, 832), (832, 480)}
     assert sorted(prov.encerrados) == sorted(prov.criados) == ["p1", "p2"]
     env = prov.envs[0]
-    assert int(env["DEADMAN_S"]) <= 6 * 3600 and len(env["AGENT_TOKEN"]) >= 32
+    assert int(env["DEADMAN_S"]) <= 2 * 3600 and len(env["AGENT_TOKEN"]) >= 32
     assert env["AGENT_TOKEN"] != prov.envs[1]["AGENT_TOKEN"]
     assert (saida / ".nuvem" / "pods.json").read_text().strip() == "[]"
 
@@ -224,3 +224,23 @@ def test_clean_up_registered_pods(tmp_path):
     assert ln.main(["--saida", str(tmp_path), "--limpar"], provedor=prov) == 0
     assert prov.encerrados == ["p7"] and est.read_text() == "[]"
     assert Path(est).exists()
+
+
+def test_no_package_starts_without_safe_time_before_the_2h_limit(
+    pasta, tmp_path, fake_comfy, fake_ollama, sem_git, monkeypatch
+):
+    monkeypatch.setattr(ln, "MARGEM_S", 2 * 3600)  # nenhum pacote cabe antes do limite
+    prov = Provedor()
+    code = ln.main(
+        _argv(pasta, tmp_path / "s"),
+        provedor=prov,
+        remoto=_remoto(tmp_path, fake_comfy.url, fake_ollama.url),
+    )
+    assert code == ln.EXIT_PENDENTE and prov.encerrados == prov.criados == ["p1"]
+    assert fake_comfy.prompts == {}
+
+
+def test_default_gpu_order_is_secure_l40s_first():
+    a = ln.build_parser().parse_args(["--saida", "s"])
+    assert a.nuvem == "secure"
+    assert ln.GPUS_PADRAO[:2] == ["NVIDIA L40S", "NVIDIA L40"]

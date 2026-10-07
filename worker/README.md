@@ -46,7 +46,7 @@ ssh -L 8188:127.0.0.1:8188 root@<host>      # o ComfyUI só escuta em 127.0.0.1
 | Variável | Padrão | Uso |
 |---|---|---|
 | `MODE` | `pod` | `serverless`: sobe o handler do RunPod depois do ComfyUI (ver "Modo serverless") |
-| `AUTO_TERMINATE_HOURS` | `0` | No RunPod: o próprio pod se encerra depois de N horas (o `runpod_pod.py subir` usa 3) |
+| `AUTO_TERMINATE_HOURS` | `2` | No RunPod: o próprio pod se encerra depois de N horas. **Máximo 2**; valor fora de (0, 2] vira 2 (regra do projeto) |
 | `TERMINATE_ON_BAD_GPU` | `1` | No RunPod: encerra o pod se a GPU falhar na checagem |
 | `MODEL_SET` | `i2v_r1v2` | Conjuntos do `models.lock.json`, separados por vírgula (ex.: `i2v_r1v2,t2v_a14b_q6k` no bake-off) |
 | `MODELS_FROM_DIR` | — | Copia os modelos que faltarem deste diretório (ex.: `/workspace/models` do volume), por leitura sequencial, para o disco local |
@@ -94,7 +94,7 @@ python tools/runpod_pod.py disponibilidade --gpu "NVIDIA GeForce RTX 4090" --gpu
 export RUNPOD_API_KEY=...        # nas configurações do ambiente, nunca no código
 python tools/runpod_pod.py subir --imagem <registry>/gpu2go-worker:full \
   --gpu "NVIDIA GeForce RTX 4090" --gpu "NVIDIA GeForce RTX 5090" \
-  --auto-encerrar-horas 3
+  --auto-encerrar-horas 2
 python tools/runpod_pod.py listar
 python tools/runpod_pod.py encerrar <id>
 ```
@@ -102,7 +102,7 @@ python tools/runpod_pod.py encerrar <id>
 - **Só secure** (decisão de 07/10/2026): os hosts community de RTX 4090 que sorteamos falharam no CUDA (`cuInit` = 999) em 3 de 3 tentativas. `--nuvem community` ou `qualquer` continuam existindo só para teste explícito.
 - O `stockStatus` (High/Medium/Low) é só um indicativo. A disponibilidade de verdade é decidida no ato da criação: sem vaga, a opção seguinte é tentada. Um pod que não sobe em `--espera` segundos é encerrado antes da próxima tentativa.
 - Só máquinas com CUDA ≥ 12.8 (driver ≥ 570). A única porta é a 22 (SSH); o ComfyUI e o Ollama continuam em 127.0.0.1.
-- **Desligamento automático:** o entrypoint encerra o próprio pod depois de `AUTO_TERMINATE_HOURS`, usando a chave que o RunPod injeta no pod. Se a GPU falhar na checagem (como num host community com `cuInit` quebrado), o pod também se encerra (`TERMINATE_ON_BAD_GPU=1`).
+- **Desligamento automático, no máximo 2 h** (regra de 07/10/2026; `subir` recusa mais que isso): o entrypoint encerra o próprio pod depois de `AUTO_TERMINATE_HOURS`, usando a chave que o RunPod injeta no pod. Se a GPU falhar na checagem (como num host community com `cuInit` quebrado), o pod também se encerra (`TERMINATE_ON_BAD_GPU=1`).
 - Exige a imagem do worker num registry acessível pelo RunPod.
 - Ainda não validado com chave real: a criação via REST e o `podTerminate` feito com a chave do próprio pod. Esse caminho só é confirmado na primeira subida; o `podStop` é a alternativa.
 
@@ -208,7 +208,7 @@ Também:
 ```bash
 # só planeja e estima (sem pods)
 python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" --simular
-# 2 pods secure (L40S, depois RTX 4090), orçamento máximo US$ 3
+# 2 pods secure (L40S → L40 → RTX 6000 Ada → RTX 4090), orçamento máximo US$ 3
 python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" \
   --receita produto-close --pods 2 --orcamento-usd 3 --interpolar --altura 1280
 # se o processo foi interrompido: encerra os pods registrados
@@ -217,7 +217,7 @@ python tools/lote_nuvem.py --saida entregas/loja --limpar
 
 - **Credencial do RunPod:** a cadastrada no ambiente (proxy) ou `RUNPOD_API_KEY`.
 - **Cada pod:**
-  - nasce com desligamento automático;
+  - nasce com desligamento automático (no máximo 2 h; o lote para de mandar pacotes 10 min antes, para baixar tudo, e o que não couber fica pendente para a próxima execução);
   - passa pelo teste de CUDA e é encerrado na hora se a GPU estiver com defeito ou o agente não responder em 10 min;
   - instala o worker em ~6–10 min (até existir a imagem com modelos).
 - **Distribuição:** o pedido é compilado uma vez. As fotos vão em pacotes de 2 por GPU, conforme os pods ficam livres, e pod que cai devolve o pacote.

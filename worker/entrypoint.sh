@@ -16,7 +16,8 @@
 #   COMFY_EXTRA_ARGS  argumentos extras do ComfyUI (ex.: --cpu em testes sem GPU)
 #   COMFY_GPUS        modo pod: um ComfyUI por GPU, nas portas COMFY_PORT, +1, +2...
 #                     (número ou "auto" = todas as GPUs; padrão 1; serverless usa sempre 1)
-#   AUTO_TERMINATE_HOURS  modo pod no RunPod: o pod se encerra depois de N horas (0 = nunca)
+#   AUTO_TERMINATE_HOURS  modo pod no RunPod: o pod se encerra depois de N horas
+#                     (padrão e máximo: 2; regra do projeto, nenhum pod sem limite)
 #   TERMINATE_ON_BAD_GPU  modo pod no RunPod: encerra o pod se a GPU falhar (padrão: 1)
 #   GPU2GO_SAFETY, GPU2GO_ALLOWED_URL_HOSTS  obrigatórias no serverless (ver jobs.py)
 set -euo pipefail
@@ -57,9 +58,14 @@ fi
 
 # 0. Desligamento automático no RunPod (o RunPod injeta RUNPOD_POD_ID e RUNPOD_API_KEY) ---
 DEADMAN_PID=""
-AUTO_TERMINATE_HOURS="${AUTO_TERMINATE_HOURS:-0}"
+MAX_POD_HOURS=2
+AUTO_TERMINATE_HOURS="${AUTO_TERMINATE_HOURS:-$MAX_POD_HOURS}"
 [[ "$AUTO_TERMINATE_HOURS" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "AUTO_TERMINATE_HOURS inválido: $AUTO_TERMINATE_HOURS"
-if [[ "$MODE" == "pod" && -n "${RUNPOD_POD_ID:-}" && "$AUTO_TERMINATE_HOURS" != "0" ]]; then
+if python -c "import sys; h = float(sys.argv[1]); sys.exit(0 if 0 < h <= $MAX_POD_HOURS else 1)" "$AUTO_TERMINATE_HOURS"; then :; else
+  log "AUTO_TERMINATE_HOURS=$AUTO_TERMINATE_HOURS fora de (0, $MAX_POD_HOURS]: usando $MAX_POD_HOURS h"
+  AUTO_TERMINATE_HOURS=$MAX_POD_HOURS
+fi
+if [[ "$MODE" == "pod" && -n "${RUNPOD_POD_ID:-}" ]]; then
   secs=$(python -c "print(int(float('$AUTO_TERMINATE_HOURS') * 3600))")
   log "desligamento automático em $AUTO_TERMINATE_HOURS h"
   (sleep "$secs" && python -m gpu2go_worker.runpod_pods autoencerrar) &
