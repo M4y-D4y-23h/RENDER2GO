@@ -269,11 +269,19 @@ CUDA_MINIMA = 12080  # PyTorch +cu128 exige driver com CUDA ≥ 12.8 (driver ≥
 # Rede mínima: 37 GB de modelos a 40 MB/s ≈ 15 min. Em 07/10/2026 um host RTX PRO 6000 baixava
 # a 2,9 MB/s (3,5 h só de modelos, além do limite de 2 h do pod); o normal é ~500 MB/s.
 REDE_MINIMA_MBS = 40
-REDE = (
-    "python3 -c 'import time,urllib.request as u;i=time.time();n=0;"
-    'r=u.urlopen(u.Request("{url}",headers={{"User-Agent":"gpu2go"}}),timeout=20)\n'
-    "while time.time()-i<8 and n<2e9:\n b=r.read(1<<22)\n if not b: break\n n+=len(b)\n"
-    'print("rede",round(n/1e6/(time.time()-i),1))\''
+REDE = (  # 4 conexões por 15 s, como o download real (xargs -P 4); soma em MB/s
+    "python3 -c 'import time,threading,urllib.request as u\n"
+    "t=[0]*4;i=time.time()\n"
+    "def f(k):\n"
+    ' h={{"User-Agent":"gpu2go","Range":"bytes=%d-"%(k*2**30)}}\n'
+    ' r=u.urlopen(u.Request("{url}",headers=h),timeout=20)\n'
+    " while time.time()-i<15:\n"
+    "  b=r.read(1<<22)\n"
+    "  if not b: break\n"
+    "  t[k]+=len(b)\n"
+    "h=[threading.Thread(target=f,args=(k,)) for k in range(4)]\n"
+    "[x.start() for x in h];[x.join(25) for x in h]\n"
+    'print("rede",round(sum(t)/1e6/(time.time()-i),1))\''
 )
 
 
@@ -485,7 +493,7 @@ class Orquestrador:
             problema = cuda_ok(out, pod.info.gpus)
             if problema:
                 raise NuvemError(problema)
-            _, out = ag.exec(REDE.format(url=url_teste_rede()), 45)
+            _, out = ag.exec(REDE.format(url=url_teste_rede()), 60)
             problema = rede_ok(out)
             if problema:
                 raise NuvemError(problema)
