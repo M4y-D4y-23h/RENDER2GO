@@ -1,0 +1,17 @@
+07:11:16 8 foto(s), 8 vídeo(s) em 1 GPU(s) (NVIDIA RTX PRO 6000 Blackwell Server Edition, ~80 s por vídeo): ~23 min e ~US$ 0.79 (US$ 2.09/h por GPU; subida de ~12 min incluída)
+07:11:18 pod u4rjutk2ji7zgy (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) criado, US$ 2.09/h; esperando o agente...
+07:11:56 pod u4rjutk2ji7zgy (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): rede 329.1 MB/s
+07:11:56 pod u4rjutk2ji7zgy (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): agente, CUDA e rede ok; instalando o worker (~6–10 min)
+07:17:48 pod u4rjutk2ji7zgy (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): pronto (1 GPU)
+07:18:22 prompt do lote: The camera slowly dollies in toward the product, filling the frame with a close-up. Even studio lighting with soft shadows enhances the vibrant, natural colors. The focus is sharp and detailed. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.
+07:19:31 [1/8] bebida-v1.mp4: ok (u4rjutk2ji7zgy)
+07:19:32 [2/8] caneca-v1.mp4: ok (u4rjutk2ji7zgy)
+07:20:41 [3/8] dona-v1.mp4: ok (u4rjutk2ji7zgy)
+07:20:42 [4/8] fachada-v1.mp4: ok (u4rjutk2ji7zgy)
+07:21:50 [5/8] perfume-v1.mp4: ok (u4rjutk2ji7zgy)
+07:21:52 [6/8] prato-v1.mp4: ok (u4rjutk2ji7zgy)
+07:23:00 [7/8] sala-v1.mp4: ok (u4rjutk2ji7zgy)
+07:23:02 [8/8] tenis-v1.mp4: ok (u4rjutk2ji7zgy)
+07:23:03 pod u4rjutk2ji7zgy (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) encerrado (fim do trabalho)
+07:23:03 fim em 11.8 min; custo estimado dos pods ~US$ 0.41; relatório em /tmp/claude-0/-home-user-GPU2GO/bd150a69-098f-5e76-8b23-a7734fc017fc/scratchpad/entrega-pro6000/relatorio.csv
+saida=0 ok=1

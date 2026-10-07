@@ -174,7 +174,7 @@ def test_invalid_request_budget_and_no_gpu_create_nothing(pasta, tmp_path, sem_g
 def test_estimate_and_simulation(pasta, tmp_path, capsys):
     assert ln.main(_argv(pasta, tmp_path / "s", "--simular")) == ln.EXIT_OK
     err = capsys.readouterr().err
-    assert "5 foto(s), 5 vídeo(s) em 1 GPU(s)" in err and "~55 s por vídeo" in err
+    assert "5 foto(s), 5 vídeo(s) em 1 GPU(s)" in err and "~28 s por vídeo" in err
     e = ln.estimar(50, 4, 1, 55, 0.79)
     assert e.gpus == 4 and round(e.minutos) == round((12 * 60 + 50 * 55 / 4) / 60)
     assert ln.segundos_por_video("NVIDIA L40S", "alta", 7) == 180 * 7 / 5
@@ -243,7 +243,11 @@ def test_no_package_starts_without_safe_time_before_the_2h_limit(
 def test_default_gpu_order_is_secure_l40s_first():
     a = ln.build_parser().parse_args(["--saida", "s"])
     assert a.nuvem == "secure"
-    assert ln.GPUS_PADRAO[:2] == ["NVIDIA L40S", "NVIDIA L40"]
+    assert ln.GPUS_PADRAO[:3] == [
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "NVIDIA L40S",
+        "NVIDIA L40",
+    ]
 
 
 def test_cuda_check_requires_working_gpus_and_driver_12_8():

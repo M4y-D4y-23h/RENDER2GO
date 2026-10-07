@@ -61,14 +61,17 @@ REPO = WORKER_DIR.parent
 EXIT_OK, EXIT_FALHA, EXIT_PEDIDO, EXIT_RECUSADO, EXIT_SEM_GPU, EXIT_PENDENTE = 0, 1, 2, 3, 4, 5
 # Segundos por vídeo de 5 s medidos (worker/evals/gpu-2026-10-06*); o resto usa o pior caso.
 MEDIDO_S = {
+    # alta na RTX PRO 6000 ainda sem medição: proporção da L40S (180 × 28/55)
+    "NVIDIA RTX PRO 6000 Blackwell Server Edition": {"rapida": 28, "alta": 92},
     "NVIDIA L40S": {"rapida": 55, "alta": 180},
     "NVIDIA GeForce RTX 4090": {"rapida": 80, "alta": 213},
 }
 PIOR_S = {"rapida": 80, "alta": 213}
-# Ordem padrão (decisão de 07/10/2026), sempre na nuvem secure: L40S (medida); L40 e RTX 6000
-# Ada (mesmo chip, 48 GB, ~metade do cálculo de IA da L40S; tempo ainda não medido, usa o
-# pior caso); RTX 4090 por último (24 GB, troca de modelo a cada vídeo).
+# Ordem padrão (07/10/2026), sempre na nuvem secure: RTX PRO 6000 (medida: ~28 s, mesmo custo
+# por vídeo da L40S e metade do tempo); L40S (~55 s); L40 e RTX 6000 Ada (mesmo chip da L40S,
+# ~metade do cálculo de IA; sem medição, usam o pior caso); RTX 4090 por último (troca modelo).
 GPUS_PADRAO = [
+    "NVIDIA RTX PRO 6000 Blackwell Server Edition",
     "NVIDIA L40S",
     "NVIDIA L40",
     "NVIDIA RTX 6000 Ada Generation",

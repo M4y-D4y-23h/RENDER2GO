@@ -208,7 +208,7 @@ Também:
 ```bash
 # só planeja e estima (sem pods)
 python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" --simular
-# 2 pods secure (L40S → L40 → RTX 6000 Ada → RTX 4090), orçamento máximo US$ 3
+# 2 pods secure (RTX PRO 6000 → L40S → L40 → RTX 6000 Ada → RTX 4090), orçamento máximo US$ 3
 python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" \
   --receita produto-close --pods 2 --orcamento-usd 3 --interpolar --altura 1280
 # se o processo foi interrompido: encerra os pods registrados

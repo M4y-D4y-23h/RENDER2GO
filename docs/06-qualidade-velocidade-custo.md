@@ -45,12 +45,13 @@ Para custo baixo, o que importa é o **custo por vídeo** (preço por hora × te
 | RTX 4090 secure | 24 GB | sim | 0,74 | **~80 s (medido)** | **~US$ 0,016** |
 | RTX 4090 community | 24 GB | sim | 0,34 | ~80 s | **Fora de uso** (07/10): 3 de 3 hosts com CUDA quebrado |
 | RTX 5090 | 32 GB | sim | 0,69 a 0,99 | *~50–60 s (estimativa)* | *~US$ 0,010–0,016* |
+| **RTX PRO 6000** (Blackwell) | 96 GB | sim | 2,09 | **~28 s (medido, 07/10)** | **~US$ 0,017**: mesmo custo da L40S, metade do tempo (`worker/evals/gpu-2026-10-07-rtx-pro-6000/`) |
 | **L40S** | 48 GB | sim | 0,79 a 1,09 | **~55 s (medido)**; alta ~180 s | **~US$ 0,012–0,017** |
 | A40 | 48 GB | **não** (Ampere) | 0,49 | *~120–160 s (estimativa: metade do cálculo de uma 4090)* | *~US$ 0,016–0,022* |
 | H100 SXM | 80 GB | sim | 3,49 | *~25–35 s (estimativa)* | *~US$ 0,024–0,034* |
 
 - **A40 não serve para "velocidade extrema".** É uma geração anterior (Ampere), sem fp8 nativo. Deve ser mais lenta por vídeo que a 4090. Pode compensar pelo preço, mas só medindo.
-- **A L40S foi medida** (`worker/evals/gpu-2026-10-06-l40s/`): ~55 s por vídeo, 30% mais rápida que a 4090 secure de hoje, com custo por vídeo igual ou menor. É a **recomendação para lotes**, sempre na nuvem **secure** (decisão de 07/10/2026). Ordem padrão do `lote_nuvem`: **L40S → L40 → RTX 6000 Ada → RTX 4090**. A L40 e a 6000 Ada (US$ 0,82–0,84/h) usam o mesmo chip da L40S, com 48 GB e cerca de metade do cálculo de IA: estimativa de 70–85 s por vídeo e custo por vídeo parecido, a medir no primeiro lote que cair nelas. **Nenhum pod fica ligado mais de 2 h.**
+- **A L40S foi medida** (`worker/evals/gpu-2026-10-06-l40s/`): ~55 s por vídeo, 30% mais rápida que a 4090 secure de hoje, com custo por vídeo igual ou menor. É a **recomendação para lotes**, sempre na nuvem **secure** (decisão de 07/10/2026). Ordem padrão do `lote_nuvem`: **RTX PRO 6000 → L40S → L40 → RTX 6000 Ada → RTX 4090**. A L40 e a 6000 Ada (US$ 0,82–0,84/h) usam o mesmo chip da L40S, com 48 GB e cerca de metade do cálculo de IA: estimativa de 70–85 s por vídeo e custo por vídeo parecido, a medir no primeiro lote que cair nelas. **Nenhum pod fica ligado mais de 2 h.**
 
 ## 3. Upscale e limpeza da imagem antes do render
 
