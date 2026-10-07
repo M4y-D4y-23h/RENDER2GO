@@ -1,0 +1,20 @@
+07:45:01 8 foto(s), 8 vídeo(s) em 1 GPU(s) (NVIDIA RTX PRO 6000 Blackwell Server Edition, ~92 s por vídeo): ~24 min e ~US$ 0.85 (US$ 2.09/h por GPU; subida de ~12 min incluída)
+07:45:01 evitando datacenters lentos: EUR-IS-2
+07:45:04 pod 8do2hlevz6enyv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) criado, US$ 2.09/h; esperando o agente...
+07:45:32 pod 8do2hlevz6enyv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): rede 279.5 MB/s
+07:45:32 pod 8do2hlevz6enyv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): agente, CUDA e rede ok; instalando o worker (~6–10 min)
+07:50:52 pod 8do2hlevz6enyv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): pronto (1 GPU)
+07:51:26 prompt do lote: The camera slowly dollies in toward the product, filling the frame with a close-up. Even studio lighting with soft shadows enhances the vibrant, natural colors. The focus is sharp and detailed. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.
+07:58:14 [1/8] bebida-v1.mp4: ok (8do2hlevz6enyv)
+07:58:15 [2/8] caneca-v1.mp4: ok (8do2hlevz6enyv)
+07:58:16 [3/8] dona-v1.mp4: ok (8do2hlevz6enyv)
+07:58:17 [4/8] fachada-v1.mp4: ok (8do2hlevz6enyv)
+07:58:18 pod 8do2hlevz6enyv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~101 s de GPU por vídeo (medido: ~92 s)
+08:05:06 [5/8] perfume-v1.mp4: ok (8do2hlevz6enyv)
+08:05:07 [6/8] prato-v1.mp4: ok (8do2hlevz6enyv)
+08:05:09 [7/8] sala-v1.mp4: ok (8do2hlevz6enyv)
+08:05:10 [8/8] tenis-v1.mp4: ok (8do2hlevz6enyv)
+08:05:11 pod 8do2hlevz6enyv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~101 s de GPU por vídeo (medido: ~92 s)
+08:05:12 pod 8do2hlevz6enyv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) encerrado (fim do trabalho)
+08:05:12 fim em 20.2 min; custo estimado dos pods ~US$ 0.70; relatório em /tmp/claude-0/-home-user-GPU2GO/bd150a69-098f-5e76-8b23-a7734fc017fc/scratchpad/teste-B/relatorio.csv
+saida=0

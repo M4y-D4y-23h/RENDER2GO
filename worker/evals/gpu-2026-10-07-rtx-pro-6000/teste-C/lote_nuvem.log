@@ -1,0 +1,13 @@
+07:35:42 3 foto(s), 3 vídeo(s) em 1 GPU(s) (NVIDIA RTX PRO 6000 Blackwell Server Edition, ~129 s por vídeo): ~18 min e ~US$ 0.64 (US$ 2.09/h por GPU; subida de ~12 min incluída)
+07:35:44 pod ljv7y4zkjlz4s2 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) criado, US$ 2.09/h; esperando o agente...
+07:36:24 pod ljv7y4zkjlz4s2 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): rede 267.6 MB/s
+07:36:24 pod ljv7y4zkjlz4s2 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): agente, CUDA e rede ok; instalando o worker (~6–10 min)
+07:41:45 pod ljv7y4zkjlz4s2 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): pronto (1 GPU)
+07:42:20 prompt do lote: The camera slowly dollies in toward the object, capturing a close-up. Sunlight filtering through a window creates gentle reflections and soft shadows. Tiny particles of dust float in the air, and the shadow stretches. The scene has a clean, commercial look with high detail, vibrant natural colors, and sharp focus. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.
+07:47:52 [1/3] caneca-v1.mp4: ok (ljv7y4zkjlz4s2)
+07:47:54 [2/3] perfume-v1.mp4: ok (ljv7y4zkjlz4s2)
+07:47:55 pod ljv7y4zkjlz4s2 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~164 s de GPU por vídeo (medido: ~129 s)
+07:50:37 [3/3] sala-v1.mp4: ok (ljv7y4zkjlz4s2)
+07:50:37 pod ljv7y4zkjlz4s2 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~159 s de GPU por vídeo (medido: ~129 s)
+07:50:39 pod ljv7y4zkjlz4s2 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) encerrado (fim do trabalho)
+07:50:39 fim em 14.9 min; custo estimado dos pods ~US$ 0.52; relatório em /tmp/claude-0/-home-user-GPU2GO/bd150a69-098f-5e76-8b23-a7734fc017fc/scratchpad/teste-C/relatorio.csv

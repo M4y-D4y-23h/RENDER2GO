@@ -1,0 +1,20 @@
+07:36:39 8 foto(s), 8 vídeo(s) em 1 GPU(s) (NVIDIA RTX PRO 6000 Blackwell Server Edition, ~92 s por vídeo): ~24 min e ~US$ 0.85 (US$ 2.09/h por GPU; subida de ~12 min incluída)
+07:36:41 pod 5sxf4ddb7ujwkr (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) criado, US$ 2.09/h; esperando o agente...
+07:37:19 pod 5sxf4ddb7ujwkr (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): rede 285.0 MB/s
+07:37:19 pod 5sxf4ddb7ujwkr (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): agente, CUDA e rede ok; instalando o worker (~6–10 min)
+07:42:20 pod 5sxf4ddb7ujwkr (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): pronto (1 GPU)
+07:42:54 prompt do lote: The camera slowly dollies in toward the product, filling the frame with a close-up. Even studio lighting with soft shadows enhances the vibrant, natural colors. The focus is sharp, giving the image a clean, commercial look. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.
+07:46:09 [1/8] bebida-v1.mp4: ok (5sxf4ddb7ujwkr)
+07:46:10 [2/8] caneca-v1.mp4: ok (5sxf4ddb7ujwkr)
+07:46:11 pod 5sxf4ddb7ujwkr (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~96 s de GPU por vídeo (medido: ~92 s)
+07:49:27 [3/8] dona-v1.mp4: ok (5sxf4ddb7ujwkr)
+07:49:28 [4/8] fachada-v1.mp4: ok (5sxf4ddb7ujwkr)
+07:49:29 pod 5sxf4ddb7ujwkr (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~96 s de GPU por vídeo (medido: ~92 s)
+07:52:45 [5/8] perfume-v1.mp4: ok (5sxf4ddb7ujwkr)
+07:52:47 [6/8] prato-v1.mp4: ok (5sxf4ddb7ujwkr)
+07:52:47 pod 5sxf4ddb7ujwkr (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~96 s de GPU por vídeo (medido: ~92 s)
+07:56:03 [7/8] sala-v1.mp4: ok (5sxf4ddb7ujwkr)
+07:56:05 [8/8] tenis-v1.mp4: ok (5sxf4ddb7ujwkr)
+07:56:05 pod 5sxf4ddb7ujwkr (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~96 s de GPU por vídeo (medido: ~92 s)
+07:56:06 pod 5sxf4ddb7ujwkr (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) encerrado (fim do trabalho)
+07:56:06 fim em 19.5 min; custo estimado dos pods ~US$ 0.68; relatório em /tmp/claude-0/-home-user-GPU2GO/bd150a69-098f-5e76-8b23-a7734fc017fc/scratchpad/teste-A/relatorio.csv

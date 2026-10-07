@@ -1,0 +1,16 @@
+{
+  "prompts": {
+    "b730285677668536": {
+      "acao": "a câmera avança devagar em direção ao objeto enquanto a luz do sol entra pela janela, reflexos suaves se movem pela superfície, pequenas partículas de poeira flutuam no ar e a sombra se alonga",
+      "presets": {
+        "version": 2,
+        "camera": "aproximacao-produto",
+        "estilo": "comercial",
+        "luz": "estudio",
+        "ritmo": "lento"
+      },
+      "prompt_en": "The camera slowly dollies in toward the object, capturing a close-up. Sunlight filtering through a window creates gentle reflections and soft shadows. Tiny particles of dust float in the air, and the shadow stretches. The scene has a clean, commercial look with high detail, vibrant natural colors, and sharp focus. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.",
+      "compilador": "i2v@5"
+    }
+  }
+}

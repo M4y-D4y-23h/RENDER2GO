@@ -1,0 +1,9 @@
+arquivo,foto,receita,variacao,formato,width,height,duracao,seed,gpu,status,segundos,aviso,erro,pod
+bebida-v1.mp4,bebida.png,produto-close,1,vertical,720,1280,5,7305475988434358,http://127.0.0.1:8188,ok,95.6,"foto pequena (480x832), ampliada 1.5x",,5sxf4ddb7ujwkr
+caneca-v1.mp4,caneca.png,produto-close,1,quadrado,960,960,5,2326067240448129,http://127.0.0.1:8188,ok,92.8,"foto pequena (640x640), ampliada 1.5x",,5sxf4ddb7ujwkr
+dona-v1.mp4,dona.png,produto-close,1,vertical,720,1280,5,5245669924522904,http://127.0.0.1:8188,ok,93.0,"foto pequena (480x832), ampliada 1.5x",,5sxf4ddb7ujwkr
+fachada-v1.mp4,fachada.png,produto-close,1,vertical,720,1280,5,3393449363126822,http://127.0.0.1:8188,ok,93.2,"foto pequena (480x832), ampliada 1.5x",,5sxf4ddb7ujwkr
+perfume-v1.mp4,perfume.png,produto-close,1,vertical,720,1280,5,987566140940773,http://127.0.0.1:8188,ok,92.9,"foto pequena (480x832), ampliada 1.5x",,5sxf4ddb7ujwkr
+prato-v1.mp4,prato.png,produto-close,1,vertical,720,1280,5,535170167805117,http://127.0.0.1:8188,ok,93.0,"foto pequena (480x832), ampliada 1.5x",,5sxf4ddb7ujwkr
+sala-v1.mp4,sala.png,produto-close,1,horizontal,1280,720,5,108079365847299,http://127.0.0.1:8188,ok,92.8,"foto pequena (832x480), ampliada 1.5x",,5sxf4ddb7ujwkr
+tenis-v1.mp4,tenis.png,produto-close,1,quadrado,960,960,5,2275358921886067,http://127.0.0.1:8188,ok,93.0,"foto pequena (640x640), ampliada 1.5x",,5sxf4ddb7ujwkr

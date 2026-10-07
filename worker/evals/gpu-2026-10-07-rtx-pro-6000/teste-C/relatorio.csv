@@ -1,0 +1,4 @@
+arquivo,foto,receita,variacao,formato,width,height,duracao,seed,gpu,status,segundos,aviso,erro,pod
+caneca-v1.mp4,caneca.png,produto-close,1,quadrado,960,960,7,2326067240448129,http://127.0.0.1:8188,ok,161.5,"foto pequena (640x640), ampliada 1.5x",,ljv7y4zkjlz4s2
+perfume-v1.mp4,perfume.png,produto-close,1,vertical,720,1280,7,987566140940773,http://127.0.0.1:8188,ok,158.6,"foto pequena (480x832), ampliada 1.5x",,ljv7y4zkjlz4s2
+sala-v1.mp4,sala.png,produto-close,1,horizontal,1280,720,7,108079365847299,http://127.0.0.1:8188,ok,158.2,"foto pequena (832x480), ampliada 1.5x",,ljv7y4zkjlz4s2

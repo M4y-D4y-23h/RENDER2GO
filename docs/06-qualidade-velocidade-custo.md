@@ -10,7 +10,7 @@
 | Ponto | Vale para o lote? | Situação |
 |---|---|---|
 | GPU mais potente | Sim, se o custo por vídeo cair | GPUs de 48 GB ainda sem medição (seção 2) |
-| Vários vídeos ao mesmo tempo **na mesma GPU** | **Não** | Medido: fila 1 e fila 2 deram ~80 s por vídeo |
+| Vários vídeos ao mesmo tempo **na mesma GPU** | **Não** | Medido duas vezes: fila 2 num ComfyUI (4090, ~80 s) e 2 ComfyUI na mesma RTX PRO 6000 (~100 s de GPU por vídeo, contra 93 s um de cada vez) |
 | Paralelismo com **uma GPU por vídeo** | **Sim**, é o que acelera | Feito: `COMFY_GPUS=auto` e `lote --gpus N` |
 | Limpeza e ajuste da foto antes do render | Sim | Feito: `preparo.py` (EXIF, corte, Lanczos) |
 | Upscale da foto de entrada com IA | Raramente | Foto de celular já é maior que o vídeo; só foto pequena se beneficia |
@@ -45,7 +45,7 @@ Para custo baixo, o que importa é o **custo por vídeo** (preço por hora × te
 | RTX 4090 secure | 24 GB | sim | 0,74 | **~80 s (medido)** | **~US$ 0,016** |
 | RTX 4090 community | 24 GB | sim | 0,34 | ~80 s | **Fora de uso** (07/10): 3 de 3 hosts com CUDA quebrado |
 | RTX 5090 | 32 GB | sim | 0,69 a 0,99 | *~50–60 s (estimativa)* | *~US$ 0,010–0,016* |
-| **RTX PRO 6000** (Blackwell) | 96 GB | sim | 2,09 | **~28 s (medido, 07/10)** | **~US$ 0,017**: mesmo custo da L40S, metade do tempo (`worker/evals/gpu-2026-10-07-rtx-pro-6000/`) |
+| **RTX PRO 6000** (Blackwell) | 96 GB | sim | 2,09 | **~28 s (medido, 07/10)**; 720p ~93 s; 720p 7 s ~160 s | **~US$ 0,017**: mesmo custo da L40S, metade do tempo (`worker/evals/gpu-2026-10-07-rtx-pro-6000/`) |
 | **L40S** | 48 GB | sim | 0,79 a 1,09 | **~55 s (medido)**; alta ~180 s | **~US$ 0,012–0,017** |
 | A40 | 48 GB | **não** (Ampere) | 0,49 | *~120–160 s (estimativa: metade do cálculo de uma 4090)* | *~US$ 0,016–0,022* |
 | H100 SXM | 80 GB | sim | 3,49 | *~25–35 s (estimativa)* | *~US$ 0,024–0,034* |
