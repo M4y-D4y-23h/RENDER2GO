@@ -113,6 +113,7 @@ class Config:
     timeout: float = 1800.0
     ocioso_s: float = OCIOSO_S
     segredo: str | None = None
+    ate: float | None = None  # epoch: não pega job novo depois disso (limite de 2 h do pod)
 
 
 class WorkerFila:
@@ -251,6 +252,9 @@ class WorkerFila:
 
     def _laco(self, comfy: str) -> None:
         while True:
+            if self.cfg.ate and time.time() > self.cfg.ate:
+                _log("perto do limite de tempo do pod: não pega mais jobs")
+                return
             try:
                 job = self.api.reivindicar()
             except FilaError as e:
@@ -293,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--gpus", type=int, default=1, help="ComfyUI em 8188, 8189, ...")
     p.add_argument("--ollama", default="http://127.0.0.1:11434")
     p.add_argument("--ocioso", type=float, default=OCIOSO_S, help="sai após N s sem jobs")
+    p.add_argument("--ate", type=float, help="epoch: não pega jobs novos depois disso")
     a = p.parse_args(argv)
     token = os.environ.get("GPU2GO_WORKER_TOKEN", "")
     if len(token) < 32:
@@ -307,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         ollama=a.ollama,
         ocioso_s=a.ocioso,
         segredo=os.environ.get("GPU2GO_SEGREDO_APROVACAO") or None,
+        ate=a.ate,
     )
     return WorkerFila(ApiFila(a.api, token, a.worker), cfg).rodar()
 

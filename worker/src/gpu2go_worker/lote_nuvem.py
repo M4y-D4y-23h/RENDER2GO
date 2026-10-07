@@ -652,6 +652,15 @@ class Orquestrador:
             return None
         return pod
 
+    # -- uso pelo orquestrador da fila (servico/orquestrador.py) ----------------------------
+
+    def subir_pod(self, i: int, deadman_s: int) -> Pod | None:
+        """Cria, testa (CUDA, rede, datacenter) e instala um pod; None se não conseguiu."""
+        return self._subir_pod(i, deadman_s)
+
+    def encerrar(self, pod: Pod, motivo: str) -> None:
+        self._encerrar(pod, motivo)
+
     def _instalar(self, pod: Pod) -> None:
         r, ag = self.remoto, pod.agente
         limite = time.monotonic() + ESPERA_AGENTE_S

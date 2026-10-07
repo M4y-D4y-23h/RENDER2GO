@@ -83,7 +83,7 @@ def handler(token: str):
                 return self._send(400, {"erro": "rota ou tamanho"})
             caminho = self._caminho()
             os.makedirs(os.path.dirname(caminho) or ".", exist_ok=True)
-            tmp, faltam = caminho + ".parcial", n
+            tmp, faltam = f"{caminho}.parcial-{os.urandom(4).hex()}", n  # envios simultâneos
             with open(tmp, "wb") as f:
                 while faltam:
                     pedaco = self.rfile.read(min(faltam, 1 << 20))
