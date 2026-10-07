@@ -77,6 +77,8 @@ Assim o "venv no volume" foi feito sem quebrar a regra do volume não POSIX: o v
 - Prende o lote a um datacenter, com menos vagas de GPU.
 - Datacenters com volume (em 07/10): AP-JP-1, CA-MTL-1/3/4, EU-FR-1, EU-RO-1, EUR-IS-1/3, EUR-NO-1/2, US-CA-2, US-CO-1, US-IL-1, US-MO-2, **US-NC-2** (usado), US-NE-1, US-TX-3. O US-NC-1 não aceita volume.
 
+**Global Volume (verificado em 07/10, não medido):** só pode ser anexado a pods pelo painel do RunPod, em "Configure Pod with volume" ([docs](https://docs.runpod.io/storage/globalvolume/globalvolume-pods)). A API de pods, v1 e v2, não tem esse campo (só `globalNetworking`), e a API compatível com S3 é só de network volumes ([docs](https://docs.runpod.io/storage/s3-api)). Por isso o `lote_nuvem`, que cria os pods pela API, não consegue usá-lo. A documentação agora aceita `globalVolumes` em endpoints serverless, o que corrige o `docs/01`, item 12.
+
 **Pod reservado ligado (não feito):**
 - pod parado perde o disco do container, e ao religar a GPU pode não estar livre no mesmo host;
 - uma RTX PRO 6000 ligada direto custa ~US$ 50/dia, enquanto uma subida nova custa ~US$ 0,10 (~3 min).
