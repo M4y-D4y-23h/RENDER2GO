@@ -219,7 +219,12 @@ python tools/lote_nuvem.py --saida entregas/loja --limpar
 - **Cada pod:**
   - nasce com desligamento automático (no máximo 2 h; o lote para de mandar pacotes 10 min antes, para baixar tudo, e o que não couber fica pendente para a próxima execução);
   - passa pelo teste de CUDA e é encerrado na hora se a GPU estiver com defeito ou o agente não responder em 10 min;
-  - instala o worker em ~6–10 min (até existir a imagem com modelos).
+  - instala o worker em ~1,5 min (download em partes, medido em 07/10; `worker/evals/gpu-2026-10-07-volume/`).
+- **Espelho dos modelos no R2 (reserva do Hugging Face, opcional):**
+  - **Configuração:** variáveis `GPU2GO_R2_ENDPOINT` (`https://<conta>.r2.cloudflarestorage.com`), `GPU2GO_R2_BUCKET`, `GPU2GO_R2_ACCESS_KEY_ID` e `GPU2GO_R2_SECRET_ACCESS_KEY`, só na máquina que roda o comando. O pod recebe apenas URLs assinadas.
+  - **Download:** cada modelo vem da origem e do espelho ao mesmo tempo. Se uma das duas cair, segue pela outra. O SHA-256 decide, e uma cópia ruim é baixada de novo.
+  - **Enchimento:** o que falta no espelho é enviado pelo 1º pod do lote, em partes de 512 MB, enquanto ele renderiza (~50 GB, ~US$ 0,75/mês no R2).
+  - `--sem-espelho` desliga.
 - **Distribuição:** o pedido é compilado uma vez. As fotos vão em pacotes de 2 por GPU, conforme os pods ficam livres, e pod que cai devolve o pacote.
 - **Na pasta de entrega:** cada vídeo chega assim que o pacote termina, com `relatorio.csv` (coluna `pod`) e `conferencia/`. Com `--interpolar`, `--altura` ou `--zoom`, o acabamento vai para `final/`.
 - **Segurança e custo:**

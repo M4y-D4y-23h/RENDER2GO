@@ -2,6 +2,7 @@
 com ComfyUI e Ollama falsos (conftest)."""
 
 import csv
+import os
 import shutil
 import sys
 import threading
@@ -178,6 +179,41 @@ def test_only_one_pod_writes_the_volume_cache_and_waits_for_it(
     grava = [e.get("GPU2GO_VOLUME_GRAVA") for e in prov.envs]
     assert grava[:2] == ["1", None] and grava.count("1") == 2  # p1 e o substituto dele
     assert "cache gravado no volume" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(not os.environ.get("GPU2GO_TESTE_S3"), reason="sem S3 local")
+def test_first_pod_fills_the_r2_mirror_and_next_lot_gets_signed_urls(
+    pasta, tmp_path, fake_comfy, fake_ollama, sem_git, monkeypatch, capsys
+):
+    from test_espelho import modelos_pequenos  # mesma montagem de modelos pequenos
+
+    from gpu2go_worker import espelho as esp_mod
+
+    pasta_modelos, entradas = modelos_pequenos.__wrapped__(tmp_path, monkeypatch)
+    for k, v in {"ENDPOINT": os.environ["GPU2GO_TESTE_S3"], "BUCKET": "gpu2go",
+                 "ACCESS_KEY_ID": os.environ["GPU2GO_TESTE_S3_CHAVE"],
+                 "SECRET_ACCESS_KEY": os.environ["GPU2GO_TESTE_S3_SEGREDO"],
+                 "REGION": "us-east-1"}.items():
+        monkeypatch.setenv(f"GPU2GO_R2_{k}", v)
+    s3 = esp_mod.Armazenamento.do_ambiente()
+    for m in entradas.values():
+        s3.apagar(f"modelos/{m.sha256}")
+    monkeypatch.setattr(ln, "ESPERA_GUARDAR_S", 60)
+    remoto = _remoto(tmp_path, fake_comfy.url, fake_ollama.url)
+    remoto.instalar = "echo PRONTO > {raiz}/estado; echo GUARDADO > {raiz}/guardado"
+    argv = _argv(pasta, tmp_path / "entrega", "--pods", "2")
+    assert ln.main(argv, provedor=Provedor(), remoto=remoto) == ln.EXIT_OK
+    err = capsys.readouterr().err
+    assert "espelho (R2): 0 de 2" in err and "enviando 2 modelo(s) ao espelho" in err
+    assert err.count("enviando") == 1  # só o pod gravador envia
+    assert all(s3.tamanho(f"modelos/{m.sha256}") == m.bytes for m in entradas.values())
+    # próximo lote: espelho completo; os pods recebem as URLs assinadas e ninguém envia
+    (tmp_path / "pod" / "espelho.tsv").unlink(missing_ok=True)
+    argv2 = _argv(pasta, tmp_path / "entrega2", "--pods", "1")
+    assert ln.main(argv2, provedor=Provedor(), remoto=remoto) == ln.EXIT_OK
+    err = capsys.readouterr().err
+    assert "espelho (R2): 2 de 2" in err and "enviando" not in err
+    assert len((tmp_path / "pod" / "espelho.tsv").read_text().splitlines()) == 2
 
 
 def test_bootstrap_downloads_in_parts_and_caches_the_environment():

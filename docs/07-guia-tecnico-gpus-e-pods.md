@@ -77,6 +77,14 @@ Assim o "venv no volume" foi feito sem quebrar a regra do volume não POSIX: o v
 - Prende o lote a um datacenter, com menos vagas de GPU.
 - Datacenters com volume (em 07/10): AP-JP-1, CA-MTL-1/3/4, EU-FR-1, EU-RO-1, EUR-IS-1/3, EUR-NO-1/2, US-CA-2, US-CO-1, US-IL-1, US-MO-2, **US-NC-2** (usado), US-NE-1, US-TX-3. O US-NC-1 não aceita volume.
 
+**Decisão (07/10):** sem volume do RunPod. O Network Volume de teste foi apagado. A reserva fica no **R2** (espelho dos modelos, `worker/README.md`, "Lote na nuvem"):
+- não prende datacenter;
+- custa ~US$ 0,75/mês;
+- o aria2 baixa da origem e do espelho ao mesmo tempo;
+- é o mesmo armazenamento que vai entregar os vídeos aos clientes (ADR 0003).
+
+Testado sem GPU, com S3 local: Hugging Face fora do ar com o espelho bom baixou do espelho; espelho corrompido com a origem boa foi detectado pelo SHA-256 e baixado de novo.
+
 **Global Volume (verificado em 07/10, não medido):** só pode ser anexado a pods pelo painel do RunPod, em "Configure Pod with volume" ([docs](https://docs.runpod.io/storage/globalvolume/globalvolume-pods)). A API de pods, v1 e v2, não tem esse campo (só `globalNetworking`), e a API compatível com S3 é só de network volumes ([docs](https://docs.runpod.io/storage/s3-api)). Por isso o `lote_nuvem`, que cria os pods pela API, não consegue usá-lo. A documentação agora aceita `globalVolumes` em endpoints serverless, o que corrige o `docs/01`, item 12.
 
 **Pod reservado ligado (não feito):**

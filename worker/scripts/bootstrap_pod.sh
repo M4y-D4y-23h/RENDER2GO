@@ -8,6 +8,8 @@
 # Uso: bootstrap_pod.sh <repo.tgz> <conjuntos de modelos, ex.: i2v_r1v2>
 # Estado em /root/gpu2go/estado: INSTALANDO → PRONTO | FALHOU <motivo>
 # Tempos por etapa (s desde o início) em /root/gpu2go/tempos.
+# Com /root/gpu2go/espelho.tsv (<arquivo>\t<URL assinada>, do lote_nuvem), cada modelo também vem
+# do espelho no R2, ao mesmo tempo que da origem (reserva se o Hugging Face cair).
 #
 # Com GPU2GO_VOLUME=1 (volume de rede do RunPod em /workspace), o cache fica em
 # /workspace/gpu2go-cache:
@@ -61,12 +63,25 @@ copia() {
     echo "cópia do volume não confere, baixando de novo: $(basename "$2")" && rm -f "$2"
   fi
 }
-um() {  # reserva: curl numa conexão só, com retomada
+espelho() {  # URL assinada do espelho (R2) para o arquivo, se o lote_nuvem mandou uma
+  [[ -f $R/espelho.tsv ]] && awk -F'\t' -v n="$(basename "$1")" '$1 == n {print $2}' $R/espelho.tsv
+}
+um() {  # reserva: curl numa conexão só, com retomada; da origem e, se falhar, do espelho
   mkdir -p "$(dirname "$2")"
-  for _ in 1 2 3 4 5; do curl -fsSL -C - --retry 5 -o "$2" "$1" && return 0; sleep 5; done
+  local u m; m=$(espelho "$2")
+  for u in "$1" "$1" "$1" ${m:+"$m" "$m"}; do
+    curl -fsSL -C - --retry 5 -o "$2" "$u" && return 0; sleep 5
+  done
   return 1
 }
-export -f confere copia um
+# depois do download em partes: se bytes ou SHA-256 não conferem (ex.: espelho ruim), apaga e
+# baixa de novo numa conexão só, antes de desistir
+reconfere() {
+  confere "$@" && return 0
+  echo "bytes ou SHA-256 errados: $(basename "$2"); baixando de novo"
+  rm -f "$2" && um "$1" "$2" && confere "$@" || { echo "bytes ou SHA-256 errados: $1"; return 1; }
+}
+export -f confere copia espelho um reconfere
 
 modelos() {
   python3 - "$MODEL_SET" > $R/modelos.tsv <<'PY' || return 1
@@ -87,7 +102,8 @@ PY
   # em partes: os 2 arquivos de ~15 GB dominam; numa conexão só, a média caía para ~140 MB/s
   while IFS=$'\t' read -r url dest _ _; do
     mkdir -p "$(dirname "$dest")"
-    printf '%s\n  dir=%s\n  out=%s\n' "$url" "$(dirname "$dest")" "$(basename "$dest")"
+    m=$(espelho "$dest")  # com espelho, o aria2 baixa das duas origens ao mesmo tempo
+    printf '%s%s\n  dir=%s\n  out=%s\n' "$url" "${m:+$'\t'$m}" "$(dirname "$dest")" "$(basename "$dest")"
   done < $R/falta.tsv > $R/aria2.txt
   aria2c ${SSL_CERT_FILE:+--ca-certificate=$SSL_CERT_FILE} -i $R/aria2.txt -j 4 -x 8 -s 8 -k 64M --file-allocation=none --continue=true \
     --allow-overwrite=true --auto-file-renaming=false --max-tries=10 --retry-wait=5 \
@@ -97,8 +113,7 @@ PY
     [ "$(stat -c %s "$dest" 2>/dev/null)" = "$bytes" ] || printf '%s\t%s\n' "$url" "$dest"
   done < $R/falta.tsv | xargs -r -P 4 -L 1 bash -c 'um "$0" "$1"' || return 1
   marca modelos_download
-  xargs -r -P 4 -L 1 bash -c 'confere "$@" || { echo "bytes ou SHA-256 errados: $1"; exit 255; }' _ \
-    < $R/falta.tsv || return 1
+  xargs -r -P 4 -L 1 bash -c 'reconfere "$@" || exit 255' _ < $R/falta.tsv || return 1
   marca modelos_conferidos
 }
 

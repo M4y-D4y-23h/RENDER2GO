@@ -56,6 +56,8 @@ from typing import Protocol
 import requests
 
 from gpu2go_worker import WORKER_DIR, acabamento, lote, preparo, runpod_pods
+from gpu2go_worker.armazenamento import ArmazenamentoError
+from gpu2go_worker.espelho import Espelho
 
 REPO = WORKER_DIR.parent
 EXIT_OK, EXIT_FALHA, EXIT_PEDIDO, EXIT_RECUSADO, EXIT_SEM_GPU, EXIT_PENDENTE = 0, 1, 2, 3, 4, 5
@@ -528,6 +530,7 @@ class Pod:
     fim: float | None = None
     vazao: list[float] = field(default_factory=list)
     grava_volume: bool = False
+    espelhando: bool = False
 
     @property
     def nome(self) -> str:
@@ -584,8 +587,9 @@ class Orquestrador:
             "DEADMAN_S": str(deadman_s),
             "NVIDIA_DRIVER_CAPABILITIES": "compute,utility",
         }
-        with self.lock:  # o 1º pod (ou o substituto dele) grava o cache no volume
-            grava = bool(getattr(self.a, "volume", None)) and not (
+        esp = getattr(self.a, "espelho", None)
+        with self.lock:  # o 1º pod (ou o substituto dele) grava o cache no volume e no espelho
+            grava = bool(getattr(self.a, "volume", None) or (esp and esp.faltando())) and not (
                 self.gravador or self.gravador_pendente
             )
             self.gravador_pendente |= grava
@@ -637,6 +641,12 @@ class Orquestrador:
                 raise NuvemError(problema)
             _, out = ag.exec(REDE.format(url=url_teste_rede()), 60)
             problema = rede_ok(out)
+            url_espelho = self._url_teste_espelho()
+            if problema and url_espelho:  # Hugging Face fora ou lento: vale a rede até o espelho
+                _, out2 = ag.exec(REDE.format(url=url_espelho), 60)
+                if not rede_ok(out2):
+                    _log(f"pod {pod.nome}: origem com problema ({problema}); usando o espelho")
+                    out, problema = out2, None
             m = re.search(r"rede ([\d.]+)", out)
             lembrar_datacentro(
                 pod.info.datacentro, float(m.group(1)) if m else None, problema or ""
@@ -647,6 +657,12 @@ class Orquestrador:
         _log(f"pod {pod.nome}: agente, CUDA e rede ok; instalando o worker (~1–3 min)")
         ag.put(self.a.repo_tgz, f"{r.raiz}/repo.tgz")
         ag.put(WORKER_DIR / "scripts" / "bootstrap_pod.sh", f"{r.raiz}/bootstrap_pod.sh")
+        esp = getattr(self.a, "espelho", None)
+        if esp and esp.presentes:  # URLs assinadas do espelho (GET, 6 h), uma por modelo
+            tsv = self.a.saida / ESTADO / f"espelho-{pod.info.id}.tsv"
+            tsv.write_text(esp.tsv())
+            ag.put(tsv, f"{r.raiz}/espelho.tsv")
+            tsv.unlink()
         ag.bg(r.instalar.format(raiz=r.raiz), f"{r.raiz}/instalar.log")
         estado = self._esperar(
             pod, f"cat {r.raiz}/estado 2>/dev/null", ("PRONTO", "FALHOU"), ESPERA_INSTALACAO_S
@@ -654,6 +670,8 @@ class Orquestrador:
         if not estado.startswith("PRONTO"):
             _, log = ag.exec(f"tail -5 {r.raiz}/bootstrap.log {r.raiz}/*.log 2>/dev/null", 30)
             raise NuvemError(f"instalação: {estado.strip()} | {log[-300:]}")
+        if pod.grava_volume and esp and esp.faltando():
+            self._espelhar(pod)
         _, tempos = ag.exec(f"cat {r.raiz}/tempos 2>/dev/null", 30)
         if tempos.strip():  # etapas em s desde o início da instalação (para medir o cache)
             _log(f"pod {pod.nome}: tempos da instalação: {' | '.join(tempos.strip().splitlines())}")
@@ -669,6 +687,52 @@ class Orquestrador:
             falha="ERRO",
         )
         _log(f"pod {pod.nome}: pronto ({pod.info.gpus} GPU)")
+
+    def _url_teste_espelho(self) -> str | None:
+        esp = getattr(self.a, "espelho", None)
+        if not esp:
+            return None
+        return next((u for m in esp.modelos if (u := esp.url(m))), None)
+
+    def _espelhar(self, pod: Pod) -> None:
+        """Pod gravador: envia ao espelho, em segundo plano, os modelos que faltam lá."""
+        esp, r = self.a.espelho, self.remoto
+        try:
+            with self.lock:
+                plano = esp.plano()
+            arq = self.a.saida / ESTADO / f"espelho-plano-{pod.info.id}.json"
+            arq.write_text(json.dumps(plano))
+            pod.agente.put(arq, f"{r.raiz}/espelho-plano.json")
+            arq.unlink()
+            pod.agente.put(WORKER_DIR / "scripts" / "espelhar.py", f"{r.raiz}/espelhar.py")
+            pod.agente.bg(
+                f"python3 {r.raiz}/espelhar.py {r.raiz}/espelho-plano.json "
+                f"{r.raiz}/espelho-resultado.json",
+                f"{r.raiz}/espelhar.log",
+            )
+            pod.espelhando = True
+            n = len(plano["arquivos"])
+            _log(f"pod {pod.nome}: enviando {n} modelo(s) ao espelho (R2) em segundo plano")
+        except (ArmazenamentoError, NuvemError, OSError) as e:
+            _log(f"AVISO: espelho não iniciado: {e}")
+            with self.lock:
+                esp.abortar()
+
+    def _concluir_espelho(self, pod: Pod, out: str) -> None:
+        esp, r = self.a.espelho, self.remoto
+        try:
+            if "ESPELHADO" not in out:
+                raise NuvemError(out.strip()[-200:] or "não terminou no prazo")
+            _, txt = pod.agente.exec(f"cat {r.raiz}/espelho-resultado.json", 30)
+            with self.lock:
+                feitos = esp.concluir(json.loads(txt))
+            _log(f"espelho (R2): {', '.join(feitos) or 'nada'} enviado(s)"
+                 + (f"; AVISO: {esp.erro}" if esp.erro else ""))
+        except (ArmazenamentoError, NuvemError, OSError, ValueError) as e:
+            _log(f"AVISO: espelho incompleto ({e}); o próximo lote completa")
+            with self.lock:
+                esp.abortar()
+        pod.espelhando = False
 
     def _esperar(self, pod, cmd, fins, limite_s, falha: str | None = None) -> str:
         limite = time.monotonic() + limite_s
@@ -862,22 +926,31 @@ class Orquestrador:
             self._encerrar(pod, "fim do trabalho")
 
     def _esperar_guardar(self, pod: Pod) -> None:
-        """O pod que grava o cache no volume só sai depois de terminar (ou do prazo)."""
+        """O pod gravador só sai depois de terminar o cache no volume e o envio ao espelho."""
         limite = min(
             time.monotonic() + ESPERA_GUARDAR_S, pod.criado + getattr(self, "deadman_s", 0) - 60
         )
-        _log(f"pod {pod.nome}: terminando de gravar o cache no volume")
+        r = self.remoto.raiz
+        _log(f"pod {pod.nome}: terminando de gravar o cache (volume/espelho)")
+        out = ""
         while time.monotonic() < limite:
             try:
-                _, out = pod.agente.exec(f"cat {self.remoto.raiz}/guardado 2>/dev/null", 30)
+                _, out = pod.agente.exec(
+                    f"cat {r}/guardado 2>/dev/null; tail -2 {r}/espelhar.log 2>/dev/null", 30
+                )
             except (NuvemError, OSError):
                 break
-            if "GUARDADO" in out:
-                _log(f"pod {pod.nome}: cache gravado no volume")
+            volume_ok = "GUARDADO" in out
+            espelho_ok = not pod.espelhando or "ESPELHADO" in out or "FALHOU" in out
+            if volume_ok and espelho_ok:
+                if getattr(self.a, "volume", None):
+                    _log(f"pod {pod.nome}: cache gravado no volume")
                 break
             time.sleep(15)
         else:
             _log(f"pod {pod.nome}: AVISO: o cache não terminou de gravar; o próximo pod completa")
+        if pod.espelhando:
+            self._concluir_espelho(pod, out)
         with self.lock:
             if self.gravador is pod:
                 self.gravador = None
@@ -942,6 +1015,22 @@ def _interromper(*_: object) -> None:
 
 def pod_agente_path() -> Path:
     return Path(__file__).with_name("pod_agente.py")
+
+
+def preparar_espelho() -> Espelho | None:
+    """Espelho dos modelos no R2, se GPU2GO_R2_* estiver configurado (reserva do Hugging Face)."""
+    esp = Espelho.do_ambiente()
+    if esp is None:
+        return None
+    try:
+        esp.verificar()
+    except ArmazenamentoError as e:
+        _log(f"AVISO: espelho (R2) inacessível, seguindo só com a origem: {e}")
+        return None
+    falta = len(esp.faltando())
+    _log(f"espelho (R2): {len(esp.presentes)} de {len(esp.modelos)} modelo(s)"
+         + (f"; o 1º pod envia os {falta} que faltam" if falta else ""))
+    return esp
 
 
 def empacotar_repo(destino: Path) -> Path:
@@ -1010,6 +1099,11 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument(
         "--volume",
         help="volume de rede do RunPod (id) com o cache dos modelos; o pod sobe no datacenter dele",
+    )
+    g.add_argument(
+        "--sem-espelho",
+        action="store_true",
+        help="não usa o espelho dos modelos no R2 (variáveis GPU2GO_R2_*), mesmo configurado",
     )
     g.add_argument("--sim", action="store_true", help="não pede confirmação")
     g.add_argument("--simular", action="store_true", help="só planeja e estima, sem pods")
@@ -1098,6 +1192,7 @@ def main(
         _log("cancelado (use --sim para não perguntar)")
         return EXIT_SEM_GPU
     a.repo_tgz = empacotar_repo(a.saida / ESTADO / "repo.tgz")
+    a.espelho = None if a.sem_espelho else preparar_espelho()
     # Desligamento automático por pod: o menor entre
     #   2 h (regra do projeto), 2× a estimativa + 20 min,
     #   o que o orçamento paga (com 20% de folga) e o que o saldo da conta paga (menos a reserva).
