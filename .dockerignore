@@ -10,5 +10,6 @@
 !worker/workflows
 !worker/prompts
 !worker/presets
+!worker/filtros
 **/__pycache__
 **/*.pyc

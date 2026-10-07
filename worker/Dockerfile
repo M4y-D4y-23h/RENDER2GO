@@ -99,6 +99,7 @@ COPY scripts /opt/gpu2go/worker/scripts
 COPY workflows /opt/gpu2go/worker/workflows
 COPY prompts /opt/gpu2go/worker/prompts
 COPY presets /opt/gpu2go/worker/presets
+COPY filtros /opt/gpu2go/worker/filtros
 RUN chmod +x /opt/gpu2go/worker/entrypoint.sh \
     && python -c "import runpod, gpu2go_worker.handler_runpod, gpu2go_worker.jobs"
 # A versão da imagem (GPU2GO_IMAGE_VERSION) vem do endpoint em runtime, não de um ARG:

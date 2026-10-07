@@ -53,6 +53,10 @@ def load_filters() -> Filters:
     mode = os.environ.get(MODE_ENV, "").strip()
     if mode == SFW_TESTS:
         return DisabledForSfwTests()
+    if mode == "c1-revisao-humana":  # ADR 0004: C1 + aprovação humana do lote no lugar do C2
+        from gpu2go_worker.filtros import FiltrosC1
+
+        return FiltrosC1()
     raise SafetyNotConfigured(
         f"filtros C1–C2 não configurados ({MODE_ENV}={mode or '<vazio>'}); "
         f"o worker não processa jobs sem eles (Etapa 4). Para testes SFW: {MODE_ENV}={SFW_TESTS}"
