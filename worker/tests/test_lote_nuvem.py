@@ -244,3 +244,12 @@ def test_default_gpu_order_is_secure_l40s_first():
     a = ln.build_parser().parse_args(["--saida", "s"])
     assert a.nuvem == "secure"
     assert ln.GPUS_PADRAO[:2] == ["NVIDIA L40S", "NVIDIA L40"]
+
+
+def test_cuda_check_requires_working_gpus_and_driver_12_8():
+    assert ln.cuda_ok("cuInit 0 gpus 1 driver 13020", 1) is None  # driver novo: aceito
+    assert ln.cuda_ok("cuInit 0 gpus 2 driver 12080", 2) is None
+    assert "defeito" in ln.cuda_ok("cuInit 999 gpus 1 driver 13000", 1)
+    assert "defeito" in ln.cuda_ok("cuInit 0 gpus 1 driver 13000", 2)
+    assert "antigo" in ln.cuda_ok("cuInit 0 gpus 1 driver 12040", 1)
+    assert "sem resposta" in ln.cuda_ok("bash: python3: not found", 1)

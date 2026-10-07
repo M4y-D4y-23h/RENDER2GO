@@ -39,6 +39,7 @@ import csv
 import json
 import os
 import queue
+import re
 import secrets
 import shlex
 import subprocess
@@ -257,8 +258,23 @@ class Remoto:
 
 CUINIT = (
     'python3 -c \'import ctypes;l=ctypes.CDLL("libcuda.so.1");r=l.cuInit(0);'
-    'n=ctypes.c_int();l.cuDeviceGetCount(ctypes.byref(n));print("cuInit",r,"gpus",n.value)\''
+    "n=ctypes.c_int();l.cuDeviceGetCount(ctypes.byref(n));v=ctypes.c_int();"
+    'l.cuDriverGetVersion(ctypes.byref(v));print("cuInit",r,"gpus",n.value,"driver",v.value)\''
 )
+CUDA_MINIMA = 12080  # PyTorch +cu128 exige driver com CUDA ≥ 12.8 (driver ≥ 570)
+
+
+def cuda_ok(saida: str, gpus: int) -> str | None:
+    """Confere a saída de CUINIT; devolve o problema ou None."""
+    m = re.search(r"cuInit (-?\d+) gpus (\d+) driver (\d+)", saida)
+    if not m:
+        return f"teste de CUDA sem resposta ({saida.strip()[:120]})"
+    r, n, driver = map(int, m.groups())
+    if r != 0 or n != gpus:
+        return f"GPU com defeito (cuInit {r}, {n} de {gpus} GPUs)"
+    if driver < CUDA_MINIMA:
+        return f"driver antigo (CUDA {driver // 1000}.{driver % 1000 // 10}; mínimo 12.8)"
+    return None
 
 
 # --- plano local ----------------------------------------------------------------------
@@ -435,8 +451,9 @@ class Orquestrador:
             time.sleep(10)
         if r.verificar_cuda:
             _, out = ag.exec(CUINIT, 30)
-            if f"cuInit 0 gpus {pod.info.gpus}" not in out:
-                raise NuvemError(f"GPU com defeito ({out.strip()[:120]})")
+            problema = cuda_ok(out, pod.info.gpus)
+            if problema:
+                raise NuvemError(problema)
         _log(f"pod {pod.nome}: agente e CUDA ok; instalando o worker (~6–10 min)")
         ag.put(self.a.repo_tgz, f"{r.raiz}/repo.tgz")
         ag.put(WORKER_DIR / "scripts" / "bootstrap_pod.sh", f"{r.raiz}/bootstrap_pod.sh")

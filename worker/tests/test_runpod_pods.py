@@ -86,9 +86,10 @@ def test_up_raises_when_nothing_is_available(monkeypatch):
         rp.subir([rp.Opcao("RTX A", "secure")], {}, "k", espera_s=0.01)
 
 
-def test_pod_body_pins_cuda_and_keeps_secrets_out():
+def test_pod_body_does_not_restrict_cuda_and_keeps_secrets_out():
     corpo = rp.corpo_pod(rp.Opcao("RTX A", "secure"), "img", "n", 80, {"MODE": "pod"}, ["22/tcp"])
-    assert corpo["allowedCudaVersions"][0] == "12.8" and corpo["cloudType"] == "SECURE"
+    # sem allowedCudaVersions: a lista da API excluía hosts novos (RTX PRO 6000, 07/10/2026)
+    assert "allowedCudaVersions" not in corpo and corpo["cloudType"] == "SECURE"
     assert corpo["ports"] == ["22/tcp"]  # ComfyUI e Ollama nunca expostos
     assert "RUNPOD_API_KEY" not in json.dumps(corpo)
 

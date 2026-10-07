@@ -36,9 +36,6 @@ GRAPHQL = "https://api.runpod.io/graphql"
 # passa, mas uma identificação explícita evita depender disso.
 USER_AGENT = "gpu2go-runpod/0.1 (+https://github.com/M4y-D4y-23h/GPU2GO)"
 NUVENS = {"community": "COMMUNITY", "secure": "SECURE"}
-# driver >= 570 (PyTorch +cu128): só máquinas com CUDA 12.8 ou mais novo
-# A API REST aceita até 13.0 (enum conferido em 07/10/2026); pedir mais dá HTTP 400.
-CUDA_PERMITIDAS = ["12.8", "12.9", "13.0"]
 MAX_HORAS_POD = 2  # regra do dono do projeto (07/10/2026): nenhum pod ligado mais de 2 h
 SEM_VAGA = (
     "no instances",
@@ -177,7 +174,8 @@ def corpo_pod(
         "containerDiskInGb": disco_gb,
         "volumeInGb": 0,
         "ports": portas,
-        "allowedCudaVersions": CUDA_PERMITIDAS,
+        # sem allowedCudaVersions: a API só aceita até "13.0" e excluía hosts com driver mais
+        # novo (RTX PRO 6000, 07/10/2026). O driver ≥ 570 é conferido no pod (gpu_check/cuInit).
         "env": env,
     }
 
