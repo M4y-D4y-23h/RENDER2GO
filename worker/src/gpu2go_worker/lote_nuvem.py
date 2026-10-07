@@ -273,7 +273,9 @@ class RunPod:
             if self.volume:
                 corpo["networkVolumeId"] = self.volume
                 corpo["env"] = {**env, "GPU2GO_VOLUME": "1"}
-            dcs = self.datacentros or self._datacentros_bons(opcao.gpu)
+            # com volume, o próprio volume prende o datacenter (e há datacenters com volume, como
+            # o US-NC-2, que a lista dataCenterIds da API REST não aceita)
+            dcs = None if self.volume else self.datacentros or self._datacentros_bons(opcao.gpu)
             if dcs:
                 corpo["dataCenterIds"] = dcs
             try:
@@ -281,6 +283,10 @@ class RunPod:
             except runpod_pods.SemVaga:
                 tentativas.append(f"{opcao}: sem vaga")
                 continue
+            dc = self._datacentro_do_pod(pod["id"])
+            if self.volume and dc and dc not in self.datacentros:
+                runpod_pods.encerrar(pod["id"], self.chave)
+                raise runpod_pods.RunPodError(f"pod nasceu em {dc}, fora do datacenter do volume")
             return PodInfo(
                 id=pod["id"],
                 url=f"https://{pod['id']}-8888.proxy.runpod.net",
@@ -289,7 +295,7 @@ class RunPod:
                 descricao=str(opcao),
                 gpus=gpus,
                 gpu=opcao.gpu,
-                datacentro=self._datacentro_do_pod(pod["id"]),
+                datacentro=dc,
             )
         raise runpod_pods.SemVaga("; ".join(tentativas) or "nenhuma opção")
 
