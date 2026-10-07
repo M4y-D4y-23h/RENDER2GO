@@ -246,9 +246,16 @@ class RunPod:
 
     IMAGEM = "python:3.12-slim-bookworm"
 
-    def __init__(self, datacentros: list[str] | None = None) -> None:
+    def __init__(self, datacentros: list[str] | None = None, volume: str | None = None) -> None:
         self.chave = runpod_pods._chave()
         self.datacentros = datacentros or []
+        self.volume = volume
+        if volume:  # o pod precisa nascer no datacenter do volume
+            r = runpod_pods._rest("GET", f"/networkvolumes/{volume}", self.chave)
+            dc = (r.json() or {}).get("dataCenterId") if r.status_code == 200 else None
+            if not dc:
+                raise runpod_pods.RunPodError(f"volume {volume} não encontrado ({r.status_code})")
+            self.datacentros = [dc]
 
     def preco(self, gpu: str, nuvem: str) -> float | None:
         for row in runpod_pods.disponibilidade([gpu]):
@@ -262,6 +269,9 @@ class RunPod:
             corpo = runpod_pods.corpo_pod(opcao, self.IMAGEM, nome, 120, env, ["8888/http"])
             corpo["gpuCount"] = gpus
             corpo["dockerStartCmd"] = ["bash", "-c", AGENTE_CMD]
+            if self.volume:
+                corpo["networkVolumeId"] = self.volume
+                corpo["env"] = {**env, "GPU2GO_VOLUME": "1"}
             dcs = self.datacentros or self._datacentros_bons(opcao.gpu)
             if dcs:
                 corpo["dataCenterIds"] = dcs
@@ -945,6 +955,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="só estes datacenters do RunPod (repetível), ex.: US-KS-2",
     )
+    g.add_argument(
+        "--volume",
+        help="volume de rede do RunPod (id) com o cache dos modelos; o pod sobe no datacenter dele",
+    )
     g.add_argument("--sim", action="store_true", help="não pede confirmação")
     g.add_argument("--simular", action="store_true", help="só planeja e estima, sem pods")
     g.add_argument("--limpar", action="store_true", help="encerra pods de uma execução anterior")
@@ -987,7 +1001,7 @@ def main(
         else None
     )
     try:
-        provedor = provedor or (None if a.simular else RunPod(a.datacentro))
+        provedor = provedor or (None if a.simular else RunPod(a.datacentro, a.volume))
     except runpod_pods.RunPodError as e:
         _log(f"ERRO {e}")
         return EXIT_SEM_GPU

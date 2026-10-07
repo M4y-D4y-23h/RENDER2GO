@@ -6,6 +6,11 @@
 #
 # Uso: bootstrap_pod.sh <repo.tgz> <conjuntos de modelos, ex.: i2v_r1v2>
 # Estado em /root/gpu2go/estado: INSTALANDO → PRONTO | FALHOU <motivo>
+#
+# Com GPU2GO_VOLUME=1 (volume de rede do RunPod em /workspace), os modelos e o modelo do
+# compilador ficam em /workspace/gpu2go-cache: o 1º pod baixa e guarda; os seguintes copiam do
+# volume para o disco local (regra: nunca ler modelo direto do volume) e conferem o SHA-256.
+# Volume não POSIX: só rsync --inplace, sem rename nem chmod.
 set -uo pipefail
 REPO_TGZ=$1 MODEL_SET=${2:-i2v_r1v2}
 EST=/root/gpu2go/estado
@@ -16,7 +21,9 @@ W=/opt/gpu2go/worker COMFY_DIR=/opt/comfyui OLLAMA_MODELS=/opt/ollama/models
 export OLLAMA_MODELS
 
 apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-  git curl ffmpeg zstd unzip ca-certificates procps >/dev/null || falha "apt"
+  git curl ffmpeg zstd unzip ca-certificates procps rsync >/dev/null || falha "apt"
+CACHE=""
+[[ "${GPU2GO_VOLUME:-0}" == "1" && -d /workspace ]] && CACHE=/workspace/gpu2go-cache && mkdir -p $CACHE/modelos $CACHE/ollama
 mkdir -p /opt/gpu2go && tar -xzf "$REPO_TGZ" -C /opt/gpu2go || falha "repo"
 arg() { sed -n "s/^ARG $1=//p" $W/Dockerfile | head -1; }
 
@@ -37,10 +44,26 @@ PY
     return 1
   }
   export -f um
-  cut -f1,2 /root/gpu2go/modelos.tsv | xargs -P 4 -L 1 bash -c 'um "$0" "$1"' || return 1
+  if [[ -n "$CACHE" ]]; then  # do volume para o disco local, quando o tamanho confere
+    while IFS=$'\t' read -r _ dest bytes _; do
+      c="$CACHE/modelos/$(basename "$dest")"
+      if [[ -f "$c" && "$(stat -c %s "$c")" == "$bytes" ]]; then
+        mkdir -p "$(dirname "$dest")" && rsync --inplace "$c" "$dest" && echo "do volume: $(basename "$dest")"
+      fi
+    done < /root/gpu2go/modelos.tsv
+  fi
+  # baixa só o que faltar ou estiver incompleto
+  while IFS=$'\t' read -r url dest bytes _; do
+    [[ -f "$dest" && "$(stat -c %s "$dest")" == "$bytes" ]] || printf '%s\t%s\n' "$url" "$dest"
+  done < /root/gpu2go/modelos.tsv | xargs -P 4 -L 1 bash -c 'um "$0" "$1"' || return 1
   while IFS=$'\t' read -r _ dest bytes sha; do
     [ "$(stat -c %s "$dest")" = "$bytes" ] || { echo "bytes errados: $dest"; return 1; }
     echo "$sha  $dest" | sha256sum -c --quiet - || return 1
+    if [[ -n "$CACHE" ]]; then  # guarda no volume para os próximos pods (bytes conferidos)
+      c="$CACHE/modelos/$(basename "$dest")"
+      [[ -f "$c" && "$(stat -c %s "$c")" == "$bytes" ]] || rsync --inplace "$dest" "$c"
+      [ "$(stat -c %s "$c")" = "$bytes" ] || echo "AVISO: cópia no volume incompleta: $c"
+    fi
   done < /root/gpu2go/modelos.tsv
 }
 
@@ -62,7 +85,9 @@ ambiente() {
   echo "$(arg OLLAMA_SHA256)  /tmp/ollama.tar.zst" | sha256sum -c --quiet - || return 1
   tar --zstd -xf /tmp/ollama.tar.zst -C /usr/local || return 1
   mkdir -p $OLLAMA_MODELS
+  [[ -n "$CACHE" ]] && rsync -r --inplace $CACHE/ollama/ $OLLAMA_MODELS/  # o pull só confere
   bash $W/scripts/pull_compiler_model.sh "$(arg COMPILER_MODEL)" "$(arg COMPILER_MODEL_DIGEST)" || return 1
+  [[ -n "$CACHE" ]] && rsync -r --inplace $OLLAMA_MODELS/ $CACHE/ollama/
   /opt/venv/bin/python $W/scripts/gpu_check.py
 }
 
