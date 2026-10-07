@@ -7,7 +7,7 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 
 - `referencia/especificacao-pipeline-manual.md`: pipeline manual testado. Não editar.
 - `referencia/wan-i2v-com-ollama.api.json`: workflow exportado. Não editar; os templates derivados ficam em `worker/workflows/`.
-- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, aceito; 0002: hospedagem da imagem, aceito; 0003: arquitetura em escala, aceito; fase 2 = `lote_nuvem.py`). Qualidade, velocidade e custo dos lotes: `docs/06`; guia técnico consolidado (GPUs, pods, proteções, custos): `docs/07`.
+- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, aceito; 0002: hospedagem da imagem, aceito; 0003: arquitetura em escala, aceito; fase 2 = `lote_nuvem.py`). Qualidade, velocidade e custo dos lotes: `docs/06`; guia técnico consolidado (GPUs, pods, proteções, custos): `docs/07`. Vários clientes ao mesmo tempo, escala e isolamento entre clientes: `docs/08`.
 
 ## Regras técnicas (mudar só com ADR)
 
