@@ -77,7 +77,7 @@ GPUS_PADRAO = [
     "NVIDIA RTX 6000 Ada Generation",
     "NVIDIA GeForce RTX 4090",
 ]
-SUBIDA_S = 12 * 60  # agente + instalação + modelos + serviços (medido: 8–12 min)
+SUBIDA_S = 5 * 60  # agente + instalação + serviços (medido em 07/10, download em partes: 2,5–3 min)
 # Regra do dono do projeto (07/10/2026): pod nenhum fica ligado mais de 2 h. O lote para
 # de mandar pacotes a tempo de baixar tudo (MARGEM_S) antes do desligamento automático.
 MAX_POD_S = 2 * 3600
@@ -644,7 +644,7 @@ class Orquestrador:
             if problema:
                 raise NuvemError(f"{problema} (datacenter {pod.info.datacentro or '?'})")
             _log(f"pod {pod.nome}: {out.strip()} MB/s")
-        _log(f"pod {pod.nome}: agente, CUDA e rede ok; instalando o worker (~6–10 min)")
+        _log(f"pod {pod.nome}: agente, CUDA e rede ok; instalando o worker (~1–3 min)")
         ag.put(self.a.repo_tgz, f"{r.raiz}/repo.tgz")
         ag.put(WORKER_DIR / "scripts" / "bootstrap_pod.sh", f"{r.raiz}/bootstrap_pod.sh")
         ag.bg(r.instalar.format(raiz=r.raiz), f"{r.raiz}/instalar.log")

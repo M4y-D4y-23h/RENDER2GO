@@ -61,24 +61,27 @@ Por isso pod caro para mais cedo que pod barato.
 - Durante o lote, se o gasto passa de 1,5× o orçamento, o lote para e encerra os pods.
 - O lote deixa de mandar pacotes 10 min antes do prazo, para baixar tudo; o que sobrar é retomado na próxima execução.
 
-## 6. Pod reservado, volume e venv (pedido de 07/10)
+## 6. Subida do pod, volume e venv (medido em 07/10, `worker/evals/gpu-2026-10-07-volume/`)
 
-**Feito: cache no volume de rede.** Com `--volume <id>`:
+**Download em partes (sempre ligado):** o aria2 baixa cada arquivo com 8 conexões, 4 arquivos por vez, e o SHA-256 é conferido em paralelo. A instalação caiu de **~5,5 min para ~1,5 min**, a ~750 MB/s em vez de ~140 MB/s. Do comando ao pod pronto: ~3 min, contra ~6,5 min antes.
+
+**Cache no volume de rede (`--volume <id>`, opcional):**
 - o pod sobe no datacenter do volume;
-- o 1º pod baixa os modelos (37 GB) e o modelo do compilador e os guarda em `/workspace/gpu2go-cache`;
-- os pods seguintes **copiam do volume para o disco local** (regra do projeto: nunca ler modelo direto do volume) e conferem o SHA-256.
+- o 1º pod baixa tudo e, depois do PRONTO, grava em `/workspace/gpu2go-cache`: modelos, compilador e o **ambiente inteiro** (venv + ComfyUI + Ollama) num `tar.zst` chaveado pelo `requirements.lock` e pelo Dockerfile;
+- os pods seguintes **copiam para o disco local** e conferem o SHA-256 (regra do projeto: nunca ler direto do volume). Cópia ruim é apagada e refeita da origem.
 
-Isso tira o download do Hugging Face e a dependência da rede do host.
-- Custo: ~US$ 0,07/GB/mês, ~US$ 3–4 por mês para ~50 GB.
-- Escolha um datacenter **bom**, como o US-NC-1.
+Assim o "venv no volume" foi feito sem quebrar a regra do volume não POSIX: o volume guarda um arquivo único, extraído no disco local.
 
-**Não feito, e por quê:**
-- **venv dentro do volume:** o volume global não é POSIX (sem `rename`/`chmod`). O `uv`/`pip` usam `rename` e bits de execução, e importar Python por rede deixa cada subida lenta. O ambiente segue sendo instalado no disco local, ~3–4 min, em paralelo com a cópia dos modelos.
-- **Pod reservado ligado (parado e religado):**
-  - pod parado perde o disco do container, e ao religar a GPU pode não estar livre no mesmo host;
-  - uma RTX PRO 6000 ligada direto custa ~US$ 50/dia.
+**Ganho medido:** só ~14 s a mais (77 s contra 91 s), porque o volume leu a ~580 MB/s, mais devagar que a origem nesse host. O valor do cache é a **reserva**: a subida não depende de Hugging Face, GitHub e PyPI, nem da rede do host.
+- Custo: ~US$ 4,20 por mês (60 GB).
+- Prende o lote a um datacenter, com menos vagas de GPU.
+- Datacenters com volume (em 07/10): AP-JP-1, CA-MTL-1/3/4, EU-FR-1, EU-RO-1, EUR-IS-1/3, EUR-NO-1/2, US-CA-2, US-CO-1, US-IL-1, US-MO-2, **US-NC-2** (usado), US-NE-1, US-TX-3. O US-NC-1 não aceita volume.
 
-  Com o volume, o mesmo ganho vem de **subir um pod novo que copia do volume** (~2–3 min de subida), sem pagar GPU ociosa. Pod fixo só vale com fila constante de clientes (ADR 0003, fases 3 e 4).
+**Pod reservado ligado (não feito):**
+- pod parado perde o disco do container, e ao religar a GPU pode não estar livre no mesmo host;
+- uma RTX PRO 6000 ligada direto custa ~US$ 50/dia, enquanto uma subida nova custa ~US$ 0,10 (~3 min).
+
+Pod fixo só vale com fila constante de clientes (ADR 0003, fases 3 e 4).
 
 ## 7. Qualidade "rápida" × "alta" como padrão
 

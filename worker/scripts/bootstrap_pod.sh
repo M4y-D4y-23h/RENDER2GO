@@ -2,7 +2,8 @@
 # Monta o worker num pod efêmero a partir de python:3.12-slim (lote_nuvem, ADR 0003 fase 2):
 # mesmas versões e hashes do worker/Dockerfile (lidos de lá), modelos do models.lock.json
 # baixados em partes (aria2: 8 conexões por arquivo, 4 arquivos por vez) e conferidos por bytes e
-# SHA-256 em paralelo. Sem cache, ~6 min por pod num datacenter bom (medido em 07/10/2026).
+# SHA-256 em paralelo. Medido em 07/10/2026 (US-NC-2): 91 s sem cache (era 5–6 min com uma conexão
+# por arquivo) e 77 s com o cache do volume.
 #
 # Uso: bootstrap_pod.sh <repo.tgz> <conjuntos de modelos, ex.: i2v_r1v2>
 # Estado em /root/gpu2go/estado: INSTALANDO → PRONTO | FALHOU <motivo>

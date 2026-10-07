@@ -1,0 +1,16 @@
+19:05:54 2 foto(s), 2 vídeo(s) em 1 GPU(s) (NVIDIA RTX PRO 6000 Blackwell Server Edition, ~12 s por vídeo): ~12 min e ~US$ 0.43 (US$ 2.09/h por GPU; subida de ~12 min incluída)
+19:05:54 saldo da conta: US$ 7.65 (reserva US$ 1.00)
+19:05:54 desligamento automático de cada pod em 44 min (limite: estimativa)
+19:05:56 pod o3lowcateosm79 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) criado, US$ 2.09/h; esperando o agente...
+19:06:34 pod o3lowcateosm79 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): rede 196.9 MB/s
+19:06:34 pod o3lowcateosm79 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): agente, CUDA e rede ok; instalando o worker (~6–10 min)
+19:08:03 pod o3lowcateosm79 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): tempos da instalação: apt 13 | ambiente_volume 45 | compilador 68 | modelos_volume 77 | pronto 77 | guardado 78
+19:08:26 pod o3lowcateosm79 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): pronto (1 GPU)
+19:09:01 prompt do lote: The camera slowly dollies in toward the product, maintaining a close-up view. Even studio lighting with soft shadows enhances the vibrant, natural colors. The focus is sharp and detailed. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.
+19:09:39 [1/2] dona-v1.mp4: ok (o3lowcateosm79)
+19:09:41 [2/2] prato-v1.mp4: ok (o3lowcateosm79)
+19:09:41 pod o3lowcateosm79 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~17 s de GPU por vídeo (medido: ~12 s)
+19:09:41 pod o3lowcateosm79 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): terminando de gravar o cache no volume
+19:09:42 pod o3lowcateosm79 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): cache gravado no volume
+19:09:43 pod o3lowcateosm79 (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) encerrado (fim do trabalho)
+19:09:43 fim em 3.8 min; custo estimado dos pods ~US$ 0.13; relatório em entrega-vol-2/relatorio.csv
