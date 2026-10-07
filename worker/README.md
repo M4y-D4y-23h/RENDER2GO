@@ -208,14 +208,22 @@ Também:
 ```bash
 # só planeja e estima (sem pods)
 python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" --simular
-# 2 pods secure (RTX PRO 6000 → L40S → L40 → RTX 6000 Ada → RTX 4090), orçamento máximo US$ 3
+# pods automáticos (padrão), secure (RTX PRO 6000 → L40S → L40 → RTX 6000 Ada → RTX 4090), orçamento máximo US$ 3
 python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" \
-  --receita produto-close --pods 2 --orcamento-usd 3 --interpolar --altura 1280
+  --receita produto-close --orcamento-usd 3 --interpolar --altura 1280
+# cliente com pressa: o mínimo de pods para entregar em 20 min (custa mais)
+python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "..." --prazo 20
 # se o processo foi interrompido: encerra os pods registrados
 python tools/lote_nuvem.py --saida entregas/loja --limpar
 ```
 
 - **Credencial do RunPod:** a cadastrada no ambiente (proxy) ou `RUNPOD_API_KEY`.
+- **Quantos pods (`--pods auto`, padrão):**
+  - cada pod paga uma subida (~3 min, ~US$ 0,10) antes do 1º vídeo, então só entra pod que tiver pelo menos 10 min de vídeos, até 8;
+  - exemplos: 50 fotos em rápida usam 2 pods; 50 em alta, 7; 10 testes × 10 fotos de 3 s, 2;
+  - `--prazo MIN` escolhe o mínimo de pods para entregar em MIN minutos (estimativa com subida de 5 min, pessimista);
+  - `--pods N` força N;
+  - a estimativa mostra as alternativas (1, 2, 4, 8 pods) com tempo e custo.
 - **Cada pod:**
   - nasce com desligamento automático (no máximo 2 h; o lote para de mandar pacotes 10 min antes, para baixar tudo, e o que não couber fica pendente para a próxima execução);
   - passa pelo teste de CUDA e é encerrado na hora se a GPU estiver com defeito ou o agente não responder em 10 min;

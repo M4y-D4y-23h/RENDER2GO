@@ -102,16 +102,18 @@ Pod fixo só vale com fila constante de clientes (ADR 0003, fases 3 e 4).
 | Qualidade | Boa em celular; produto com rótulo ou líquido pode deformar | Rótulo e cor estáveis; nitidez para telas grandes |
 | Defeitos vistos | Perfume mudou de cor | Nenhum nos testes |
 
-**Recomendação:** **alta como padrão dos pacotes pagos** e rápida para prévias e amostras de venda. O custo de GPU continua abaixo de 3% de um preço de R$ 2–5 por vídeo. O tempo extra se resolve com mais pods (`--pods 4`) sem aumentar o custo por vídeo.
+**Recomendação:** **alta como padrão dos pacotes pagos** e rápida para prévias e amostras de venda. O custo de GPU continua abaixo de 3% de um preço de R$ 2–5 por vídeo. O tempo extra se resolve com mais pods (`--pods auto` já usa até 7 em 50 fotos; `--prazo` para entregar mais rápido), quase sem aumentar o custo por vídeo.
 
 ## 8. Comandos de referência
 
 ```bash
 # estimar sem gastar
 python tools/lote_nuvem.py FOTOS --saida ENTREGA --prompt "..." --qualidade alta --simular
-# lote real: 4 pods, orçamento máximo, acabamento local
-python tools/lote_nuvem.py FOTOS --saida ENTREGA --prompt "..." --qualidade alta --pods 4 \
+# lote real: pods automáticos (cada um com ≥ 10 min de vídeos), orçamento máximo, acabamento local
+python tools/lote_nuvem.py FOTOS --saida ENTREGA --prompt "..." --qualidade alta \
   --orcamento-usd 10 --interpolar --altura 1280
+# com prazo: o mínimo de pods para entregar em 20 min
+python tools/lote_nuvem.py FOTOS --saida ENTREGA --prompt "..." --qualidade alta --prazo 20
 # com cache no volume de rede (datacenter bom)
 python tools/lote_nuvem.py FOTOS --saida ENTREGA --prompt "..." --volume <id-do-volume>
 # encerrar pods de uma execução interrompida

@@ -510,6 +510,31 @@ class Estimativa:
     usd: float
 
 
+# Pods automáticos: cada pod paga uma subida (~3 min, medido em 07/10) antes do 1º vídeo; com
+# menos de ~10 min de trabalho por pod (~3× a subida), a subida passa de ~25% do custo.
+TRABALHO_MIN_POD_S = 10 * 60
+MAX_PODS_AUTO = 8
+
+
+def escolher_pods(
+    n_videos: int, n_pacotes: int, gpus_por_pod: int, s_video: float, prazo_min: int | None
+) -> tuple[int, str]:
+    """Quantos pods usar: o mínimo que cumpre o prazo, ou (sem prazo) o máximo que mantém
+    cada pod com pelo menos TRABALHO_MIN_POD_S de vídeos. Nunca mais pods que pacotes."""
+    trabalho_s = n_videos * s_video / gpus_por_pod  # GPU-segundos por pod, se fosse um só
+    if prazo_min:
+        livre_s = prazo_min * 60 - SUBIDA_S
+        pods = -(-int(trabalho_s) // int(livre_s)) if livre_s > 0 else MAX_PODS_AUTO
+        motivo = f"prazo de {prazo_min} min"
+    else:
+        pods = int(trabalho_s // TRABALHO_MIN_POD_S)
+        motivo = f"cada pod com ≥ {TRABALHO_MIN_POD_S // 60} min de vídeos"
+    teto = min(MAX_PODS_AUTO, max(1, n_pacotes))
+    if prazo_min and pods > teto:
+        motivo += f" (não cabe: no máximo {teto} pods)"
+    return max(1, min(pods, teto)), motivo
+
+
 def estimar(n_videos: int, pods: int, gpus_por_pod: int, s_video: float, usd_h: float):
     gpus = pods * gpus_por_pod
     render_s = n_videos * s_video / gpus
@@ -1062,7 +1087,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--consentimento", action="store_true")
     p.add_argument("--subpastas", action="store_true")
     g = p.add_argument_group("pods")
-    g.add_argument("--pods", type=int, default=1, help="quantos pods em paralelo (padrão 1)")
+    g.add_argument(
+        "--pods",
+        default="auto",
+        help="quantos pods em paralelo, ou auto (padrão): cada pod com pelo menos "
+        f"{TRABALHO_MIN_POD_S // 60} min de vídeos, até {MAX_PODS_AUTO}",
+    )
+    g.add_argument(
+        "--prazo",
+        type=int,
+        metavar="MIN",
+        help="com --pods auto: o mínimo de pods para entregar em MIN minutos (custa mais)",
+    )
     g.add_argument(
         "--gpu",
         action="append",
@@ -1155,8 +1191,12 @@ def main(
         return limpar(a.saida, provedor)
     if a.pasta is None or a.prompt is None:
         p.error("informe a pasta e o --prompt")
-    if not 1 <= a.pods <= 20 or a.gpus_por_pod not in (1, 2, 4, 8):
-        p.error("--pods de 1 a 20; --gpus-por-pod 1, 2, 4 ou 8")
+    if a.pods != "auto" and not (a.pods.isdigit() and 1 <= int(a.pods) <= 20):
+        p.error("--pods de 1 a 20, ou auto")
+    if a.gpus_por_pod not in (1, 2, 4, 8):
+        p.error("--gpus-por-pod 1, 2, 4 ou 8")
+    if a.prazo is not None and (a.pods != "auto" or a.prazo < 5):
+        p.error("--prazo só com --pods auto, a partir de 5 min")
 
     try:
         fotos, erros = planejar(a)
@@ -1173,6 +1213,17 @@ def main(
     if provedor is not None:
         usd_h = next((x for o in a.opcoes if (x := provedor.preco(o.gpu, o.nuvem))), None)
     usd_h = usd_h or 1.10
+    n_pacotes = -(-len(fotos) // (FOTOS_POR_GPU * a.gpus_por_pod * a.comfy_por_gpu))
+    if a.pods == "auto":
+        a.pods, motivo = escolher_pods(n_videos, n_pacotes, a.gpus_por_pod, s_video, a.prazo)
+        opcoes = sorted({1, 2, 4, 8, a.pods} & set(range(1, min(MAX_PODS_AUTO, n_pacotes) + 1)))
+        _log(f"pods automáticos: {a.pods} ({motivo}); outras opções (--pods N): " + "; ".join(
+            f"{n}: ~{e.minutos:.0f} min, ~US$ {e.usd:.2f}"
+            for n in opcoes
+            if (e := estimar(n_videos, n, a.gpus_por_pod, s_video, usd_h * a.gpus_por_pod))
+        ))
+    else:
+        a.pods = int(a.pods)
     est = estimar(
         n_videos, min(a.pods, len(fotos)), a.gpus_por_pod, s_video, usd_h * a.gpus_por_pod
     )

@@ -41,7 +41,7 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
 
 - **Pods automáticos pelo tamanho da fila:**
   - pods = trabalho na fila ÷ prazo desejado (ex.: 15 min), com mínimo de 1 e um teto (custo por hora que o saldo aguenta);
-  - cada pod precisa ter trabalho para pelo menos ~3× a subida (~10 min); senão, o trabalho vai para menos pods (ponto 1, a automatizar).
+  - cada pod precisa ter trabalho para pelo menos ~3× a subida (~10 min); senão, o trabalho vai para menos pods. Já feito no `lote_nuvem` (`--pods auto`, padrão, e `--prazo`).
 - **Sem volume quando a demanda é alta:** o volume prende o lote a um datacenter e ganha só ~14 s. Sem ele, os pods sobem onde houver vaga, em qualquer datacenter bom, seguindo a ordem RTX PRO 6000 → L40S → L40 → RTX 6000 Ada → RTX 4090.
 - **Pod quente:** quando a fila esvazia, o pod espera até ~3 min (o tempo de uma subida) antes de desligar. Pedidos em sequência saem sem subida nenhuma.
 - **Prioridade:** pacotes pagos na frente; testes gratuitos intercalados entre si, numa faixa separada.

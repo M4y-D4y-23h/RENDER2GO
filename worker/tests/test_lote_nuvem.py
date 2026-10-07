@@ -216,6 +216,32 @@ def test_first_pod_fills_the_r2_mirror_and_next_lot_gets_signed_urls(
     assert len((tmp_path / "pod" / "espelho.tsv").read_text().splitlines()) == 2
 
 
+def test_automatic_pods_keep_each_pod_busy_or_meet_the_deadline():
+    escolher = ln.escolher_pods
+    # 50 fotos, rápida 5 s (28 s): ~23 min de vídeos → 2 pods, não 4
+    assert escolher(50, 25, 1, 28, None)[0] == 2
+    # 50 fotos, alta (93 s): ~78 min → 7 pods (cada um com ≥ 10 min)
+    assert escolher(50, 25, 1, 93, None)[0] == 7
+    # 10 clientes × 10 fotos, teste de 3 s (~12 s): ~21 min → 2 pods
+    assert escolher(100, 50, 1, 12.4, None)[0] == 2
+    # lote pequeno: 1 pod; nunca mais pods que pacotes, nem acima do teto
+    assert escolher(4, 2, 1, 28, None)[0] == 1
+    assert escolher(500, 250, 1, 93, None)[0] == ln.MAX_PODS_AUTO
+    # com prazo: o mínimo de pods que entrega no prazo (subida incluída)
+    pods, _ = escolher(100, 50, 1, 12.4, 10)
+    assert ln.SUBIDA_S + 100 * 12.4 / pods <= 10 * 60 < ln.SUBIDA_S + 100 * 12.4 / (pods - 1)
+    pods, motivo = escolher(500, 250, 1, 93, 15)
+    assert pods == ln.MAX_PODS_AUTO and "não cabe" in motivo
+
+
+def test_cli_shows_the_automatic_choice_and_alternatives(pasta, tmp_path, capsys):
+    assert ln.main([*_argv(pasta, tmp_path / "s"), "--simular"]) == ln.EXIT_OK
+    err = capsys.readouterr().err
+    assert "pods automáticos: 1" in err and "outras opções" in err
+    with pytest.raises(SystemExit):
+        ln.main([*_argv(pasta, tmp_path / "s"), "--pods", "2", "--prazo", "10", "--simular"])
+
+
 def test_bootstrap_downloads_in_parts_and_caches_the_environment():
     s = (WORKER / "scripts" / "bootstrap_pod.sh").read_text()
     assert "aria2c" in s and "-x 8 -s 8" in s and "xargs -r -P 4" in s
