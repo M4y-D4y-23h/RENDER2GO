@@ -42,6 +42,7 @@ import queue
 import re
 import secrets
 import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -198,8 +199,9 @@ class RunPod:
 
     IMAGEM = "python:3.12-slim-bookworm"
 
-    def __init__(self) -> None:
+    def __init__(self, datacentros: list[str] | None = None) -> None:
         self.chave = runpod_pods._chave()
+        self.datacentros = datacentros or []
 
     def preco(self, gpu: str, nuvem: str) -> float | None:
         for row in runpod_pods.disponibilidade([gpu]):
@@ -213,6 +215,8 @@ class RunPod:
             corpo = runpod_pods.corpo_pod(opcao, self.IMAGEM, nome, 120, env, ["8888/http"])
             corpo["gpuCount"] = gpus
             corpo["dockerStartCmd"] = ["bash", "-c", AGENTE_CMD]
+            if self.datacentros:
+                corpo["dataCenterIds"] = self.datacentros
             try:
                 pod = runpod_pods.criar(opcao, corpo, self.chave)
             except runpod_pods.SemVaga:
@@ -704,6 +708,10 @@ class Orquestrador:
         return EXIT_FALHA if falhas else EXIT_OK
 
 
+def _interromper(*_: object) -> None:
+    raise KeyboardInterrupt("SIGTERM")
+
+
 def pod_agente_path() -> Path:
     return Path(__file__).with_name("pod_agente.py")
 
@@ -753,6 +761,12 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument(
         "--orcamento-usd", type=float, default=5.0, help="não sobe pods se a estimativa passar"
     )
+    g.add_argument(
+        "--datacentro",
+        action="append",
+        default=[],
+        help="só estes datacenters do RunPod (repetível), ex.: US-KS-2",
+    )
     g.add_argument("--sim", action="store_true", help="não pede confirmação")
     g.add_argument("--simular", action="store_true", help="só planeja e estima, sem pods")
     g.add_argument("--limpar", action="store_true", help="encerra pods de uma execução anterior")
@@ -783,6 +797,9 @@ def main(
 ) -> int:
     p = build_parser()
     a = p.parse_args(argv)
+    if threading.current_thread() is threading.main_thread():
+        # kill/timeout (SIGTERM) passa pelo mesmo caminho do Ctrl+C: encerra os pods antes de sair
+        signal.signal(signal.SIGTERM, _interromper)
     gpus = a.gpu or GPUS_PADRAO
     nuvens = ["community", "secure"] if a.nuvem == "qualquer" else [a.nuvem]
     a.opcoes = [runpod_pods.Opcao(g, n) for g in gpus for n in nuvens]
@@ -792,7 +809,7 @@ def main(
         else None
     )
     try:
-        provedor = provedor or (None if a.simular else RunPod())
+        provedor = provedor or (None if a.simular else RunPod(a.datacentro))
     except runpod_pods.RunPodError as e:
         _log(f"ERRO {e}")
         return EXIT_SEM_GPU
