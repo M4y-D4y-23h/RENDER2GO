@@ -391,6 +391,9 @@ class Orquestrador:
         except runpod_pods.SemVaga as e:
             _log(f"pod {i}: sem GPU disponível ({e})")
             return None
+        except runpod_pods.RunPodError as e:
+            _log(f"pod {i}: o RunPod recusou a criação ({e})")
+            return None
         pod = Pod(info, Agente(info.url, info.token))
         with self.lock:
             self.pods.append(pod)

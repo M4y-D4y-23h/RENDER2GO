@@ -37,7 +37,8 @@ GRAPHQL = "https://api.runpod.io/graphql"
 USER_AGENT = "gpu2go-runpod/0.1 (+https://github.com/M4y-D4y-23h/GPU2GO)"
 NUVENS = {"community": "COMMUNITY", "secure": "SECURE"}
 # driver >= 570 (PyTorch +cu128): só máquinas com CUDA 12.8 ou mais novo
-CUDA_PERMITIDAS = ["12.8", "12.9", "13.0", "13.1", "13.2"]
+# A API REST aceita até 13.0 (enum conferido em 07/10/2026); pedir mais dá HTTP 400.
+CUDA_PERMITIDAS = ["12.8", "12.9", "13.0"]
 SEM_VAGA = (
     "no instances",
     "not available",

@@ -43,6 +43,8 @@ class Provedor:
         return 0.79
 
     def criar(self, nome, opcoes, gpus, env):
+        if self.sem_vaga == "recusa":
+            raise runpod_pods.RunPodError("criação recusada (400)")
         if self.sem_vaga:
             raise runpod_pods.SemVaga("nada")
         pid = f"p{len(self.criados) + 1}"
@@ -166,6 +168,7 @@ def test_invalid_request_budget_and_no_gpu_create_nothing(pasta, tmp_path, sem_g
     assert ln.main(_argv(pasta, tmp_path / "s", "--orcamento-usd", "0.01"), provedor=prov) == 4
     assert prov.criados == []
     assert ln.main(_argv(pasta, tmp_path / "s"), provedor=Provedor(sem_vaga=True)) == 4
+    assert ln.main(_argv(pasta, tmp_path / "s"), provedor=Provedor(sem_vaga="recusa")) == 4
 
 
 def test_estimate_and_simulation(pasta, tmp_path, capsys):
