@@ -8,7 +8,7 @@ O que acontece:
 1. **Aqui, sem GPU:** confere o pedido inteiro (`lote.planejar`), prepara as fotos
    (`preparo`: corte e Lanczos no tamanho do vídeo, ~0,3–1 MB cada) e mostra a estimativa
    de tempo e custo. Sem `--sim`, pede confirmação.
-2. **Sobe os pods** (GPU e nuvem na ordem pedida, conferindo a vaga na hora). Cada pod:
+2. **Sobe os pods** (GPUs na ordem pedida, nuvem secure, conferindo a vaga na hora). Cada pod:
    - nasce com desligamento automático (`DEADMAN_S`, no agente, contado do 1º segundo);
    - passa por um teste de CUDA (`cuInit`) e é encerrado na hora se a GPU estiver com
      defeito, ou se o agente não responder em 10 min;
@@ -662,9 +662,14 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument(
         "--gpu",
         action="append",
-        help="GPU em ordem de preferência (repetível); padrão: L40S, depois RTX 4090",
+        help="GPU em ordem de preferência (repetível); padrão: L40S, depois RTX 4090 (secure)",
     )
-    g.add_argument("--nuvem", choices=["qualquer", "community", "secure"], default="qualquer")
+    g.add_argument(
+        "--nuvem",
+        choices=["secure", "qualquer", "community"],
+        default="secure",
+        help="padrão: secure (decisão de 07/10/2026; hosts community falharam no CUDA)",
+    )
     g.add_argument("--gpus-por-pod", type=int, default=1, help="GPUs por pod (1, 2, 4, 8)")
     g.add_argument(
         "--orcamento-usd", type=float, default=5.0, help="não sobe pods se a estimativa passar"

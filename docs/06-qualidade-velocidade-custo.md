@@ -43,14 +43,14 @@ Para custo baixo, o que importa é o **custo por vídeo** (preço por hora × te
 | GPU (RunPod, 06/10) | VRAM | fp8 nativo | US$/h | Por vídeo de 5 s (rápida) | Custo por vídeo |
 |---|---|---|---|---|---|
 | RTX 4090 secure | 24 GB | sim | 0,74 | **~80 s (medido)** | **~US$ 0,016** |
-| RTX 4090 community | 24 GB | sim | 0,34 | ~80 s | ~US$ 0,008, mas 3 de 3 hosts com CUDA quebrado |
+| RTX 4090 community | 24 GB | sim | 0,34 | ~80 s | **Fora de uso** (07/10): 3 de 3 hosts com CUDA quebrado |
 | RTX 5090 | 32 GB | sim | 0,69 a 0,99 | *~50–60 s (estimativa)* | *~US$ 0,010–0,016* |
 | **L40S** | 48 GB | sim | 0,79 a 1,09 | **~55 s (medido)**; alta ~180 s | **~US$ 0,012–0,017** |
 | A40 | 48 GB | **não** (Ampere) | 0,49 | *~120–160 s (estimativa: metade do cálculo de uma 4090)* | *~US$ 0,016–0,022* |
 | H100 SXM | 80 GB | sim | 3,49 | *~25–35 s (estimativa)* | *~US$ 0,024–0,034* |
 
 - **A40 não serve para "velocidade extrema".** É uma geração anterior (Ampere), sem fp8 nativo. Deve ser mais lenta por vídeo que a 4090. Pode compensar pelo preço, mas só medindo.
-- **A L40S foi medida** (`worker/evals/gpu-2026-10-06-l40s/`): ~55 s por vídeo, 30% mais rápida que a 4090 secure de hoje, com custo por vídeo igual ou menor. É a **recomendação para lotes**: community quando houver vaga (com o teste de CUDA), secure como reserva.
+- **A L40S foi medida** (`worker/evals/gpu-2026-10-06-l40s/`): ~55 s por vídeo, 30% mais rápida que a 4090 secure de hoje, com custo por vídeo igual ou menor. É a **recomendação para lotes**, sempre na nuvem **secure** (decisão de 07/10/2026). A RTX 4090 secure fica como reserva.
 
 ## 3. Upscale e limpeza da imagem antes do render
 

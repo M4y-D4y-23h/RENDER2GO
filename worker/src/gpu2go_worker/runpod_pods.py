@@ -273,8 +273,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     s.add_argument(
         "--nuvem",
-        choices=["community", "secure", "qualquer"],
-        default="qualquer",
+        choices=["secure", "qualquer", "community"],
+        default="secure",
         help="qualquer = tenta community (mais barata) e depois secure",
     )
     s.add_argument(

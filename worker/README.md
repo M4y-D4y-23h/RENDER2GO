@@ -84,22 +84,22 @@ GPU2GO_ALLOW_DISCARD_OUTPUT=1 python -m gpu2go_worker.handler_runpod --test_inpu
 
 Endpoints, bench e custos: [`../infra/runpod/LEIAME.md`](../infra/runpod/LEIAME.md) e [`evals/custos.md`](evals/custos.md).
 
-## Subir um pod no RunPod (community ou secure)
+## Subir um pod no RunPod (secure)
 
 ```bash
-# estoque e preço agora, nas duas nuvens (não precisa de chave)
+# estoque e preço agora (não precisa de chave)
 python tools/runpod_pod.py disponibilidade --gpu "NVIDIA GeForce RTX 4090" --gpu "NVIDIA GeForce RTX 5090"
 
-# cria o pod: tenta community (mais barata) e, sem vaga, secure; depois a próxima GPU
+# cria o pod na nuvem secure; sem vaga, tenta a próxima GPU
 export RUNPOD_API_KEY=...        # nas configurações do ambiente, nunca no código
 python tools/runpod_pod.py subir --imagem <registry>/gpu2go-worker:full \
   --gpu "NVIDIA GeForce RTX 4090" --gpu "NVIDIA GeForce RTX 5090" \
-  --nuvem qualquer --auto-encerrar-horas 3
+  --auto-encerrar-horas 3
 python tools/runpod_pod.py listar
 python tools/runpod_pod.py encerrar <id>
 ```
 
-- `--nuvem community` ou `--nuvem secure` fixa a nuvem; `qualquer` tenta community primeiro.
+- **Só secure** (decisão de 07/10/2026): os hosts community de RTX 4090 que sorteamos falharam no CUDA (`cuInit` = 999) em 3 de 3 tentativas. `--nuvem community` ou `qualquer` continuam existindo só para teste explícito.
 - O `stockStatus` (High/Medium/Low) é só um indicativo. A disponibilidade de verdade é decidida no ato da criação: sem vaga, a opção seguinte é tentada. Um pod que não sobe em `--espera` segundos é encerrado antes da próxima tentativa.
 - Só máquinas com CUDA ≥ 12.8 (driver ≥ 570). A única porta é a 22 (SSH); o ComfyUI e o Ollama continuam em 127.0.0.1.
 - **Desligamento automático:** o entrypoint encerra o próprio pod depois de `AUTO_TERMINATE_HOURS`, usando a chave que o RunPod injeta no pod. Se a GPU falhar na checagem (como num host community com `cuInit` quebrado), o pod também se encerra (`TERMINATE_ON_BAD_GPU=1`).
@@ -208,7 +208,7 @@ Também:
 ```bash
 # só planeja e estima (sem pods)
 python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" --simular
-# 2 pods (L40S, depois RTX 4090; community, depois secure), orçamento máximo US$ 3
+# 2 pods secure (L40S, depois RTX 4090), orçamento máximo US$ 3
 python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" \
   --receita produto-close --pods 2 --orcamento-usd 3 --interpolar --altura 1280
 # se o processo foi interrompido: encerra os pods registrados
