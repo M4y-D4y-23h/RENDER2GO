@@ -29,6 +29,6 @@ def test_validation():
         r2.url("POST", "a")
     with pytest.raises(ArmazenamentoError):
         r2.url("GET", "a", expira_s=8 * 24 * 3600)
-    u = r2.url("PUT", "clientes/c1/l1/entrada/f.jpg", content_type="image/jpeg")
-    assert u.startswith("https://conta.r2.cloudflarestorage.com/gpu2go/clientes/c1/l1/entrada/f.jpg?")
+    u = r2.url("PUT", "entrada/c1/l1/f.jpg", content_type="image/jpeg")
+    assert u.startswith("https://conta.r2.cloudflarestorage.com/gpu2go/entrada/c1/l1/f.jpg?")
     assert "X-Amz-SignedHeaders=content-type%3Bhost" in u

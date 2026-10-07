@@ -7,3 +7,4 @@ saida/
 *.part
 servico/.venv/
 node_modules/
+.env

@@ -70,7 +70,7 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     (lote,) = ambiente.banco.lotes()
     for j in ambiente.banco.jobs(lote["id"]):
         if j["tipo"] == "render":
-            ambiente.objetos[f"clientes/{lote['cliente_id']}/{lote['id']}/saida/{j['arquivo']}"] = b"mp4"
+            ambiente.objetos[f"saida/{lote['cliente_id']}/{lote['id']}/{j['arquivo']}"] = b"mp4"
     with ambiente.banco.tx() as c:
         c.run("UPDATE jobs SET status = 'ok'")
         c.run("UPDATE lotes SET status = 'concluido'")

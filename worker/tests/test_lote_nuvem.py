@@ -421,3 +421,20 @@ def test_shutdown_follows_cost_and_account_balance(pasta, tmp_path, sem_git, cap
     prov = Pobre()
     assert ln.main(_argv(pasta, tmp_path / "s"), provedor=prov) == ln.EXIT_SEM_GPU
     assert prov.criados == [] and "passa do saldo" in capsys.readouterr().err
+
+
+def test_package_without_git_has_worker_and_tools(tmp_path, monkeypatch):
+    import tarfile
+
+    repo = tmp_path / "repo"
+    (repo / "worker" / "scripts").mkdir(parents=True)
+    (repo / "worker" / "scripts" / "bootstrap_pod.sh").write_text("#!/bin/bash")
+    (repo / "worker" / ".venv").mkdir()
+    (repo / "worker" / ".venv" / "lixo").write_text("x")
+    (repo / "tools").mkdir()
+    (repo / "tools" / "lote.py").write_text("")
+    monkeypatch.setattr(ln, "REPO", repo)
+    with tarfile.open(ln.empacotar_repo(tmp_path / "p.tgz")) as t:
+        nomes = set(t.getnames())
+    assert "worker/scripts/bootstrap_pod.sh" in nomes and "tools/lote.py" in nomes
+    assert not any(".venv" in n for n in nomes)

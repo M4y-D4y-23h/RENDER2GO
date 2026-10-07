@@ -1,6 +1,6 @@
 # ADR 0003 — Arquitetura para lotes em escala (pastas grandes, muitos clientes)
 
-- **Status:** **aceito em 07/10/2026** pelo dono do projeto. Fase 2 implementada (`lote_nuvem.py`, seção "Fase 2 implementada"). Fases 3 e 4 por fazer.
+- **Status:** **aceito em 07/10/2026** pelo dono do projeto. Fase 2 implementada (`lote_nuvem.py`, seção "Fase 2 implementada"). Fase 3 implementada em 07/10/2026 (`servico/`; implantação em `docs/09`; segurança em ADR 0004, proposto), ainda sem medição em produção. Fase 4 por fazer.
 - **Contexto:** caminho A (docs/05, seção 5.1), com lotes de 50+ fotos e um pedido só. O dono pediu que o sistema já nasça preparado para escalas muito grandes: pastas enormes, muitos pedidos, download e envio de arquivos, armazenamento, sobrecarga e segurança.
 - **Relacionados:** doc 02 (protocolo de jobs por URL assinada, já implementado em `jobs.py` e `media.py`), ADR 0002 (imagem do worker), doc 06 (GPU e custo).
 
@@ -26,8 +26,8 @@ Cliente (navegador/celular)
   │ 3. envio direto ao armazenamento, em paralelo, retomável
   ▼
 Armazenamento de objetos (Cloudflare R2: sem custo de saída)
-  clientes/<cliente>/<lote>/entrada/*.jpg     → apagadas em 7 dias
-  clientes/<cliente>/<lote>/saida/*.mp4|.zip  → apagadas em 30 dias
+  entrada/<cliente>/<lote>/*.jpg     → apagadas em 7 dias
+  saida/<cliente>/<lote>/*.mp4       → apagadas em 30 dias (o prefixo decide a regra do bucket)
   ▲                                   │
   │ 6. vídeos (URL assinada)          │ 5. fotos (URL assinada)
   │                                   ▼

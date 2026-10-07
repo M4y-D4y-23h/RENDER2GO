@@ -21,7 +21,7 @@ Análise de 07/10/2026 para a fase 3 (ADR 0003): como atender muitos pedidos sim
 
 São camadas independentes: uma falha numa delas não basta para trocar arquivos.
 
-1. **O destino é decidido pelo servidor, nunca pelo pod nem pelo cliente.** Todo arquivo tem um endereço `clientes/<cliente>/<lote>/entrada|saida/<arquivo>` (`servico/armazenamento.py`).
+1. **O destino é decidido pelo servidor, nunca pelo pod nem pelo cliente.** Todo arquivo tem um endereço `entrada/<cliente>/<lote>/<foto>` ou `saida/<cliente>/<lote>/<vídeo>` (`servico/armazenamento.py`).
    - O pod recebe uma **URL assinada de envio para um único endereço**, válida por 1 h. Ele não tem como gravar em outro lugar.
    - Já está no rascunho da API: `/api/worker/reivindicar`.
 2. **Um job = uma foto de um lote**, numa linha do banco: lote, foto, arquivo de saída e semente.
@@ -50,9 +50,18 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
 - **Limite da conta no RunPod:** o número de GPUs simultâneas e o saldo limitam a escala; a regra de saldo já trava antes de gastar o que não existe. Para picos maiores, recarregar o saldo e pedir aumento de limite.
 - **Sempre valendo:** desligamento automático de cada pod (no máximo 2 h), prazo por job e fila no Postgres com `FOR UPDATE SKIP LOCKED`, para dois pods nunca pegarem o mesmo job.
 
-## 4. O que falta implementar (fase 3)
+## 4. Implementado na fase 3 (07/10/2026)
 
-1. **Intercalar clientes na fila:** hoje o `reivindicar` pega por ordem de criação, e o primeiro lote passaria na frente de todos. Basta ordenar pelo número de jobs já iniciados de cada lote.
-2. A conferência do 1º quadro (seção 2, item 5).
-3. Pods automáticos pelo tamanho da fila e o pod quente (seção 3).
-4. Worker puxador (`MODE=fila`), orquestrador de pods e páginas do cliente e do aprovador: tarefas já previstas da fase 3.
+1. **Clientes intercalados na fila:** `db.reivindicar` dá preferência ao lote com menos vídeos já iniciados, e lotes pagos passam na frente de testes gratuitos.
+2. **Conferência do 1º quadro:**
+   - o worker só envia o vídeo que bate com a foto (`gpu2go_worker/conferencia.py`);
+   - a API recusa "ok" sem a similaridade ou sem o vídeo no armazenamento, apaga o vídeo e repete o job.
+3. **Pods automáticos pelo tamanho da fila e pod quente:**
+   - o orquestrador (`servico/.../orquestrador.py`) usa a mesma regra do `lote_nuvem --pods auto`;
+   - o worker sai após 3 min sem jobs, e o pod é encerrado.
+4. **Worker da fila, orquestrador, páginas e implantação:**
+   - worker da fila: `gpu2go_worker/fila.py`;
+   - páginas: `/` e `/aprovar`;
+   - Dockerfile, CI e `docs/09-implantacao.md`.
+
+**Ainda por fazer:** medir em pods reais a fila com vários clientes, que só é possível depois da implantação (`docs/09`, seção 6).

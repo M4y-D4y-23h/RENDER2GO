@@ -45,6 +45,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 from argparse import Namespace
@@ -1074,13 +1075,27 @@ def preparar_espelho() -> Espelho | None:
     return esp
 
 
+PACOTE_DIRS = ("worker", "tools")  # o que o pod usa (bootstrap, worker, lote)
+PACOTE_FORA = {".venv", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache", "evals"}
+
+
 def empacotar_repo(destino: Path) -> Path:
-    """O código que vai para o pod: o commit atual do repositório (git archive)."""
+    """O código que vai para o pod: o commit atual (git archive) ou, sem .git (contêiner do
+    serviço), as pastas worker/ e tools/ como estão no disco."""
     destino.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["git", "-C", str(REPO), "archive", "--format=tar.gz", "-o", str(destino), "HEAD"],
-        check=True,
-    )
+    if (REPO / ".git").exists():
+        subprocess.run(
+            ["git", "-C", str(REPO), "archive", "--format=tar.gz", "-o", str(destino), "HEAD"],
+            check=True,
+        )
+        return destino
+
+    def filtro(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        return None if set(Path(info.name).parts) & PACOTE_FORA else info
+
+    with tarfile.open(destino, "w:gz") as tar:
+        for d in PACOTE_DIRS:
+            tar.add(REPO / d, arcname=d, filter=filtro)
     return destino
 
 

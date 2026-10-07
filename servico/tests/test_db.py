@@ -13,7 +13,7 @@ def _lote(b, n_fotos=2, variacoes=1):
             "nome": f"f{i}",
             "tipo": "image/jpeg",
             "bytes": 100 + i,
-            "chave": f"clientes/{cid}/{{lote}}/entrada/f{i}.jpg",
+            "chave": f"entrada/{cid}/{{lote}}/f{i}.jpg",
         }
         for i in range(n_fotos)
     ]
@@ -42,7 +42,7 @@ def test_client_token_is_stored_hashed(banco):
 def test_upload_check_and_no_jobs_before_approval(banco):
     _, _, lid = _lote(banco)
     fotos = banco.fotos(lid)
-    assert all(f["chave"].endswith(f"{lid}/entrada/{f['nome']}.jpg") for f in fotos)
+    assert all(f["chave"] == f"entrada/{f['chave'].split('/')[1]}/{lid}/{f['nome']}.jpg" for f in fotos)
     problemas = banco.confirmar_envio(lid, {fotos[0]["chave"]: fotos[0]["bytes"], fotos[1]["chave"]: 1})
     assert problemas == ["f1: 1 bytes, esperados 101"]
     assert banco.lote(lid)["status"] == "aguardando_envio"
@@ -123,7 +123,7 @@ def _lote_de(b, nome, n_fotos, plano="pago"):
             "nome": f"{nome}{i}",
             "tipo": "image/jpeg",
             "bytes": 100,
-            "chave": f"clientes/{cid}/{{lote}}/entrada/{i}.jpg",
+            "chave": f"entrada/{cid}/{{lote}}/{i}.jpg",
         }
         for i in range(n_fotos)
     ]

@@ -1,0 +1,58 @@
+# Serviço GPU2GO num servidor só (docs/09-implantacao.md):
+#   API + páginas, orquestrador de pods, Postgres e Caddy (HTTPS automático).
+# Uso: cp exemplo.env .env; edite; docker compose up -d --build
+name: gpu2go
+
+services:
+  api:
+    build: { context: ../.., dockerfile: servico/Dockerfile }
+    image: gpu2go-servico
+    command: ["gpu2go-servico", "api"]
+    env_file: .env
+    environment:
+      GPU2GO_DB_URL: postgresql://gpu2go:${POSTGRES_PASSWORD}@postgres:5432/gpu2go
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+
+  orquestrador:
+    image: gpu2go-servico
+    command: ["gpu2go-servico", "orquestrar"]
+    env_file: .env
+    environment:
+      GPU2GO_DB_URL: postgresql://gpu2go:${POSTGRES_PASSWORD}@postgres:5432/gpu2go
+    volumes: ["orquestrador:/home/gpu2go/.cache/gpu2go"]  # estado para 'limpar' e memória de datacenters
+    depends_on:
+      postgres: { condition: service_healthy }
+      api: { condition: service_started }
+    restart: unless-stopped
+    stop_grace_period: 2m  # ao parar, encerra os pods que estão rodando
+
+  postgres:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_USER: gpu2go
+      POSTGRES_DB: gpu2go
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: ["postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gpu2go"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMINIO: ${DOMINIO}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+    depends_on: [api]
+    restart: unless-stopped
+
+volumes:
+  postgres:
+  orquestrador:
+  caddy:

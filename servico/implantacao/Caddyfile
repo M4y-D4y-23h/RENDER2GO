@@ -1,0 +1,9 @@
+# HTTPS automático (Let's Encrypt) para o domínio do serviço
+{$DOMINIO} {
+	encode gzip
+	request_body {
+		max_size 1MB  # as fotos vão direto ao R2; a API só recebe JSON
+	}
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy api:8000
+}

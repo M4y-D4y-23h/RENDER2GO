@@ -512,10 +512,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     def origem_armazenamento() -> str:
         """Só o armazenamento (R2) além da própria API: fotos sobem e vídeos descem de lá."""
-        cfg = app.state.cfg
-        base = getattr(cfg.armazenamento, "endpoint", None) or getattr(cfg.armazenamento, "base", "")
-        u = urlsplit(base) if cfg else None
-        return f"{u.scheme}://{u.netloc}" if u and u.netloc else ""
+        try:
+            arm = config().armazenamento  # carrega a configuração na 1ª requisição, se preciso
+        except (Exception, SystemExit):  # noqa: BLE001 (sem configuração: CSP só com 'self')
+            return ""
+        u = urlsplit(getattr(arm, "endpoint", None) or getattr(arm, "base", ""))
+        return f"{u.scheme}://{u.netloc}" if u.netloc else ""
 
     @app.middleware("http")
     async def cabecalhos(request: Request, call_next):

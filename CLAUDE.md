@@ -1,13 +1,13 @@
 # CLAUDE.md
 
 Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
-**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); imagem montada pelo RunPod a partir do GitHub (ADR 0002, aceito); medições pendentes da primeira build lá. **Caminho escolhido (docs/05): A, serviço de marketing com IA para pequenos negócios**: foco em **lotes de 50+ fotos com um pedido só**, renderizados em vários pods (docs/05, seção 5.1; `lote.py`, `acabamento.py`, presets v2, receitas); Etapas 4–6 em pausa. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
+**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); imagem montada pelo RunPod a partir do GitHub (ADR 0002, aceito); medições pendentes da primeira build lá. **Caminho escolhido (docs/05): A, serviço de marketing com IA para pequenos negócios**: foco em **lotes de 50+ fotos com um pedido só**, renderizados em vários pods (docs/05, seção 5.1; `lote.py`, `acabamento.py`, presets v2, receitas); fase 2 (`lote_nuvem.py`) validada em GPU; **fase 3 implementada** em `servico/` (API, fila, orquestrador, páginas; ADR 0004 proposto) e pronta para implantar (docs/09); Etapas 4–6 em pausa. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
 
 ## Fontes de verdade
 
 - `referencia/especificacao-pipeline-manual.md`: pipeline manual testado. Não editar.
 - `referencia/wan-i2v-com-ollama.api.json`: workflow exportado. Não editar; os templates derivados ficam em `worker/workflows/`.
-- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, aceito; 0002: hospedagem da imagem, aceito; 0003: arquitetura em escala, aceito; fase 2 = `lote_nuvem.py`). Qualidade, velocidade e custo dos lotes: `docs/06`; guia técnico consolidado (GPUs, pods, proteções, custos): `docs/07`. Vários clientes ao mesmo tempo, escala e isolamento entre clientes: `docs/08`.
+- `docs/01` a `docs/04`: verificações, arquitetura, segurança e plano. Mudanças de arquitetura viram ADR em `docs/adr/` (0001: modelo T2V, aceito; 0002: hospedagem da imagem, aceito; 0003: arquitetura em escala, aceito; fase 2 = `lote_nuvem.py`). Qualidade, velocidade e custo dos lotes: `docs/06`; guia técnico consolidado (GPUs, pods, proteções, custos): `docs/07`. Vários clientes ao mesmo tempo, escala e isolamento entre clientes: `docs/08`. Implantação do serviço: `docs/09`.
 
 ## Regras técnicas (mudar só com ADR)
 
@@ -34,7 +34,8 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 
 ## Comandos
 
-- Testes e lint: `cd worker && uv sync --python 3.12 && uv run pytest -q && uv run ruff check . ../tools`
+- Testes e lint: `cd worker && uv sync --python 3.12 && uv run pytest -q && uv run ruff check . ../tools && uv run ruff format --check . ../tools`
+- Serviço (fase 3): `cd servico && uv sync --python 3.12 && uv run pytest -q && uv run ruff check src tests && uv run ruff format --check src tests`; Postgres de teste por `GPU2GO_TESTE_PG`; páginas: `cd servico/web && npm ci && npm run build` (o `app.js` é versionado; o CI confere) e teste no navegador com `uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py`
 - Template em dia com o export: `python tools/derive_i2v_template.py --check`
 - Candidatos T2V em dia: `python tools/build_t2v_templates.py --check`
 - Dockerfiles do RunPod em dia: `python tools/build_runpod_dockerfiles.py --check` (gerados; nunca editar `infra/runpod/Dockerfile.*` à mão)

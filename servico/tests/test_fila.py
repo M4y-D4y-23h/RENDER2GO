@@ -198,7 +198,7 @@ def test_queue_worker_renders_checks_and_delivers(ambiente, monkeypatch):
     assert all(j["similaridade"] > 0.9 and j["bytes_video"] > 0 for j in jobs)
     # cada vídeo está no endereço do próprio cliente e lote, com a folha de conferência
     chaves = sorted(ambiente.objetos)
-    assert sum(k.endswith(".mp4") and f"/{lid}/saida/" in k for k in chaves) == 2
+    assert sum(k.startswith("saida/") and k.endswith(".mp4") and f"/{lid}/" in k for k in chaves) == 2
     assert sum("/conferencia/" in k for k in chaves) == 2
     assert ambiente.banco.lote(lid)["prompt_en"].startswith("The camera")
 

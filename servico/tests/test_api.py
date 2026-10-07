@@ -88,7 +88,7 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
     assert r.status_code == 200, r.text
     lid, envios = r.json()["lote"], r.json()["envios"]
     # cada foto tem endereço próprio, decidido pelo servidor, dentro do cliente e do lote
-    assert all(f"/{lid}/entrada/" in e["url"] and "PUT" in e["url"] for e in envios)
+    assert all("/entrada/" in e["url"] and f"/{lid}/" in e["url"] and "PUT" in e["url"] for e in envios)
     assert api.post(f"/api/lotes/{lid}/enviado", headers=h(tok_a)).status_code == 422  # nada enviado
     assert _enviar_tudo(api, tok_a, lid, envios).json()["status"] == "aguardando_aprovacao"
 
@@ -122,7 +122,7 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
 
     render = _job(api)
     chave_video = render["video_url"].split("armazem.teste/")[1].split("?")[0]
-    assert chave_video.startswith("clientes/") and f"/{lid}/saida/" in chave_video
+    assert chave_video.startswith("saida/") and chave_video.endswith(f"/{lid}/{render['arquivo']}")
     assert render["foto_url"].endswith("?GET") and "PUT" in render["video_url"]
     # outro worker não conclui o job
     r = api.post(
@@ -169,7 +169,7 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
         assert r.json()["status"] == "ok"
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok_a)).json()
     assert lote["status"] == "concluido" and lote["prontos"] == 2
-    assert all("clientes/" in v["url"] and f"/{lid}/saida/" in v["url"] for v in lote["videos"])
+    assert all("/saida/" in v["url"] and f"/{lid}/" in v["url"] for v in lote["videos"])
 
 
 def test_free_trial_limits(api):
@@ -213,3 +213,22 @@ def test_refusal_and_admin_client_creation(api):
     assert r.json()["status"] == "recusado"
     assert api.get(f"/api/lotes/{lid}", headers=h(tok)).json()["motivo"] == "foto sem autorização"
     assert api.post("/api/admin/clientes", json={"nome": "X", "plano": "vip"}, headers=h(ADMIN)).status_code == 422
+
+
+def test_app_configured_from_environment(monkeypatch, tmp_path):
+    for k, v in {
+        "GPU2GO_DB_URL": f"sqlite:///{tmp_path / 'env.db'}",
+        "GPU2GO_R2_ENDPOINT": "https://conta.r2.cloudflarestorage.com",
+        "GPU2GO_R2_BUCKET": "gpu2go",
+        "GPU2GO_R2_ACCESS_KEY_ID": "k",
+        "GPU2GO_R2_SECRET_ACCESS_KEY": "s",
+        "GPU2GO_SEGREDO_APROVACAO": "s" * 40,
+        "GPU2GO_ADMIN_TOKENS": ADMIN,
+    }.items():
+        monkeypatch.setenv(k, v)
+    api = TestClient(criar_app())  # sem Config: lê do ambiente na 1ª requisição
+    r = api.get("/")
+    assert r.status_code == 200 and 'data-pagina="cliente"' in r.text
+    csp = r.headers["Content-Security-Policy"]
+    assert "connect-src 'self' https://conta.r2.cloudflarestorage.com" in csp
+    assert api.get("/estilo.css").status_code == 200 and api.get("/app.js").status_code == 200

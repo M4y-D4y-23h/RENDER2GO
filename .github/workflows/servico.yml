@@ -1,0 +1,77 @@
+name: servico
+
+on:
+  push:
+    paths:
+      - "servico/**"
+      - "worker/**"
+      - "tools/**"
+      - ".github/workflows/servico.yml"
+  pull_request:
+    paths:
+      - "servico/**"
+      - "worker/**"
+      - "tools/**"
+      - ".github/workflows/servico.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: servico-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gpu2go_teste
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      GPU2GO_TESTE_PG: postgresql://postgres:postgres@localhost:5432/gpu2go_teste
+    defaults:
+      run:
+        working-directory: servico
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.17"
+      - name: ffmpeg (conferência do 1º quadro e worker da fila)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: uv sync --python 3.12
+      - run: uv run ruff check src tests
+      - run: uv run ruff format --check src tests
+      - name: Testes (SQLite e Postgres)
+        run: uv run pytest -q
+      - name: Páginas no Chromium (playwright)
+        run: |
+          uv run --with playwright==1.56.0 playwright install --with-deps chromium
+          uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: servico/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - name: app.js em dia com src/app.ts
+        run: npm run build && git diff --exit-code app.js
+
+  imagem:
+    needs: [test, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build da imagem do serviço
+        run: docker buildx build --file servico/Dockerfile --output type=cacheonly .

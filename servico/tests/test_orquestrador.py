@@ -45,7 +45,7 @@ class Provedor:
 def _lote(banco, n, plano="teste"):
     cid, _ = banco.criar_cliente("Loja", plano=plano)
     fotos = [
-        {"nome": f"f{i}", "tipo": "image/jpeg", "bytes": 10, "chave": f"clientes/{cid}/{{lote}}/entrada/f{i}.jpg"}
+        {"nome": f"f{i}", "tipo": "image/jpeg", "bytes": 10, "chave": f"entrada/{cid}/{{lote}}/f{i}.jpg"}
         for i in range(n)
     ]
     lid = banco.criar_lote(

@@ -1,0 +1,16 @@
+# contexto = raiz do repositório; só worker/, tools/ e servico/ entram na imagem
+.git
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+worker/evals
+worker/tests
+servico/tests
+docs
+infra
+referencia
+fixtures
+saida
