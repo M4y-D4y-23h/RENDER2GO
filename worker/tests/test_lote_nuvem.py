@@ -97,6 +97,7 @@ def sem_git(monkeypatch, tmp_path):
 
     monkeypatch.setattr(ln, "empacotar_repo", falso)
     monkeypatch.setattr(ln, "CACHE", tmp_path / "cache")
+    monkeypatch.setattr(ln, "ESPERA_VAGA_S", 0)
     monkeypatch.setattr(ln, "ESPERA_AGENTE_S", 3)
     monkeypatch.setattr(ln.time, "sleep", lambda s: None if s >= 10 else _dormir(s))
 

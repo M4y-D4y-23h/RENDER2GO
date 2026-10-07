@@ -89,6 +89,7 @@ ESPERA_INSTALACAO_S = 18 * 60
 LENTO = 1.6
 FOLGA_S = 15  # tolerância fixa por vídeo (envio, download, carga do 1º vídeo)
 SUBSTITUTOS = 2  # pods trocados por pod pedido, no máximo
+ESPERA_VAGA_S = 60  # sem vaga: espera antes da próxima tentativa
 CACHE = Path(os.environ.get("GPU2GO_CACHE", Path.home() / ".cache" / "gpu2go"))
 MEMORIA_DIAS = 7  # datacenter lento fica de fora por esse tempo
 ESPERA_SERVICOS_S = 600
@@ -748,6 +749,7 @@ class Orquestrador:
                 _log(f"posto {i}: trocando o pod ({tentativa}/{self.a.substitutos})")
             pod = self._subir_pod(i, deadman_s)
             if pod is None:
+                time.sleep(ESPERA_VAGA_S)  # sem vaga agora: espera antes de gastar outra troca
                 continue
             if self._usar(pod, deadman_s):
                 return  # terminou sem falha (fila vazia ou limite de tempo)
