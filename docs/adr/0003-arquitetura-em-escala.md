@@ -149,6 +149,12 @@ A GPU continua sendo o custo principal, ~US$ 0,016 por vídeo na 4090 secure.
 
   O trabalho fica com os outros pods.
 - **Instalação:** `scripts/bootstrap_pod.sh` lê versões e hashes do `worker/Dockerfile` e confere os modelos por SHA-256. Leva ~6–10 min por pod, até existir a imagem com modelos (ADR 0002).
+- **Validado em 07/10/2026**, com 8 fotos sintéticas SFW e 2 pods pedidos:
+  - a RTX 4090 community não respondeu e foi descartada sozinha em 10 min;
+  - a L40S secure ficou pronta em 7,5 min e gerou os 8 vídeos, ~55 s cada;
+  - interpolação para 32 fps e 1280 px feitas localmente;
+  - pods encerrados no fim;
+  - **16,9 min do comando ao fim, ~US$ 0,40.**
 - **Sem armazenamento de objetos ainda:** as fotos saem da máquina de quem roda o comando, preparadas e pequenas, e os vídeos voltam para ela.
 
 ## Decisão pendente
