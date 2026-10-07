@@ -153,7 +153,7 @@ A GPU continua sendo o custo principal, ~US$ 0,016 por vídeo na 4090 secure.
 
 ## Decisão pendente
 
-Fase 3 (R2 + Postgres + API), aprovada em 07/10/2026 junto com este ADR; começa depois de validar a fase 2 com clientes. Alternativas consideradas:
+Fase 3 (R2 + Postgres + API): começa depois de validar a fase 2 com os primeiros clientes, com confirmação do dono do projeto. Alternativas consideradas:
 - **S3 da AWS:** saída paga, cara para entregar vídeo.
 - **Volume de rede do RunPod como armazenamento do cliente:** prende a um datacenter e não tem URL pública assinada.
 - **Fila Redis/SQS desde o início:** peça a mais sem necessidade medida.
