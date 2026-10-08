@@ -1161,7 +1161,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument(
         "--gpu",
         action="append",
-        help="GPU em ordem de preferência (repetível); padrão: L40S, L40, RTX 6000 Ada, RTX 4090",
+        help="GPU em ordem de preferência (repetível); padrão: L40S, RTX 6000 Ada, RTX PRO 6000, "
+        "RTX 4090",
     )
     g.add_argument(
         "--nuvem",
