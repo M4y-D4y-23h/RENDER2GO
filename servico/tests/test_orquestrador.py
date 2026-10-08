@@ -107,6 +107,16 @@ def test_no_work_no_pods(orq):
     assert o.provedor.criados == []
 
 
+def test_each_cycle_marks_the_loop_alive(orq):
+    o = orq(intervalo_s=0.05)  # o healthcheck do compose confere a idade do arquivo "vivo"
+    t = threading.Thread(target=o.rodar, daemon=True)
+    t.start()
+    assert _esperar(lambda: (o.cfg.estado / "vivo").exists())
+    o.parar.set()
+    t.join(5)
+    assert not t.is_alive()
+
+
 def test_pods_follow_the_queue_and_shut_down_when_the_worker_ends(orq, banco):
     _lote(banco, 100)  # 100 vídeos de 3 s: ~21 min de GPU → 2 pods (cada um com ≥ 10 min)
     o = orq()

@@ -43,6 +43,7 @@ FILA_CMD = (
     "PATH=/opt/venv/bin:$PATH PYTHONPATH=/opt/gpu2go/worker/src "
     "python -m gpu2go_worker.fila --api {api} --worker {worker} --gpus {gpus} --ate {ate}"
 )
+VIVO = "vivo"  # tocado a cada ciclo bem-sucedido (healthcheck do contêiner)
 
 
 def _log(msg: str) -> None:
@@ -255,6 +256,7 @@ class Orquestrador:
             while not self.parar.is_set():
                 try:
                     self.ciclo()
+                    (self.cfg.estado / VIVO).touch()  # o healthcheck do compose confere a idade deste arquivo
                 except Exception as e:  # noqa: BLE001 (o laço não pode morrer; os pods têm desligamento próprio)
                     _log(f"AVISO: ciclo falhou: {e}")
                 self.parar.wait(self.cfg.intervalo_s)

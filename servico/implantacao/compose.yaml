@@ -27,6 +27,15 @@ services:
       api: { condition: service_started }
     restart: unless-stopped
     stop_grace_period: 2m  # ao parar, encerra os pods que estão rodando
+    healthcheck:  # sem porta HTTP: saudável = o laço completou um ciclo nos últimos 3 min
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,sys,time; sys.exit(time.time() - os.path.getmtime('/home/gpu2go/.cache/gpu2go/orquestrador/vivo') > 180)"
+      interval: 60s
+      timeout: 5s
+      start_period: 60s
 
   postgres:
     image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
