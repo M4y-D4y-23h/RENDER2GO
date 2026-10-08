@@ -133,7 +133,8 @@ def disponibilidade(gpus: list[str]) -> list[dict[str, Any]]:
             f"secure: lowestPrice(input:{{gpuCount:1, secureCloud:true}}) {campos} "
             f"community: lowestPrice(input:{{gpuCount:1, secureCloud:false}}) {campos} }} }}"
         )
-        tipos = _graphql(q).get("gpuTypes") or []
+        # com RUNPOD_API_KEY (servidor do serviço, sem o proxy do ambiente), a chave vai junto
+        tipos = _graphql(q, _chave() or None).get("gpuTypes") or []
         if not tipos:
             out.append(
                 {

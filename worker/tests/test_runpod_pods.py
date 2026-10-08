@@ -111,9 +111,26 @@ def test_availability_parsing(monkeypatch):
         }
 
     monkeypatch.setattr(rp, "_graphql", gql)
+    monkeypatch.delenv("RUNPOD_API_KEY", raising=False)
     rows = {r["nuvem"]: r for r in rp.disponibilidade(["NVIDIA GeForce RTX 4090"])}
     assert rows["secure"]["provavel"] and rows["secure"]["usd_hora"] == 0.74
     assert not rows["community"]["provavel"] and rows["community"]["estoque"] == "sem estoque"
+
+
+def test_availability_sends_the_key_when_there_is_one(monkeypatch):
+    # no servidor do serviço não há proxy que inclua a credencial
+    chaves = []
+
+    def gql(query, chave=None, timeout=30):
+        chaves.append(chave)
+        return {"gpuTypes": []}
+
+    monkeypatch.setattr(rp, "_graphql", gql)
+    monkeypatch.setenv("RUNPOD_API_KEY", "chave-do-servidor")
+    rp.disponibilidade(["NVIDIA GeForce RTX 4090"])
+    monkeypatch.delenv("RUNPOD_API_KEY")
+    rp.disponibilidade(["NVIDIA GeForce RTX 4090"])
+    assert chaves == ["chave-do-servidor", None]
 
 
 def test_self_terminate_falls_back_to_stop(monkeypatch):
