@@ -48,6 +48,9 @@ Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técni
   - Os clientes e os códigos de acesso ficam. Sem `--confirmar`, só mostra o que seria apagado.
 - **Servidor:** os passos estão no [`docs/09`](docs/09-implantacao.md), seção 0.
 
+### Correção
+- **Tabela nova criada sem disputa:** a API e o orquestrador sobem juntos e criam as tabelas novas ao mesmo tempo. No Postgres, isso podia derrubar um dos dois na 1ª subida depois de uma atualização (ele voltava sozinho, reiniciado pelo Docker). Agora um espera o outro.
+
 ## 08/10/2026: identidade visual e front-end das páginas
 
 ### Identidade visual ([`docs/10`](docs/10-identidade-visual-e-front-end.md))
