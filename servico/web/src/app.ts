@@ -1,4 +1,4 @@
-// Páginas do serviço GPU2GO (ADR 0003, fase 3): cliente (/) e aprovador (/aprovar).
+// Páginas do serviço Render2Go (ADR 0003, fase 3): cliente (/) e aprovador (/aprovar).
 // Os arquivos nunca passam pela API: as fotos vão direto ao armazenamento (R2) por URLs
 // assinadas, uma por foto; os vídeos voltam por links assinados que expiram em 24 h.
 // Compilar: cd servico/web && npm ci && npm run build  (gera app.js)
@@ -41,7 +41,7 @@ type Lote = {
   previsao?: Previsao;
 };
 type Envio = { original: string; url: string; tipo: string };
-// análise automática de cada foto (gpu2go_servico/pessoas.py); null = ainda analisando
+// análise automática de cada foto (render2go_servico/pessoas.py); null = ainda analisando
 type Analise = { pessoas?: number; rostos?: number; erro?: string } | null;
 type ItemHistorico = {
   lote: string;
@@ -154,8 +154,16 @@ function criar<K extends keyof HTMLElementTagNameMap>(
 }
 
 // token guardado só neste navegador (conveniência; pode falhar em janela anônima)
+// chaves com o nome antigo do projeto (antes de Render2Go) são lidas uma vez e migradas
+function migrarChave(chave: string): void {
+  const antiga = chave.replace("render2go-", "gpu" + "2go-");
+  const valor = localStorage.getItem(antiga);
+  if (valor && !localStorage.getItem(chave)) localStorage.setItem(chave, valor);
+  if (valor) localStorage.removeItem(antiga);
+}
 function lerToken(chave: string): string {
   try {
+    migrarChave(chave);
     return localStorage.getItem(chave) ?? "";
   } catch {
     return "";
@@ -183,10 +191,11 @@ function uuid4(): string {
 let DISPOSITIVO_SESSAO = "";
 function dispositivo(): string {
   try {
-    let d = localStorage.getItem("gpu2go-dispositivo");
+    migrarChave("render2go-dispositivo");
+    let d = localStorage.getItem("render2go-dispositivo");
     if (!d) {
       d = uuid4();
-      localStorage.setItem("gpu2go-dispositivo", d);
+      localStorage.setItem("render2go-dispositivo", d);
     }
     return d;
   } catch {
@@ -425,7 +434,7 @@ function iniciarCliente(): void {
     }
   };
 
-  painelToken("gpu2go-token-cliente", async (t) => {
+  painelToken("render2go-token-cliente", async (t) => {
     token = t;
     try {
       receitas = await api<Receitas>("/api/receitas", token);
@@ -776,7 +785,7 @@ function iniciarAprovador(): void {
       listarHistorico().catch((e) => aviso(msg, `Não foi possível carregar: ${(e as Error).message}`, "erro"));
     });
   }
-  painelToken("gpu2go-token-admin", (t) => {
+  painelToken("render2go-token-admin", (t) => {
     token = t;
     el("painel").hidden = false;
     listar();

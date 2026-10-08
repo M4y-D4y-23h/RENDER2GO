@@ -6,7 +6,7 @@ import pytest
 from conftest import WORKER
 from PIL import Image
 
-from gpu2go_worker import preparo
+from render2go_worker import preparo
 
 PADRAO = WORKER.parent / "fixtures" / "sfw" / "padrao-teste-640.png"
 

@@ -1,4 +1,4 @@
-"""Aviso de pessoas (gpu2go_servico.pessoas) com fotos SFW de domínio público (fixtures/sfw/FONTES.md)."""
+"""Aviso de pessoas (render2go_servico.pessoas) com fotos SFW de domínio público (fixtures/sfw/FONTES.md)."""
 
 import hashlib
 import threading
@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from gpu2go_servico import SERVICO_DIR, pessoas
+from render2go_servico import SERVICO_DIR, pessoas
 
 FIXTURES = SERVICO_DIR.parent / "fixtures" / "sfw"
 

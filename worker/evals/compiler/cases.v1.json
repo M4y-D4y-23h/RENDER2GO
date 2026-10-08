@@ -1,5 +1,5 @@
 {
-  "_comment": "Casos de fidelidade do compilador (tudo SFW). Ver gpu2go_worker/fidelity.py para a semântica de must/forbid/order. Limites definidos antes da primeira rodada (doc 04, Etapa 2) e aplicados por perfil, sobre os casos gating de todas as seeds.",
+  "_comment": "Casos de fidelidade do compilador (tudo SFW). Ver render2go_worker/fidelity.py para a semântica de must/forbid/order. Limites definidos antes da primeira rodada (doc 04, Etapa 2) e aplicados por perfil, sobre os casos gating de todas as seeds.",
   "version": 1,
   "thresholds": {"case_pass_rate": 0.85, "quoted": 1.0, "forbid": 0.95},
   "seeds": [1, 2, 3],

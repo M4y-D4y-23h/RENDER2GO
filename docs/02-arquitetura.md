@@ -94,7 +94,7 @@ A hospedagem de cada peça (backend, storage, CDN) depende de fornecedores que a
 6. Se aprovado: job "pronto", créditos debitados, cliente notificado. Se reprovado: nada é entregue; quarentena e fluxo do doc 03.
 7. O cliente assiste ou baixa por URL assinada de curta duração.
 
-Exemplo de entrada do job (nada de binário no payload; o limite do `/run` é 10 MB). Implementado em `worker/src/gpu2go_worker/jobs.py` (Etapa 3):
+Exemplo de entrada do job (nada de binário no payload; o limite do `/run` é 10 MB). Implementado em `worker/src/render2go_worker/jobs.py` (Etapa 3):
 
 ```json
 {
@@ -120,7 +120,7 @@ Exemplo de entrada do job (nada de binário no payload; o limite do `/run` é 10
 - O worker monta a entrada rotulada a partir da ação e dos presets e anexa os termos dos presets ao prompt (`presets.py`). O backend manda só os ids dos presets.
 - `mode`: `i2v` (com `input_image_url`), `continuar` (com `input_video_url`; o worker usa o último quadro) ou `t2v`.
 - `compiler.prompt_en` no lugar de `action_pt` pula o compilador. Os filtros C1–C2 valem nos dois casos.
-- As URLs precisam ser https e de um host listado em `GPU2GO_ALLOWED_URL_HOSTS`. Sem essa lista, nenhuma URL é aceita.
+- As URLs precisam ser https e de um host listado em `RENDER2GO_ALLOWED_URL_HOSTS`. Sem essa lista, nenhuma URL é aceita.
 
 Saída do job:
 

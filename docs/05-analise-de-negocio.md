@@ -39,7 +39,7 @@
 - ChatGPT, Gemini e os serviços grandes de vídeo com IA entregam, em geral, mais qualidade que o pipeline atual, muitas vezes dentro de assinaturas que a pessoa já tem ou com cota gratuita.
 - O pipeline atual entrega 640p, 5 s, sem áudio, com movimento limitado, e no I2V a imagem domina (`worker/evals/gpu-2026-10-05/LEIAME.md`).
 
-## 4. A pergunta franca: empresas escolheriam o GPU2GO?
+## 4. A pergunta franca: empresas escolheriam o Render2Go?
 
 **Como ferramenta, na maioria dos casos, não.** Para uma empresa que quer um vídeo bonito, as ferramentas das grandes empresas são mais simples e melhores.
 
@@ -53,7 +53,7 @@ Onde o projeto ganha:
 ## 5. Decisão: serviço de marketing com IA (caminho A)
 
 - **O que se vende:** pacotes de vídeos e posts de divulgação para pequenos negócios (lojas, restaurantes, imobiliárias, estética), entregues prontos para postar.
-- **Ferramentas:** a melhor para cada caso, inclusive ChatGPT ou Gemini. O GPU2GO é a ferramenta interna de volume e custo baixo, com receitas por nicho, geração em lote e acabamento (logo, música, cartão final). Ver `worker/README.md`, seção "Modo serviço".
+- **Ferramentas:** a melhor para cada caso, inclusive ChatGPT ou Gemini. O Render2Go é a ferramenta interna de volume e custo baixo, com receitas por nicho, geração em lote e acabamento (logo, música, cartão final). Ver `worker/README.md`, seção "Modo serviço".
 - **Preço sugerido** (validar com os primeiros clientes):
 
 | Pacote | Conteúdo | Preço |

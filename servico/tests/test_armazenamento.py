@@ -2,7 +2,7 @@ import datetime as dt
 
 import pytest
 
-from gpu2go_servico.armazenamento import Armazenamento, ArmazenamentoError
+from render2go_servico.armazenamento import Armazenamento, ArmazenamentoError
 
 
 def test_sigv4_presigned_get_matches_aws_documented_example():
@@ -21,7 +21,7 @@ def test_sigv4_presigned_get_matches_aws_documented_example():
 
 
 def test_validation():
-    r2 = Armazenamento("https://conta.r2.cloudflarestorage.com", "gpu2go", "k", "s")
+    r2 = Armazenamento("https://conta.r2.cloudflarestorage.com", "render2go", "k", "s")
     for chave in ("../x", "a b", ""):
         with pytest.raises(ArmazenamentoError):
             r2.url("GET", chave)
@@ -30,5 +30,5 @@ def test_validation():
     with pytest.raises(ArmazenamentoError):
         r2.url("GET", "a", expira_s=8 * 24 * 3600)
     u = r2.url("PUT", "entrada/c1/l1/f.jpg", content_type="image/jpeg")
-    assert u.startswith("https://conta.r2.cloudflarestorage.com/gpu2go/entrada/c1/l1/f.jpg?")
+    assert u.startswith("https://conta.r2.cloudflarestorage.com/render2go/entrada/c1/l1/f.jpg?")
     assert "X-Amz-SignedHeaders=content-type%3Bhost" in u

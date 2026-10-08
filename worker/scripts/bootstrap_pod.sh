@@ -6,43 +6,43 @@
 # por arquivo) e 77 s com o cache do volume.
 #
 # Uso: bootstrap_pod.sh <repo.tgz> <conjuntos de modelos, ex.: i2v_r1v2>
-# Estado em /root/gpu2go/estado: INSTALANDO → PRONTO | FALHOU <motivo>
-# Tempos por etapa (s desde o início) em /root/gpu2go/tempos.
-# Com /root/gpu2go/espelho.tsv (<arquivo>\t<URL assinada>, do lote_nuvem), cada modelo também vem
+# Estado em /root/render2go/estado: INSTALANDO → PRONTO | FALHOU <motivo>
+# Tempos por etapa (s desde o início) em /root/render2go/tempos.
+# Com /root/render2go/espelho.tsv (<arquivo>\t<URL assinada>, do lote_nuvem), cada modelo também vem
 # do espelho no R2, ao mesmo tempo que da origem (reserva se o Hugging Face cair).
 #
-# Com GPU2GO_VOLUME=1 (volume de rede do RunPod em /workspace), o cache fica em
-# /workspace/gpu2go-cache:
+# Com RENDER2GO_VOLUME=1 (volume de rede do RunPod em /workspace), o cache fica em
+# /workspace/render2go-cache:
 #   modelos/   arquivos do models.lock (SHA-256 do lock)
 #   ollama/    modelo do compilador (blobs com o SHA-256 no nome)
 #   ambiente/  venv + ComfyUI + Ollama num tar.zst, chaveado pelo requirements.lock e Dockerfile,
 #              com um .sha256 escrito por último (sem ele, o arquivo é ignorado)
 # Tudo é copiado para o disco local e conferido antes do uso (regra: nunca ler modelo direto do
-# volume); cópia ruim é apagada e refeita da origem. Só o pod com GPU2GO_VOLUME_GRAVA=1 grava no
-# volume, e só depois do PRONTO (não atrasa o pod); ao terminar, escreve /root/gpu2go/guardado.
+# volume); cópia ruim é apagada e refeita da origem. Só o pod com RENDER2GO_VOLUME_GRAVA=1 grava no
+# volume, e só depois do PRONTO (não atrasa o pod); ao terminar, escreve /root/render2go/guardado.
 # Volume não POSIX: só rsync --inplace e cp, sem rename nem chmod.
 set -uo pipefail
 REPO_TGZ=$1 MODEL_SET=${2:-i2v_r1v2}
-R=/root/gpu2go EST=/root/gpu2go/estado
+R=/root/render2go EST=/root/render2go/estado
 mkdir -p $R/ok $R/vol && echo INSTALANDO > $EST && : > $R/tempos && rm -f $R/guardado
 T0=$(date +%s)
 marca() { echo "$1 $(( $(date +%s) - T0 ))" >> $R/tempos; }
 falha() { echo "FALHOU $*" > $EST; echo "FALHOU: $*"; echo GUARDADO > $R/guardado; exit 1; }
 export DEBIAN_FRONTEND=noninteractive
-W=/opt/gpu2go/worker COMFY_DIR=/opt/comfyui OLLAMA_MODELS=/opt/ollama/models
+W=/opt/render2go/worker COMFY_DIR=/opt/comfyui OLLAMA_MODELS=/opt/ollama/models
 export OLLAMA_MODELS R
 
 apt-get update -qq && apt-get install -y -qq --no-install-recommends \
   git curl ffmpeg zstd unzip ca-certificates procps rsync aria2 >/dev/null || falha "apt"
 marca apt
 CACHE="" GRAVA=0
-if [[ "${GPU2GO_VOLUME:-0}" == "1" && -d /workspace ]]; then
-  CACHE=/workspace/gpu2go-cache
+if [[ "${RENDER2GO_VOLUME:-0}" == "1" && -d /workspace ]]; then
+  CACHE=/workspace/render2go-cache
   mkdir -p $CACHE/modelos $CACHE/ollama $CACHE/ambiente
-  [[ "${GPU2GO_VOLUME_GRAVA:-0}" == "1" ]] && GRAVA=1
+  [[ "${RENDER2GO_VOLUME_GRAVA:-0}" == "1" ]] && GRAVA=1
 fi
 export CACHE
-mkdir -p /opt/gpu2go && tar -xzf "$REPO_TGZ" -C /opt/gpu2go || falha "repo"
+mkdir -p /opt/render2go && tar -xzf "$REPO_TGZ" -C /opt/render2go || falha "repo"
 arg() { sed -n "s/^ARG $1=//p" $W/Dockerfile | head -1; }
 CHAVE=$(cat $W/requirements.lock $W/Dockerfile | sha256sum | cut -c1-16)
 AMB=${CACHE:-/nao-ha}/ambiente/ambiente-$CHAVE.tar.zst
@@ -86,7 +86,7 @@ export -f confere copia espelho um reconfere
 modelos() {
   python3 - "$MODEL_SET" > $R/modelos.tsv <<'PY' || return 1
 import json, sys
-lock = json.load(open("/opt/gpu2go/worker/models.lock.json"))
+lock = json.load(open("/opt/render2go/worker/models.lock.json"))
 nomes = sorted({m for s in sys.argv[1].split(",") for m in lock["sets"][s]})
 for n in nomes:
     m = lock["models"][n]

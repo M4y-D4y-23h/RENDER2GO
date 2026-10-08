@@ -2,8 +2,8 @@ import json
 
 from conftest import WORKER
 
-from gpu2go_worker import experiment as ex
-from gpu2go_worker import template as t
+from render2go_worker import experiment as ex
+from render2go_worker import template as t
 
 I2V = "workflows/i2v_r1v2.v1.api.json"
 

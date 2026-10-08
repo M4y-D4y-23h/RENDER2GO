@@ -4,10 +4,10 @@ import threading
 import time
 
 import pytest
-from gpu2go_worker import lote_nuvem as ln
-from gpu2go_worker import pod_agente
+from render2go_worker import lote_nuvem as ln
+from render2go_worker import pod_agente
 
-from gpu2go_servico.orquestrador import ConfigOrq, Orquestrador
+from render2go_servico.orquestrador import ConfigOrq, Orquestrador
 
 _dormir = time.sleep
 
@@ -78,7 +78,7 @@ def orq(banco, tmp_path, monkeypatch):
             raiz=str(tmp_path / "pod"),
             verificar_cuda=False,
             instalar="echo PRONTO > {raiz}/estado; echo GUARDADO > {raiz}/guardado",
-            servicos="echo '[gpu2go] pronto'",
+            servicos="echo '[render2go] pronto'",
         )
         repo = tmp_path / "repo.tgz"
         repo.write_bytes(b"repo")
@@ -123,11 +123,11 @@ def test_pods_follow_the_queue_and_shut_down_when_the_worker_ends(orq, banco):
     assert o.ciclo()["desejados"] == 2
     assert _esperar(lambda: len(o.ativos) == 2)
     env = o.provedor.envs[0]
-    assert int(env["DEADMAN_S"]) <= 2 * 3600 and "GPU2GO_WORKER_TOKEN" not in env  # token não vai no env do pod
+    assert int(env["DEADMAN_S"]) <= 2 * 3600 and "RENDER2GO_WORKER_TOKEN" not in env  # token não vai no env do pod
     # o worker recebeu o arquivo de ambiente com o token e os hosts permitidos
     pf = next(iter(o.ativos.values()))
     _, out = pf.pod.agente.exec(f"cat {o.remoto.raiz}/fila.env", 10)
-    assert "GPU2GO_SAFETY=c1-revisao-humana" in out and "GPU2GO_ALLOWED_URL_HOSTS=r2.teste" in out
+    assert "RENDER2GO_SAFETY=c1-revisao-humana" in out and "RENDER2GO_ALLOWED_URL_HOSTS=r2.teste" in out
     # o worker falso termina; com a fila zerada, o próximo ciclo encerra os pods e não sobe outros
     with banco.tx() as c:
         c.run("UPDATE jobs SET status = 'ok'")

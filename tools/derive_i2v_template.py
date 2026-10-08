@@ -30,7 +30,7 @@ DEFAULTS = {
     ("129:161", "value"): 5.0,
     ("129:98", "width"): 640,
     ("129:98", "height"): 640,
-    ("108", "filename_prefix"): "video/gpu2go",
+    ("108", "filename_prefix"): "video/render2go",
 }
 
 

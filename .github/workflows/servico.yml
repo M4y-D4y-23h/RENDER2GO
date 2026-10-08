@@ -28,12 +28,12 @@ jobs:
         image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
         env:
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: gpu2go_teste
+          POSTGRES_DB: render2go_teste
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      GPU2GO_TESTE_PG: postgresql://postgres:postgres@localhost:5432/gpu2go_teste
+      RENDER2GO_TESTE_PG: postgresql://postgres:postgres@localhost:5432/render2go_teste
     defaults:
       run:
         working-directory: servico

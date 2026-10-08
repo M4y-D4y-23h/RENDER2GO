@@ -54,13 +54,13 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
 
 1. **Clientes intercalados na fila:** `db.reivindicar` dá preferência ao lote com menos vídeos já iniciados, e lotes pagos passam na frente de testes gratuitos.
 2. **Conferência do 1º quadro:**
-   - o worker só envia o vídeo que bate com a foto (`gpu2go_worker/conferencia.py`);
+   - o worker só envia o vídeo que bate com a foto (`render2go_worker/conferencia.py`);
    - a API recusa "ok" sem a similaridade ou sem o vídeo no armazenamento, apaga o vídeo e repete o job.
 3. **Pods automáticos pelo tamanho da fila e pod quente:**
    - o orquestrador (`servico/.../orquestrador.py`) usa a mesma regra do `lote_nuvem --pods auto`;
    - o worker sai após 3 min sem jobs, e o pod é encerrado.
 4. **Worker da fila, orquestrador, páginas e implantação:**
-   - worker da fila: `gpu2go_worker/fila.py`;
+   - worker da fila: `render2go_worker/fila.py`;
    - páginas: `/` e `/aprovar`;
    - Dockerfile, CI e `docs/09-implantacao.md`.
 

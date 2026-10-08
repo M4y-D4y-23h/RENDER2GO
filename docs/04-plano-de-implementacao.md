@@ -1,6 +1,6 @@
 # 04 — Plano de implementação em etapas
 
-> **Pausa (06/10/2026):** o dono do projeto escolheu o caminho A do [doc 05](05-analise-de-negocio.md): serviço de marketing com IA para pequenos negócios, com o GPU2GO como ferramenta interna (receitas, lote e acabamento, em `worker/README.md`, seção "Modo serviço"). As Etapas 4 a 6 como app público ficam em pausa até o volume do serviço justificar. As medições da Etapa 3 continuam valendo para o custo do serviço.
+> **Pausa (06/10/2026):** o dono do projeto escolheu o caminho A do [doc 05](05-analise-de-negocio.md): serviço de marketing com IA para pequenos negócios, com o Render2Go como ferramenta interna (receitas, lote e acabamento, em `worker/README.md`, seção "Modo serviço"). As Etapas 4 a 6 como app público ficam em pausa até o volume do serviço justificar. As medições da Etapa 3 continuam valendo para o custo do serviço.
 
 ## Princípios
 
@@ -52,7 +52,7 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
    - Teste de fumaça na build: `python main.py --quick-test-for-ci --cpu` e a linha `[ComfyUI-UMT5-Extended] Loaded` no log.
 2. `worker/models.lock.json` e `tools/fetch_models.py`: baixa com retomada, confere os bytes da seção 2 da especificação e o SHA-256 (registrado no primeiro download); serve para a build e para o modo `pod` (cópia `--inplace` a partir do volume, como na seção 4.4).
 3. `worker/entrypoint.sh` com os modos `pod` e `serverless` (o `agent` fica para a Etapa 8): checagem de GPU, Ollama supervisionado, ComfyUI com `--reserve-vram`, espera por `/system_stats`.
-4. `worker/workflows/i2v_r1v2.v1.api.json` (export sem os nós `165`/`166`), `i2v_r1v2.v1.contract.json` (doc 02, seção 6) e `gpu2go_worker/template.py`, que preenche e valida.
+4. `worker/workflows/i2v_r1v2.v1.api.json` (export sem os nós `165`/`166`), `i2v_r1v2.v1.contract.json` (doc 02, seção 6) e `render2go_worker/template.py`, que preenche e valida.
 5. `tools/submit_workflow.py`:
 
    ```bash
@@ -110,7 +110,7 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 > **Status (06/10/2026): código pronto; hospedagem decidida (integração GitHub do RunPod, [ADR 0002](adr/0002-hospedagem-da-imagem.md)); medições pendentes da primeira build no RunPod.**
 >
 > - **Feito:**
->   - handler (`gpu2go_worker/jobs.py` + `handler_runpod.py`, `MODE=serverless`), com o protocolo do doc 02: URLs assinadas com lista de hosts, quadros de amostra, erros tipados e idempotência por `job_id`;
+>   - handler (`render2go_worker/jobs.py` + `handler_runpod.py`, `MODE=serverless`), com o protocolo do doc 02: URLs assinadas com lista de hosts, quadros de amostra, erros tipados e idempotência por `job_id`;
 >   - filtros fail-closed: sem C1–C2 nenhum job roda; o modo de testes SFW é explícito;
 >   - endpoints como código (`infra/runpod/`, `tools/runpod_endpoint.py`);
 >   - `tools/bench.py` (cold start, p50/p95, custo quente e isolado) e os planos de bench (52 jobs de I2V, que cobrem o aceite);
@@ -165,7 +165,7 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 ## Estrutura do repositório
 
 ```
-GPU2GO/
+Render2Go/
 ├── README.md
 ├── CLAUDE.md                        # regras para sessões do Claude Code
 ├── docs/                            # esta proposta; docs/adr/ para decisões registradas
@@ -178,7 +178,7 @@ GPU2GO/
 │   ├── workflows/                   # templates API + contratos de parâmetros
 │   ├── prompts/                     # system prompts do compilador, versionados
 │   ├── presets/                     # ritmo, câmera, enquadramento, luz, estilo
-│   ├── src/gpu2go_worker/
+│   ├── src/render2go_worker/
 │   │   ├── pipeline.py              # compilar → filtrar → renderizar → enviar
 │   │   ├── comfy_client.py          # /upload/image, /prompt, /ws, /history, /view
 │   │   ├── ollama_client.py
@@ -188,7 +188,7 @@ GPU2GO/
 │   └── tests/
 ├── packages/safety/                 # C1 + interface de C2; usado pelo worker e pelo backend
 ├── backend/
-│   ├── src/gpu2go_api/              # routes, jobs, providers, moderation, billing, storage, auth
+│   ├── src/render2go_api/              # routes, jobs, providers, moderation, billing, storage, auth
 │   ├── migrations/
 │   └── tests/
 ├── frontend/                        # PWA (Next.js)

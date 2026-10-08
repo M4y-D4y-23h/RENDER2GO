@@ -6,8 +6,8 @@ import math
 import pytest
 from fastapi.testclient import TestClient
 
-from gpu2go_servico import api as api_mod
-from gpu2go_servico.api import Config, criar_app
+from render2go_servico import api as api_mod
+from render2go_servico.api import Config, criar_app
 
 ADMIN = "a" * 40
 WORKER = "w" * 40
@@ -486,13 +486,13 @@ def test_people_warning_is_computed_after_upload_and_shown_to_the_reviewer(banco
 
 def test_app_configured_from_environment(monkeypatch, tmp_path):
     for k, v in {
-        "GPU2GO_DB_URL": f"sqlite:///{tmp_path / 'env.db'}",
-        "GPU2GO_R2_ENDPOINT": "https://conta.r2.cloudflarestorage.com",
-        "GPU2GO_R2_BUCKET": "gpu2go",
-        "GPU2GO_R2_ACCESS_KEY_ID": "k",
-        "GPU2GO_R2_SECRET_ACCESS_KEY": "s",
-        "GPU2GO_SEGREDO_APROVACAO": "s" * 40,
-        "GPU2GO_ADMIN_TOKENS": ADMIN,
+        "RENDER2GO_DB_URL": f"sqlite:///{tmp_path / 'env.db'}",
+        "RENDER2GO_R2_ENDPOINT": "https://conta.r2.cloudflarestorage.com",
+        "RENDER2GO_R2_BUCKET": "gpu2go",
+        "RENDER2GO_R2_ACCESS_KEY_ID": "k",
+        "RENDER2GO_R2_SECRET_ACCESS_KEY": "s",
+        "RENDER2GO_SEGREDO_APROVACAO": "s" * 40,
+        "RENDER2GO_ADMIN_TOKENS": ADMIN,
     }.items():
         monkeypatch.setenv(k, v)
     api = TestClient(criar_app())  # sem Config: lê do ambiente na 1ª requisição

@@ -96,13 +96,13 @@ Escala aproximada: ~45 vídeos por hora por GPU 4090 (80 s cada). 1.000 vídeos 
   - só tipos de imagem (conferidos pelo conteúdo, não pela extensão);
   - limite de tamanho e de pixels (50 MP, já no `preparo.py`: protege contra "bomba de descompressão");
   - a foto é decodificada e regravada como PNG limpo, o que elimina EXIF, GPS e conteúdo escondido.
-- **URLs:** assinadas, curtas e por objeto. Só https, e só hosts permitidos no worker (`GPU2GO_ALLOWED_URL_HOSTS`, já existe).
+- **URLs:** assinadas, curtas e por objeto. Só https, e só hosts permitidos no worker (`RENDER2GO_ALLOWED_URL_HOSTS`, já existe).
 - **Acesso:**
   - conta por cliente;
   - chaves de API do RunPod e do R2 só no orquestrador (cofre de segredos), nunca no worker. O worker recebe só URLs assinadas;
   - registro de auditoria de cada lote.
 - **Conteúdo:**
-  - SFW com filtros C1–C2 obrigatórios no worker (`GPU2GO_SAFETY`, já existe; fail-closed);
+  - SFW com filtros C1–C2 obrigatórios no worker (`RENDER2GO_SAFETY`, já existe; fail-closed);
   - receitas com pessoa exigem consentimento registrado;
   - a folha de conferência fica guardada para revisão humana amostral.
 - **Abuso e sobrecarga:**
@@ -135,7 +135,7 @@ A GPU continua sendo o custo principal, ~US$ 0,016 por vídeo na 4090 secure.
 
 ## Fase 2 implementada (07/10/2026)
 
-- **Comando:** `tools/lote_nuvem.py` (`gpu2go-lote-nuvem`). Uso em `worker/README.md`, seção "Lote na nuvem".
+- **Comando:** `tools/lote_nuvem.py` (`render2go-lote-nuvem`). Uso em `worker/README.md`, seção "Lote na nuvem".
 - **Canal de controle dos pods efêmeros:** `pod_agente.py`. É um agente HTTP na porta 8888, atrás do proxy HTTPS do RunPod, com token aleatório de 256 bits por pod e comparação em tempo constante; sem token, a resposta é 403.
   - É a única porta do pod. ComfyUI e Ollama continuam em 127.0.0.1.
   - Exceção registrada à regra "nenhuma porta exposta", válida só para estes pods de lote, que vivem minutos e se encerram sozinhos.

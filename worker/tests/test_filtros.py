@@ -1,6 +1,6 @@
 import pytest
 
-from gpu2go_worker import filtros, safety
+from render2go_worker import filtros, safety
 
 
 @pytest.mark.parametrize(
@@ -60,10 +60,10 @@ def test_whole_words_only():
 
 
 def test_safety_mode_requires_explicit_opt_in(monkeypatch):
-    monkeypatch.setenv("GPU2GO_SAFETY", "c1-revisao-humana")
+    monkeypatch.setenv("RENDER2GO_SAFETY", "c1-revisao-humana")
     f = safety.load_filters()
     assert f.mode == "c1-revisao-humana" and f.exige_aprovacao
     assert not f.check_request("modelo de lingerie").allowed
-    monkeypatch.setenv("GPU2GO_SAFETY", "")
+    monkeypatch.setenv("RENDER2GO_SAFETY", "")
     with pytest.raises(safety.SafetyNotConfigured):
         safety.load_filters()

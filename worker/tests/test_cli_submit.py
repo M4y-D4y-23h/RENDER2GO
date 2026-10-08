@@ -6,7 +6,7 @@ import subprocess
 import pytest
 from conftest import FAKE_MP4, I2V_TEMPLATE, T2V_TEMPLATES
 
-from gpu2go_worker import cli_submit
+from render2go_worker import cli_submit
 
 
 def _run(capsys, *args):

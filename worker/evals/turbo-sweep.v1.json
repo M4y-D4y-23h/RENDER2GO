@@ -3,7 +3,7 @@
   "name": "Turbo do I2V R1 v2 v1",
   "description": "Base 4 passos/CFG 1/troca no 2 × 8 passos (troca no 4) × CFG 1,5 e 2. Pergunta: há mais movimento e aderência sem cores estouradas, e a que custo de tempo?",
   "image_required": true,
-  "image_hint": "foto SFW de uma pessoa, de corpo inteiro, 640x640 (pode ser o último quadro de um vídeo do bake-off: python -m gpu2go_worker.video last-frame ...)",
+  "image_hint": "foto SFW de uma pessoa, de corpo inteiro, 640x640 (pode ser o último quadro de um vídeo do bake-off: python -m render2go_worker.video last-frame ...)",
   "params": {"width": 640, "height": 640, "duration_s": 5},
   "seeds": [11, 22],
   "variants": [

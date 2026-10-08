@@ -4,7 +4,7 @@ import subprocess
 import pytest
 from PIL import Image, ImageDraw
 
-from gpu2go_worker import conferencia
+from render2go_worker import conferencia
 
 com_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg ausente")
 

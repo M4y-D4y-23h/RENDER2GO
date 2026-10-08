@@ -13,11 +13,11 @@ Navegador do cliente ──fotos (URL assinada)──►  R2 (Cloudflare)  ◄�
 
 | Peça | Onde | O que faz |
 |---|---|---|
-| API e páginas | contêiner `api` (`gpu2go-servico api`) | Cadastra lotes, assina URLs, recebe aprovações e conclusões |
+| API e páginas | contêiner `api` (`render2go-servico api`) | Cadastra lotes, assina URLs, recebe aprovações e conclusões |
 | Orquestrador | contêiner `orquestrador` (mesma imagem) | Lê a fila, sobe e encerra pods; só um rodando por vez |
 | Banco | Postgres 16 (contêiner ou gerenciado) | Clientes, lotes, jobs, eventos |
 | Arquivos | R2 (bucket `gpu2go`, já criado) | Fotos, vídeos, folhas de conferência e espelho dos modelos |
-| GPUs | Pods RunPod secure | Worker da fila (`gpu2go_worker.fila`), sem porta de entrada |
+| GPUs | Pods RunPod secure | Worker da fila (`render2go_worker.fila`), sem porta de entrada |
 | HTTPS | Caddy | Certificado automático (Let's Encrypt) |
 
 ## 2. O que você precisa providenciar
@@ -62,7 +62,7 @@ git clone https://github.com/M4y-D4y-23h/GPU2GO.git && cd GPU2GO/servico/implant
 # 2) configuração (nunca versionar o .env)
 cp exemplo.env .env && chmod 600 .env
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"   # rode uma vez para cada segredo
-nano .env    # DOMINIO, POSTGRES_PASSWORD, GPU2GO_R2_*, segredos, GPU2GO_API_URL, RUNPOD_API_KEY
+nano .env    # DOMINIO, POSTGRES_PASSWORD, RENDER2GO_R2_*, segredos, RENDER2GO_API_URL, RUNPOD_API_KEY
 
 # 3) subir
 docker compose up -d --build
@@ -77,23 +77,23 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 |---|---|
 | `DOMINIO` | Domínio do serviço (Caddy pede o certificado) |
 | `POSTGRES_PASSWORD` | Senha do Postgres local |
-| `GPU2GO_R2_ENDPOINT`, `_BUCKET`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY` | R2; os mesmos valores do ambiente do Claude |
-| `GPU2GO_SEGREDO_APROVACAO` | Assina o carimbo de aprovação (HMAC) |
-| `GPU2GO_ADMIN_TOKENS` | Token(s) do aprovador, separados por vírgula |
-| `GPU2GO_WORKER_TOKENS` | Token dos pods; o orquestrador usa o primeiro |
-| `GPU2GO_API_URL` | `https://` + domínio; é por ela que os pods falam com a API |
+| `RENDER2GO_R2_ENDPOINT`, `_BUCKET`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY` | R2; os mesmos valores do ambiente do Claude |
+| `RENDER2GO_SEGREDO_APROVACAO` | Assina o carimbo de aprovação (HMAC) |
+| `RENDER2GO_ADMIN_TOKENS` | Token(s) do aprovador, separados por vírgula |
+| `RENDER2GO_WORKER_TOKENS` | Token dos pods; o orquestrador usa o primeiro |
+| `RENDER2GO_API_URL` | `https://` + domínio; é por ela que os pods falam com a API |
 | `RUNPOD_API_KEY` | O orquestrador cria e encerra pods |
-| `GPU2GO_MAX_PODS`, `GPU2GO_MAX_USD_H` | Teto de pods e de gasto por hora |
-| `GPU2GO_PRAZO_MIN` | Opcional: prazo de entrega em minutos (mais pods, mais custo) |
-| `GPU2GO_AGRUPAR_TESTE_MIN`, `GPU2GO_AGRUPAR_TESTE_VIDEOS` | Opcional: testes gratuitos esperam juntar 20 vídeos ou 10 min antes de subir um pod (padrões) |
+| `RENDER2GO_MAX_PODS`, `RENDER2GO_MAX_USD_H` | Teto de pods e de gasto por hora |
+| `RENDER2GO_PRAZO_MIN` | Opcional: prazo de entrega em minutos (mais pods, mais custo) |
+| `RENDER2GO_AGRUPAR_TESTE_MIN`, `RENDER2GO_AGRUPAR_TESTE_VIDEOS` | Opcional: testes gratuitos esperam juntar 20 vídeos ou 10 min antes de subir um pod (padrões) |
 
-**Banco gerenciado (opcional):** troque o Postgres local por um serviço como Neon ou Supabase. Basta pôr `GPU2GO_DB_URL` no `.env` e apagar as linhas `GPU2GO_DB_URL` do `compose.yaml`. O esquema é criado sozinho na primeira subida.
+**Banco gerenciado (opcional):** troque o Postgres local por um serviço como Neon ou Supabase. Basta pôr `RENDER2GO_DB_URL` no `.env` e apagar as linhas `RENDER2GO_DB_URL` do `compose.yaml`. O esquema é criado sozinho na primeira subida.
 
 ## 5. Operação do dia a dia
 
 - **Cadastrar um cliente:** em `https://<domínio>/aprovar`, na seção "Novo cliente". O código aparece uma vez; envie ao cliente por um canal seguro. Pelo terminal:
   ```bash
-  docker compose exec api gpu2go-servico cliente "Padaria do Bairro" --plano teste
+  docker compose exec api render2go-servico cliente "Padaria do Bairro" --plano teste
   ```
 - **Histórico:** em `/aprovar`, abaixo dos pendentes. Mostra todos os pedidos (filtros: em revisão, aprovados, recusados), com cliente, IP, fotos, quem aprovou, motivo da recusa e andamento. A tabela "Uso por IP" soma as fotos por IP.
 - **Código de cliente vazou:** no histórico, "Desativar o código deste cliente". O código deixa de valer na hora.
@@ -103,14 +103,14 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 - **Parar tudo e encerrar os pods:**
   ```bash
   docker compose stop orquestrador
-  docker compose run --rm orquestrador gpu2go-servico limpar
+  docker compose run --rm orquestrador render2go-servico limpar
   ```
 - **Atualizar o código:** `git pull && docker compose up -d --build`.
 - **Backup do banco** (ex.: diário, por cron):
   ```bash
   docker compose exec -T postgres pg_dump -U gpu2go gpu2go | gzip > backup-$(date +%F).sql.gz
   ```
-- **Gasto:** o painel do RunPod mostra os pods. O orquestrador respeita `GPU2GO_MAX_USD_H` e o saldo da conta, e cada pod se desliga sozinho em no máximo 2 h.
+- **Gasto:** o painel do RunPod mostra os pods. O orquestrador respeita `RENDER2GO_MAX_USD_H` e o saldo da conta, e cada pod se desliga sozinho em no máximo 2 h.
 
 ## 5.1 Teste gratuito e custo
 
@@ -118,7 +118,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
   - um pedido só, com até 10 fotos;
   - vídeos de 3 s em 480p;
   - no máximo 10 fotos de teste **por dispositivo** (navegador);
-  - no máximo 50 fotos de teste **por IP** (`GPU2GO_TESTE_FOTOS_IP`). Assim cinco pessoas da mesma empresa, na mesma rede, conseguem fazer o teste cada uma, e quem troca de navegador para juntar testes esbarra no teto da rede.
+  - no máximo 50 fotos de teste **por IP** (`RENDER2GO_TESTE_FOTOS_IP`). Assim cinco pessoas da mesma empresa, na mesma rede, conseguem fazer o teste cada uma, e quem troca de navegador para juntar testes esbarra no teto da rede.
 - **Dispositivo:** a página cria um identificador aleatório e guarda no próprio navegador. Janela anônima ou dados apagados geram outro; por isso existe o teto por IP.
 - **Sinais no `/aprovar`, tabela "Dispositivos":** um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes; fusos horários diferentes também são sinal de VPN.
 - **Pedido recusado libera o teste** do cliente, para ele corrigir e mandar de novo.
@@ -147,13 +147,13 @@ A página do cliente tem um formulário de suporte.
 - **Para receber no seu e-mail**, configure no `.env`:
 
   ```
-  GPU2GO_SMTP_HOST=smtp.gmail.com        # ou o SMTP de um serviço de envio (Brevo, Resend, Mailgun...)
-  GPU2GO_SMTP_PORTA=587
-  GPU2GO_SMTP_TLS=starttls
-  GPU2GO_SMTP_USUARIO=seu-usuario
-  GPU2GO_SMTP_SENHA=senha-de-app        # no Gmail: "senha de app" (exige verificação em duas etapas)
-  GPU2GO_SUPORTE_DE=seu-remetente@...
-  GPU2GO_SUPORTE_PARA=seu-email@...
+  RENDER2GO_SMTP_HOST=smtp.gmail.com        # ou o SMTP de um serviço de envio (Brevo, Resend, Mailgun...)
+  RENDER2GO_SMTP_PORTA=587
+  RENDER2GO_SMTP_TLS=starttls
+  RENDER2GO_SMTP_USUARIO=seu-usuario
+  RENDER2GO_SMTP_SENHA=senha-de-app        # no Gmail: "senha de app" (exige verificação em duas etapas)
+  RENDER2GO_SUPORTE_DE=seu-remetente@...
+  RENDER2GO_SUPORTE_PARA=seu-email@...
   ```
 
   Depois rode `docker compose up -d`.
@@ -162,12 +162,12 @@ A página do cliente tem um formulário de suporte.
 
 ## 5.1.3 O que o cliente vê enquanto espera
 
-- **Em análise:** "começa em até N min". O tempo vem de `GPU2GO_PRAZO_REVISAO_MIN` (padrão 60); ajuste ao seu ritmo de revisão.
+- **Em análise:** "começa em até N min". O tempo vem de `RENDER2GO_PRAZO_REVISAO_MIN` (padrão 60); ajuste ao seu ritmo de revisão.
 - **Na fila:** "começa em cerca de N min". A conta considera o preparo do gerador, a espera de juntar testes gratuitos e os vídeos à frente.
 - **Gerando:** "termina em cerca de N min", pela média dos últimos vídeos prontos.
 - **Sempre:** um ponto pulsando e "Atualizado às HH:MM:SS". A página se atualiza sozinha a cada 10 s. Nenhuma etapa interna aparece.
 - **Vídeos prontos:** o nome abre o vídeo numa aba nova; "baixar" salva o arquivo.
-- **Modelo de geração:** a página mostra os modelos oferecidos (hoje só o Wan 2.2) e o pedido guarda qual foi usado. Para acrescentar um modelo, veja `servico/src/gpu2go_servico/modelos.py`. O worker recusa modelo que não conhece.
+- **Modelo de geração:** a página mostra os modelos oferecidos (hoje só o Wan 2.2) e o pedido guarda qual foi usado. Para acrescentar um modelo, veja `servico/src/render2go_servico/modelos.py`. O worker recusa modelo que não conhece.
 
 ## 5.2 O que fica guardado
 

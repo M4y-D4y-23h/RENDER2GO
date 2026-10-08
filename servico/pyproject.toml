@@ -1,21 +1,21 @@
 [project]
-name = "gpu2go-servico"
+name = "render2go-servico"
 version = "0.1.0"
-description = "Serviço do GPU2GO: API dos lotes, fila, armazenamento (R2) e orquestrador de pods"
+description = "Serviço do Render2Go: API dos lotes, fila, armazenamento (R2) e orquestrador de pods"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.118.0",
     "uvicorn==0.37.0",
     "psycopg[binary]==3.2.10",
     "opencv-python-headless==4.12.0.88",  # aviso de pessoas no /aprovar (pessoas.py)
-    "gpu2go-worker",
+    "render2go-worker",
 ]
 
 [project.scripts]
-gpu2go-servico = "gpu2go_servico.cli:main"
+render2go-servico = "render2go_servico.cli:main"
 
 [tool.uv.sources]
-gpu2go-worker = { path = "../worker", editable = true }
+render2go-worker = { path = "../worker", editable = true }
 
 [dependency-groups]
 dev = ["pytest==8.4.2", "ruff==0.13.3", "httpx==0.28.1"]
@@ -25,7 +25,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/gpu2go_servico"]
+packages = ["src/render2go_servico"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -73,8 +73,8 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     assert cli.locator("#modelo option").all_inner_texts() == ["Wan 2.2 · imagem para vídeo · 14B"]
     assert cli.locator("#declarante").count() == 0
     cli.check("#consentimento")
-    if os.environ.get("GPU2GO_CAPTURAS"):
-        cli.screenshot(path=os.path.join(os.environ["GPU2GO_CAPTURAS"], "cliente-teste.png"), full_page=True)
+    if os.environ.get("RENDER2GO_CAPTURAS"):
+        cli.screenshot(path=os.path.join(os.environ["RENDER2GO_CAPTURAS"], "cliente-teste.png"), full_page=True)
     cli.fill("#prompt", "a câmera se aproxima devagar do produto")
     cli.select_option("#duracao", "3")
     cli.click("#enviar")
@@ -94,8 +94,8 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     assert "sem pessoas detectadas" in adm.locator(".grade").inner_text()
     assert "Autorização marcada em" in adm.locator("#pendentes .autorizacao").inner_text()
     assert "marcou ter autorização" in adm.locator("#pendentes .aviso.alerta").inner_text()
-    if os.environ.get("GPU2GO_CAPTURAS"):
-        adm.screenshot(path=os.path.join(os.environ["GPU2GO_CAPTURAS"], "aprovar.png"), full_page=True)
+    if os.environ.get("RENDER2GO_CAPTURAS"):
+        adm.screenshot(path=os.path.join(os.environ["RENDER2GO_CAPTURAS"], "aprovar.png"), full_page=True)
     adm.click(".acoes button.primario")
     adm.wait_for_selector("text=Nada aguardando revisão.")
     # histórico: o pedido aprovado, com cliente e IP; e o uso por IP
@@ -134,6 +134,6 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     adm.click("#atualizar")
     adm.wait_for_selector("#suporte .msg-suporte")
     assert "Preciso de ajuda" in adm.locator("#suporte").inner_text()
-    if os.environ.get("GPU2GO_CAPTURAS"):
-        cli.screenshot(path=os.path.join(os.environ["GPU2GO_CAPTURAS"], "cliente.png"), full_page=True)
+    if os.environ.get("RENDER2GO_CAPTURAS"):
+        cli.screenshot(path=os.path.join(os.environ["RENDER2GO_CAPTURAS"], "cliente.png"), full_page=True)
     assert erros == []

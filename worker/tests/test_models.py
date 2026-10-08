@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from gpu2go_worker import models as m
+from render2go_worker import models as m
 
 # Tamanhos exatos da seção 2 da especificação (referencia/especificacao-pipeline-manual.md)
 SPEC_BYTES = {

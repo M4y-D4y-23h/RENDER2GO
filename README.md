@@ -1,4 +1,4 @@
-# GPU2GO
+# Render2Go
 
 Plataforma web para gerar vídeos curtos com IA (Wan 2.2 + compilador de prompts em Ollama) a partir de um pedido em português, de qualquer dispositivo, sem terminal nem ComfyUI visível.
 

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
+Projeto Render2Go: plataforma web de geração de vídeo com IA (ver `README.md`).
 **Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); imagem montada pelo RunPod a partir do GitHub (ADR 0002, aceito); medições pendentes da primeira build lá. **Caminho escolhido (docs/05): A, serviço de marketing com IA para pequenos negócios**: foco em **lotes de 50+ fotos com um pedido só**, renderizados em vários pods (docs/05, seção 5.1; `lote.py`, `acabamento.py`, presets v2, receitas); fase 2 (`lote_nuvem.py`) validada em GPU; **fase 3 implantada** em `servico/` (API, fila, orquestrador, páginas; ADR 0004 proposto) em https://app.render2go.com (Hetzner, docs/09; 1º lote real em 08/10); aviso de pessoas, histórico e teste gratuito com limite por IP e agrupamento; filtro de imagem reservado (ADR 0005 proposto); Etapas 4–6 em pausa. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
 
 ## Fontes de verdade
@@ -19,8 +19,8 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 - Ollama em processo separado do ComfyUI; compilar antes de renderizar; reservar VRAM (`--reserve-vram`).
 - PyTorch `+cu128` (driver ≥ 570); não usar as wheels CUDA 13 do PyPI.
 - Nos workers, ComfyUI e Ollama só em `127.0.0.1`; nenhuma porta exposta.
-- Payload de job sem binário: imagens e vídeos trafegam por URL assinada, só https e só hosts de `GPU2GO_ALLOWED_URL_HOSTS`.
-- Worker sem filtros C1–C2 não processa jobs (`GPU2GO_SAFETY`); `disabled-sfw-tests` só em endpoints com "teste" no nome.
+- Payload de job sem binário: imagens e vídeos trafegam por URL assinada, só https e só hosts de `RENDER2GO_ALLOWED_URL_HOSTS`.
+- Worker sem filtros C1–C2 não processa jobs (`RENDER2GO_SAFETY`); `disabled-sfw-tests` só em endpoints com "teste" no nome.
 - Termos dos presets são anexados ao prompt pelo código, nunca reescritos pelo LLM. Preset novo = arquivo novo (`presets.v<N>.json`) que mantém todos os termos da versão anterior. Prompt do compilador novo = arquivo novo (`compiler-<perfil>.v<N>.txt`) + rodada de fidelidade.
 - Templates candidatos ficam em `worker/workflows/experimental/` (gerados por `tools/build_t2v_templates.py`); só vão para `worker/workflows/` com ADR aceito.
 
@@ -35,7 +35,7 @@ Projeto GPU2GO: plataforma web de geração de vídeo com IA (ver `README.md`).
 ## Comandos
 
 - Testes e lint: `cd worker && uv sync --python 3.12 && uv run pytest -q && uv run ruff check . ../tools && uv run ruff format --check . ../tools`
-- Serviço (fase 3): `cd servico && uv sync --python 3.12 && uv run pytest -q && uv run ruff check src tests && uv run ruff format --check src tests`; Postgres de teste por `GPU2GO_TESTE_PG`; páginas: `cd servico/web && npm ci && npm run build` (o `app.js` é versionado; o CI confere) e teste no navegador com `uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py`
+- Serviço (fase 3): `cd servico && uv sync --python 3.12 && uv run pytest -q && uv run ruff check src tests && uv run ruff format --check src tests`; Postgres de teste por `RENDER2GO_TESTE_PG`; páginas: `cd servico/web && npm ci && npm run build` (o `app.js` é versionado; o CI confere) e teste no navegador com `uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py`
 - Template em dia com o export: `python tools/derive_i2v_template.py --check`
 - Candidatos T2V em dia: `python tools/build_t2v_templates.py --check`
 - Dockerfiles do RunPod em dia: `python tools/build_runpod_dockerfiles.py --check` (gerados; nunca editar `infra/runpod/Dockerfile.*` à mão)

@@ -44,7 +44,7 @@ comfy-angle
 # huggingface-hub 1.x quebra o ComfyUI na subida (mesmo pin do worker-comfyui)
 huggingface-hub<1.0
 
-# Pacote gpu2go_worker
+# Pacote render2go_worker
 websocket-client
 
 # Handler do RunPod Serverless (SDK oficial, MIT)

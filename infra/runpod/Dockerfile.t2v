@@ -27,8 +27,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UV_LINK_MODE=copy \
     COMFY_DIR=/opt/comfyui \
     OLLAMA_MODELS=/opt/ollama/models \
-    GPU2GO_WORKER_DIR=/opt/gpu2go/worker \
-    PYTHONPATH=/opt/gpu2go/worker/src
+    RENDER2GO_WORKER_DIR=/opt/render2go/worker \
+    PYTHONPATH=/opt/render2go/worker/src
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3.12 python3.12-venv ca-certificates curl git ffmpeg zstd unzip tini \
@@ -36,11 +36,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=uv /uv /usr/local/bin/uv
-COPY worker/scripts/ca-env.sh /usr/local/lib/gpu2go/ca-env.sh
+COPY worker/scripts/ca-env.sh /usr/local/lib/render2go/ca-env.sh
 
 # Dependências Python com versões e hashes fixados (worker/requirements.lock)
 COPY worker/requirements.lock /tmp/requirements.lock
-RUN . /usr/local/lib/gpu2go/ca-env.sh \
+RUN . /usr/local/lib/render2go/ca-env.sh \
     && export UV_HTTP_TIMEOUT=300 UV_CONCURRENT_DOWNLOADS=4 \
     && uv venv /opt/venv --python /usr/bin/python3.12 \
     && uv pip install --no-cache --require-hashes -r /tmp/requirements.lock \
@@ -50,13 +50,13 @@ RUN . /usr/local/lib/gpu2go/ca-env.sh \
     && rm /tmp/requirements.lock
 
 # ComfyUI na tag fixada, conferindo o commit
-RUN . /usr/local/lib/gpu2go/ca-env.sh \
+RUN . /usr/local/lib/render2go/ca-env.sh \
     && git clone --depth 1 --branch "${COMFYUI_REF}" https://github.com/comfyanonymous/ComfyUI.git "${COMFY_DIR}" \
     && test "$(git -C "${COMFY_DIR}" rev-parse HEAD)" = "${COMFYUI_COMMIT}" \
     && rm -rf "${COMFY_DIR}/.git"
 
 # Patch obrigatório do encoder NSFW-UMT5 (só monkeypatch; revisado: sem rede nem I/O)
-RUN . /usr/local/lib/gpu2go/ca-env.sh \
+RUN . /usr/local/lib/render2go/ca-env.sh \
     && curl -fsSL -o /tmp/umt5.zip "${UMT5_PATCH_URL}" \
     && echo "${UMT5_PATCH_SHA256}  /tmp/umt5.zip" | sha256sum -c - \
     && unzip -q /tmp/umt5.zip -d "${COMFY_DIR}/custom_nodes/" \
@@ -64,7 +64,7 @@ RUN . /usr/local/lib/gpu2go/ca-env.sh \
     && test -f "${COMFY_DIR}/custom_nodes/ComfyUI-UMT5-Extended/__init__.py"
 
 # Ollama na versão fixada, conferindo o checksum publicado no release
-RUN . /usr/local/lib/gpu2go/ca-env.sh \
+RUN . /usr/local/lib/render2go/ca-env.sh \
     && curl -fsSL -o /tmp/ollama.tar.zst \
         "https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-linux-amd64.tar.zst" \
     && echo "${OLLAMA_SHA256}  /tmp/ollama.tar.zst" | sha256sum -c - \
@@ -79,16 +79,16 @@ ARG WITH_COMPILER_MODEL=1
 ARG COMPILER_MODEL=huihui_ai/qwen2.5-abliterate:7b
 ARG COMPILER_MODEL_DIGEST=sha256:212345411ab817a8d7669ed63f24a30f2e2a2cd297455a6aad1de50c82f7691c
 
-COPY worker/pyproject.toml worker/models.lock.json worker/entrypoint.sh /opt/gpu2go/worker/
-COPY worker/src /opt/gpu2go/worker/src
-COPY worker/scripts /opt/gpu2go/worker/scripts
-COPY worker/workflows /opt/gpu2go/worker/workflows
-COPY worker/prompts /opt/gpu2go/worker/prompts
-COPY worker/presets /opt/gpu2go/worker/presets
-COPY worker/filtros /opt/gpu2go/worker/filtros
-RUN chmod +x /opt/gpu2go/worker/entrypoint.sh \
-    && python -c "import runpod, gpu2go_worker.handler_runpod, gpu2go_worker.jobs"
-# A versão da imagem (GPU2GO_IMAGE_VERSION) vem do endpoint em runtime, não de um ARG:
+COPY worker/pyproject.toml worker/models.lock.json worker/entrypoint.sh /opt/render2go/worker/
+COPY worker/src /opt/render2go/worker/src
+COPY worker/scripts /opt/render2go/worker/scripts
+COPY worker/workflows /opt/render2go/worker/workflows
+COPY worker/prompts /opt/render2go/worker/prompts
+COPY worker/presets /opt/render2go/worker/presets
+COPY worker/filtros /opt/render2go/worker/filtros
+RUN chmod +x /opt/render2go/worker/entrypoint.sh \
+    && python -c "import runpod, render2go_worker.handler_runpod, render2go_worker.jobs"
+# A versão da imagem (RENDER2GO_IMAGE_VERSION) vem do endpoint em runtime, não de um ARG:
 # um ARG aqui invalidaria o cache das camadas de modelos do alvo full.
 
 # Teste de fumaça (CPU, sem GPU): o ComfyUI importa todos os nós, o patch UMT5 carrega,
@@ -101,30 +101,30 @@ RUN cd "${COMFY_DIR}" \
 RUN cd "${COMFY_DIR}" \
     && (python main.py --cpu --listen 127.0.0.1 --port 8188 > /tmp/comfy.log 2>&1 &) \
     && for i in $(seq 1 120); do curl -fsS -o /dev/null http://127.0.0.1:8188/system_stats && break; sleep 1; done \
-    && python -m gpu2go_worker.template --comfy http://127.0.0.1:8188 \
-        /opt/gpu2go/worker/workflows/*.api.json \
+    && python -m render2go_worker.template --comfy http://127.0.0.1:8188 \
+        /opt/render2go/worker/workflows/*.api.json \
     || (tail -50 /tmp/comfy.log; exit 1)
 
 # Modelo do compilador, conferindo o digest da camada de pesos
-RUN . /usr/local/lib/gpu2go/ca-env.sh \
-    && /opt/gpu2go/worker/scripts/pull_compiler_model.sh "$COMPILER_MODEL" "$COMPILER_MODEL_DIGEST"
+RUN . /usr/local/lib/render2go/ca-env.sh \
+    && /opt/render2go/worker/scripts/pull_compiler_model.sh "$COMPILER_MODEL" "$COMPILER_MODEL_DIGEST"
 
 ENV MODE=pod
-ENTRYPOINT ["/usr/bin/tini", "--", "/opt/gpu2go/worker/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/render2go/worker/entrypoint.sh"]
 
 # ---------------------------------------------------------------------------------------
 FROM slim AS full-t2v
 
-RUN . /usr/local/lib/gpu2go/ca-env.sh \
-    && python -m gpu2go_worker.models wan21_vae --models-dir "${COMFY_DIR}/models"
-RUN . /usr/local/lib/gpu2go/ca-env.sh \
-    && python -m gpu2go_worker.models nsfw_umt5_xxl_v2_fp8 --models-dir "${COMFY_DIR}/models"
-RUN . /usr/local/lib/gpu2go/ca-env.sh \
-    && python -m gpu2go_worker.models lightning_t2v_v11_high lightning_t2v_v11_low --models-dir "${COMFY_DIR}/models"
-RUN . /usr/local/lib/gpu2go/ca-env.sh \
-    && python -m gpu2go_worker.models wan22_t2v_a14b_high_fp8 --models-dir "${COMFY_DIR}/models"
-RUN . /usr/local/lib/gpu2go/ca-env.sh \
-    && python -m gpu2go_worker.models wan22_t2v_a14b_low_fp8 --models-dir "${COMFY_DIR}/models"
+RUN . /usr/local/lib/render2go/ca-env.sh \
+    && python -m render2go_worker.models wan21_vae --models-dir "${COMFY_DIR}/models"
+RUN . /usr/local/lib/render2go/ca-env.sh \
+    && python -m render2go_worker.models nsfw_umt5_xxl_v2_fp8 --models-dir "${COMFY_DIR}/models"
+RUN . /usr/local/lib/render2go/ca-env.sh \
+    && python -m render2go_worker.models lightning_t2v_v11_high lightning_t2v_v11_low --models-dir "${COMFY_DIR}/models"
+RUN . /usr/local/lib/render2go/ca-env.sh \
+    && python -m render2go_worker.models wan22_t2v_a14b_high_fp8 --models-dir "${COMFY_DIR}/models"
+RUN . /usr/local/lib/render2go/ca-env.sh \
+    && python -m render2go_worker.models wan22_t2v_a14b_low_fp8 --models-dir "${COMFY_DIR}/models"
 
 ENV MODEL_SET=t2v_a14b_fp8
 

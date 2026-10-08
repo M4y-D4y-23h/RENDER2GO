@@ -1,6 +1,6 @@
 import pytest
 
-from gpu2go_worker import presets as p
+from render2go_worker import presets as p
 
 
 def test_compose_labeled_input_and_verbatim_suffix():

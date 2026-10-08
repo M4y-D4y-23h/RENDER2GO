@@ -7,7 +7,7 @@ import pytest
 from conftest import I2V_TEMPLATE, WORKER
 from PIL import Image
 
-from gpu2go_worker import cli_submit, compiler, lote, presets
+from render2go_worker import cli_submit, compiler, lote, presets
 
 PADRAO = WORKER.parent / "fixtures" / "sfw" / "padrao-teste-640.png"
 

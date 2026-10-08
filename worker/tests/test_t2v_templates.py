@@ -5,8 +5,8 @@ import sys
 import pytest
 from conftest import T2V_TEMPLATES, WORKER
 
-from gpu2go_worker import models
-from gpu2go_worker import template as t
+from render2go_worker import models
+from render2go_worker import template as t
 
 
 def test_generated_templates_are_in_sync():

@@ -2,9 +2,9 @@ import os
 
 import pytest
 
-from gpu2go_servico.db import Banco
+from render2go_servico.db import Banco
 
-PG_URL = os.environ.get("GPU2GO_TESTE_PG", "postgresql://postgres@/gpu2go_teste?host=/var/tmp&port=55432")
+PG_URL = os.environ.get("RENDER2GO_TESTE_PG", "postgresql://postgres@/render2go_teste?host=/var/tmp&port=55432")
 
 
 def _pg_disponivel() -> bool:

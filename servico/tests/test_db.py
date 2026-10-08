@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from gpu2go_servico.db import MAX_TENTATIVAS, BancoError
+from render2go_servico.db import MAX_TENTATIVAS, BancoError
 
 
 def _lote(b, n_fotos=2, variacoes=1):
@@ -168,7 +168,7 @@ def test_work_summary_and_verification_fields(banco):
 def test_schema_upgrade_adds_new_columns_to_an_existing_database(tmp_path):
     import sqlite3
 
-    from gpu2go_servico.db import Banco
+    from render2go_servico.db import Banco
 
     caminho = tmp_path / "antigo.db"
     con = sqlite3.connect(caminho)  # tabela de fotos como na primeira implantação, sem "analise"

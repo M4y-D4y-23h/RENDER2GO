@@ -5,8 +5,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 from conftest import WORKER
 
-from gpu2go_worker import bench, runpod_endpoints, runpod_pods
-from gpu2go_worker.safety import SFW_TESTS
+from render2go_worker import bench, runpod_endpoints, runpod_pods
+from render2go_worker.safety import SFW_TESTS
 
 INFRA = WORKER.parent / "infra" / "runpod"
 
@@ -38,8 +38,8 @@ def test_shipped_configs_build_only_with_filters_and_hosts():
             cfg, "reg/img:2026.10.1", "2026.10.1", "storage.example", True, "teste"
         )
         assert ep["name"].endswith("-teste") and tpl["isServerless"] is True
-        assert tpl["env"]["GPU2GO_SAFETY"] == SFW_TESTS and tpl["ports"] == []
-        assert tpl["env"]["GPU2GO_IMAGE_VERSION"] == "2026.10.1"
+        assert tpl["env"]["RENDER2GO_SAFETY"] == SFW_TESTS and tpl["ports"] == []
+        assert tpl["env"]["RENDER2GO_IMAGE_VERSION"] == "2026.10.1"
         assert ep["allowedCudaVersions"][0] == "12.8" and ep["flashboot"] is True
 
 
@@ -215,7 +215,7 @@ def test_github_mode_only_adjusts_an_existing_endpoint(monkeypatch):
     (p_ep, b_ep), (p_tpl, b_tpl) = patches
     assert p_ep == "/endpoints/e9" and b_ep["flashboot"] is True
     assert p_tpl == "/templates/tg" and set(b_tpl) == {"env"}  # a imagem não é tocada
-    assert b_tpl["env"]["GPU2GO_IMAGE_VERSION"] == "v0.3.0"
+    assert b_tpl["env"]["RENDER2GO_IMAGE_VERSION"] == "v0.3.0"
 
 
 def test_cli_requires_exactly_one_image_source(monkeypatch, capsys):

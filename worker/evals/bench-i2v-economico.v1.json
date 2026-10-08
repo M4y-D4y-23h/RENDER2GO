@@ -1,5 +1,5 @@
 {
-  "_comment": "Bench do endpoint I2V econômico (RTX 4090). input_image_url: imagem SFW num host listado em GPU2GO_ALLOWED_URL_HOSTS do endpoint. 4 células x 13 jobs = 52 jobs, cobre o aceite de 50 jobs seguidos.",
+  "_comment": "Bench do endpoint I2V econômico (RTX 4090). input_image_url: imagem SFW num host listado em RENDER2GO_ALLOWED_URL_HOSTS do endpoint. 4 células x 13 jobs = 52 jobs, cobre o aceite de 50 jobs seguidos.",
   "name": "I2V econômico (RTX 4090) v1",
   "mode": "i2v",
   "template": "i2v_r1v2@1",

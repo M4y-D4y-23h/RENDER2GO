@@ -5,8 +5,8 @@ from fractions import Fraction
 import pytest
 from conftest import WORKER
 
-from gpu2go_worker import acabamento as ac
-from gpu2go_worker import video
+from render2go_worker import acabamento as ac
+from render2go_worker import video
 
 PADRAO = WORKER.parent / "fixtures" / "sfw" / "padrao-teste-640.png"
 com_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg ausente")

@@ -7,7 +7,7 @@
 
 No serviço de marketing SFW, a segurança fica assim até o C2 existir:
 
-1. **C1 em três pontos** (`gpu2go_worker/filtros.py`, listas em `filtros/c1.v2.json`; a v2, de 08/10/2026, mantém a v1 e acrescenta despir, roupa íntima e movimentos sexualizados):
+1. **C1 em três pontos** (`render2go_worker/filtros.py`, listas em `filtros/c1.v2.json`; a v2, de 08/10/2026, mantém a v1 e acrescenta despir, roupa íntima e movimentos sexualizados):
    - na entrada do pedido, pela API;
    - no prompt compilado, pelo worker;
    - no prompt compilado de novo, pela API, antes de liberar os renders.
@@ -18,10 +18,10 @@ No serviço de marketing SFW, a segurança fica assim até o C2 existir:
    - O aprovador vê, em `/aprovar`, as miniaturas, o pedido e o resultado do C1, e aprova ou recusa com motivo. O cliente vê o motivo.
    - A aprovação gera um carimbo HMAC que o worker pode conferir.
    - **Exceção: plano interno** (08/10/2026). Os pedidos do próprio dono do serviço são aprovados automaticamente no envio (`aprovado_por = auto:interno`), porque quem pede é o próprio revisor. Continuam valendo o C1, o aviso de pessoas, o registro de autorização e a conferência do 1º quadro. O plano é criado só com o token de administração e não deve ser dado a clientes.
-3. **Worker da fila só com `GPU2GO_SAFETY=c1-revisao-humana`.** O modo de testes SFW (`disabled-sfw-tests`) não sobe a fila.
+3. **Worker da fila só com `RENDER2GO_SAFETY=c1-revisao-humana`.** O modo de testes SFW (`disabled-sfw-tests`) não sobe a fila.
 4. **O compilador continua sem ser camada de segurança:** a regra `REFUSED` segue no system prompt, e a recusa dele vira erro do lote.
 5. **Pessoas nas fotos:** receitas com pessoas exigem a caixa de autorização por escrito (`exige_consentimento`). O aprovador recusa quando a foto mostra pessoas e a caixa não foi marcada.
-   - Desde 08/10/2026, o servidor analisa cada foto depois do envio (`gpu2go_servico/pessoas.py`: YOLOX-tiny para pessoas, inclusive de costas, e YuNet para rostos) e o `/aprovar` mostra "contém pessoas" por foto e um resumo do lote, em vermelho quando a caixa de autorização não foi marcada.
+   - Desde 08/10/2026, o servidor analisa cada foto depois do envio (`render2go_servico/pessoas.py`: YOLOX-tiny para pessoas, inclusive de costas, e YuNet para rostos) e o `/aprovar` mostra "contém pessoas" por foto e um resumo do lote, em vermelho quando a caixa de autorização não foi marcada.
    - É um aviso, não uma barreira: a análise pode errar, e a falha aparece como "análise indisponível", nunca como "sem pessoas".
    - **Registro de auditoria da autorização** (08/10/2026), em todos os planos, inclusive o teste:
      - marcar a caixa não pede nome (fácil de inventar e incômodo): a declaração fica presa à conta do cliente (código de acesso), à origem e aos sinais do navegador;

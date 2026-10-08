@@ -1,6 +1,6 @@
 import pytest
 
-from gpu2go_worker import compiler as c
+from render2go_worker import compiler as c
 
 
 def test_compile_sends_versioned_system_prompt(fake_ollama):
@@ -74,7 +74,7 @@ def test_non_english_output_fails_after_attempts(fake_ollama):
 
 
 def test_static_camera_sentences_are_dropped_only_with_camera_preset():
-    from gpu2go_worker import compiler as c
+    from render2go_worker import compiler as c
 
     texto = (
         "A slow dolly-in towards the mug. Steam rises gently. Static camera. "
@@ -85,7 +85,7 @@ def test_static_camera_sentences_are_dropped_only_with_camera_preset():
 
 
 def test_compile_with_camera_preset_drops_llm_static_camera(fake_ollama):
-    from gpu2go_worker import compiler as c
+    from render2go_worker import compiler as c
 
     fake_ollama.response = "The product turns slowly on the table. Static camera."
     r = c.compile_prompt(

@@ -5,8 +5,8 @@ import sys
 import pytest
 from conftest import I2V_TEMPLATE, WORKER
 
-from gpu2go_worker import template as t
-from gpu2go_worker.models import load_lock
+from render2go_worker import template as t
+from render2go_worker.models import load_lock
 
 BASE = {"image": "entrada.png", "prompt_en": "A woman walks toward the camera.", "seed": 42}
 

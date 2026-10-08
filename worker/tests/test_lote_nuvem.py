@@ -12,8 +12,8 @@ import pytest
 from conftest import WORKER
 from PIL import Image
 
-from gpu2go_worker import lote_nuvem as ln
-from gpu2go_worker import pod_agente, runpod_pods
+from render2go_worker import lote_nuvem as ln
+from render2go_worker import pod_agente, runpod_pods
 
 PADRAO = WORKER.parent / "fixtures" / "sfw" / "padrao-teste-640.png"
 
@@ -73,7 +73,7 @@ def _remoto(tmp_path, comfy, ollama):
     shim.write_text(
         "import sys\n"
         f"sys.path.insert(0, {str(WORKER / 'src')!r})\n"
-        "from gpu2go_worker import lote\n"
+        "from render2go_worker import lote\n"
         "a = sys.argv[1:]\n"
         "if '--gpus' in a:\n"
         "    i = a.index('--gpus'); del a[i:i + 2]\n"
@@ -84,7 +84,7 @@ def _remoto(tmp_path, comfy, ollama):
         raiz=str(tmp_path / "pod"),
         verificar_cuda=False,
         instalar="echo PRONTO > {raiz}/estado",
-        servicos="echo '[gpu2go] pronto'",
+        servicos="echo '[render2go] pronto'",
         lote=f"{sys.executable} {shim}",
     )
 
@@ -167,6 +167,9 @@ def test_only_one_pod_writes_the_volume_cache_and_waits_for_it(
     pasta, tmp_path, fake_comfy, fake_ollama, sem_git, monkeypatch, capsys
 ):
     monkeypatch.setattr(ln, "ESPERA_GUARDAR_S", 5)
+    # p1 dado como perdido já na 1ª verificação: assim ainda há trabalho e o substituto sempre sobe
+    # (com 3 s de espera, o p2 às vezes terminava as 5 fotos antes e o substituto não era preciso)
+    monkeypatch.setattr(ln, "ESPERA_AGENTE_S", 0)
     prov = Provedor(quebrados=1)  # p1 (gravador) nunca responde: o substituto herda a gravação
     remoto = _remoto(tmp_path, fake_comfy.url, fake_ollama.url)
     remoto.instalar = "echo PRONTO > {raiz}/estado; echo GUARDADO > {raiz}/guardado"
@@ -176,28 +179,28 @@ def test_only_one_pod_writes_the_volume_cache_and_waits_for_it(
         remoto=remoto,
     )
     assert code == ln.EXIT_OK
-    grava = [e.get("GPU2GO_VOLUME_GRAVA") for e in prov.envs]
+    grava = [e.get("RENDER2GO_VOLUME_GRAVA") for e in prov.envs]
     assert grava[:2] == ["1", None] and grava.count("1") == 2  # p1 e o substituto dele
     assert "cache gravado no volume" in capsys.readouterr().err
 
 
-@pytest.mark.skipif(not os.environ.get("GPU2GO_TESTE_S3"), reason="sem S3 local")
+@pytest.mark.skipif(not os.environ.get("RENDER2GO_TESTE_S3"), reason="sem S3 local")
 def test_first_pod_fills_the_r2_mirror_and_next_lot_gets_signed_urls(
     pasta, tmp_path, fake_comfy, fake_ollama, sem_git, monkeypatch, capsys
 ):
     from test_espelho import modelos_pequenos  # mesma montagem de modelos pequenos
 
-    from gpu2go_worker import espelho as esp_mod
+    from render2go_worker import espelho as esp_mod
 
     pasta_modelos, entradas = modelos_pequenos.__wrapped__(tmp_path, monkeypatch)
     for k, v in {
-        "ENDPOINT": os.environ["GPU2GO_TESTE_S3"],
+        "ENDPOINT": os.environ["RENDER2GO_TESTE_S3"],
         "BUCKET": "gpu2go",
-        "ACCESS_KEY_ID": os.environ["GPU2GO_TESTE_S3_CHAVE"],
-        "SECRET_ACCESS_KEY": os.environ["GPU2GO_TESTE_S3_SEGREDO"],
+        "ACCESS_KEY_ID": os.environ["RENDER2GO_TESTE_S3_CHAVE"],
+        "SECRET_ACCESS_KEY": os.environ["RENDER2GO_TESTE_S3_SEGREDO"],
         "REGION": "us-east-1",
     }.items():
-        monkeypatch.setenv(f"GPU2GO_R2_{k}", v)
+        monkeypatch.setenv(f"RENDER2GO_R2_{k}", v)
     s3 = esp_mod.Armazenamento.do_ambiente()
     for m in entradas.values():
         s3.apagar(f"modelos/{m.sha256}")

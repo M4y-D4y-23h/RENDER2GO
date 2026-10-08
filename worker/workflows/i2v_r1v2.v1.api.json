@@ -10,7 +10,7 @@
   },
   "108": {
     "inputs": {
-      "filename_prefix": "video/gpu2go",
+      "filename_prefix": "video/render2go",
       "format": "auto",
       "format.codec": "auto",
       "codec": "auto",

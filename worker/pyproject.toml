@@ -1,7 +1,7 @@
 [project]
-name = "gpu2go-worker"
+name = "render2go-worker"
 version = "0.1.0"
-description = "Worker do GPU2GO: compila o pedido, preenche o template do ComfyUI e devolve o vídeo"
+description = "Worker do Render2Go: compila o pedido, preenche o template do ComfyUI e devolve o vídeo"
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31",
@@ -10,16 +10,16 @@ dependencies = [
 ]
 
 [project.scripts]
-gpu2go-submit = "gpu2go_worker.cli_submit:main"
-gpu2go-fetch-models = "gpu2go_worker.models:main"
-gpu2go-validate-template = "gpu2go_worker.template:main"
-gpu2go-eval-compiler = "gpu2go_worker.cli_eval:main"
-gpu2go-experiment = "gpu2go_worker.experiment:main"
-gpu2go-video = "gpu2go_worker.video:main"
-gpu2go-runpod = "gpu2go_worker.runpod_pods:main"
-gpu2go-lote = "gpu2go_worker.lote:main"
-gpu2go-lote-nuvem = "gpu2go_worker.lote_nuvem:main"
-gpu2go-acabamento = "gpu2go_worker.acabamento:main"
+render2go-submit = "render2go_worker.cli_submit:main"
+render2go-fetch-models = "render2go_worker.models:main"
+render2go-validate-template = "render2go_worker.template:main"
+render2go-eval-compiler = "render2go_worker.cli_eval:main"
+render2go-experiment = "render2go_worker.experiment:main"
+render2go-video = "render2go_worker.video:main"
+render2go-runpod = "render2go_worker.runpod_pods:main"
+render2go-lote = "render2go_worker.lote:main"
+render2go-lote-nuvem = "render2go_worker.lote_nuvem:main"
+render2go-acabamento = "render2go_worker.acabamento:main"
 
 [dependency-groups]
 dev = [
@@ -32,7 +32,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/gpu2go_worker"]
+packages = ["src/render2go_worker"]
 
 [tool.ruff]
 line-length = 100

@@ -50,7 +50,7 @@
       "node": "108",
       "input": "filename_prefix",
       "type": "str",
-      "default": "video/gpu2go",
+      "default": "video/render2go",
       "max_len": 120
     }
   },

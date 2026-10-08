@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "worker" / "src"))
 
-from gpu2go_worker.lote import main  # noqa: E402
+from render2go_worker.lote import main  # noqa: E402
 
 if __name__ == "__main__":
     sys.exit(main())

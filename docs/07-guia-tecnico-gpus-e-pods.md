@@ -39,7 +39,7 @@ Consolida as medições de 05 a 07/10/2026. Detalhes e relatórios em `worker/ev
 | `allowedCudaVersions` excluía GPUs novas ("sem vaga" falso) | O pedido não restringe; o pod confere o driver |
 | Rede de 2–3 MB/s (37 GB = 3,5 h) | Teste de rede com 4 conexões por 15 s, mínimo 40 MB/s; descarte em ~30 s (~US$ 0,02) |
 | Teste curto aprovou host que entregava 12 MB/s | Teste sustentado; prazo de instalação de 18 min |
-| Datacenter ruim repetido | Memória de datacenters lentos por 7 dias (`~/.cache/gpu2go/datacentros.json`); só pede IDs que a API REST aceita |
+| Datacenter ruim repetido | Memória de datacenters lentos por 7 dias (`~/.cache/render2go/datacentros.json`); só pede IDs que a API REST aceita |
 | Pod que renderiza devagar | Vazão medida a cada pacote; se for > 1,6× o medido, o pod é trocado (até 2 trocas; os vídeos já feitos ficam) |
 | Sem vaga | Espera 60 s antes de gastar outra troca |
 | Proxy do RunPod com 404 transitório | Repetição só de respostas que não vêm do agente |
@@ -67,7 +67,7 @@ Por isso pod caro para mais cedo que pod barato.
 
 **Cache no volume de rede (`--volume <id>`, opcional):**
 - o pod sobe no datacenter do volume;
-- o 1º pod baixa tudo e, depois do PRONTO, grava em `/workspace/gpu2go-cache`: modelos, compilador e o **ambiente inteiro** (venv + ComfyUI + Ollama) num `tar.zst` chaveado pelo `requirements.lock` e pelo Dockerfile;
+- o 1º pod baixa tudo e, depois do PRONTO, grava em `/workspace/render2go-cache`: modelos, compilador e o **ambiente inteiro** (venv + ComfyUI + Ollama) num `tar.zst` chaveado pelo `requirements.lock` e pelo Dockerfile;
 - os pods seguintes **copiam para o disco local** e conferem o SHA-256 (regra do projeto: nunca ler direto do volume). Cópia ruim é apagada e refeita da origem.
 
 Assim o "venv no volume" foi feito sem quebrar a regra do volume não POSIX: o volume guarda um arquivo único, extraído no disco local.

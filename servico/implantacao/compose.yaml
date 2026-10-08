@@ -1,27 +1,28 @@
-# Serviço GPU2GO num servidor só (docs/09-implantacao.md):
+# Serviço Render2Go num servidor só (docs/09-implantacao.md):
 #   API + páginas, orquestrador de pods, Postgres e Caddy (HTTPS automático).
 # Uso: cp exemplo.env .env; edite; docker compose up -d --build
-name: gpu2go
+name: render2go
 
 services:
   api:
     build: { context: ../.., dockerfile: servico/Dockerfile }
-    image: gpu2go-servico
-    command: ["gpu2go-servico", "api"]
+    image: render2go-servico
+    command: ["render2go-servico", "api"]
     env_file: .env
     environment:
-      GPU2GO_DB_URL: postgresql://gpu2go:${POSTGRES_PASSWORD}@postgres:5432/gpu2go
+      # banco e usuário "gpu2go": nomes da primeira implantação (renomear exigiria migrar os dados)
+      RENDER2GO_DB_URL: postgresql://gpu2go:${POSTGRES_PASSWORD}@postgres:5432/gpu2go
     depends_on:
       postgres: { condition: service_healthy }
     restart: unless-stopped
 
   orquestrador:
-    image: gpu2go-servico
-    command: ["gpu2go-servico", "orquestrar"]
+    image: render2go-servico
+    command: ["render2go-servico", "orquestrar"]
     env_file: .env
     environment:
-      GPU2GO_DB_URL: postgresql://gpu2go:${POSTGRES_PASSWORD}@postgres:5432/gpu2go
-    volumes: ["orquestrador:/home/gpu2go/.cache/gpu2go"]  # estado para 'limpar' e memória de datacenters
+      RENDER2GO_DB_URL: postgresql://gpu2go:${POSTGRES_PASSWORD}@postgres:5432/gpu2go
+    volumes: ["orquestrador:/home/render2go/.cache/render2go"]  # estado para 'limpar' e memória de datacenters
     depends_on:
       postgres: { condition: service_healthy }
       api: { condition: service_started }
@@ -32,7 +33,7 @@ services:
         - CMD
         - python
         - -c
-        - "import os,sys,time; sys.exit(time.time() - os.path.getmtime('/home/gpu2go/.cache/gpu2go/orquestrador/vivo') > 180)"
+        - "import os,sys,time; sys.exit(time.time() - os.path.getmtime('/home/render2go/.cache/render2go/orquestrador/vivo') > 180)"
       interval: 60s
       timeout: 5s
       start_period: 60s
@@ -61,7 +62,9 @@ services:
     depends_on: [api]
     restart: unless-stopped
 
+# volumes com o nome da primeira implantação (projeto "gpu2go"): banco, estado do orquestrador e
+# certificados continuam os mesmos depois da troca do nome para Render2Go
 volumes:
-  postgres:
-  orquestrador:
-  caddy:
+  postgres: { name: gpu2go_postgres }
+  orquestrador: { name: gpu2go_orquestrador }
+  caddy: { name: gpu2go_caddy }

@@ -21,7 +21,7 @@
 #   AUTO_TERMINATE_HOURS  modo pod no RunPod: o pod se encerra depois de N horas
 #                     (padrão e máximo: 2; regra do projeto, nenhum pod sem limite)
 #   TERMINATE_ON_BAD_GPU  modo pod no RunPod: encerra o pod se a GPU falhar (padrão: 1)
-#   GPU2GO_SAFETY, GPU2GO_ALLOWED_URL_HOSTS  obrigatórias no serverless (ver jobs.py)
+#   RENDER2GO_SAFETY, RENDER2GO_ALLOWED_URL_HOSTS  obrigatórias no serverless (ver jobs.py)
 set -euo pipefail
 
 MODE="${MODE:-pod}"
@@ -32,12 +32,12 @@ COMFY_PORT="${COMFY_PORT:-8188}"
 RESERVE_VRAM_GB="${RESERVE_VRAM_GB:-6}"
 COMFY_GPUS="${COMFY_GPUS:-1}"
 COMFY_POR_GPU="${COMFY_POR_GPU:-1}"
-WORKER_DIR="${GPU2GO_WORKER_DIR:-/opt/gpu2go/worker}"
+WORKER_DIR="${RENDER2GO_WORKER_DIR:-/opt/render2go/worker}"
 export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
 export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-0}"
 
-log() { echo "[gpu2go] $*"; }
-die() { echo "[gpu2go] ERRO: $*" >&2; exit 1; }
+log() { echo "[render2go] $*"; }
+die() { echo "[render2go] ERRO: $*" >&2; exit 1; }
 
 wait_http() {  # url, segundos, nome
   local i
@@ -72,7 +72,7 @@ fi
 if [[ "$MODE" == "pod" && -n "${RUNPOD_POD_ID:-}" ]]; then
   secs=$(python -c "print(int(float('$AUTO_TERMINATE_HOURS') * 3600))")
   log "desligamento automático em $AUTO_TERMINATE_HOURS h"
-  (sleep "$secs" && python -m gpu2go_worker.runpod_pods autoencerrar) &
+  (sleep "$secs" && python -m render2go_worker.runpod_pods autoencerrar) &
   DEADMAN_PID=$!
 fi
 
@@ -84,7 +84,7 @@ if [[ "${SKIP_GPU_CHECK:-0}" != "1" ]]; then
     # (no serverless, basta sair: o RunPod troca o worker)
     if [[ "$MODE" == "pod" && -n "${RUNPOD_POD_ID:-}" && "${TERMINATE_ON_BAD_GPU:-1}" == "1" ]]; then
       log "encerrando o pod para não cobrar por uma GPU que não roda CUDA"
-      python -m gpu2go_worker.runpod_pods autoencerrar || true
+      python -m render2go_worker.runpod_pods autoencerrar || true
     fi
     die "GPU indisponível (veja a mensagem acima)"
   fi
@@ -94,16 +94,16 @@ fi
 IFS=, read -ra model_sets <<< "$MODEL_SET"
 fetch_args=("${model_sets[@]}" --models-dir "$COMFY_DIR/models")
 [[ "${VERIFY_SHA:-0}" == "1" ]] || fetch_args+=(--no-sha)
-if ! python -m gpu2go_worker.models "${fetch_args[@]}" --check-only >/dev/null 2>&1; then
+if ! python -m render2go_worker.models "${fetch_args[@]}" --check-only >/dev/null 2>&1; then
   if [[ -n "${MODELS_FROM_DIR:-}" ]]; then
     log "copiando modelos de $MODELS_FROM_DIR (leitura sequencial; ~3 min para 37 GB)"
-    python -m gpu2go_worker.models "${fetch_args[@]}" --from-dir "$MODELS_FROM_DIR" \
+    python -m render2go_worker.models "${fetch_args[@]}" --from-dir "$MODELS_FROM_DIR" \
       || die "falha ao copiar os modelos"
   elif [[ "${MODELS_FETCH:-0}" == "1" ]]; then
     log "baixando modelos do Hugging Face"
-    python -m gpu2go_worker.models "${fetch_args[@]}" || die "falha ao baixar os modelos"
+    python -m render2go_worker.models "${fetch_args[@]}" || die "falha ao baixar os modelos"
   elif [[ "${REQUIRE_MODELS:-1}" == "1" ]]; then
-    python -m gpu2go_worker.models "${fetch_args[@]}" --check-only || true
+    python -m render2go_worker.models "${fetch_args[@]}" --check-only || true
     die "modelos ausentes: use a imagem full, MODELS_FROM_DIR ou MODELS_FETCH=1"
   else
     log "AVISO: subindo sem os modelos (REQUIRE_MODELS=0)"
@@ -158,7 +158,7 @@ log "pronto"
 HANDLER_PID=""
 if [[ "$MODE" == "serverless" ]]; then
   log "subindo o handler do RunPod"
-  setsid python -m gpu2go_worker.handler_runpod > >(sed -u 's/^/[handler] /') 2>&1 &
+  setsid python -m render2go_worker.handler_runpod > >(sed -u 's/^/[handler] /') 2>&1 &
   HANDLER_PID=$!
 fi
 

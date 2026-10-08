@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from gpu2go_worker import video
+from render2go_worker import video
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg ausente")
 

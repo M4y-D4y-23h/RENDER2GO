@@ -1,6 +1,6 @@
 import json
 
-from gpu2go_worker import compiler, fidelity
+from render2go_worker import compiler, fidelity
 
 CASE = {
     "id": "x",
@@ -78,7 +78,7 @@ def test_cases_file_is_valid_and_sfw_policy_is_explicit():
 
 
 def test_eval_cli_writes_reports(fake_ollama, tmp_path):
-    from gpu2go_worker import cli_eval
+    from render2go_worker import cli_eval
 
     fake_ollama.response = GOOD
     out = tmp_path / "rel"

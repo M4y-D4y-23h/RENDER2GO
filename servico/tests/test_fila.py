@@ -13,11 +13,11 @@ from urllib.parse import urlsplit
 
 import pytest
 import uvicorn
-from gpu2go_worker import cli_submit, fila, media
 from PIL import Image, ImageDraw
+from render2go_worker import cli_submit, fila, media
 
-from gpu2go_servico.api import Config, criar_app
-from gpu2go_servico.db import Banco
+from render2go_servico.api import Config, criar_app
+from render2go_servico.db import Banco
 
 ADMIN, WORKER = "a" * 40, "w" * 40
 com_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg ausente")
@@ -106,7 +106,7 @@ def ambiente(tmp_path, monkeypatch):
             break
         time.sleep(0.05)
     monkeypatch.setattr(media, "check_url", lambda url: None)  # local: http em 127.0.0.1
-    monkeypatch.setenv("GPU2GO_SAFETY", "c1-revisao-humana")
+    monkeypatch.setenv("RENDER2GO_SAFETY", "c1-revisao-humana")
     yield SimpleNamespace(
         url=f"http://127.0.0.1:{porta}", banco=banco, objetos=Deposito.objetos, armazem=armazem, cfg=cfg
     )
@@ -226,14 +226,14 @@ def test_a_video_of_the_wrong_photo_never_reaches_the_client(ambiente, monkeypat
 
 
 def test_worker_refuses_to_start_without_filters(monkeypatch):
-    monkeypatch.delenv("GPU2GO_SAFETY", raising=False)
+    monkeypatch.delenv("RENDER2GO_SAFETY", raising=False)
     with pytest.raises(Exception, match="filtros"):
         fila.WorkerFila(fila.ApiFila("http://127.0.0.1:1", WORKER, "p"), fila.Config(comfy=["x"]))
     assert fila.carimbo_ok("s" * 40, {"lote": "l", "aprovado_em": 1.0, "aprovacao": "falso"}) is False
 
 
 def test_worker_refuses_a_model_it_does_not_have(monkeypatch):
-    monkeypatch.setenv("GPU2GO_SAFETY", "c1-revisao-humana")
+    monkeypatch.setenv("RENDER2GO_SAFETY", "c1-revisao-humana")
     chamadas = []
 
     class Api:

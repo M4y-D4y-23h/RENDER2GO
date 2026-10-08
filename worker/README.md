@@ -22,13 +22,13 @@ Contexto de build: a pasta `worker/`.
 
 ```bash
 # sem modelos de vídeo (~18 GB sem o Qwen; para pods com volume ou MODELS_FETCH=1)
-docker build -f worker/Dockerfile --target slim -t gpu2go-worker:slim worker
+docker build -f worker/Dockerfile --target slim -t render2go-worker:slim worker
 
 # com os modelos de vídeo embutidos (+~37 GB, uma camada por arquivo)
-docker build -f worker/Dockerfile --target full -t gpu2go-worker:full worker
+docker build -f worker/Dockerfile --target full -t render2go-worker:full worker
 
 # só para o bake-off do T2V: slim + ComfyUI-GGUF (modelos entram em runtime)
-docker build -f worker/Dockerfile --target bakeoff -t gpu2go-worker:bakeoff worker
+docker build -f worker/Dockerfile --target bakeoff -t render2go-worker:bakeoff worker
 ```
 
 - A build do `slim` já roda um teste de fumaça em CPU: o ComfyUI importa todos os nós, o patch UMT5 precisa logar `Loaded`, e os templates de `workflows/` são validados contra o `/object_info` dessa versão do ComfyUI.
@@ -39,7 +39,7 @@ docker build -f worker/Dockerfile --target bakeoff -t gpu2go-worker:bakeoff work
 ## Executar (modo `pod`)
 
 ```bash
-docker run --gpus all -e PUBLIC_KEY="$(cat ~/.ssh/id_ed25519.pub)" -p 22:22 gpu2go-worker:full
+docker run --gpus all -e PUBLIC_KEY="$(cat ~/.ssh/id_ed25519.pub)" -p 22:22 render2go-worker:full
 ssh -L 8188:127.0.0.1:8188 root@<host>      # o ComfyUI só escuta em 127.0.0.1
 ```
 
@@ -62,21 +62,21 @@ O entrypoint confere a GPU com um kernel real, confere ou copia os modelos, sobe
 
 ## Modo serverless (Etapa 3)
 
-Com `MODE=serverless`, o entrypoint sobe o Ollama e o ComfyUI em 127.0.0.1 e depois o handler (`gpu2go_worker/handler_runpod.py`, SDK oficial `runpod`). O protocolo do job (entrada, saída e erros tipados) está no doc 02, seção 4, e é implementado em `gpu2go_worker/jobs.py`.
+Com `MODE=serverless`, o entrypoint sobe o Ollama e o ComfyUI em 127.0.0.1 e depois o handler (`render2go_worker/handler_runpod.py`, SDK oficial `runpod`). O protocolo do job (entrada, saída e erros tipados) está no doc 02, seção 4, e é implementado em `render2go_worker/jobs.py`.
 
 | Variável | Obrigatória | Uso |
 |---|---|---|
-| `GPU2GO_SAFETY` | sim | Filtros C1–C2. Sem ela, todo job é recusado (`SAFETY_NOT_CONFIGURED`). `disabled-sfw-tests` só para testes e medições SFW |
-| `GPU2GO_ALLOWED_URL_HOSTS` | sim | Hosts das URLs assinadas (ex.: `storage.exemplo.com,.r2.exemplo.com`). Só https |
-| `GPU2GO_IMAGE_VERSION` | não | Tag da imagem, registrada na saída de cada job |
+| `RENDER2GO_SAFETY` | sim | Filtros C1–C2. Sem ela, todo job é recusado (`SAFETY_NOT_CONFIGURED`). `disabled-sfw-tests` só para testes e medições SFW |
+| `RENDER2GO_ALLOWED_URL_HOSTS` | sim | Hosts das URLs assinadas (ex.: `storage.exemplo.com,.r2.exemplo.com`). Só https |
+| `RENDER2GO_IMAGE_VERSION` | não | Tag da imagem, registrada na saída de cada job |
 | `JOB_TIMEOUT_S` | não | Limite do render (padrão 600) |
-| `GPU2GO_ALLOW_DISCARD_OUTPUT` | não | `1` permite `discard_output` (só no endpoint de teste do bench) |
+| `RENDER2GO_ALLOW_DISCARD_OUTPUT` | não | `1` permite `discard_output` (só no endpoint de teste do bench) |
 
 Para testar o handler localmente, sem GPU (o resultado esperado sem modelos é um erro tipado do ComfyUI):
 
 ```bash
-COMFY_PORT=8188 GPU2GO_SAFETY=disabled-sfw-tests GPU2GO_ALLOWED_URL_HOSTS=storage.example \
-GPU2GO_ALLOW_DISCARD_OUTPUT=1 python -m gpu2go_worker.handler_runpod --test_input \
+COMFY_PORT=8188 RENDER2GO_SAFETY=disabled-sfw-tests RENDER2GO_ALLOWED_URL_HOSTS=storage.example \
+RENDER2GO_ALLOW_DISCARD_OUTPUT=1 python -m render2go_worker.handler_runpod --test_input \
   '{"input": {"job_id": "j1", "mode": "t2v", "template": "t2v_a14b_fp8_lightning@1",
    "compiler": {"prompt_en": "A red ball rolls."}, "discard_output": true,
    "params": {"width": 320, "height": 320, "duration_s": 3, "seed": 42}}}'
@@ -92,7 +92,7 @@ python tools/runpod_pod.py disponibilidade --gpu "NVIDIA GeForce RTX 4090" --gpu
 
 # cria o pod na nuvem secure; sem vaga, tenta a próxima GPU
 export RUNPOD_API_KEY=...        # nas configurações do ambiente, nunca no código
-python tools/runpod_pod.py subir --imagem <registry>/gpu2go-worker:full \
+python tools/runpod_pod.py subir --imagem <registry>/render2go-worker:full \
   --gpu "NVIDIA GeForce RTX 4090" --gpu "NVIDIA GeForce RTX 5090" \
   --auto-encerrar-horas 2
 python tools/runpod_pod.py listar
@@ -131,7 +131,7 @@ python tools/submit_workflow.py \
 
 ## Compilador e testes de fidelidade
 
-Os system prompts ficam em [`prompts/`](prompts/) com versão no nome (`compiler-i2v.v5.txt`); a versão em produção de cada perfil está em `gpu2go_worker/compiler.py`. Mudança de prompt = arquivo novo + rodada de fidelidade.
+Os system prompts ficam em [`prompts/`](prompts/) com versão no nome (`compiler-i2v.v5.txt`); a versão em produção de cada perfil está em `render2go_worker/compiler.py`. Mudança de prompt = arquivo novo + rodada de fidelidade.
 
 ```bash
 python tools/eval_compiler.py --ollama http://127.0.0.1:11434 \
@@ -229,7 +229,7 @@ python tools/lote_nuvem.py --saida entregas/loja --limpar
   - passa pelo teste de CUDA e é encerrado na hora se a GPU estiver com defeito ou o agente não responder em 10 min;
   - instala o worker em ~1,5 min (download em partes, medido em 07/10; `worker/evals/gpu-2026-10-07-volume/`).
 - **Espelho dos modelos no R2 (reserva do Hugging Face, opcional):**
-  - **Configuração:** variáveis `GPU2GO_R2_ENDPOINT` (`https://<conta>.r2.cloudflarestorage.com`), `GPU2GO_R2_BUCKET`, `GPU2GO_R2_ACCESS_KEY_ID` e `GPU2GO_R2_SECRET_ACCESS_KEY`, só na máquina que roda o comando. O pod recebe apenas URLs assinadas.
+  - **Configuração:** variáveis `RENDER2GO_R2_ENDPOINT` (`https://<conta>.r2.cloudflarestorage.com`), `RENDER2GO_R2_BUCKET`, `RENDER2GO_R2_ACCESS_KEY_ID` e `RENDER2GO_R2_SECRET_ACCESS_KEY`, só na máquina que roda o comando. O pod recebe apenas URLs assinadas.
   - **Download:** cada modelo vem da origem e do espelho ao mesmo tempo. Se uma das duas cair, segue pela outra. O SHA-256 decide, e uma cópia ruim é baixada de novo.
   - **Enchimento:** o que falta no espelho é enviado pelo 1º pod do lote, em partes de 512 MB, enquanto ele renderiza (~50 GB, ~US$ 0,75/mês no R2).
   - `--sem-espelho` desliga.

@@ -1,7 +1,7 @@
 # ADR 0005: filtro de imagem nas fotos e nos quadros dos vídeos (2ª porta)
 
 - **Status:** proposto (08/10/2026). Aceitar é decisão do dono do projeto, depois da validação da seção "Antes de aceitar".
-- **Contexto:** o C1 (ADR 0004) olha só o texto. Um pedido com texto inocente ("a câmera se aproxima") pode vir com uma foto expositiva, ou o modelo pode gerar um quadro expositivo a partir de uma foto que passou. Hoje, quem enxerga a imagem é só a revisão humana, e só a foto de entrada (o vídeo pronto não é revisto). O aviso de pessoas (`gpu2go_servico/pessoas.py`) já criou o caminho: o servidor baixa cada foto depois do envio, analisa em CPU e grava o resultado em `fotos.analise`.
+- **Contexto:** o C1 (ADR 0004) olha só o texto. Um pedido com texto inocente ("a câmera se aproxima") pode vir com uma foto expositiva, ou o modelo pode gerar um quadro expositivo a partir de uma foto que passou. Hoje, quem enxerga a imagem é só a revisão humana, e só a foto de entrada (o vídeo pronto não é revisto). O aviso de pessoas (`render2go_servico/pessoas.py`) já criou o caminho: o servidor baixa cada foto depois do envio, analisa em CPU e grava o resultado em `fotos.analise`.
 
 ## Decisão (proposta)
 

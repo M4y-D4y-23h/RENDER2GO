@@ -35,9 +35,9 @@ Gerados por `tools/build_t2v_templates.py` em `worker/workflows/experimental/`. 
 Num pod com GPU de 24 GB (RTX 4090, o tier mais barato) e o Global Volume:
 
 ```bash
-docker build -f worker/Dockerfile --target bakeoff -t gpu2go-worker:bakeoff worker
+docker build -f worker/Dockerfile --target bakeoff -t render2go-worker:bakeoff worker
 docker run --gpus all -e MODEL_SET=i2v_r1v2,t2v_a14b_q6k,t2v_a14b_fp8 \
-  -e MODELS_FROM_DIR=/workspace/models -e RESERVE_VRAM_GB=4 ... gpu2go-worker:bakeoff
+  -e MODELS_FROM_DIR=/workspace/models -e RESERVE_VRAM_GB=4 ... render2go-worker:bakeoff
 python tools/experiment.py worker/evals/t2v-bakeoff.v1.json --out saida/bakeoff
 ```
 

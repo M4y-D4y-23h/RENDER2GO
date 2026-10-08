@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "worker" / "Dockerfile"
 OUT = ROOT / "infra" / "runpod"
 TARGETS = {"Dockerfile.i2v": "full", "Dockerfile.t2v": "full-t2v"}
-MOUNTS = re.compile(r"--mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca ")
+MOUNTS = re.compile(r"--mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/render2go-ca ")
 FROM = re.compile(r"^FROM\s+(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE)
 
 

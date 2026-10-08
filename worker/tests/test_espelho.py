@@ -1,6 +1,7 @@
 """Espelho dos modelos no R2. Os testes de integração precisam de um S3 local (ex.: SeaweedFS):
-GPU2GO_TESTE_S3=http://127.0.0.1:8333 GPU2GO_TESTE_S3_BUCKET=gpu2go
-GPU2GO_TESTE_S3_CHAVE=... GPU2GO_TESTE_S3_SEGREDO=...; sem isso, só os testes de unidade rodam.
+RENDER2GO_TESTE_S3=http://127.0.0.1:8333 RENDER2GO_TESTE_S3_BUCKET=gpu2go
+RENDER2GO_TESTE_S3_CHAVE=... RENDER2GO_TESTE_S3_SEGREDO=...
+Sem isso, só os testes de unidade rodam.
 """
 
 import hashlib
@@ -13,21 +14,21 @@ from pathlib import Path
 
 import pytest
 
-from gpu2go_worker import espelho as esp_mod
-from gpu2go_worker import models
-from gpu2go_worker.armazenamento import Armazenamento
+from render2go_worker import espelho as esp_mod
+from render2go_worker import models
+from render2go_worker.armazenamento import Armazenamento
 
 WORKER = Path(__file__).resolve().parents[1]
-S3 = os.environ.get("GPU2GO_TESTE_S3")
-s3_local = pytest.mark.skipif(not S3, reason="sem S3 local (GPU2GO_TESTE_S3)")
+S3 = os.environ.get("RENDER2GO_TESTE_S3")
+s3_local = pytest.mark.skipif(not S3, reason="sem S3 local (RENDER2GO_TESTE_S3)")
 
 
 def _s3() -> Armazenamento:
     return Armazenamento(
         S3,
-        os.environ.get("GPU2GO_TESTE_S3_BUCKET", "gpu2go"),
-        os.environ["GPU2GO_TESTE_S3_CHAVE"],
-        os.environ["GPU2GO_TESTE_S3_SEGREDO"],
+        os.environ.get("RENDER2GO_TESTE_S3_BUCKET", "gpu2go"),
+        os.environ["RENDER2GO_TESTE_S3_CHAVE"],
+        os.environ["RENDER2GO_TESTE_S3_SEGREDO"],
         "us-east-1",
     )
 

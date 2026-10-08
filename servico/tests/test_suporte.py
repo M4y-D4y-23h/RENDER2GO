@@ -8,8 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 from test_api import ADMIN, WORKER, Armazem, _cliente, h
 
-from gpu2go_servico import suporte
-from gpu2go_servico.api import Config, criar_app
+from render2go_servico import suporte
+from render2go_servico.api import Config, criar_app
 
 D1, D2 = "11111111-0000-4000-8000-000000000000", "22222222-0000-4000-8000-000000000000"
 

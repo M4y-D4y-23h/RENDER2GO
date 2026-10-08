@@ -3,7 +3,7 @@ import json
 import pytest
 import requests
 
-from gpu2go_worker import runpod_pods as rp
+from render2go_worker import runpod_pods as rp
 
 
 class Resp:

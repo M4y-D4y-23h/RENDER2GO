@@ -6,8 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 from conftest import I2V_TEMPLATE, WORKER
 
-from gpu2go_worker import handler_runpod, jobs, media, safety
-from gpu2go_worker.comfy_client import ComfyClient
+from render2go_worker import handler_runpod, jobs, media, safety
+from render2go_worker.comfy_client import ComfyClient
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg ausente")
 
@@ -200,7 +200,7 @@ def test_comfy_errors_are_typed(ctx, storage, fake_comfy):
 def test_fail_closed_without_filters_or_hosts(ctx, storage, monkeypatch):
     ctx.filters = None
     assert jobs.run(_job(storage), ctx)["error"]["code"] == "SAFETY_NOT_CONFIGURED"
-    monkeypatch.delenv("GPU2GO_SAFETY", raising=False)
+    monkeypatch.delenv("RENDER2GO_SAFETY", raising=False)
     with pytest.raises(safety.SafetyNotConfigured):
         safety.load_filters()
     monkeypatch.delenv(media.HOSTS_ENV)
