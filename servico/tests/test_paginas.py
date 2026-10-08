@@ -336,6 +336,13 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
             pw.expect(pg.locator("#previa .miniatura :is(canvas, img)")).to_have_count(1)
         largura_pagina = pg.evaluate("document.documentElement.scrollWidth")
         assert largura_pagina <= largura, (estado, largura_pagina)
+        # com uma fonte larga (a padrão de muitos Linux e de alguns Android), também sem rolagem lateral
+        pg.evaluate(
+            "() => { const r = document.documentElement.style; for (const v of ['--fonte-texto', '--fonte-titulos'])"
+            " r.setProperty(v, '\"DejaVu Sans\", Verdana, sans-serif'); }"
+        )
+        largura_pagina = pg.evaluate("document.documentElement.scrollWidth")
+        assert largura_pagina <= largura, (estado, "fonte larga", largura_pagina)
         # alvos de toque: botões, campos e a navegação com pelo menos 44 px de altura (WCAG 2.5.5)
         alvos = ".navegacao :is(a, button), .botao, .filtros button, .secoes a, select, textarea, input"
         pequenos = pg.evaluate(

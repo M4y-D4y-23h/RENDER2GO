@@ -13,6 +13,7 @@
 
 .cab-pagina {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-2);
   margin-bottom: var(--esp-5);
 }
@@ -59,6 +60,7 @@
 
 .entrada {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-6);
   grid-template-areas: "hero" "entrar" "como";
 }
@@ -66,6 +68,7 @@
 .hero {
   grid-area: hero;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
   align-content: start;
 }
@@ -73,6 +76,7 @@
 .entrar {
   grid-area: entrar;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
   align-self: start;
 }
@@ -80,12 +84,14 @@
 .como {
   grid-area: como;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
   align-content: start;
 }
 
 .como ol {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-3);
   list-style: none;
   counter-reset: como;
@@ -136,6 +142,7 @@
 
 .painel-grade {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-6);
 }
 
@@ -170,17 +177,20 @@
 
 .enviar {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
   margin-top: var(--esp-6);
 }
 
 .lotes {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
 }
 
 .lote {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-3);
 }
 
@@ -226,6 +236,7 @@
 
 .pagina-erro {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: start;
   gap: var(--esp-4);
   padding-block: var(--esp-8);
@@ -248,6 +259,7 @@
 
 .entrar-admin {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
   max-width: 28rem;
   margin: var(--esp-6) auto 0;
@@ -255,6 +267,7 @@
 
 .admin-grade {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-5);
 }
 
@@ -315,12 +328,14 @@
 
 .admin-conteudo {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-7);
   min-width: 0;
 }
 
 .admin-conteudo > section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
   align-content: start;
 }
@@ -353,11 +368,13 @@
 
 .lista {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-3);
 }
 
 .pendente {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-3);
 }
 
@@ -387,6 +404,7 @@
 
 .foto {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-1);
   color: inherit;
   text-decoration: none;
@@ -411,6 +429,7 @@
 
 .decisao {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-2);
   padding-top: var(--esp-3);
   border-top: 1px solid var(--cor-borda);
@@ -425,6 +444,7 @@
 
 .hist {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-2);
 }
 
@@ -436,5 +456,6 @@
 
 .form-cliente {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
 }

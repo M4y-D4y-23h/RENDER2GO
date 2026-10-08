@@ -263,6 +263,7 @@
 
 .campo {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-2);
   min-width: 0;
 }
@@ -409,6 +410,7 @@ input[type="checkbox"] {
 
 .duas {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
 }
 
@@ -457,6 +459,7 @@ input[type="checkbox"] {
   padding: 0;
   min-width: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
 }
 
@@ -638,6 +641,7 @@ progress::-moz-progress-bar {
 
 .progresso {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-2);
 }
 
@@ -694,6 +698,7 @@ progress::-moz-progress-bar {
 
 .esqueleto {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-3);
 }
 
@@ -730,6 +735,7 @@ progress::-moz-progress-bar {
 
 .vazio {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   gap: var(--esp-2);
   padding: var(--esp-6) var(--esp-4);
@@ -753,6 +759,7 @@ progress::-moz-progress-bar {
 
 .soltar {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   gap: var(--esp-3);
   padding: var(--esp-5) var(--esp-4);
@@ -944,6 +951,7 @@ progress::-moz-progress-bar {
 
 .videos {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-2);
   list-style: none;
 }
@@ -1040,6 +1048,7 @@ dialog[open] {
 .dialogo-corpo {
   padding: var(--esp-5);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
 }
 
@@ -1194,6 +1203,7 @@ dialog.confirmacao {
 
 .cookies .opcoes {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-2);
   margin-bottom: var(--esp-4);
 }
