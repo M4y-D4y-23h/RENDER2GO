@@ -36,6 +36,10 @@
         <label for="prompt">O que deve acontecer nos vídeos?</label>
         <textarea id="prompt" required minlength="3" maxlength="600" placeholder="Ex.: a câmera se aproxima devagar do produto"></textarea>
 
+        <label for="modelo">Modelo de geração</label>
+        <select id="modelo"></select>
+        <p id="modelo-info" class="fraco"></p>
+
         <div class="duas">
           <div>
             <label for="receita">Estilo</label>
@@ -56,11 +60,7 @@
           <option value="6">6 s</option><option value="7">7 s</option>
         </select>
         <label class="check"><input id="consentimento" type="checkbox"> <span id="texto-autorizacao">Tenho autorização por escrito das pessoas que aparecem nas fotos (obrigatório em estilos com pessoas).</span></label>
-        <div id="bloco-declarante" hidden>
-          <label for="declarante">Nome completo de quem declara</label>
-          <input id="declarante" maxlength="120" autocomplete="name">
-          <p class="fraco">A declaração fica registrada com o seu nome, a data, o endereço de internet e este dispositivo, para auditoria.</p>
-        </div>
+        <p class="fraco">Ao marcar, a declaração fica registrada com a sua conta, a data, o endereço de internet e este dispositivo.</p>
 
         <button type="submit" id="enviar">Enviar pedido</button>
         <progress id="progresso" hidden></progress>
@@ -69,6 +69,19 @@
 
       <h2>Seus pedidos</h2>
       <div id="lotes"></div>
+
+      <h2>Suporte</h2>
+      <form id="form-suporte">
+        <p class="fraco">Dúvida ou problema com um pedido? Escreva aqui. Respondemos pelo e-mail que você informar.</p>
+        <label for="suporte-assunto">Assunto (opcional)</label>
+        <input id="suporte-assunto" maxlength="120">
+        <label for="suporte-mensagem">Mensagem</label>
+        <textarea id="suporte-mensagem" required minlength="10" maxlength="2000"></textarea>
+        <label for="suporte-email">Seu e-mail para resposta (opcional)</label>
+        <input id="suporte-email" type="email" maxlength="200" autocomplete="email">
+        <button type="submit" id="suporte-enviar">Enviar mensagem</button>
+        <p id="suporte-msg" class="aviso" hidden></p>
+      </form>
     </div>
   </main>
 </body>

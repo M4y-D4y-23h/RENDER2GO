@@ -24,8 +24,8 @@ No serviço de marketing SFW, a segurança fica assim até o C2 existir:
    - Desde 08/10/2026, o servidor analisa cada foto depois do envio (`gpu2go_servico/pessoas.py`: YOLOX-tiny para pessoas, inclusive de costas, e YuNet para rostos) e o `/aprovar` mostra "contém pessoas" por foto e um resumo do lote, em vermelho quando a caixa de autorização não foi marcada.
    - É um aviso, não uma barreira: a análise pode errar, e a falha aparece como "análise indisponível", nunca como "sem pessoas".
    - **Registro de auditoria da autorização** (08/10/2026), em todos os planos, inclusive o teste:
-     - marcar a caixa exige o nome completo de quem declara;
-     - a tabela `consentimentos` (só inserção) guarda: declarante, cliente, texto exibido e sua versão (`autorizacao-v1`) com o SHA-256, IP, identificador do dispositivo, User-Agent, fuso horário, lista de fotos e data;
+     - marcar a caixa não pede nome (fácil de inventar e incômodo): a declaração fica presa à conta do cliente (código de acesso), à origem e aos sinais do navegador;
+     - a tabela `consentimentos` (só inserção) guarda: cliente, texto exibido e sua versão (`autorizacao-v1`) com o SHA-256, IP, identificador do dispositivo, User-Agent, fuso horário, lista de fotos, data e os sinais do navegador (`sinais`: idioma, tela, plataforma, núcleos, memória, toque, hora do clique na caixa e a impressão do navegador);
      - cada foto guarda a impressão SHA-256 (`fotos.sha256`), que continua no banco depois que a foto é apagada;
      - o `/aprovar` mostra a declaração no pedido e exporta o registro completo do lote (`GET /api/admin/lotes/{id}/auditoria`, com os eventos).
 6. **Conferência do vídeo** (docs/08): só é entregue o vídeo cujo 1º quadro bate com a foto do job (similaridade ≥ 0,9). A API apaga e repete o que não bate.

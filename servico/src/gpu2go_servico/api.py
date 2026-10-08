@@ -4,13 +4,15 @@ Cliente (Authorization: Bearer <token do cliente>):
     GET  /api/receitas                 receitas, formatos e limites
     POST /api/lotes                    cria o lote; devolve uma URL de envio por foto
     POST /api/lotes/{id}/enviado       confere no armazenamento e manda para aprovação
-    GET  /api/lotes  /api/lotes/{id}   andamento e links dos vídeos
+    GET  /api/lotes  /api/lotes/{id}   andamento, previsão e links dos vídeos (abrir e baixar)
+    POST /api/suporte                  mensagem para o suporte (e-mail), com limite contra spam
 
 Aprovação (Bearer <token de administração>), ADR 0004:
     GET  /api/admin/lotes              lotes aguardando aprovação, com miniaturas e aviso de pessoas
     POST /api/admin/lotes/{id}/aprovar | /recusar
     GET  /api/admin/historico          pedidos feitos, aprovados e recusados; uso por IP e por dispositivo
     GET  /api/admin/lotes/{id}/auditoria  registro completo de um lote (origem, autorização, fotos, eventos)
+    GET  /api/admin/suporte            últimas mensagens de suporte
     POST /api/admin/clientes           cadastra um cliente (plano pago ou teste); o token aparece uma vez
     POST /api/admin/clientes/{id}/desativar   o código de acesso do cliente deixa de valer
 
@@ -36,6 +38,7 @@ import contextlib
 import hashlib
 import hmac
 import json
+import math
 import os
 import queue
 import re
@@ -53,7 +56,7 @@ from fastapi.responses import FileResponse, Response
 from gpu2go_worker import conferencia, filtros, lote, presets
 from pydantic import BaseModel, Field
 
-from gpu2go_servico import SERVICO_DIR, pessoas
+from gpu2go_servico import SERVICO_DIR, modelos, pessoas, suporte
 from gpu2go_servico.armazenamento import Armazenamento, chave_entrada, chave_saida
 from gpu2go_servico.db import Banco, BancoError
 
@@ -81,6 +84,13 @@ AUTORIZACAO = {
         "(ou de seus responsáveis legais) para criar e usar os vídeos, e que posso apresentá-la se for pedida."
     ),
 }
+# previsão mostrada ao cliente (sem detalhar as etapas internas)
+PRAZO_ANALISE_S = int(os.environ.get("GPU2GO_PRAZO_REVISAO_MIN", 60)) * 60  # tempo típico da revisão
+PREPARO_S = 4 * 60  # medido em 08/10: gerador pronto em ~2 min 40 s, mais a tradução do pedido
+VIDEO_PADRAO_S = 30.0  # sem histórico: ~25–30 s por vídeo de 3 s (medido em 08/10)
+# os mesmos padrões do orquestrador (testes gratuitos esperam juntar vídeos antes de começar)
+AGRUPAR_TESTE_S = float(os.environ.get("GPU2GO_AGRUPAR_TESTE_MIN", 10)) * 60
+AGRUPAR_TESTE_VIDEOS = int(os.environ.get("GPU2GO_AGRUPAR_TESTE_VIDEOS", 20))
 DISPOSITIVO = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 FUSO = re.compile(r"^[A-Za-z0-9_+\-/]{1,64}$")
 LOTE_FECHADO = ("concluido", "concluido_com_falhas", "recusado")
@@ -149,6 +159,8 @@ class Config:
     segredo_aprovacao: str
     limite_por_minuto: int = 120
     analisar: Callable[[bytes], dict] | None = None  # None: sem aviso de pessoas
+    email: suporte.ConfigEmail | None = None  # None: mensagens de suporte só no banco
+    enviar_email: Callable = suporte.enviar
     _janelas: dict = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _analises: AnaliseFotos | None = None
@@ -197,6 +209,7 @@ class Config:
             worker_tokens=lista("GPU2GO_WORKER_TOKENS"),
             segredo_aprovacao=segredo,
             analisar=pessoas.analisador(),
+            email=suporte.ConfigEmail.do_ambiente(),
         )
 
     def limitar(self, chave: str) -> None:
@@ -246,6 +259,25 @@ def origem_de(request: Request) -> dict:
     }
 
 
+def impressao_navegador(origem: dict, nav: NavegadorIn | None) -> str | None:
+    """Resumo (SHA-256) dos sinais do navegador: acha o mesmo navegador quando o identificador muda
+    (janela anônima, dados apagados). Aparelhos iguais podem ter a mesma impressão: é sinal, não prova."""
+    if nav is None:
+        return None
+    partes = [
+        origem.get("agente") or "",
+        nav.idioma or "",
+        ",".join(nav.idiomas),
+        nav.tela or "",
+        nav.plataforma or "",
+        str(nav.nucleos),
+        str(nav.memoria),
+        str(nav.toque),
+        origem.get("fuso") or "",
+    ]
+    return hashlib.sha256("|".join(partes).encode()).hexdigest()[:24]
+
+
 def _apagar_fotos(c: Config, lote_id: str) -> None:
     """Fotos de entrada de um lote fechado: apagadas do armazenamento (minimiza o que guardamos)."""
     falhas = 0
@@ -257,6 +289,15 @@ def _apagar_fotos(c: Config, lote_id: str) -> None:
             print(f"[fotos] AVISO: {f['chave']}: {e}", flush=True)
     if not falhas:
         c.banco.marcar_fotos_apagadas(lote_id)
+
+
+def _enviar_suporte(c: Config, sid: str, dados: dict) -> None:
+    try:
+        c.enviar_email(c.email, suporte.montar(c.email, dados))
+        c.banco.marcar_suporte(sid, True)
+    except Exception as e:  # noqa: BLE001 (a mensagem fica no banco; o /aprovar mostra o erro)
+        c.banco.marcar_suporte(sid, False, str(e)[:300])
+        print(f"[suporte] AVISO: e-mail {sid} não saiu: {e}", flush=True)
 
 
 def _se_fechou(c: Config, lote_id: str) -> None:
@@ -285,6 +326,25 @@ class FotoIn(BaseModel):
     bytes: int = Field(gt=0)
 
 
+class NavegadorIn(BaseModel):
+    """Sinais do navegador enviados com o pedido (registro de auditoria e impressão do navegador)."""
+
+    idioma: str | None = Field(None, max_length=35)
+    idiomas: list[str] = Field(default_factory=list, max_length=10)
+    tela: str | None = Field(None, max_length=40)
+    plataforma: str | None = Field(None, max_length=60)
+    nucleos: int | None = Field(None, ge=0, le=1024)
+    memoria: float | None = Field(None, ge=0, le=4096)
+    toque: int | None = Field(None, ge=0, le=64)
+    marcado_em: str | None = Field(None, max_length=40)  # quando a caixa de autorização foi marcada
+
+
+class SuporteIn(BaseModel):
+    assunto: str = Field("", max_length=120)
+    mensagem: str = Field(min_length=10, max_length=2000)
+    email: str | None = Field(None, max_length=200)
+
+
 class LoteIn(BaseModel):
     prompt: str = Field(min_length=3, max_length=600)
     receita: str = "produto-close"
@@ -293,7 +353,9 @@ class LoteIn(BaseModel):
     duracao: int | None = None
     variacoes: int = Field(1, ge=1, le=lote.MAX_VARIACOES)
     consentimento: bool = False
-    declarante: str | None = Field(None, max_length=120)  # nome de quem marca a autorização
+    declarante: str | None = Field(None, max_length=120)  # opcional; a página não pede mais
+    modelo: str = modelos.PADRAO
+    navegador: NavegadorIn | None = None
     fotos: list[FotoIn]
 
 
@@ -403,6 +465,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         return {
             "plano": plano,
             "autorizacao": AUTORIZACAO,
+            "modelos": modelos.disponiveis(),
+            "modelo_padrao": modelos.PADRAO,
             "receitas": [
                 {
                     "id": k,
@@ -425,9 +489,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     @app.post("/api/lotes")
     def criar_lote(body: LoteIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
         origem = origem_de(request)
-        declarante = (body.declarante or "").strip()
-        if body.consentimento and len(declarante) < 3:
-            raise HTTPException(422, "informe o nome completo de quem declara a autorização")
+        origem["impressao"] = impressao_navegador(origem, body.navegador)
+        if body.modelo not in {m["id"] for m in modelos.disponiveis()}:
+            raise HTTPException(422, "modelo de geração indisponível")
         d = filtros.avaliar(body.prompt)
         if not d.allowed:  # C1 já na entrada (ADR 0004)
             raise HTTPException(422, f"pedido recusado pelo filtro de conteúdo: {d.reason}")
@@ -478,13 +542,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "original": f.nome,
                 }
             )
-        pedido = body.model_dump(exclude={"fotos", "declarante"})
+        pedido = body.model_dump(exclude={"fotos", "declarante", "navegador"})
         autorizacao = None
-        if body.consentimento:  # registro de auditoria: quem declarou, de onde, qual texto, quais fotos
+        if body.consentimento:  # registro de auditoria: conta, de onde, qual texto, quais fotos, sinais
+            sinais = body.navegador.model_dump() if body.navegador else {}
+            sinais["accept_language"] = request.headers.get("accept-language", "")[:200] or None
+            sinais["impressao"] = origem["impressao"]
             autorizacao = {
-                "declarante": declarante,
+                "declarante": (body.declarante or "").strip(),
                 "texto_versao": AUTORIZACAO["versao"],
                 "texto": AUTORIZACAO["texto"],
+                "sinais": sinais,
             }
         if cli["plano"] == "teste":  # envio anterior que não terminou não segura o teste
             c.banco.substituir_envios(cli["id"])
@@ -537,21 +605,83 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         for j in jobs:
             item = {"arquivo": j["arquivo"], "status": j["status"], "aviso": j["aviso"]}
             if j["status"] == "ok":
-                item["url"] = c.armazenamento.url(
-                    "GET", chave_saida(cliente_id, lt["id"], j["arquivo"]), URL_DOWNLOAD_S
+                chave = chave_saida(cliente_id, lt["id"], j["arquivo"])
+                item["url"] = c.armazenamento.url("GET", chave, URL_DOWNLOAD_S)  # abre e toca no navegador
+                item["baixar"] = c.armazenamento.url(  # o mesmo vídeo, salvo como arquivo
+                    "GET",
+                    chave,
+                    URL_DOWNLOAD_S,
+                    extra={"response-content-disposition": f'attachment; filename="{j["arquivo"]}"'},
                 )
             videos.append(item)
+        pedido = json.loads(lt["pedido"])
         return {
             "lote": lt["id"],
             "status": lt["status"],
             "criado": lt["criado"],
             "fotos": lt["n_fotos"],
             "motivo": lt["motivo"],
-            "pedido": json.loads(lt["pedido"]),
+            "pedido": pedido,
+            "modelo": modelos.nome(pedido.get("modelo")),
             "prontos": sum(1 for v in videos if v["status"] == "ok"),
             "total": len(videos),
             "videos": videos,
+            "previsao": _previsao(c, lt, jobs),
         }
+
+    def _previsao(c: Config, lt: dict, jobs: list[dict]) -> dict | None:
+        """Quanto falta para começar e para terminar, em segundos (o cliente vê só o tempo)."""
+        if lt["status"] == "aguardando_aprovacao":
+            return {"fase": "analise", "inicio_max_s": PRAZO_ANALISE_S}
+        if lt["status"] not in ("aprovado", "processando"):
+            return None
+        restantes = sum(j["status"] in ("pendente", "em_andamento") for j in jobs)
+        por_video = c.banco.segundos_por_video() or VIDEO_PADRAO_S
+        ativos = c.banco.geradores_ativos()
+        vazao = por_video / max(1, ativos)
+        if any(j["status"] in ("em_andamento", "ok") for j in jobs):
+            return {"fase": "gerando", "fim_s": math.ceil(restantes * vazao)}
+        espera = 0.0 if ativos else PREPARO_S
+        if lt["prompt_en"] is None and ativos:
+            espera += 60  # a tradução do pedido roda antes dos vídeos
+        if not ativos and lt["prioridade"] > 0:  # teste gratuito: espera juntar com outros testes
+            trabalho = c.banco.trabalho()
+            if trabalho and not any(t["prioridade"] == 0 for t in trabalho):
+                videos = sum(int(t["pendentes"] or 0) + int(t["em_andamento"] or 0) for t in trabalho)
+                idade = time.time() - min(float(t["mais_antigo"]) for t in trabalho)
+                if videos < AGRUPAR_TESTE_VIDEOS:
+                    espera += max(0.0, AGRUPAR_TESTE_S - idade)
+        inicio = espera + c.banco.videos_a_frente(lt) * vazao
+        return {"fase": "fila", "inicio_s": math.ceil(inicio), "fim_s": math.ceil(inicio + restantes * vazao)}
+
+    @app.post("/api/suporte")
+    def mensagem_suporte(body: SuporteIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        origem = origem_de(request)
+        email = (body.email or "").strip() or None
+        if email and not suporte.EMAIL.match(email):
+            raise HTTPException(422, "e-mail para resposta inválido")
+        valores = {"ip": origem["ip"], "dispositivo": origem["dispositivo"], "cliente_id": cli["id"]}
+        for campo, janela, maximo in suporte.LIMITES:
+            if c.banco.contar_suporte(campo, valores[campo], janela) >= maximo:
+                espera = "uma hora" if janela <= 3600 else "amanhã"
+                raise HTTPException(429, f"muitas mensagens seguidas; tente de novo em {espera}")
+        mensagem = body.mensagem.strip()
+        sid = c.banco.registrar_suporte(cli["id"], origem, email, body.assunto.strip(), mensagem)
+        if c.email is not None:
+            dados = {
+                "id": sid,
+                "cliente_id": cli["id"],
+                "cliente_nome": cli["nome"],
+                "plano": cli["plano"],
+                "email": email,
+                "assunto": body.assunto.strip(),
+                "mensagem": mensagem,
+                "ip": origem["ip"],
+                "dispositivo": origem["dispositivo"],
+                "quando": time.time(),
+            }
+            c.em_segundo_plano(_enviar_suporte, c, sid, dados)
+        return {"ok": True, "id": sid}
 
     @app.get("/api/lotes")
     def meus_lotes(cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -583,6 +713,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "ip": lt["ip"],
                     "dispositivo": lt["dispositivo"],
                     "autorizacao": c.banco.autorizacao(lt["id"]),
+                    "modelo": modelos.nome(json.loads(lt["pedido"]).get("modelo")),
                     "criado": lt["criado"],
                     "pedido": json.loads(lt["pedido"]),
                     "filtro_c1": filtros.avaliar(json.loads(lt["pedido"])["prompt"]).reason,
@@ -669,6 +800,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "dispositivo": lt["dispositivo"],
                     "fuso": lt["fuso"],
                     "declarante": lt["declarante"],
+                    "modelo": modelos.nome(json.loads(lt["pedido"]).get("modelo")),
                     "autorizado_em": lt["autorizado_em"],
                     "prontos": lt["prontos"],
                     "total": lt["total"],
@@ -678,6 +810,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "ips": c.banco.uso_por_ip(),
             "dispositivos": c.banco.uso_por_dispositivo(),
         }
+
+    @app.get("/api/admin/suporte")
+    def ver_suporte(_: str = Depends(admin), c: Config = Depends(config)):
+        return {"email_configurado": c.email is not None, "mensagens": c.banco.suporte_recente()}
 
     @app.get("/api/admin/lotes/{lote_id}/auditoria")
     def auditoria(lote_id: str, _: str = Depends(admin), c: Config = Depends(config)):
@@ -691,6 +827,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         a["lote"]["pedido"] = js(a["lote"]["pedido"])
         if a["autorizacao"]:
             a["autorizacao"]["fotos"] = js(a["autorizacao"]["fotos"])
+            a["autorizacao"]["sinais"] = js(a["autorizacao"].get("sinais"))
         for f in a["fotos"]:
             f["analise"] = js(f["analise"])
         for e in a["eventos"]:

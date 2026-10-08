@@ -230,3 +230,17 @@ def test_worker_refuses_to_start_without_filters(monkeypatch):
     with pytest.raises(Exception, match="filtros"):
         fila.WorkerFila(fila.ApiFila("http://127.0.0.1:1", WORKER, "p"), fila.Config(comfy=["x"]))
     assert fila.carimbo_ok("s" * 40, {"lote": "l", "aprovado_em": 1.0, "aprovacao": "falso"}) is False
+
+
+def test_worker_refuses_a_model_it_does_not_have(monkeypatch):
+    monkeypatch.setenv("GPU2GO_SAFETY", "c1-revisao-humana")
+    chamadas = []
+
+    class Api:
+        def concluir(self, job_id, status, **kw):
+            chamadas.append((job_id, status, kw))
+
+    w = fila.WorkerFila(Api(), fila.Config(comfy=["x"]))
+    monkeypatch.setattr(fila, "carimbo_ok", lambda segredo, job: True)
+    assert w.processar({"job_id": "j1", "tipo": "render", "pedido": {"modelo": "outro-modelo"}}, "x") is True
+    assert chamadas == [("j1", "erro", {"erro": "modelo outro-modelo não disponível neste gerador"})]

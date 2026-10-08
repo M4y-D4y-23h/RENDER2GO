@@ -68,6 +68,11 @@ ESQUEMA = [
         cliente_nome TEXT NOT NULL, declarante TEXT NOT NULL, texto_versao TEXT NOT NULL,
         texto_sha256 TEXT NOT NULL, texto TEXT NOT NULL, ip TEXT, dispositivo TEXT, agente TEXT, fuso TEXT,
         fotos TEXT NOT NULL, quando DOUBLE PRECISION NOT NULL)""",
+    # mensagens do formulário de suporte (guardadas mesmo sem e-mail configurado)
+    """CREATE TABLE IF NOT EXISTS suporte (
+        id TEXT PRIMARY KEY, cliente_id TEXT NOT NULL, ip TEXT, dispositivo TEXT, email TEXT,
+        assunto TEXT, mensagem TEXT NOT NULL, quando DOUBLE PRECISION NOT NULL,
+        enviado INTEGER NOT NULL DEFAULT 0, erro TEXT)""",
 ]
 # colunas que entraram depois da primeira implantação: (tabela, coluna, tipo)
 COLUNAS_NOVAS = [
@@ -78,6 +83,8 @@ COLUNAS_NOVAS = [
     ("lotes", "agente", "TEXT"),  # User-Agent do navegador
     ("lotes", "fuso", "TEXT"),  # fuso horário informado pelo navegador (sinal de VPN)
     ("fotos", "sha256", "TEXT"),  # impressão da foto, que fica depois que a foto é apagada
+    ("lotes", "impressao", "TEXT"),  # resumo dos sinais do navegador (acha o mesmo navegador sem o identificador)
+    ("consentimentos", "sinais", "TEXT"),  # sinais do navegador no momento da declaração (JSON)
 ]
 # lote que já passou do envio e não foi recusado: conta nos limites do teste gratuito
 ATIVO = "status NOT IN ('aguardando_envio', 'recusado')"
@@ -263,13 +270,14 @@ class Banco:
             )
 
     def uso_por_dispositivo(self, dias: int = 90, limite: int = 50) -> list[dict]:
-        """Por dispositivo: IPs, códigos de cliente e fusos usados (todos os pedidos dos últimos
-        `dias`), e fotos de teste ativas. Mais de um IP ou de um código no mesmo dispositivo é sinal
-        de troca de IP (VPN, celular) ou de alguém juntando testes."""
+        """Por dispositivo: IPs, códigos de cliente, fusos e impressões do navegador (todos os pedidos
+        dos últimos `dias`), e fotos de teste ativas. Sinais: mais de um IP (troca de rede, VPN), mais de
+        um código (alguém juntando testes) e a mesma impressão em outro identificador (janela anônima
+        ou dados do navegador apagados)."""
         with self.tx() as c:
             linhas = c.all(
-                "SELECT l.dispositivo, l.ip, l.cliente_id, l.n_fotos, l.status, l.criado, l.fuso, k.plano"
-                " FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
+                "SELECT l.dispositivo, l.ip, l.cliente_id, l.n_fotos, l.status, l.criado, l.fuso, l.impressao,"
+                " k.plano FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
                 " WHERE l.dispositivo IS NOT NULL AND l.criado > ? ORDER BY l.criado",
                 (time.time() - dias * 86400,),
             )
@@ -282,17 +290,31 @@ class Banco:
                     "ips": [],
                     "clientes": [],
                     "fusos": [],
+                    "impressoes": [],
                     "pedidos": 0,
                     "fotos_teste": 0,
                 },
             )
-            for campo, valor in (("ips", r["ip"]), ("clientes", r["cliente_id"]), ("fusos", r["fuso"])):
+            campos = (
+                ("ips", r["ip"]),
+                ("clientes", r["cliente_id"]),
+                ("fusos", r["fuso"]),
+                ("impressoes", r["impressao"]),
+            )
+            for campo, valor in campos:
                 if valor and valor not in d[campo]:
                     d[campo].append(valor)
             d["pedidos"] += 1
             if r["plano"] == "teste" and r["status"] not in ("aguardando_envio", "recusado"):
                 d["fotos_teste"] += int(r["n_fotos"])
             d["ultimo"] = r["criado"]
+        donos: dict[str, set] = {}
+        for d in por.values():
+            for imp in d["impressoes"]:
+                donos.setdefault(imp, set()).add(d["dispositivo"])
+        for d in por.values():
+            outros = set().union(*(donos[i] for i in d["impressoes"])) if d["impressoes"] else set()
+            d["mesmo_navegador"] = sorted(outros - {d["dispositivo"]})
         return sorted(por.values(), key=lambda d: d["ultimo"], reverse=True)[:limite]
 
     def auditoria(self, lote_id: str) -> dict | None:
@@ -367,7 +389,7 @@ class Banco:
                 raise BancoError("cliente não encontrado")
             c.run(
                 "INSERT INTO lotes (id, cliente_id, status, pedido, n_fotos, prioridade, criado, ip, dispositivo,"
-                " agente, fuso) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " agente, fuso, impressao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     lid,
                     cliente_id,
@@ -380,13 +402,14 @@ class Banco:
                     o.get("dispositivo"),
                     o.get("agente"),
                     o.get("fuso"),
+                    o.get("impressao"),
                 ),
             )
             if autorizacao:
                 c.run(
                     "INSERT INTO consentimentos (id, lote_id, cliente_id, cliente_nome, declarante, texto_versao,"
-                    " texto_sha256, texto, ip, dispositivo, agente, fuso, fotos, quando)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " texto_sha256, texto, ip, dispositivo, agente, fuso, fotos, quando, sinais)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         novo_id("aut"),
                         lid,
@@ -402,6 +425,7 @@ class Banco:
                         o.get("fuso"),
                         json.dumps([{"nome": f["nome"], "bytes": f["bytes"]} for f in fotos], ensure_ascii=False),
                         agora,
+                        json.dumps(autorizacao.get("sinais") or {}, ensure_ascii=False),
                     ),
                 )
             for f in fotos:
@@ -418,6 +442,74 @@ class Banco:
                 )
             self.evento(c, lid, "criado", {"fotos": len(fotos), "autorizacao": bool(autorizacao), **o})
         return lid
+
+    # -- suporte --------------------------------------------------------------------------
+
+    def registrar_suporte(self, cliente_id: str, origem: dict, email: str | None, assunto: str, mensagem: str) -> str:
+        sid = novo_id("sup")
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO suporte (id, cliente_id, ip, dispositivo, email, assunto, mensagem, quando)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (sid, cliente_id, origem.get("ip"), origem.get("dispositivo"), email, assunto, mensagem, time.time()),
+            )
+        return sid
+
+    def contar_suporte(self, campo: str, valor: str | None, desde_s: float) -> int:
+        """Mensagens do mesmo IP, dispositivo ou cliente na janela (limite contra spam)."""
+        if campo not in ("ip", "dispositivo", "cliente_id") or not valor:
+            return 0
+        with self.tx() as c:
+            r = c.one(
+                f"SELECT COUNT(*) AS n FROM suporte WHERE {campo} = ? AND quando > ?", (valor, time.time() - desde_s)
+            )
+        return int(r["n"])
+
+    def marcar_suporte(self, sid: str, enviado: bool, erro: str | None = None) -> None:
+        with self.tx() as c:
+            c.run("UPDATE suporte SET enviado = ?, erro = ? WHERE id = ?", (int(enviado), erro, sid))
+
+    def suporte_recente(self, limite: int = 50) -> list[dict]:
+        with self.tx() as c:
+            return c.all(
+                "SELECT s.*, k.nome AS cliente_nome, k.plano FROM suporte s LEFT JOIN clientes k ON k.id = s.cliente_id"
+                " ORDER BY s.quando DESC LIMIT ?",
+                (limite,),
+            )
+
+    # -- previsão para o cliente ----------------------------------------------------------
+
+    def segundos_por_video(self, n: int = 30) -> float | None:
+        """Média dos últimos vídeos prontos (download, geração e envio)."""
+        with self.tx() as c:
+            linhas = c.all(
+                "SELECT segundos FROM jobs WHERE tipo = 'render' AND status = 'ok' AND segundos IS NOT NULL"
+                " ORDER BY atualizado DESC LIMIT ?",
+                (n,),
+            )
+        return sum(float(r["segundos"]) for r in linhas) / len(linhas) if linhas else None
+
+    def geradores_ativos(self, janela_s: float = 600) -> int:
+        """Quantos workers mexeram em vídeos na janela (inclui o que espera pedido novo)."""
+        with self.tx() as c:
+            r = c.one(
+                "SELECT COUNT(DISTINCT worker) AS n FROM jobs WHERE tipo = 'render' AND worker IS NOT NULL"
+                " AND atualizado > ?",
+                (time.time() - janela_s,),
+            )
+        return int(r["n"])
+
+    def videos_a_frente(self, lote: dict) -> int:
+        """Vídeos na fila antes deste lote (prioridade menor, ou a mesma e criado antes)."""
+        with self.tx() as c:
+            r = c.one(
+                "SELECT COUNT(*) AS n FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                " WHERE j.tipo = 'render' AND j.status IN ('pendente', 'em_andamento')"
+                " AND l.status IN ('aprovado', 'processando') AND l.id <> ?"
+                " AND (l.prioridade < ? OR (l.prioridade = ? AND l.criado < ?))",
+                (lote["id"], lote["prioridade"], lote["prioridade"], lote["criado"]),
+            )
+        return int(r["n"])
 
     def lote(self, lote_id: str, cliente_id: str | None = None) -> dict | None:
         with self.tx() as c:

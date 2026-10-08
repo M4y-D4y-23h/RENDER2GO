@@ -81,3 +81,12 @@ progress { width: 100%; max-width: 320px; height: 10px; accent-color: var(--marc
 .aviso.info strong { font-weight: 700; }
 .tabela tr.sinal td { color: var(--alerta); background: var(--alerta-fundo); }
 .autorizacao { font-size: 14px; margin: 4px 0; }
+/* previsão de tempo do pedido (sem detalhar etapas) */
+.previsao { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 6px 0; }
+.pulso { width: 10px; height: 10px; border-radius: 50%; background: var(--marca); flex: none; animation: pulso 1.6s ease-in-out infinite; }
+@keyframes pulso { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.75); } }
+@media (prefers-reduced-motion: reduce) { .pulso { animation: none; } }
+.videos li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.videos .baixar { font-size: 14px; }
+.msg-suporte { padding: 12px 14px; margin-bottom: 8px; }
+.msg-suporte .texto { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }

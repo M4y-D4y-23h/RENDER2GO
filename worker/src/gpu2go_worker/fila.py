@@ -36,6 +36,9 @@ import requests
 from gpu2go_worker import cli_submit, compiler, conferencia, lote, media, preparo, presets, safety
 
 MAX_BYTES_FOTO = 50 * 1024**2
+# modelos de geração que este worker sabe rodar (gpu2go_servico/modelos.py lista os oferecidos);
+# pedido de outro modelo é recusado sem repetir: fail-closed
+MODELOS = {"wan2.2-i2v"}
 ESPERA_S = 5  # fila vazia: tempo entre consultas
 OCIOSO_S = 180  # ~ o tempo de uma subida de pod: depois disso, sair custa menos que esperar
 TIPOS = {"jpg": ".jpg", "png": ".png", "webp": ".webp"}
@@ -255,6 +258,11 @@ class WorkerFila:
     def processar(self, job: dict, comfy: str) -> bool:
         if not carimbo_ok(self.cfg.segredo, job):
             self.api.concluir(job["job_id"], "erro", erro="carimbo de aprovação inválido")
+            return True
+        modelo = (job.get("pedido") or {}).get("modelo") or "wan2.2-i2v"
+        if modelo not in MODELOS:
+            erro = f"modelo {modelo} não disponível neste gerador"
+            self.api.concluir(job["job_id"], "erro", erro=erro)
             return True
         if job["tipo"] == "compilar":
             self.compilar(job)

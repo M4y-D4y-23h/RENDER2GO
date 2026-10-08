@@ -13,15 +13,20 @@ type Plano = {
   disponivel?: boolean;
   motivo?: string | null;
 };
+type Modelo = { id: string; nome: string; descricao: string; disponivel: boolean };
 type Receitas = {
   plano?: Plano;
   autorizacao?: { versao: string; texto: string };
+  modelos?: Modelo[];
+  modelo_padrao?: string;
   receitas: Receita[];
   formatos: string[];
   qualidades: string[];
   limites: { fotos: number; bytes_foto: number; tipos: string[] };
 };
-type Video = { arquivo: string; status: string; aviso: string | null; url?: string };
+type Video = { arquivo: string; status: string; aviso: string | null; url?: string; baixar?: string };
+// previsão em segundos; o cliente vê só o tempo, não as etapas internas
+type Previsao = { fase: "analise" | "fila" | "gerando"; inicio_max_s?: number; inicio_s?: number; fim_s?: number } | null;
 type Lote = {
   lote: string;
   status: string;
@@ -32,6 +37,8 @@ type Lote = {
   prontos: number;
   total: number;
   videos: Video[];
+  modelo?: string;
+  previsao?: Previsao;
 };
 type Envio = { original: string; url: string; tipo: string };
 // análise automática de cada foto (gpu2go_servico/pessoas.py); null = ainda analisando
@@ -56,6 +63,7 @@ type ItemHistorico = {
   fuso: string | null;
   declarante: string | null;
   autorizado_em: number | null;
+  modelo?: string;
   prontos: number;
   total: number;
 };
@@ -73,11 +81,27 @@ type UsoDispositivo = {
   ips: string[];
   clientes: string[];
   fusos: string[];
+  impressoes?: string[];
+  mesmo_navegador?: string[];
   pedidos: number;
   fotos_teste: number;
   ultimo: number;
 };
 type Autorizacao = { declarante: string; quando: number; ip: string | null; dispositivo: string | null; texto_versao: string };
+type MensagemSuporte = {
+  id: string;
+  cliente_id: string;
+  cliente_nome: string | null;
+  plano: string | null;
+  email: string | null;
+  assunto: string | null;
+  mensagem: string;
+  ip: string | null;
+  dispositivo: string | null;
+  quando: number;
+  enviado: number;
+  erro: string | null;
+};
 type Pendente = {
   lote: string;
   cliente: string;
@@ -86,6 +110,7 @@ type Pendente = {
   ip?: string | null;
   dispositivo?: string | null;
   autorizacao?: Autorizacao | null;
+  modelo?: string;
   criado: number;
   pedido: {
     prompt: string;
@@ -102,7 +127,7 @@ type Pendente = {
 
 const ESTADOS: Record<string, string> = {
   aguardando_envio: "Enviando fotos",
-  aguardando_aprovacao: "Em revisão",
+  aguardando_aprovacao: "Em análise",
   aprovado: "Na fila",
   processando: "Gerando vídeos",
   concluido: "Pronto",
@@ -175,6 +200,27 @@ function fuso(): string {
   } catch {
     return "";
   }
+}
+
+// sinais do navegador para o registro de auditoria da autorização (nada sai para terceiros)
+function sinaisNavegador(marcadoEm: string | null): Record<string, unknown> {
+  const n = navigator as Navigator & { deviceMemory?: number; userAgentData?: { platform?: string } };
+  return {
+    idioma: n.language || null,
+    idiomas: Array.from(n.languages ?? []).slice(0, 10),
+    tela: `${screen.width}x${screen.height}@${window.devicePixelRatio || 1}`,
+    plataforma: n.userAgentData?.platform || n.platform || null,
+    nucleos: n.hardwareConcurrency ?? null,
+    memoria: n.deviceMemory ?? null,
+    toque: n.maxTouchPoints ?? null,
+    marcado_em: marcadoEm,
+  };
+}
+
+function minutos(s: number): string {
+  if (s < 60) return "menos de 1 min";
+  const m = Math.ceil(s / 60);
+  return m < 90 ? `cerca de ${m} min` : `cerca de ${Math.round(m / 60)} h`;
 }
 
 async function api<T>(caminho: string, token: string, init: RequestInit = {}): Promise<T> {
@@ -265,6 +311,21 @@ function cartaoLote(l: Lote): HTMLElement {
   ]);
   const pedido = criar("p", { className: "pedido", textContent: `“${l.pedido.prompt}”` });
   const cartao = criar("article", { className: `cartao estado-${l.status}` }, [cab, pedido]);
+  const p = l.previsao;
+  if (p) {
+    const texto =
+      p.fase === "analise"
+        ? `Recebemos seu pedido. Ele começa em até ${minutos(p.inicio_max_s ?? 3600)}.`
+        : p.fase === "fila"
+          ? (p.inicio_s ?? 0) < 60
+            ? "Seus vídeos começam em instantes."
+            : `Seus vídeos começam em ${minutos(p.inicio_s ?? 0)}.`
+          : `Gerando seus vídeos · termina em ${minutos(p.fim_s ?? 0)}.`;
+    cartao.append(
+      criar("div", { className: "previsao", role: "status" }, [criar("span", { className: "pulso", ariaHidden: "true" }), texto]),
+      criar("p", { className: "fraco", textContent: `Atualizado às ${new Date().toLocaleTimeString("pt-BR")} · esta página se atualiza sozinha.` }),
+    );
+  }
   if (l.total) {
     const barra = criar("progress", { max: l.total, value: l.prontos });
     cartao.append(criar("div", { className: "linha" }, [barra, ` ${l.prontos} de ${l.total} vídeo(s)`]));
@@ -274,9 +335,9 @@ function cartaoLote(l: Lote): HTMLElement {
   if (prontos.length) {
     const lista = criar("ul", { className: "videos" });
     for (const v of prontos) {
-      lista.append(
-        criar("li", {}, [criar("a", { href: v.url!, textContent: v.arquivo, download: v.arquivo, rel: "noopener" })]),
-      );
+      const itens: (Node | string)[] = [criar("a", { href: v.url!, textContent: v.arquivo, target: "_blank", rel: "noopener" })];
+      if (v.baixar) itens.push(criar("a", { href: v.baixar, textContent: "baixar", className: "baixar", rel: "noopener" }));
+      lista.append(criar("li", {}, itens));
     }
     cartao.append(lista, criar("p", { className: "fraco", textContent: "Os links valem por 24 h; recarregue para renovar." }));
   }
@@ -376,6 +437,11 @@ function iniciarCliente(): void {
     sel.replaceChildren(...receitas.receitas.map((r) => criar("option", { value: r.id, textContent: `${r.label} (${r.nicho})` })));
     aplicarPlano(receitas.plano);
     if (receitas.autorizacao) el("texto-autorizacao").textContent = receitas.autorizacao.texto;
+    const modelos = receitas.modelos ?? [];
+    const selModelo = el<HTMLSelectElement>("modelo");
+    selModelo.replaceChildren(...modelos.map((m) => criar("option", { value: m.id, textContent: `${m.nome} · ${m.descricao}` })));
+    if (receitas.modelo_padrao) selModelo.value = receitas.modelo_padrao;
+    el("modelo-info").textContent = modelos.length > 1 ? "" : "Novos modelos de geração vão aparecer aqui.";
     el("painel").hidden = false;
     listar();
   });
@@ -386,10 +452,31 @@ function iniciarCliente(): void {
     arquivos.clear();
     atualizarContagem();
   });
+  let marcadoEm: string | null = null; // momento do clique na caixa de autorização (vai no registro)
   el<HTMLInputElement>("consentimento").addEventListener("change", (ev) => {
-    const marcado = (ev.target as HTMLInputElement).checked;
-    el("bloco-declarante").hidden = !marcado;
-    el<HTMLInputElement>("declarante").required = marcado;
+    marcadoEm = (ev.target as HTMLInputElement).checked ? new Date().toISOString() : null;
+  });
+  el<HTMLFormElement>("form-suporte").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const saida = el("suporte-msg");
+    const botao = el<HTMLButtonElement>("suporte-enviar");
+    botao.disabled = true;
+    try {
+      await api("/api/suporte", token, {
+        method: "POST",
+        body: JSON.stringify({
+          assunto: el<HTMLInputElement>("suporte-assunto").value.trim(),
+          mensagem: el<HTMLTextAreaElement>("suporte-mensagem").value.trim(),
+          email: el<HTMLInputElement>("suporte-email").value.trim() || null,
+        }),
+      });
+      aviso(saida, "Mensagem enviada. Respondemos assim que possível.", "ok");
+      el<HTMLFormElement>("form-suporte").reset();
+    } catch (e) {
+      aviso(saida, (e as Error).message, "erro");
+    } finally {
+      botao.disabled = false;
+    }
   });
 
   el<HTMLFormElement>("form-lote").addEventListener("submit", async (ev) => {
@@ -404,7 +491,8 @@ function iniciarCliente(): void {
       qualidade: el<HTMLSelectElement>("qualidade").value,
       duracao,
       consentimento: el<HTMLInputElement>("consentimento").checked,
-      declarante: el<HTMLInputElement>("consentimento").checked ? el<HTMLInputElement>("declarante").value.trim() : null,
+      modelo: el<HTMLSelectElement>("modelo").value,
+      navegador: sinaisNavegador(el<HTMLInputElement>("consentimento").checked ? marcadoEm : null),
       fotos: nomes.map((n) => ({ nome: n, tipo: arquivos.get(n)!.type, bytes: arquivos.get(n)!.size })),
     };
     botao.disabled = true;
@@ -417,7 +505,7 @@ function iniciarCliente(): void {
       aviso(msg, "Pedido enviado. Ele passa por uma revisão rápida e entra na fila; os vídeos aparecem abaixo.", "ok");
       arquivos.clear();
       el<HTMLFormElement>("form-lote").reset();
-      el("bloco-declarante").hidden = true;
+      marcadoEm = null;
       atualizarContagem();
       if (receitas?.plano?.nome === "teste") {
         receitas = await api<Receitas>("/api/receitas", token);
@@ -476,7 +564,7 @@ function cartaoPendente(p: Pendente, token: string, aoMudar: () => void): HTMLEl
   const linhaAutorizacao = criar("p", {
     className: "fraco autorizacao",
     textContent: a
-      ? `Autorização declarada por ${a.declarante} em ${quando(a.quando)} · dispositivo ${curto(a.dispositivo)} · IP ${a.ip ?? "—"} · texto ${a.texto_versao}`
+      ? `Autorização marcada em ${quando(a.quando)} · dispositivo ${curto(a.dispositivo)} · IP ${a.ip ?? "—"} · texto ${a.texto_versao}`
       : "Autorização das pessoas das fotos: não marcada.",
   });
   const aprovar = criar("button", { textContent: "Aprovar", className: "primario" });
@@ -509,7 +597,7 @@ function cartaoPendente(p: Pendente, token: string, aoMudar: () => void): HTMLEl
     criar("p", { className: "pedido", textContent: `“${pedido.prompt}”` }),
     criar("p", {
       className: "fraco",
-      textContent: `${pedido.receita} · ${pedido.qualidade} · ${pedido.duracao ?? "padrão"} s · ${pedido.variacoes} variação(ões) · filtro C1: ${p.filtro_c1 || "ok"}`,
+      textContent: `${p.modelo ?? "Wan 2.2"} · ${pedido.receita} · ${pedido.qualidade} · ${pedido.duracao ?? "padrão"} s · ${pedido.variacoes} variação(ões) · filtro C1: ${p.filtro_c1 || "ok"}`,
     }),
     linhaAutorizacao,
     ...(pessoas ? [pessoas] : []),
@@ -549,7 +637,8 @@ function itemHistorico(x: ItemHistorico, token: string, aoMudar: () => void): HT
   if (x.total) detalhes.push(`${x.prontos} de ${x.total} vídeo(s) prontos`);
   if (x.concluido_em) detalhes.push(`fechado em ${quando(x.concluido_em)}`);
   if (x.fotos_apagadas) detalhes.push("fotos de entrada já apagadas");
-  detalhes.push(x.declarante ? `autorização declarada por ${x.declarante}` : "sem autorização declarada");
+  detalhes.push(x.autorizado_em ? `autorização marcada em ${quando(x.autorizado_em)}` : "sem autorização marcada");
+  if (x.modelo) detalhes.push(`modelo ${x.modelo}`);
   if (detalhes.length) linhas.push(criar("p", { className: "fraco", textContent: detalhes.join(" · ") }));
   if (x.motivo) linhas.push(criar("p", { className: "aviso erro", textContent: `Motivo: ${x.motivo}` }));
   const auditoria = criar("button", { type: "button", textContent: "Baixar registro de auditoria" });
@@ -609,7 +698,12 @@ function tabelaDispositivos(ds: UsoDispositivo[]): HTMLElement {
   const td = (t: string | number, num = false) => criar("td", { textContent: String(t), className: num ? "num" : "" });
   const cab = criar("tr", {}, [th("Dispositivo"), th("IPs"), th("Códigos", true), th("Fotos de teste", true), th("Fusos"), th("Sinais"), th("Último pedido")]);
   const linhas = ds.map((d) => {
-    const sinais = [d.ips.length > 1 ? `trocou de IP (${d.ips.length})` : "", d.clientes.length > 1 ? `vários códigos (${d.clientes.length})` : "", d.fusos.length > 1 ? "fusos diferentes" : ""].filter(Boolean);
+    const sinais = [
+      d.ips.length > 1 ? `trocou de IP (${d.ips.length})` : "",
+      d.clientes.length > 1 ? `vários códigos (${d.clientes.length})` : "",
+      d.fusos.length > 1 ? "fusos diferentes" : "",
+      d.mesmo_navegador?.length ? `mesmo navegador de ${d.mesmo_navegador.map(curto).join(", ")}` : "",
+    ].filter(Boolean);
     return criar("tr", { className: sinais.length ? "sinal" : "" }, [
       td(curto(d.dispositivo)),
       td(d.ips.join(", ")),
@@ -623,6 +717,26 @@ function tabelaDispositivos(ds: UsoDispositivo[]): HTMLElement {
   return criar("table", {}, [criar("thead", {}, [cab]), criar("tbody", {}, linhas)]);
 }
 
+function listaSuporte(msgs: MensagemSuporte[]): HTMLElement[] {
+  if (!msgs.length) return [criar("p", { className: "fraco", textContent: "Nenhuma mensagem ainda." })];
+  return msgs.map((m) =>
+    criar("article", { className: "cartao msg-suporte" }, [
+      criar("div", { className: "cab" }, [
+        criar("strong", { textContent: m.assunto || "Sem assunto" }),
+        criar("span", {
+          className: "fraco",
+          textContent: ` · ${quando(m.quando)} · ${m.cliente_nome ?? m.cliente_id} (${m.plano ?? "?"}) · responder para ${m.email ?? "—"}`,
+        }),
+      ]),
+      criar("p", { className: "texto", textContent: m.mensagem }),
+      criar("p", {
+        className: m.erro ? "aviso erro" : "fraco",
+        textContent: `${m.enviado ? "enviada por e-mail" : m.erro ? `e-mail não saiu: ${m.erro}` : "guardada (e-mail não configurado)"} · IP ${m.ip ?? "—"} · dispositivo ${curto(m.dispositivo)}`,
+      }),
+    ]),
+  );
+}
+
 function iniciarAprovador(): void {
   const msg = el("msg");
   let token = "";
@@ -634,6 +748,11 @@ function iniciarAprovador(): void {
     if (!r.lotes.length) alvo.append(criar("p", { className: "fraco", textContent: "Nenhum pedido neste filtro." }));
     el("ips").replaceChildren(tabelaIps(r.ips));
     el("dispositivos").replaceChildren(tabelaDispositivos(r.dispositivos));
+    const sup = await api<{ email_configurado: boolean; mensagens: MensagemSuporte[] }>("/api/admin/suporte", token);
+    el("suporte-config").textContent = sup.email_configurado
+      ? "As mensagens também chegam no seu e-mail."
+      : "E-mail não configurado: as mensagens ficam só aqui (veja docs/09, seção de suporte).";
+    el("suporte").replaceChildren(...listaSuporte(sup.mensagens));
   };
   const listar = async () => {
     try {

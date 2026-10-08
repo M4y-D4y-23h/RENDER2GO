@@ -122,7 +122,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 - **Dispositivo:** a página cria um identificador aleatório e guarda no próprio navegador. Janela anônima ou dados apagados geram outro; por isso existe o teto por IP.
 - **Sinais no `/aprovar`, tabela "Dispositivos":** um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes; fusos horários diferentes também são sinal de VPN.
 - **Pedido recusado libera o teste** do cliente, para ele corrigir e mandar de novo.
-- **Autorização das pessoas das fotos:** marcar a caixa pede o nome completo de quem declara. O registro de auditoria fica no banco (ADR 0004, item 5) e sai em JSON pelo botão "Baixar registro de auditoria" no histórico.
+- **Autorização das pessoas das fotos:** marcar a caixa não pede nome. O registro de auditoria liga a declaração à conta do cliente, ao IP, ao dispositivo e aos sinais do navegador, inclusive a hora do clique (ADR 0004, item 5). Ele sai em JSON pelo botão "Baixar registro de auditoria" no histórico.
 - **Dados pessoais** guardados (IP, identificador do dispositivo, navegador, fuso, nome de quem declara) precisam constar da política de privacidade (LGPD).
 
 ## 5.1.1 Acesso interno (só o dono)
@@ -138,6 +138,36 @@ Para testar sem os limites do teste gratuito e sem esperar revisão, cadastre um
 - **O IP vem do Caddy:** ele troca o `X-Forwarded-For` recebido de fora pelo IP real da conexão.
   - Se um dia o proxy da Cloudflare (nuvem laranja) for ligado, o IP passa a ser o da Cloudflare, e é preciso ler o `CF-Connecting-IP`.
   - Vários clientes podem dividir um IP (escritórios, redes de celular), e uma VPN troca o IP: é um sinal, não uma prova.
+
+## 5.1.2 Suporte por e-mail
+
+A página do cliente tem um formulário de suporte.
+- **Toda mensagem fica no banco** e aparece no `/aprovar`, em "Mensagens de suporte". Isso vale mesmo sem e-mail configurado.
+- **Limite contra spam:** 3 mensagens por hora e 10 por dia por dispositivo; 5 por hora e 20 por dia por IP; 5 por hora e 15 por dia por cliente.
+- **Para receber no seu e-mail**, configure no `.env`:
+
+  ```
+  GPU2GO_SMTP_HOST=smtp.gmail.com        # ou o SMTP de um serviço de envio (Brevo, Resend, Mailgun...)
+  GPU2GO_SMTP_PORTA=587
+  GPU2GO_SMTP_TLS=starttls
+  GPU2GO_SMTP_USUARIO=seu-usuario
+  GPU2GO_SMTP_SENHA=senha-de-app        # no Gmail: "senha de app" (exige verificação em duas etapas)
+  GPU2GO_SUPORTE_DE=seu-remetente@...
+  GPU2GO_SUPORTE_PARA=seu-email@...
+  ```
+
+  Depois rode `docker compose up -d`.
+- **Porta:** use a 587. Provedores de nuvem costumam bloquear a saída pelas portas 25 e 465 em contas novas.
+- **Responder:** o e-mail chega com "Responder para" apontando para o e-mail que o cliente informou.
+
+## 5.1.3 O que o cliente vê enquanto espera
+
+- **Em análise:** "começa em até N min". O tempo vem de `GPU2GO_PRAZO_REVISAO_MIN` (padrão 60); ajuste ao seu ritmo de revisão.
+- **Na fila:** "começa em cerca de N min". A conta considera o preparo do gerador, a espera de juntar testes gratuitos e os vídeos à frente.
+- **Gerando:** "termina em cerca de N min", pela média dos últimos vídeos prontos.
+- **Sempre:** um ponto pulsando e "Atualizado às HH:MM:SS". A página se atualiza sozinha a cada 10 s. Nenhuma etapa interna aparece.
+- **Vídeos prontos:** o nome abre o vídeo numa aba nova; "baixar" salva o arquivo.
+- **Modelo de geração:** a página mostra os modelos oferecidos (hoje só o Wan 2.2) e o pedido guarda qual foi usado. Para acrescentar um modelo, veja `servico/src/gpu2go_servico/modelos.py`. O worker recusa modelo que não conhece.
 
 ## 5.2 O que fica guardado
 

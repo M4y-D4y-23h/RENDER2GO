@@ -1,6 +1,7 @@
 """API de ponta a ponta com armazenamento falso (sem rede) e o banco dos testes."""
 
 import hashlib
+import math
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,8 +20,9 @@ class Armazem:
         self.objetos: dict[str, int] = {}
         self.apagados: list[str] = []
 
-    def url(self, metodo, chave, expira_s=900, content_type=None, **kw):
-        return f"https://armazem.teste/{chave}?{metodo}"
+    def url(self, metodo, chave, expira_s=900, content_type=None, extra=None, **kw):
+        extras = "".join(f"&{k}={v}" for k, v in (extra or {}).items())
+        return f"https://armazem.teste/{chave}?{metodo}{extras}"
 
     def tamanho(self, chave):
         return self.objetos.get(chave)
@@ -247,6 +249,18 @@ def test_free_trial_limits(api, monkeypatch):
     assert _pedir(api, tok, n=2, dispositivo=D1).status_code == 200
 
 
+NAVEGADOR = {
+    "idioma": "pt-BR",
+    "idiomas": ["pt-BR", "en"],
+    "tela": "1920x1080@1",
+    "plataforma": "Win32",
+    "nucleos": 8,
+    "memoria": 8,
+    "toque": 0,
+    "marcado_em": "2026-10-08T12:00:00.000Z",
+}
+
+
 def test_authorization_is_recorded_for_audit_with_origin_and_photo_prints(banco):
     armazem = Armazem()
     cfg = Config(
@@ -262,29 +276,76 @@ def test_authorization_is_recorded_for_audit_with_origin_and_photo_prints(banco)
     tok = _cliente(api, "Estúdio", plano="teste")
     texto = api.get("/api/receitas", headers=h(tok)).json()["autorizacao"]
     assert texto["versao"] == "autorizacao-v1" and "autorização por escrito" in texto["texto"]
-    # marcar a caixa exige o nome de quem declara
-    assert _pedir(api, tok, n=2, dispositivo=D1, consentimento=True).status_code == 422
-    r = _pedir(api, tok, n=2, dispositivo=D1, consentimento=True, declarante="  Maria da Silva  ")
-    assert r.status_code == 200
+    # marcar a caixa não pede nome: o registro usa a conta, a origem e os sinais do navegador
+    r = _pedir(api, tok, n=2, dispositivo=D1, consentimento=True, navegador=NAVEGADOR)
+    assert r.status_code == 200, r.text
     lid = r.json()["lote"]
     _enviar_tudo(api, tok, lid, r.json()["envios"])
     cfg.analises.esperar()
     (pend,) = api.get("/api/admin/lotes", headers=h(ADMIN)).json()
-    assert pend["autorizacao"]["declarante"] == "Maria da Silva" and pend["dispositivo"] == D1
+    assert pend["autorizacao"]["quando"] and pend["dispositivo"] == D1 and pend["modelo"] == "Wan 2.2"
 
     a = api.get(f"/api/admin/lotes/{lid}/auditoria", headers=h(ADMIN)).json()
     aut = a["autorizacao"]
-    assert aut["declarante"] == "Maria da Silva" and aut["texto"] == texto["texto"]
+    assert aut["cliente_nome"] == "Estúdio" and aut["texto"] == texto["texto"]
     assert aut["texto_sha256"] == hashlib.sha256(texto["texto"].encode()).hexdigest()
     assert (aut["ip"], aut["dispositivo"], aut["fuso"]) == ("testclient", D1, "America/Sao_Paulo")
+    sinais = aut["sinais"]
+    assert sinais["marcado_em"] == NAVEGADOR["marcado_em"] and sinais["tela"] == "1920x1080@1"
+    assert len(sinais["impressao"]) == 24 and sinais["impressao"] == a["lote"]["impressao"]
     assert aut["agente"] and [f["nome"] for f in aut["fotos"]] == ["foto-0", "foto-1"]
     assert all(len(f["sha256"]) == 64 for f in a["fotos"])  # impressão fica depois que a foto é apagada
-    assert a["lote"]["pedido"]["consentimento"] is True and "declarante" not in a["lote"]["pedido"]
+    assert a["lote"]["pedido"]["consentimento"] is True and "navegador" not in a["lote"]["pedido"]
     criado = a["eventos"][0]
     assert criado["tipo"] == "criado" and criado["detalhe"]["autorizacao"] is True
     assert criado["detalhe"]["dispositivo"] == D1 and criado["detalhe"]["ip"] == "testclient"
     assert api.get("/api/admin/lotes/lote_x/auditoria", headers=h(ADMIN)).status_code == 404
     assert api.get(f"/api/admin/lotes/{lid}/auditoria", headers=h(tok)).status_code == 401
+
+
+def test_generation_model_is_listed_validated_and_shown(api):
+    tok = _cliente(api)
+    r = api.get("/api/receitas", headers=h(tok)).json()
+    assert r["modelo_padrao"] == "wan2.2-i2v" and [m["nome"] for m in r["modelos"]] == ["Wan 2.2"]
+    assert _pedir(api, tok, modelo="modelo-que-nao-existe").status_code == 422
+    lid = _pedir(api, tok, n=1).json()["lote"]
+    lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
+    assert lote["modelo"] == "Wan 2.2" and lote["pedido"]["modelo"] == "wan2.2-i2v"
+
+
+def test_client_sees_a_time_estimate_and_open_or_download_links(api):
+    tok = _cliente(api, plano="teste")
+    r = _pedir(api, tok, n=2, dispositivo=D1)
+    lid = r.json()["lote"]
+    _enviar_tudo(api, tok, lid, r.json()["envios"])
+    lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
+    assert lote["previsao"] == {"fase": "analise", "inicio_max_s": api_mod.PRAZO_ANALISE_S}
+    api.post(f"/api/admin/lotes/{lid}/aprovar", headers=h(ADMIN))
+    prev = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()["previsao"]
+    # nenhum gerador ligado: preparo + espera de juntar testes (até 10 min) + 2 vídeos
+    assert prev["fase"] == "fila" and api_mod.PREPARO_S < prev["inicio_s"] <= api_mod.PREPARO_S + 600
+    assert prev["fim_s"] == prev["inicio_s"] + math.ceil(2 * api_mod.VIDEO_PADRAO_S)
+
+    comp = _job(api)  # o gerador liga e pega o trabalho
+    api.post(
+        f"/api/worker/jobs/{comp['job_id']}/prompt",
+        headers=h(WORKER),
+        json={"worker": "pod-1", "prompt_en": "The camera slowly dollies in.", "compilador": "i2v@5"},
+    )
+    api.post(f"/api/worker/jobs/{comp['job_id']}/concluir", headers=h(WORKER), json={"worker": "pod-1", "status": "ok"})
+    render = _job(api)
+    chave = render["video_url"].split("armazem.teste/")[1].split("?")[0]
+    api.armazem.objetos[chave] = 7000
+    api.post(
+        f"/api/worker/jobs/{render['job_id']}/concluir",
+        headers=h(WORKER),
+        json={"worker": "pod-1", "status": "ok", "bytes_video": 7000, "similaridade": 0.99, "segundos": 40.0},
+    )
+    lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
+    assert lote["previsao"] == {"fase": "gerando", "fim_s": 40}  # 1 vídeo restante × 40 s medidos
+    (pronto,) = [v for v in lote["videos"] if v.get("url")]
+    assert "response-content-disposition" not in pronto["url"]  # abrir: toca no navegador
+    assert "response-content-disposition" in pronto["baixar"] and pronto["arquivo"] in pronto["baixar"]
 
 
 def test_internal_plan_has_no_trial_limits_and_is_approved_automatically(api):

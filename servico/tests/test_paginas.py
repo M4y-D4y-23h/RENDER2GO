@@ -69,17 +69,18 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     cli.set_input_files("#fotos", [str(tmp_path / "bolo.png"), str(tmp_path / "loja.png")])
     assert "2 de 10 fotos escolhidas · ainda cabem 8" in cli.locator("#contagem").inner_text()
     assert cli.locator("#enviar").inner_text() == "Enviar pedido com 2 foto(s)"
-    # autorização: marcar a caixa pede o nome de quem declara (vai para o registro de auditoria)
-    assert cli.locator("#bloco-declarante").is_hidden()
+    # modelo de geração visível; autorização sem pedir nome (o registro usa conta, origem e navegador)
+    assert cli.locator("#modelo option").all_inner_texts() == ["Wan 2.2 · imagem para vídeo · 14B"]
+    assert cli.locator("#declarante").count() == 0
     cli.check("#consentimento")
-    cli.fill("#declarante", "Maria da Silva")
     if os.environ.get("GPU2GO_CAPTURAS"):
         cli.screenshot(path=os.path.join(os.environ["GPU2GO_CAPTURAS"], "cliente-teste.png"), full_page=True)
     cli.fill("#prompt", "a câmera se aproxima devagar do produto")
     cli.select_option("#duracao", "3")
     cli.click("#enviar")
     cli.wait_for_selector("#msg.ok", timeout=15000)
-    cli.wait_for_selector("text=Em revisão")
+    cli.wait_for_selector("text=Em análise")
+    assert "Ele começa em até" in cli.locator("#lotes .previsao").inner_text()
     assert sum(k.endswith(".png") for k in ambiente.objetos) == 2  # direto no armazenamento
     cli.wait_for_selector("#plano-aviso.erro")  # teste usado: o formulário trava
     assert cli.locator("#enviar").is_disabled()
@@ -91,7 +92,7 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     assert adm.locator(".grade img").count() == 2
     assert adm.locator(".selo.pessoas").count() == 1
     assert "sem pessoas detectadas" in adm.locator(".grade").inner_text()
-    assert "Autorização declarada por Maria da Silva" in adm.locator("#pendentes .autorizacao").inner_text()
+    assert "Autorização marcada em" in adm.locator("#pendentes .autorizacao").inner_text()
     assert "marcou ter autorização" in adm.locator("#pendentes .aviso.alerta").inner_text()
     if os.environ.get("GPU2GO_CAPTURAS"):
         adm.screenshot(path=os.path.join(os.environ["GPU2GO_CAPTURAS"], "aprovar.png"), full_page=True)
@@ -106,7 +107,8 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     with adm.expect_download() as baixado:
         adm.click("#historico .hist button:has-text('auditoria')")
     registro = json.loads(Path(baixado.value.path()).read_text())
-    assert registro["autorizacao"]["declarante"] == "Maria da Silva" and registro["autorizacao"]["dispositivo"]
+    aut = registro["autorizacao"]
+    assert aut["dispositivo"] and aut["sinais"]["marcado_em"] and aut["sinais"]["impressao"]
     adm.click("#filtros-historico button[data-grupo=recusados]")
     adm.wait_for_selector("text=Nenhum pedido neste filtro.")
     adm.click("#filtros-historico button[data-grupo=todos]")
@@ -122,7 +124,16 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
         c.run("UPDATE lotes SET status = 'concluido'")
     cli.reload()
     cli.wait_for_selector("text=Pronto")
-    assert cli.locator(".videos a").count() == 2
+    assert cli.locator(".videos a[target=_blank]").count() == 2  # abre em outra aba
+    assert cli.locator(".videos a.baixar").count() == 2  # e salva como arquivo
+    # suporte: a mensagem chega ao /aprovar
+    cli.fill("#suporte-mensagem", "Preciso de ajuda com o meu pedido de teste.")
+    cli.fill("#suporte-email", "cliente@padaria.com.br")
+    cli.click("#suporte-enviar")
+    cli.wait_for_selector("#suporte-msg.ok")
+    adm.click("#atualizar")
+    adm.wait_for_selector("#suporte .msg-suporte")
+    assert "Preciso de ajuda" in adm.locator("#suporte").inner_text()
     if os.environ.get("GPU2GO_CAPTURAS"):
         cli.screenshot(path=os.path.join(os.environ["GPU2GO_CAPTURAS"], "cliente.png"), full_page=True)
     assert erros == []
