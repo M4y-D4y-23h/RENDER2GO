@@ -2,6 +2,35 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 08/10/2026: identidade visual e front-end das páginas
+
+### Identidade visual ([`docs/10`](docs/10-identidade-visual-e-front-end.md))
+- **Conceito:** anil (ações e confiança) e urucum (acento de movimento), dois pigmentos brasileiros, com tinta e papel como neutros. Modo claro e escuro, com contraste AA conferido em teste (28 pares).
+- **Logo:** símbolo (play com traços de movimento) e a palavra "Render2Go" em contornos. Favicon, ícones de tela inicial, manifesto e imagem de compartilhamento (1200 × 630) saem do `tools/marca.py`.
+- **Tipografia:** títulos em Bricolage Grotesque (OFL), só com os caracteres do português (13 KB); texto na fonte do aparelho.
+- **Regras de layout e componentes documentados:** celular primeiro, alvos de toque de 44 px, pedido em passos numerados, 25 ícones próprios.
+
+### Páginas
+- **Cliente (`/`):**
+  - quem chega vê a apresentação e "Como funciona" ao lado do código de acesso;
+  - pedido em passos, com prévia das fotos (dá para tirar uma por uma), arrastar e soltar (inclusive pastas), exemplo de texto para o estilo escolhido e contador de caracteres;
+  - autorização destacada quando o estilo exige; erros no próprio campo, com o foco nele;
+  - envio com progresso em bytes e porcentagem, ✓ em cada foto enviada e confirmação antes de fechar a página no meio;
+  - vídeos assistidos na própria página, com "Abrir em outra aba" e "Baixar";
+  - código inválido ou desativado volta ao formulário com a explicação (antes, a mensagem ficava escondida);
+  - quem já tem o código vê o painel desde o primeiro quadro.
+- **Revisão (`/aprovar`):** menu de seções com o número de pendentes, também no título da aba; aprovar em verde e recusar em vermelho; as fotos não são baixadas de novo a cada atualização; confirmação própria para desativar um código; código novo com botão "Copiar".
+- **Suporte e 404:** validação no campo e contador; endereço inexistente abre uma página 404 com caminhos de volta.
+
+### Desempenho, acessibilidade e segurança ([ADR 0006](docs/adr/0006-front-end-build-entrega-e-seguranca.md))
+- **Build com esbuild** (versão fixada): JS e CSS minificados, um script por página (o código da revisão não vai mais para o cliente), HTML compacto, versão por hash e SRI. Arquivos com cache de 1 ano; páginas revalidadas a cada visita (ETag). Caddy com zstd.
+- **Medido em 4G lenta, celular:** no painel, LCP de 0,71 s para 0,54 s na 1ª visita e de 0,41 s para 0,30 s na volta; CLS de 0,028 para 0. A 1ª visita sem código ficou 0,08 s mais lenta (CSS, HTML e fonte maiores).
+- **Acessibilidade:** WCAG 2.2 AA conferido pelo axe-core no CI, em claro e escuro; "Pular para o conteúdo", foco visível, teclado completo e anúncios curtos para leitores de tela (a atualização automática não repete nada).
+- **Segurança:** CSP com Trusted Types, COOP, CORP e Permissions-Policy; `no-store` nas respostas da API; pedido que muda algo na API vindo de outro site é recusado (CSRF por Fetch Metadata).
+- **Indexação:** descrição, canonical, Open Graph, `robots.txt`, `sitemap.xml`, manifesto e JSON-LD.
+- **Testes:** `test_web.py` (cabeçalhos, cache, SRI, 404, CSRF, indexação, contraste) e, no navegador, acessibilidade, celular (320 e 390 px), teclado, sessão e antecipação das chamadas da API.
+- **Atualizar o servidor:** `git pull && docker compose up -d --build && docker compose restart caddy` (docs/09).
+
 ## 08/10/2026: Render2Go no ar, segurança e experiência do cliente
 
 ### Implantação

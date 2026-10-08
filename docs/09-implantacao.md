@@ -140,6 +140,8 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
   docker compose run --rm orquestrador render2go-servico limpar
   ```
 - **Atualizar o código:** `git pull && docker compose up -d --build`.
+  - Quando o `Caddyfile` muda (como em 08/10/2026, compressão zstd), rode também `docker compose restart caddy`: o Compose não percebe mudança no arquivo montado.
+  - As páginas vêm prontas em `servico/web/publico/` (o servidor não precisa de Node). Navegadores com a página antiga em cache recarregam sozinhos uma vez.
 - **Backup do banco** (ex.: diário, por cron):
   ```bash
   docker compose exec -T postgres pg_dump -U gpu2go gpu2go | gzip > backup-$(date +%F).sql.gz
@@ -202,7 +204,8 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **Na fila:** "começa em cerca de N min". A conta considera o preparo do gerador, a espera de juntar testes gratuitos e os vídeos à frente.
 - **Gerando:** "termina em cerca de N min", pela média dos últimos vídeos prontos.
 - **Sempre:** um ponto pulsando e "Atualizado às HH:MM:SS". A página se atualiza sozinha a cada 10 s. Nenhuma etapa interna aparece.
-- **Vídeos prontos:** o nome abre o vídeo numa aba nova; "baixar" salva o arquivo.
+- **Vídeos prontos:** "Assistir" abre o vídeo na própria página (com "Abrir em outra aba" e "Baixar" ao lado); "Baixar" também aparece em cada vídeo da lista.
+- **Antes de enviar:** o cliente vê as miniaturas das fotos escolhidas (pode tirar uma por uma), um exemplo de texto para o estilo escolhido e o envio em bytes e porcentagem, com um ✓ em cada foto que terminou de subir. Fechar a página no meio do envio pede confirmação.
 - **Estilo "Livre (descreva o que quiser)":** o primeiro da lista, para pedidos que não se encaixam nos outros. Ele usa só ritmo e estilo naturais, e o texto do cliente decide o movimento (`worker/presets/receitas.v2.json`). Foto com pessoa continua exigindo a autorização, e o `/aprovar` avisa.
 - **Modelo de geração:** a página mostra os modelos oferecidos (hoje só o Wan 2.2) e o pedido guarda qual foi usado. Para acrescentar um modelo, veja `servico/src/render2go_servico/modelos.py`. O worker recusa modelo que não conhece.
 
@@ -214,7 +217,7 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
   - **Necessários**, sempre ativos: manter o cliente conectado com o código, segurança e prevenção de abuso (identificador do dispositivo, limite do teste) e lembrar a escolha;
   - **Estatísticas e marketing:** desligados, e nada disso carrega hoje. Se um dia você puser Google Analytics, Plausible ou pixel de anúncio, ele só pode carregar quando a escolha guardada permitir (`render2go-cookies` no navegador).
 - **Registro:** cada escolha fica gravada no servidor (tabela `cookies`: dispositivo, IP, navegador, versão e escolha), como prova do consentimento.
-- **Mudar a escolha:** pelo link "Preferências de cookies", no rodapé.
+- **Mudar a escolha:** pelo link "Preferências de cookies", no rodapé. O aviso é o primeiro item no teclado (logo depois de "Pular para o conteúdo"); aberto pelo rodapé, Esc fecha sem salvar.
 - **Falta:** a política de privacidade e os termos de uso, que devem explicar esses dados (LGPD).
 
 ## 5.2 O que fica guardado
@@ -237,7 +240,11 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
   - o pod recebe só o token de worker, a URL da API e os hosts permitidos;
   - o navegador recebe só URLs assinadas, uma por arquivo, que expiram.
 - **Tokens:** os dos clientes ficam no banco só como SHA-256. Os tokens de admin e de worker vêm do `.env`; para trocar um, edite e reinicie.
-- **CSP da página:** permite falar só com a própria API e com o R2.
+- **Páginas (ADR 0006, docs/10):**
+  - CSP estrita: scripts e estilos só do próprio domínio, nada embutido, Trusted Types obrigatório; a página fala só com a própria API e com o R2;
+  - SRI nos scripts e no CSS; COOP, CORP e `Permissions-Policy` (câmera, microfone, localização e pagamento desligados);
+  - pedido que muda algo na API vindo de outro site é recusado (403), pela checagem de `Sec-Fetch-Site`/`Origin`;
+  - respostas da API com `Cache-Control: no-store`; `/aprovar` e a API com `noindex`.
 - **Token do R2:** com permissão só no bucket `gpu2go`.
 - **RunPod:** pods só secure, com desligamento automático.
 - **Arquivos dos clientes:** fotos apagadas em 7 dias, vídeos em 30 (seção 3).

@@ -84,6 +84,8 @@ Estimativas para comparar ordens de grandeza; a Etapa 3 do plano mede os valores
 
 A hospedagem de cada peça (backend, storage, CDN) depende de fornecedores que aceitem o caso de uso (doc 03, seção 1).
 
+> **Front-end implementado (08/10/2026):** no serviço de marketing (fase 3, `servico/`), as páginas são TypeScript sem framework, com build próprio (esbuild), em vez do PWA em Next.js previsto acima. Identidade visual, layout e os cuidados de desempenho, acessibilidade e segurança estão no [docs/10](10-identidade-visual-e-front-end.md); a decisão, no [ADR 0006](adr/0006-front-end-build-entrega-e-seguranca.md).
+
 ## 4. Fluxo de um job
 
 1. O cliente envia `POST /jobs` com modo (`t2v`, `continuar` ou `i2v` a partir de um ativo), ação em português, presets, duração, resolução e tier.

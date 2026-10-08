@@ -18,8 +18,8 @@ Serviço de vídeos curtos com IA para pequenos negócios: o cliente envia as fo
 | Pasta | O que tem |
 |---|---|
 | [`worker/`](worker/README.md) | O gerador: imagem Docker com ComfyUI 0.38.0, compilador de pedidos (Ollama), presets e receitas, lote, worker da fila e ferramentas de pods |
-| [`servico/`](docs/09-implantacao.md) | O serviço: API, banco, orquestrador, páginas (TypeScript), detector de pessoas e suporte; implantação com Docker Compose |
-| `tools/` | Geração e conferência de templates e Dockerfiles |
+| [`servico/`](docs/09-implantacao.md) | O serviço: API, banco, orquestrador, páginas (TypeScript, [`docs/10`](docs/10-identidade-visual-e-front-end.md)), detector de pessoas e suporte; implantação com Docker Compose |
+| `tools/` | Geração e conferência de templates e Dockerfiles; arquivos da marca (`marca.py`) |
 | `infra/runpod/` | Dockerfiles do RunPod (gerados) e endpoint de teste |
 | `fixtures/sfw/` | Imagens de teste, só conteúdo SFW, com origem e licença |
 | `referencia/` | Pipeline manual original e workflow exportado (não editar) |
@@ -37,13 +37,14 @@ Serviço de vídeos curtos com IA para pequenos negócios: o cliente envia as fo
 | [`docs/07-guia-tecnico-gpus-e-pods.md`](docs/07-guia-tecnico-gpus-e-pods.md) | GPUs medidas, pods, proteções e custos |
 | [`docs/08-varios-clientes-e-demanda-alta.md`](docs/08-varios-clientes-e-demanda-alta.md) | Vários clientes ao mesmo tempo, escala e isolamento |
 | [`docs/09-implantacao.md`](docs/09-implantacao.md) | Implantação e operação do serviço (servidor, R2, e-mail, migração, 24 h) |
-| [`docs/adr/`](docs/adr) | Decisões de arquitetura (0001 a 0005) |
+| [`docs/10-identidade-visual-e-front-end.md`](docs/10-identidade-visual-e-front-end.md) | Identidade visual, regras de layout, componentes, desempenho, acessibilidade e segurança das páginas |
+| [`docs/adr/`](docs/adr) | Decisões de arquitetura (0001 a 0006) |
 
 ## Desenvolvimento
 
 - Worker: `cd worker && uv sync --python 3.12 && uv run pytest -q`
 - Serviço: `cd servico && uv sync --python 3.12 && uv run pytest -q`
-- Páginas: `cd servico/web && npm ci && npm run build`
+- Páginas: `cd servico/web && npm ci && npm run build` (edite `src/`; o build gera `publico/`, que também é versionado)
 
 Comandos completos, regras técnicas e de segurança estão no [`CLAUDE.md`](CLAUDE.md).
 

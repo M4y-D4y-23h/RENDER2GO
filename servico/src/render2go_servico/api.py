@@ -31,7 +31,10 @@ Workers (Bearer <token de worker>), sem porta de entrada nos pods (eles puxam):
     POST /api/worker/jobs/{id}/concluir  "ok" de render só com o vídeo no armazenamento e a
                                        conferência do 1º quadro acima do limiar (docs/08)
 
-Páginas: / (cliente), /suporte (suporte) e /aprovar (administração).
+Páginas: / (cliente), /suporte (suporte) e /aprovar (administração), compiladas em servico/web/publico
+(docs/10). Os arquivos de /estatico/ levam ?v=<hash> e ficam um ano em cache; as páginas são revalidadas
+a cada visita (ETag). Cabeçalhos de segurança em toda resposta (CSP com Trusted Types, COOP, CORP,
+Permissions-Policy) e proteção contra CSRF: pedido que muda algo na API só da própria página.
 """
 
 from __future__ import annotations
@@ -54,9 +57,11 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from render2go_worker import conferencia, filtros, lote, presets
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from render2go_servico import SERVICO_DIR, modelos, pessoas, suporte
 from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_saida
@@ -97,7 +102,71 @@ DISPOSITIVO = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 FUSO = re.compile(r"^[A-Za-z0-9_+\-/]{1,64}$")
 LOTE_FECHADO = ("concluido", "concluido_com_falhas", "recusado")
 NOME = re.compile(r"[^A-Za-z0-9_-]+")
-WEB = SERVICO_DIR / "web"
+PUBLICO = SERVICO_DIR / "web" / "publico"  # páginas compiladas (cd servico/web && npm run build)
+TIPOS_WEB = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+    ".webmanifest": "application/manifest+json",
+    ".txt": "text/plain; charset=utf-8",
+    ".xml": "application/xml; charset=utf-8",
+}
+CACHE_ANO = "public, max-age=31536000, immutable"  # /estatico/...?v=<hash atual>: o conteúdo nunca muda
+CACHE_DIA = "public, max-age=86400"
+CACHE_REVALIDAR = "no-cache"  # guarda, mas confere (ETag) a cada uso: página nova chega na hora
+PERMISSOES = (
+    "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+)
+# a página anterior ao front-end de 08/10/2026, se ficou no cache de algum navegador, pede /app.js:
+# este script recarrega uma vez, e a página nova (sempre revalidada) chega
+RECARREGAR_JS = (
+    b'(function(){try{if(sessionStorage.getItem("render2go-recarregou"))return;'
+    b'sessionStorage.setItem("render2go-recarregou","1")}catch(e){}location.reload()})();\n'
+)
+
+
+@dataclass(frozen=True)
+class ArquivoWeb:
+    dados: bytes
+    tipo: str
+    versao: str  # 12 primeiros hex do SHA-256: o mesmo ?v= que o construir.mjs põe nas páginas
+    etag: str
+
+
+def carregar_publico(raiz: Path = PUBLICO) -> dict[str, ArquivoWeb]:
+    """Arquivos de servico/web/publico na memória (poucas centenas de KB): resposta e ETag prontas."""
+    arquivos = {}
+    for p in sorted(raiz.rglob("*")):
+        if p.is_file() and p.suffix in TIPOS_WEB:
+            dados = p.read_bytes()
+            h = hashlib.sha256(dados).hexdigest()
+            arquivos[p.relative_to(raiz).as_posix()] = ArquivoWeb(dados, TIPOS_WEB[p.suffix], h[:12], f'"{h[:32]}"')
+    if "index.html" not in arquivos:
+        raise RuntimeError(f"páginas ausentes em {raiz}: rode `npm ci && npm run build` em servico/web")
+    return arquivos
+
+
+def servir(request: Request, arq: ArquivoWeb, cache: str, status: int = 200) -> Response:
+    cab = {"Cache-Control": cache, "ETag": arq.etag}
+    pedido = request.headers.get("if-none-match", "")
+    if status == 200 and any(t.strip().removeprefix("W/") in (arq.etag, "*") for t in pedido.split(",") if t.strip()):
+        return Response(status_code=304, headers=cab)
+    return Response(arq.dados, status_code=status, media_type=arq.tipo, headers=cab)
+
+
+def mesma_origem(request: Request) -> bool:
+    """Proteção contra CSRF (Fetch Metadata): o navegador diz de onde vem o pedido (Sec-Fetch-Site; os
+    antigos, só Origin). Sem nenhum dos dois não é um navegador (pods, curl, testes): a API exige o token."""
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        return site in ("same-origin", "none")
+    origem = request.headers.get("origin")
+    return origem is None or urlsplit(origem).netloc == request.headers.get("host", "")
 
 
 class AnaliseFotos:
@@ -431,31 +500,58 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if not _um_de(_token(authorization), c.worker_tokens):
             raise HTTPException(401, "token inválido")
 
-    # -- páginas ------------------------------------------------------------------------
+    # -- páginas (servico/web/publico; docs/10) ---------------------------------------------
+
+    web = carregar_publico()
 
     @app.get("/", include_in_schema=False)
-    def pagina_cliente():
-        return FileResponse(WEB / "index.html")
+    def pagina_cliente(request: Request):
+        return servir(request, web["index.html"], CACHE_REVALIDAR)
 
     @app.get("/suporte", include_in_schema=False)
-    def pagina_suporte():
-        return FileResponse(WEB / "suporte.html", media_type="text/html")
+    def pagina_suporte(request: Request):
+        return servir(request, web["suporte.html"], CACHE_REVALIDAR)
 
     @app.get("/aprovar", include_in_schema=False)
-    def pagina_aprovar():
-        return FileResponse(WEB / "aprovar.html")
+    def pagina_aprovar(request: Request):
+        return servir(request, web["aprovar.html"], CACHE_REVALIDAR)
+
+    @app.get("/estatico/{nome}", include_in_schema=False)
+    def estatico(nome: str, request: Request, v: str | None = None):
+        arq = web.get(f"estatico/{nome}")
+        if arq is None:
+            raise HTTPException(404, "arquivo não encontrado")
+        return servir(request, arq, CACHE_ANO if v == arq.versao else CACHE_REVALIDAR)
+
+    def arquivo_raiz(nome: str):
+        def rota(request: Request, v: str | None = None):
+            arq = web[nome]
+            return servir(request, arq, CACHE_ANO if v == arq.versao else CACHE_DIA)
+
+        return rota
+
+    for nome in ("favicon.ico", "robots.txt", "sitemap.xml", "manifest.webmanifest"):
+        app.add_api_route(f"/{nome}", arquivo_raiz(nome), methods=["GET"], include_in_schema=False)
 
     @app.get("/app.js", include_in_schema=False)
-    def js():
-        return FileResponse(WEB / "app.js", media_type="text/javascript")
+    def js_antigo():
+        return Response(RECARREGAR_JS, media_type=TIPOS_WEB[".js"], headers={"Cache-Control": CACHE_REVALIDAR})
 
     @app.get("/estilo.css", include_in_schema=False)
-    def css():
-        return FileResponse(WEB / "estilo.css", media_type="text/css")
+    def css_antigo(request: Request):
+        return servir(request, web["estatico/estilo.css"], CACHE_REVALIDAR)
 
-    @app.get("/favicon.ico", include_in_schema=False)
-    def favicon():
-        return Response(status_code=204)
+    @app.exception_handler(StarletteHTTPException)
+    async def erro_http(request: Request, exc: StarletteHTTPException):
+        """Endereço inexistente aberto no navegador: página 404 com caminhos de volta (a API segue em JSON)."""
+        if (
+            exc.status_code == 404
+            and request.method == "GET"
+            and not request.url.path.startswith("/api/")
+            and "text/html" in request.headers.get("accept", "")
+        ):
+            return servir(request, web["404.html"], CACHE_REVALIDAR, status=404)
+        return await http_exception_handler(request, exc)
 
     @app.get("/saude")
     def saude():
@@ -982,15 +1078,32 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def cabecalhos(request: Request, call_next):
-        resp = await call_next(request)
+        caminho = request.url.path
+        da_api = caminho.startswith("/api/") or caminho == "/saude"
+        if da_api and request.method not in ("GET", "HEAD", "OPTIONS") and not mesma_origem(request):
+            resp: Response = JSONResponse({"detail": "pedido de outro site recusado"}, status_code=403)
+        else:
+            resp = await call_next(request)
         arm = origem_armazenamento()
-        resp.headers["X-Content-Type-Options"] = "nosniff"
-        resp.headers["Referrer-Policy"] = "no-referrer"
-        resp.headers["X-Frame-Options"] = "DENY"
-        resp.headers["Content-Security-Policy"] = (
-            f"default-src 'self'; img-src 'self' {arm}; media-src {arm}; connect-src 'self' {arm}; "
-            "style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        h = resp.headers
+        h["X-Content-Type-Options"] = "nosniff"
+        h["Referrer-Policy"] = "no-referrer"
+        h["X-Frame-Options"] = "DENY"
+        h["Cross-Origin-Opener-Policy"] = "same-origin"
+        # imagens da marca podem aparecer em prévias de link de outros sites; o resto, só aqui
+        marca = caminho.startswith("/estatico/") and caminho.endswith((".png", ".jpg", ".svg"))
+        h["Cross-Origin-Resource-Policy"] = "cross-origin" if marca or caminho == "/favicon.ico" else "same-origin"
+        h["Permissions-Policy"] = PERMISSOES
+        h["Content-Security-Policy"] = (
+            f"default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; manifest-src 'self'; "
+            f"img-src 'self' blob: {arm}; media-src {arm}; connect-src 'self' {arm}; object-src 'none'; "
+            "frame-ancestors 'none'; base-uri 'none'; form-action 'self'; "
+            "require-trusted-types-for 'script'; trusted-types 'none'"
         )
+        if da_api:
+            h.setdefault("Cache-Control", "no-store")  # respostas com dados da conta não ficam em cache
+        if da_api or caminho == "/aprovar":
+            h["X-Robots-Tag"] = "noindex, nofollow"
         return resp
 
     return app

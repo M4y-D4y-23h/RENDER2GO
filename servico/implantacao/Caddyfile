@@ -1,6 +1,6 @@
 # HTTPS automático (Let's Encrypt) para o domínio do serviço
 {$DOMINIO} {
-	encode gzip
+	encode zstd gzip  # zstd para navegadores novos; gzip para os outros
 	request_body {
 		max_size 1MB  # as fotos vão direto ao R2; a API só recebe JSON
 	}

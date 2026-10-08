@@ -56,7 +56,13 @@ jobs:
       - run: uv run ruff format --check src tests
       - name: Testes (SQLite e Postgres)
         run: uv run pytest -q
-      - name: Páginas no Chromium (playwright)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: axe-core (acessibilidade nas páginas)
+        working-directory: servico/web
+        run: npm ci
+      - name: Páginas no Chromium (playwright e axe-core)
         run: |
           uv run --with playwright==1.56.0 playwright install --with-deps chromium
           uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py
@@ -73,8 +79,14 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci
-      - name: app.js em dia com src/app.ts
-        run: npm run build && git diff --exit-code app.js
+      - name: publico/ em dia com src/ (TypeScript, CSS e HTML minificados, versões e SRI)
+        run: |
+          npm run build
+          if [ -n "$(git status --porcelain -- publico)" ]; then
+            git status --short -- publico
+            echo "::error::publico/ desatualizado: rode 'npm run build' em servico/web e versione o resultado"
+            exit 1
+          fi
 
   imagem:
     needs: [test, web]

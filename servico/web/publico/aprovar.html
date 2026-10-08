@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Revisão · Render2Go</title>
+<meta name="robots" content="noindex, nofollow">
+<script src="/estatico/inicio.js?v=f0f2df15beb8" integrity="sha384-+TWRsxk/xzw/lCcR/G5w72nItMDmkxnwiy5YcWN5HKYp6IfgxOr9czSNDktqRoh4" data-chave="render2go-token-admin" data-antecipar="/api/admin/suporte /api/admin/lotes /api/admin/historico?grupo=todos"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0e17" media="(prefers-color-scheme: dark)">
+<meta name="format-detection" content="telephone=no">
+<link rel="stylesheet" href="/estatico/estilo.css?v=0c06a1e24b09" integrity="sha384-rAkcbrOJjy5nOTySnLBXSd3AoSYHkl/WxzPRVLf0IWelcjfal5ayA0oVa1CyuOnz">
+<link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
+<link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
+<link rel="manifest" href="/manifest.webmanifest?v=d9a1c1aab530">
+<meta property="og:site_name" content="Render2Go">
+<meta property="og:locale" content="pt_BR">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://app.render2go.com/estatico/og.jpg?v=11020cae96d7">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
+<meta name="twitter:card" content="summary_large_image">
+<script src="/estatico/aprovar.js?v=0ff1d54d436c" integrity="sha384-uJnSw3hvuiY7hrpVYE5cMUDLnT7P8IM2DG3Mgn6meKWWyfi7XNsXys4WxIOGy7EF" defer></script>
+</head>
+<body data-pagina="aprovar">
+<a class="pular" href="#conteudo">Pular para o conteúdo</a>
+<header class="topo">
+<div class="recipiente topo-interno">
+<a class="marca" href="/aprovar">
+<picture>
+<source media="(max-width: 22.5em)" srcset="/estatico/icone.svg?v=5320513ad899" width="32" height="32">
+<source media="(prefers-color-scheme: dark)" srcset="/estatico/logo-escuro.svg?v=135b3af3bee0" width="211" height="32">
+<img src="/estatico/logo.svg?v=5f8eec44f1fd" alt="Render2Go" width="211" height="32">
+</picture>
+<span class="marca-area">Revisão</span>
+</a>
+<nav class="navegacao" aria-label="Ações da revisão">
+<button type="button" id="atualizar" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.4 5.7M20 5v6h-6"/></svg><span class="rotulo-nav">Atualizar</span></button>
+<button type="button" id="sair" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16.5 14.5 12 10 7.5M14.5 12H4"/></svg><span class="rotulo-nav">Sair</span></button>
+</nav>
+</div>
+</header>
+<main id="conteudo" class="conteudo" tabindex="-1">
+<div class="recipiente">
+<noscript><p class="aviso erro">Esta página precisa de JavaScript.</p></noscript>
+<form id="form-token" class="cartao elevado entrar-admin so-sem-sessao" aria-labelledby="titulo-entrar">
+<h1 id="titulo-entrar">Revisão dos pedidos</h1>
+<div class="campo">
+<label for="token">Token de administração</label>
+<div class="senha">
+<input id="token" type="password" autocomplete="current-password" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go">
+<button type="button" class="botao fantasma pequeno" id="mostrar-token" aria-controls="token" aria-pressed="false">Mostrar</button>
+</div>
+</div>
+<p id="msg-entrada" class="aviso erro" hidden></p>
+<button type="submit" class="botao primario largo">Entrar</button>
+</form>
+<div class="painel so-com-sessao" id="painel">
+<div class="cab-pagina">
+<h1 id="titulo-painel" tabindex="-1">Revisão dos pedidos</h1>
+<p class="fraco">Nada vai para a GPU sem aprovação (ADR 0004). Confira se as fotos e o pedido são apropriados e se as pessoas nas fotos têm autorização.</p>
+</div>
+<div class="admin-grade">
+<nav class="secoes" aria-label="Seções da revisão">
+<a href="#sec-pendentes">Aguardando <span class="contagem" id="n-pendentes"></span></a>
+<a href="#sec-historico">Histórico</a>
+<a href="#sec-ips">Uso por IP</a>
+<a href="#sec-dispositivos">Dispositivos</a>
+<a href="#sec-suporte">Suporte <span class="contagem" id="n-suporte"></span></a>
+<a href="#sec-cliente">Novo cliente</a>
+</nav>
+<div class="admin-conteudo">
+<p id="msg" class="aviso" hidden></p>
+<section id="sec-pendentes" aria-labelledby="t-pendentes">
+<div class="cab-secao">
+<h2 id="t-pendentes">Aguardando revisão</h2>
+<span class="fraco" id="atualizado"></span>
+</div>
+<div id="pendentes" class="lista" aria-busy="true">
+<div class="cartao esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
+</div>
+</section>
+<section id="sec-historico" aria-labelledby="t-historico">
+<h2 id="t-historico">Histórico</h2>
+<div class="filtros" id="filtros-historico" role="group" aria-label="Filtrar o histórico">
+<button type="button" data-grupo="todos" aria-pressed="true">Todos</button>
+<button type="button" data-grupo="revisao" aria-pressed="false">Em revisão</button>
+<button type="button" data-grupo="aprovados" aria-pressed="false">Aprovados</button>
+<button type="button" data-grupo="recusados" aria-pressed="false">Recusados</button>
+</div>
+<div id="historico" class="lista"></div>
+</section>
+<section id="sec-ips" aria-labelledby="t-ips">
+<h2 id="t-ips">Uso por IP</h2>
+<p class="fraco">Fotos de pedidos que passaram do envio e não foram recusados. O teste gratuito vale até 10 fotos por IP, somando todos os clientes de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
+<div id="ips" class="tabela" role="region" aria-label="Tabela de uso por IP (role para o lado)" tabindex="0"></div>
+</section>
+<section id="sec-dispositivos" aria-labelledby="t-dispositivos">
+<h2 id="t-dispositivos">Dispositivos</h2>
+<p class="fraco">Cada navegador recebe um identificador guardado nele mesmo. Um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes. Uma janela anônima ou limpar os dados do navegador gera um identificador novo, mas o teto por IP continua valendo.</p>
+<div id="dispositivos" class="tabela" role="region" aria-label="Tabela de dispositivos (role para o lado)" tabindex="0"></div>
+</section>
+<section id="sec-suporte" aria-labelledby="t-suporte">
+<h2 id="t-suporte">Mensagens de suporte</h2>
+<p id="suporte-config" class="fraco"></p>
+<div id="suporte" class="lista"></div>
+</section>
+<section id="sec-cliente" aria-labelledby="t-cliente">
+<h2 id="t-cliente">Novo cliente</h2>
+<form id="form-cliente" class="cartao form-cliente" novalidate>
+<div class="duas">
+<div class="campo">
+<label for="cliente-nome">Nome</label>
+<input id="cliente-nome" required minlength="2" maxlength="120" autocomplete="off">
+</div>
+<div class="campo">
+<label for="cliente-plano">Plano</label>
+<select id="cliente-plano">
+<option value="teste">Teste gratuito (um pedido, até 10 fotos, 3 s, 480p)</option>
+<option value="pago">Pago</option>
+<option value="interno">Interno (só você: sem limites e sem revisão)</option>
+</select>
+</div>
+</div>
+<div class="campo">
+<label for="cliente-cota">Fotos por dia</label>
+<input id="cliente-cota" type="number" inputmode="numeric" min="1" max="100000" value="500">
+</div>
+<div class="acoes">
+<button type="submit" class="botao primario" id="cliente-enviar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3a6 6 0 0 1-2.2 11.6L11 16.5H9v2H7v2H3v-3.6l6.2-6.2A6 6 0 0 1 15 3zM16.5 7.5h.01"/></svg>Cadastrar e gerar o código</button>
+</div>
+<div id="token-novo" class="aviso ok" hidden></div>
+</form>
+</section>
+</div>
+</div>
+</div>
+</div>
+</main>
+<div id="anuncio" class="visualmente-oculto" aria-live="polite" aria-atomic="true"></div>
+<div id="anuncio-urgente" class="visualmente-oculto" aria-live="assertive" aria-atomic="true"></div>
+</body>
+</html>

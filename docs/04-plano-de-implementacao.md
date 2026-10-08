@@ -149,6 +149,8 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 
 ## Etapa 6 — Frontend PWA
 
+> **Status (08/10/2026): em pausa como PWA da plataforma geral (D1).** O serviço de marketing (caminho A) tem as próprias páginas (`/`, `/suporte`, `/aprovar`), já com identidade visual, celular primeiro, acessibilidade WCAG 2.2 AA (axe-core no CI), desempenho e segurança no front-end: [docs/10](10-identidade-visual-e-front-end.md) e [ADR 0006](adr/0006-front-end-build-entrega-e-seguranca.md).
+
 - Telas: entrada e verificação de idade; novo vídeo (modo, ação, presets em botões, duração, resolução, tier com preço e tempo estimados); acompanhamento (fila e progresso); galeria privada (assistir, baixar, apagar, continuar, variar a seed); créditos; denúncia; privacidade (exportar e apagar dados).
 - Mobile-first, pt-BR, robusta em conexão lenta (jobs assíncronos e aviso ao concluir).
 

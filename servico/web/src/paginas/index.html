@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Render2Go · Vídeos curtos com IA a partir das suas fotos</title>
+<meta name="description" content="Envie as fotos do seu negócio, diga em português o que deve acontecer e receba um vídeo curto por foto, pronto para as redes sociais.">
+<link rel="canonical" href="{{ORIGEM}}/">
+<meta property="og:title" content="Render2Go · Vídeos curtos com IA a partir das suas fotos">
+<meta property="og:description" content="Envie as fotos do seu negócio, diga em português o que deve acontecer e receba um vídeo curto por foto.">
+<meta property="og:url" content="{{ORIGEM}}/">
+<script src="/estatico/inicio.js" data-chave="render2go-token-cliente" data-antecipar="/api/receitas /api/lotes"></script>
+<!--@cabeca-->
+<script src="/estatico/cliente.js" defer></script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"Organization","@id":"{{ORIGEM}}/#organizacao","name":"Render2Go","url":"{{ORIGEM}}/","logo":"{{ORIGEM}}/estatico/icone-512.png"},
+{"@type":"WebSite","name":"Render2Go","url":"{{ORIGEM}}/","inLanguage":"pt-BR","publisher":{"@id":"{{ORIGEM}}/#organizacao"}}
+]}
+</script>
+</head>
+<body data-pagina="cliente">
+<!--@topo-->
+<main id="conteudo" class="conteudo" tabindex="-1">
+  <noscript>
+    <div class="recipiente"><p class="aviso erro">Esta página precisa de JavaScript. Ative o JavaScript no navegador e recarregue a página.</p></div>
+  </noscript>
+
+  <!-- quem ainda não entrou: apresentação e código de acesso -->
+  <div class="recipiente entrada so-sem-sessao">
+    <section class="hero" aria-labelledby="titulo-hero">
+      <p class="sobretitulo"><!--@icone brilho-->Vídeos com IA para pequenos negócios</p>
+      <h1 id="titulo-hero">Suas fotos viram vídeos curtos, prontos para postar</h1>
+      <p class="lead">Envie dezenas de fotos de uma vez, diga em português o que deve acontecer e receba um vídeo por foto.</p>
+    </section>
+
+    <form id="form-token" class="cartao elevado entrar" aria-labelledby="titulo-entrar">
+      <h2 id="titulo-entrar">Entrar</h2>
+      <div class="campo">
+        <label for="token">Seu código de acesso</label>
+        <div class="senha">
+          <input id="token" type="password" autocomplete="current-password" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go" aria-describedby="token-dica">
+          <button type="button" class="botao fantasma pequeno" id="mostrar-token" aria-controls="token" aria-pressed="false">Mostrar</button>
+        </div>
+        <p class="dica" id="token-dica">Você recebe o código quando contrata ou pede o teste gratuito. Ele fica guardado só neste navegador.</p>
+      </div>
+      <p id="msg-entrada" class="aviso erro" hidden></p>
+      <button type="submit" class="botao primario largo">Entrar</button>
+      <p class="fraco">Não consegue entrar? <a href="/suporte">Fale com o suporte</a>.</p>
+    </form>
+
+    <section class="como" aria-labelledby="titulo-como">
+      <h2 id="titulo-como">Como funciona</h2>
+      <ol>
+        <li><span><strong>Envie as fotos.</strong> Dezenas de uma vez, do celular ou do computador.</span></li>
+        <li><span><strong>Diga o que deve acontecer.</strong> Em português, do seu jeito, como “a câmera se aproxima devagar do produto”.</span></li>
+        <li><span><strong>Baixe os vídeos.</strong> Um vídeo curto por foto, depois de uma revisão rápida do pedido.</span></li>
+      </ol>
+    </section>
+  </div>
+
+  <!-- quem já entrou: novo pedido e acompanhamento -->
+  <div class="recipiente painel so-com-sessao" id="painel">
+    <div class="cab-pagina">
+      <h1 id="titulo-painel" tabindex="-1">Seus vídeos</h1>
+      <p class="fraco">Escolha as fotos, diga o que deve acontecer e acompanhe os pedidos aqui.</p>
+    </div>
+    <p id="msg-painel" class="aviso erro" hidden></p>
+
+    <div class="painel-grade">
+      <section class="cartao novo-pedido" aria-labelledby="titulo-novo">
+        <h2 id="titulo-novo">Novo pedido</h2>
+        <div id="plano-aviso" class="aviso info" hidden></div>
+        <form id="form-lote" novalidate>
+          <fieldset class="campos-lote passos" id="campos-lote" disabled>
+            <fieldset class="passo">
+              <legend>Fotos</legend>
+              <div class="soltar" id="soltar">
+                <!--@icone imagens-->
+                <p class="soltar-titulo"><span class="so-mouse">Arraste as fotos para cá ou escolha abaixo</span><span class="so-toque">Escolha as fotos do seu aparelho</span></p>
+                <div class="escolha">
+                  <input id="fotos" type="file" multiple accept="image/jpeg,image/png,image/webp" aria-describedby="fotos-dica">
+                  <label class="botao primario" for="fotos"><!--@icone enviar-->Escolher fotos</label>
+                  <input id="pasta" type="file" multiple webkitdirectory aria-describedby="fotos-dica">
+                  <label class="botao" for="pasta" id="rotulo-pasta"><!--@icone pasta-->Escolher uma pasta</label>
+                </div>
+                <p class="dica" id="fotos-dica">JPG, PNG ou WebP, até 50 MB cada. Cada foto vira um vídeo.</p>
+              </div>
+              <div class="barra-fotos" id="barra-fotos" hidden>
+                <p id="contagem" class="fraco"></p>
+                <button type="button" class="botao pequeno" id="limpar"><!--@icone lixo-->Limpar</button>
+              </div>
+              <ul class="previa" id="previa" aria-label="Fotos escolhidas" hidden></ul>
+            </fieldset>
+
+            <fieldset class="passo">
+              <legend>Estilo e descrição</legend>
+              <div class="campo">
+                <label for="receita">Estilo</label>
+                <select id="receita"></select>
+              </div>
+              <div class="campo">
+                <label for="prompt">O que deve acontecer nos vídeos?</label>
+                <textarea id="prompt" required minlength="3" maxlength="600" spellcheck="true" autocapitalize="sentences" placeholder="Ex.: a câmera se aproxima devagar do produto" aria-describedby="prompt-dica prompt-contador"></textarea>
+                <div class="linha-campo">
+                  <p class="dica" id="prompt-dica">Escreva em português. O mesmo pedido vale para todas as fotos.</p>
+                  <span class="contador" id="prompt-contador">0/600</span>
+                </div>
+                <div class="sugestao" id="sugestao" hidden>
+                  <p>Exemplo para este estilo: <q id="sugestao-texto"></q></p>
+                  <button type="button" class="botao pequeno" id="usar-sugestao"><!--@icone brilho-->Usar este exemplo</button>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="passo">
+              <legend>Ajustes</legend>
+              <div class="duas">
+                <div class="campo">
+                  <label for="duracao">Duração</label>
+                  <select id="duracao">
+                    <option value="">Padrão do estilo</option>
+                    <option value="3">3 s</option>
+                    <option value="4">4 s</option>
+                    <option value="5">5 s</option>
+                    <option value="6">6 s</option>
+                    <option value="7">7 s</option>
+                  </select>
+                </div>
+                <div class="campo">
+                  <label for="qualidade">Qualidade</label>
+                  <select id="qualidade">
+                    <option value="rapida">Rápida (prévia, 480p)</option>
+                    <option value="alta">Alta (720p)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="campo">
+                <label for="modelo">Modelo de geração</label>
+                <select id="modelo" aria-describedby="modelo-info"></select>
+                <p id="modelo-info" class="dica"></p>
+              </div>
+            </fieldset>
+
+            <fieldset class="passo">
+              <legend>Autorização</legend>
+              <label class="marcacao" id="caixa-consentimento">
+                <input id="consentimento" type="checkbox" aria-describedby="consentimento-dica">
+                <span id="texto-autorizacao">Tenho autorização por escrito das pessoas que aparecem nas fotos (obrigatório em estilos com pessoas).</span>
+              </label>
+              <p class="dica" id="consentimento-dica">Obrigatória quando aparecem pessoas nas fotos. Ao marcar, a declaração fica registrada com a sua conta, a data, o endereço de internet e este dispositivo.</p>
+            </fieldset>
+
+            <div class="enviar">
+              <button type="submit" class="botao primario largo" id="enviar"><!--@icone enviar-->Enviar pedido</button>
+              <div class="progresso" id="area-progresso" hidden>
+                <div class="progresso-texto"><span id="progresso-texto">Enviando as fotos…</span><span id="progresso-pct"></span></div>
+                <progress id="progresso" aria-labelledby="progresso-texto"></progress>
+              </div>
+            </div>
+          </fieldset>
+          <p id="msg" class="aviso" hidden></p>
+        </form>
+      </section>
+
+      <section class="pedidos" aria-labelledby="titulo-pedidos">
+        <div class="cab-secao">
+          <h2 id="titulo-pedidos" tabindex="-1">Seus pedidos</h2>
+          <span class="fraco" id="atualizado"></span>
+        </div>
+        <div id="lotes" class="lotes" aria-busy="true">
+          <div class="cartao esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
+        </div>
+        <p class="suporte-link fraco">Precisa de ajuda? Fale com o suporte em <a id="link-suporte" href="/suporte">app.render2go.com/suporte</a></p>
+      </section>
+    </div>
+  </div>
+</main>
+<!--@rodape-->
+<!--@anuncios-->
+</body>
+</html>

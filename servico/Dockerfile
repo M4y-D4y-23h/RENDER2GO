@@ -27,7 +27,7 @@ ENV RENDER2GO_MODELOS_SERVICO=/opt/render2go/modelos-servico
 RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/render2go-ca . /usr/local/lib/render2go/ca-env.sh \
     && chmod -R a+rX /app \
     && cd servico && uv sync --frozen --no-dev --no-cache \
-    && test -s web/app.js \
+    && test -s web/publico/index.html && test -s web/publico/estatico/cliente.js \
     && /opt/venv/bin/python -m render2go_servico.pessoas baixar "$RENDER2GO_MODELOS_SERVICO"
 # a pasta de estado já existe com o dono certo: o volume nomeado do compose herda dono e permissões
 RUN useradd --system --uid 10001 --create-home render2go \

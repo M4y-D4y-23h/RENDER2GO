@@ -132,6 +132,7 @@ Entregue ─► C9 canal de denúncia ─► remoção em até 48 h + hash bloqu
 - **Webhooks** assinados (HMAC), com conferência do `job_id` e processamento idempotente.
 - **Cadeia de suprimentos:** versões fixadas (tag do ComfyUI, commits dos custom nodes, lock das dependências Python com hashes, SHA-256 dos modelos); build no CI; ComfyUI-Manager fora da produção.
 - **Contas:** senha + segundo fator ou passkeys; cookies `HttpOnly`; limite de requisições; pontuação de abuso (recusas repetidas bloqueiam a conta).
+- **Páginas do serviço de marketing (fase 3, 08/10/2026):** CSP estrita com Trusted Types, SRI, COOP, CORP, `Permissions-Policy` e proteção contra CSRF por Fetch Metadata. O código de acesso fica guardado no navegador e vai no cabeçalho `Authorization`, não em cookie; por que, e o que muda quando houver contas com senha, está no [ADR 0006](adr/0006-front-end-build-entrega-e-seguranca.md).
 - **Isolamento entre clientes:** prefixos por usuário no storage; testes contra acesso a recurso de outro usuário (IDOR).
 - Criptografia em repouso (banco e storage) e TLS em tudo.
 

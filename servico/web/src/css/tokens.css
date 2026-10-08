@@ -1,0 +1,147 @@
+/* Tokens da identidade visual Render2Go (docs/10-identidade-visual-e-front-end.md).
+   Pigmentos: anil (ação e confiança), urucum (acento e movimento), tinta (texto) e papel (fundo).
+   Todo par texto/fundo daqui tem contraste conferido (WCAG AA) por servico/tests/test_web.py. */
+
+@font-face {
+  font-family: "Render2Go Titulos";
+  src: url("/estatico/fonte-titulos.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  /* optional e sem preload: a fonte nunca atrasa a primeira pintura nem troca depois (CLS zero); na
+     primeira visita os títulos podem sair na fonte do sistema, e daí em diante vêm do cache */
+  font-display: optional;
+  unicode-range: U+0020-007E, U+00A0, U+00AA, U+00B0, U+00B7, U+00BA, U+00C0-00C3, U+00C7-00CA, U+00CD,
+    U+00D3-00D5, U+00DA, U+00DC, U+00E0-00E3, U+00E7-00EA, U+00ED, U+00F3-00F5, U+00FA, U+00FC,
+    U+2013-2014, U+2018-2019, U+201C-201D, U+2026, U+20AC;
+}
+
+:root {
+  color-scheme: light;
+
+  /* superfícies e texto */
+  --cor-fundo: #f7f7fb;
+  --cor-superficie: #ffffff;
+  --cor-superficie-2: #f1f0f7;
+  --cor-borda: #e2e0ec;
+  --cor-borda-campo: #8e8aa6;
+  --cor-texto: #1a1830;
+  --cor-texto-2: #45425c;
+  --cor-texto-3: #5e5b73;
+
+  /* marca */
+  --cor-marca: #4338ca;
+  --cor-marca-forte: #3730a3;
+  --cor-sobre-marca: #ffffff;
+  --cor-marca-suave: #eeedff;
+  --cor-marca-texto: #3730a3;
+  --cor-acento: #e5532e;
+  --cor-acento-texto: #b5361a;
+  --cor-acento-suave: #fff1ec;
+  --cor-foco: #4338ca;
+
+  /* estados */
+  --cor-ok: #13693f;
+  --cor-ok-fundo: #e4f5ec;
+  --cor-ok-borda: #8fd0ae;
+  --cor-erro: #b42318;
+  --cor-erro-fundo: #fdebe9;
+  --cor-erro-borda: #f1ada5;
+  --cor-alerta: #855000;
+  --cor-alerta-fundo: #fff3d1;
+  --cor-alerta-borda: #ebc56a;
+  --cor-sobre-estado: #ffffff;
+
+  /* tipografia */
+  --fonte-titulos: "Render2Go Titulos", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --fonte-texto: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", sans-serif;
+  --fonte-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --texto-xs: 0.8125rem;
+  --texto-sm: 0.875rem;
+  --texto-md: 1rem;
+  --texto-lg: 1.125rem;
+  --titulo-1: clamp(1.75rem, 1.3rem + 2.2vw, 2.625rem);
+  --titulo-2: clamp(1.25rem, 1.12rem + 0.6vw, 1.5rem);
+  --titulo-3: clamp(1.0625rem, 1.02rem + 0.25vw, 1.1875rem);
+  --entrelinha: 1.55;
+  --entrelinha-titulo: 1.15;
+
+  /* espaço (base 4 px) e medidas */
+  --esp-1: 0.25rem;
+  --esp-2: 0.5rem;
+  --esp-3: 0.75rem;
+  --esp-4: 1rem;
+  --esp-5: 1.5rem;
+  --esp-6: 2rem;
+  --esp-7: 3rem;
+  --esp-8: 4rem;
+  --margem: clamp(1rem, 0.6rem + 2vw, 2rem);
+  --largura-pagina: 72rem;
+  --largura-estreita: 46rem;
+  --largura-texto: 68ch;
+  --alvo: 2.75rem; /* 44 px: área mínima de toque */
+  --altura-topo: 3.75rem;
+
+  /* forma e profundidade */
+  --raio-sm: 0.5rem;
+  --raio-md: 0.75rem;
+  --raio-lg: 1rem;
+  --raio-xl: 1.5rem;
+  --raio-pilula: 999px;
+  --sombra-1: 0 1px 2px rgb(26 24 48 / 0.06);
+  --sombra-2: 0 1px 2px rgb(26 24 48 / 0.05), 0 8px 24px -6px rgb(26 24 48 / 0.1);
+  --sombra-3: 0 24px 64px -12px rgb(26 24 48 / 0.35);
+
+  /* movimento */
+  --rapido: 120ms;
+  --medio: 200ms;
+  --curva: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --cor-fundo: #0f0e17;
+    --cor-superficie: #181722;
+    --cor-superficie-2: #21202d;
+    --cor-borda: #2e2c3d;
+    --cor-borda-campo: #6f6b88;
+    --cor-texto: #eeedf6;
+    --cor-texto-2: #cbc8db;
+    --cor-texto-3: #a6a3ba;
+
+    --cor-marca: #a49eff;
+    --cor-marca-forte: #beb9ff;
+    --cor-sobre-marca: #16133a;
+    --cor-marca-suave: #26234d;
+    --cor-marca-texto: #c9c5ff;
+    --cor-acento: #ff7d57;
+    --cor-acento-texto: #ff9a7c;
+    --cor-acento-suave: #3a1d14;
+    --cor-foco: #a49eff;
+
+    --cor-ok: #72d8a2;
+    --cor-ok-fundo: #10291d;
+    --cor-ok-borda: #2c6b4b;
+    --cor-erro: #ff9f94;
+    --cor-erro-fundo: #3a1614;
+    --cor-erro-borda: #7a2e28;
+    --cor-alerta: #f7c65a;
+    --cor-alerta-fundo: #33270c;
+    --cor-alerta-borda: #6e5419;
+    --cor-sobre-estado: #16133a;
+
+    --sombra-1: 0 1px 2px rgb(0 0 0 / 0.4);
+    --sombra-2: 0 1px 2px rgb(0 0 0 / 0.35), 0 10px 28px -8px rgb(0 0 0 / 0.55);
+    --sombra-3: 0 24px 64px -12px rgb(0 0 0 / 0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --rapido: 0ms;
+    --medio: 0ms;
+  }
+}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Suporte · Render2Go</title>
+<meta name="description" content="Fale com o suporte do Render2Go: dúvidas, pedidos de vídeo e código de acesso. Respondemos pelo e-mail que você informar.">
+<link rel="canonical" href="{{ORIGEM}}/suporte">
+<meta property="og:title" content="Suporte · Render2Go">
+<meta property="og:description" content="Dúvidas, pedidos de vídeo e código de acesso: fale com o suporte do Render2Go.">
+<meta property="og:url" content="{{ORIGEM}}/suporte">
+<!--@cabeca-->
+<script src="/estatico/suporte.js" defer></script>
+</head>
+<body data-pagina="suporte">
+<!--@topo-->
+<main id="conteudo" class="conteudo" tabindex="-1">
+  <div class="recipiente estreito">
+    <noscript><p class="aviso erro">Esta página precisa de JavaScript para enviar a mensagem. Ative o JavaScript no navegador e recarregue a página.</p></noscript>
+    <div class="cab-pagina">
+      <h1>Fale com o suporte</h1>
+      <p class="lead">Dúvida, problema com um pedido ou com o código de acesso? Escreva aqui. Respondemos pelo e-mail que você informar.</p>
+    </div>
+
+    <form id="form-suporte" class="cartao elevado pilha" novalidate aria-label="Mensagem para o suporte">
+      <p id="suporte-conta" class="aviso info" hidden></p>
+      <div class="campo">
+        <label for="suporte-assunto">Assunto <span class="opcional">(opcional)</span></label>
+        <input id="suporte-assunto" maxlength="120" autocomplete="off" enterkeyhint="next">
+      </div>
+      <div class="campo">
+        <label for="suporte-mensagem">Mensagem</label>
+        <textarea id="suporte-mensagem" required minlength="10" maxlength="2000" spellcheck="true" autocapitalize="sentences" aria-describedby="suporte-mensagem-dica suporte-contador"></textarea>
+        <div class="linha-campo">
+          <p class="dica" id="suporte-mensagem-dica">Conte o que aconteceu e, se for sobre um pedido, quando ele foi feito.</p>
+          <span class="contador" id="suporte-contador">0/2000</span>
+        </div>
+      </div>
+      <div class="campo">
+        <label for="suporte-email">Seu e-mail para resposta <span class="opcional" id="email-opcional" hidden>(opcional)</span></label>
+        <input id="suporte-email" type="email" maxlength="200" autocomplete="email" inputmode="email" spellcheck="false" autocapitalize="off" enterkeyhint="send">
+      </div>
+      <button type="submit" id="suporte-enviar" class="botao primario largo"><!--@icone mensagem-->Enviar mensagem</button>
+      <p id="suporte-msg" class="aviso" hidden></p>
+    </form>
+
+    <p class="voltar"><a href="/"><!--@icone voltar-->Voltar para os pedidos</a></p>
+  </div>
+</main>
+<!--@rodape-->
+<!--@anuncios-->
+</body>
+</html>

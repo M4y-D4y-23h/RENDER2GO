@@ -1,0 +1,6 @@
+/* Render2Go: folha única das páginas (docs/10-identidade-visual-e-front-end.md).
+   O construir.mjs junta os arquivos abaixo, minifica e grava em publico/estatico/estilo.css. */
+@import "./tokens.css";
+@import "./base.css";
+@import "./componentes.css";
+@import "./paginas.css";
