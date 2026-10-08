@@ -1,5 +1,8 @@
 # contexto = raiz do repositório; só worker/, tools/ e servico/ entram na imagem
 .git
+# segredos e arquivos da implantação ficam no servidor, nunca na imagem
+**/.env
+servico/implantacao
 **/.venv
 **/node_modules
 **/__pycache__
