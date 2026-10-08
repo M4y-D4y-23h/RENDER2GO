@@ -147,6 +147,7 @@ class Orquestrador:
         self.pods_ln = ln.Orquestrador(a, [], self.provedor, remoto or ln.Remoto())
         self.remoto = self.pods_ln.remoto
         self.ativos: dict[str, PodFila] = {}
+        self.encerrando: dict[str, PodFila] = {}  # gravadores terminando o envio ao espelho
         self.subindo = 0
         self.lock = threading.Lock()
         self.parar = threading.Event()
@@ -285,10 +286,23 @@ class Orquestrador:
                 _log(f"pod {pf.pod.nome}: agente inacessível ({e})")
                 fim = True
             if fim:
-                self.pods_ln.encerrar(pf.pod, "fila vazia")
                 with self.lock:
                     self.ativos.pop(pid, None)
-                self._registrar("gerador_fim", pf.gerador, "fila vazia")
+                if pf.pod.grava_volume:  # o envio ao espelho pode levar minutos: fora do ciclo
+                    with self.lock:
+                        self.encerrando[pid] = pf
+                    threading.Thread(target=self._encerrar_pod, args=(pf, "fila vazia"), daemon=True).start()
+                else:
+                    self._encerrar_pod(pf, "fila vazia")
+
+    def _encerrar_pod(self, pf: PodFila, motivo: str) -> None:
+        """Encerra o pod; o gravador antes termina o envio ao espelho (com prazo)."""
+        try:
+            self.pods_ln.encerrar(pf.pod, motivo)
+        finally:
+            with self.lock:
+                self.encerrando.pop(pf.pod.info.id, None)
+            self._registrar("gerador_fim", pf.gerador, motivo)
 
     def ciclo(self) -> dict:
         self._revisar()
@@ -344,10 +358,15 @@ class Orquestrador:
             self.encerrar_todos("orquestrador parou")
 
     def encerrar_todos(self, motivo: str) -> None:
-        for pf in list(self.ativos.values()):
-            self.pods_ln.encerrar(pf.pod, motivo)
+        """Encerra tudo na hora, inclusive o gravador no meio do envio (o espelho completa depois)."""
+        with self.lock:
+            pods = list(self.ativos.values()) + list(self.encerrando.values())
+        for pf in pods:
+            self.pods_ln.encerrar(pf.pod, motivo, esperar_espelho=False)
             self._registrar("gerador_fim", pf.gerador, motivo)
-        self.ativos.clear()
+        with self.lock:
+            self.ativos.clear()
+            self.encerrando.clear()
 
 
 def novo_token() -> str:

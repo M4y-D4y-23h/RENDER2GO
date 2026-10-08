@@ -208,6 +208,19 @@ class Armazenamento:
             raise ArmazenamentoError(f"GET {chave}: acima de {limite} bytes")
         return dados
 
+    def escrever(self, chave: str, dados: bytes, content_type: str = "text/plain") -> None:
+        """Grava um objeto pequeno (PUT assinado), como o .sha256 do ambiente no espelho."""
+        req = urllib.request.Request(
+            self.url("PUT", chave, 300, content_type=content_type),
+            data=dados,
+            method="PUT",
+            headers={"Content-Type": content_type},
+        )
+        try:
+            urllib.request.urlopen(req, timeout=60).close()
+        except (urllib.error.HTTPError, OSError) as e:
+            raise ArmazenamentoError(f"PUT {chave}: {e}") from e
+
     def apagar(self, chave: str) -> None:
         req = urllib.request.Request(self.url("DELETE", chave, 60), method="DELETE")
         try:

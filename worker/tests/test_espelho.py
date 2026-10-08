@@ -131,3 +131,70 @@ def test_pod_uploader_fills_the_mirror_and_signed_urls_download_it(modelos_peque
         nome, url = linha.split("\t")
         m = next(m for m in entradas.values() if Path(m.dest).name == nome)
         assert hashlib.sha256(urllib.request.urlopen(url).read()).hexdigest() == m.sha256
+
+
+class S3ComTextos(S3Falso):
+    """S3Falso com objetos pequenos de texto (o .sha256 do ambiente) e envios concluídos."""
+
+    def __init__(self):
+        super().__init__()
+        self.textos, self.tamanho_esperado = {}, {}
+
+    def ler(self, chave, limite):
+        if chave not in self.textos:
+            raise esp_mod.ArmazenamentoError(f"GET {chave}: HTTP 404")
+        return self.textos[chave]
+
+    def escrever(self, chave, dados, content_type="text/plain"):
+        self.textos[chave] = dados
+        self.objetos[chave] = len(dados)
+
+
+def test_environment_key_is_the_same_as_the_bootstrap():
+    esperado = subprocess.run(
+        "cat requirements.lock Dockerfile | sha256sum | cut -c1-16",
+        shell=True,
+        cwd=WORKER,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert esp_mod.chave_do_ambiente() == esperado
+
+
+def test_environment_archive_is_uploaded_once_and_then_served_with_its_sha256(
+    modelos_pequenos, monkeypatch
+):
+    _, entradas = modelos_pequenos
+    s3 = S3ComTextos()
+    for m in entradas.values():  # modelos já no espelho; falta só o ambiente
+        s3.objetos[f"modelos/{m.sha256}"] = m.bytes
+    e = esp_mod.Espelho(s3)
+    e.verificar()
+    assert not e.faltando() and e.ambiente_falta() and e.ambiente_tsv() == ""
+    amb = {"sha256": "ab" * 32, "bytes": 2 * esp_mod.PARTE + 7}
+    plano = e.plano(amb)
+    (arq,) = plano["arquivos"]
+    assert arq["caminho"] == esp_mod.AMBIENTE_NO_POD
+    assert [p["n"] for p in arq["partes"]] == [1, 2, 3]
+    chave = e.chave_ambiente()
+    assert chave == f"modelos/ambiente-{esp_mod.chave_do_ambiente()}.tar.zst"
+    # envio incompleto: abortado, e o .sha256 nunca é gravado
+    assert e.concluir({arq["caminho"]: {"1": "x"}}) == []
+    assert s3.abortados == [chave] and chave + ".sha256" not in s3.textos and e.ambiente_falta()
+    # envio completo: fecha as partes e grava o .sha256 por último
+    plano = e.plano(amb)
+    s3.tamanho_esperado[chave] = amb["bytes"]
+    feitos = e.concluir({esp_mod.AMBIENTE_NO_POD: {"1": "a", "2": "b", "3": "c"}})
+    assert feitos == [chave.rsplit("/", 1)[1]]
+    assert s3.textos[chave + ".sha256"] == f"{'ab' * 32} {amb['bytes']}\n".encode()
+    # próximo lote: o ambiente está no espelho, com URL, SHA-256 e bytes para o bootstrap
+    e2 = esp_mod.Espelho(s3)
+    e2.verificar()
+    assert e2.ambiente == amb and not e2.ambiente_falta() and e2.plano(amb) == {"arquivos": []}
+    url, sha, n = e2.ambiente_tsv().rstrip("\n").split("\t")
+    assert chave in url and sha == "ab" * 32 and int(n) == amb["bytes"]
+    # arquivo com tamanho diferente do .sha256 (envio interrompido depois): ignorado
+    s3.objetos[chave] = 5
+    e2.verificar()
+    assert e2.ambiente_falta()

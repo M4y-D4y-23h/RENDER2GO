@@ -199,3 +199,15 @@ def sfw_image(tmp_path) -> Path:
     p = tmp_path / "entrada.png"
     p.write_bytes(png)
     return p
+
+
+@pytest.fixture(autouse=True)
+def _sem_r2_de_verdade(monkeypatch):
+    """Os testes nunca falam com o R2 de verdade: as credenciais do ambiente (inclusive com o
+    prefixo antigo GPU2GO_, que render2go_worker copia para RENDER2GO_) ficam de fora. Quem
+    precisa de S3 usa o local (RENDER2GO_TESTE_S3) e põe as variáveis no próprio teste."""
+    import os
+
+    for nome in list(os.environ):
+        if nome.startswith(("RENDER2GO_R2_", "GPU2GO_R2_")):
+            monkeypatch.delenv(nome, raising=False)

@@ -45,3 +45,11 @@ def banco(request, tmp_path):
         b = Banco(PG_URL)
     b.criar_esquema()
     return b
+
+
+@pytest.fixture(autouse=True)
+def _sem_r2_de_verdade(monkeypatch):
+    """Nenhum teste fala com o R2 de verdade (credenciais do ambiente, inclusive GPU2GO_R2_*)."""
+    for nome in list(os.environ):
+        if nome.startswith(("RENDER2GO_R2_", "GPU2GO_R2_")):
+            monkeypatch.delenv(nome, raising=False)
