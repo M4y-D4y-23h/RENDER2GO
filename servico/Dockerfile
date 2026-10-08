@@ -22,10 +22,13 @@ COPY worker/ worker/
 COPY tools/ tools/
 COPY servico/ servico/
 # chmod: o checkout no servidor pode ter vindo com umask 077, e o usuário gpu2go precisa ler o código
+# modelos do aviso de pessoas no /aprovar (pessoas.py): baixados aqui, conferidos por bytes e SHA-256
+ENV GPU2GO_MODELOS_SERVICO=/opt/gpu2go/modelos-servico
 RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/gpu2go-ca . /usr/local/lib/gpu2go/ca-env.sh \
     && chmod -R a+rX /app \
     && cd servico && uv sync --frozen --no-dev --no-cache \
-    && test -s web/app.js
+    && test -s web/app.js \
+    && /opt/venv/bin/python -m gpu2go_servico.pessoas baixar "$GPU2GO_MODELOS_SERVICO"
 # a pasta de estado já existe com o dono certo: o volume nomeado do compose herda dono e permissões
 RUN useradd --system --uid 10001 --create-home gpu2go \
     && install -d -o gpu2go -g gpu2go -m 700 /home/gpu2go/.cache /home/gpu2go/.cache/gpu2go

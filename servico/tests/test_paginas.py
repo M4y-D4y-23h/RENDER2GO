@@ -28,8 +28,19 @@ def _pagina(navegador, erros):
     return pg
 
 
+def _analisar(dados: bytes) -> dict:
+    """Detector falso e determinístico: a foto de fundo azul "tem" uma pessoa."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    azul = Image.open(BytesIO(dados)).convert("RGB").getpixel((0, 0)) == (40, 90, 160)
+    return {"versao": "pessoas-v1", "pessoas": int(azul), "rostos": int(azul), "maior": 0.2}
+
+
 def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  # noqa: F811 (fixture)
     erros: list[str] = []
+    ambiente.cfg.analisar = _analisar
     # aprovador cadastra um cliente de teste gratuito
     adm = _pagina(navegador, erros)
     adm.goto(f"{ambiente.url}/aprovar")
@@ -59,11 +70,17 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     cli.wait_for_selector("text=Em revisão")
     assert sum(k.endswith(".png") for k in ambiente.objetos) == 2  # direto no armazenamento
 
-    # aprovador vê as miniaturas e aprova
+    # aprovador vê as miniaturas, o aviso de pessoas por foto e o resumo do lote, e aprova
+    ambiente.cfg.analises.esperar()
     adm.click("#atualizar")
     adm.wait_for_selector(".grade img")
     assert adm.locator(".grade img").count() == 2
-    adm.click("text=Aprovar")
+    assert adm.locator(".selo.pessoas").count() == 1
+    assert "sem pessoas detectadas" in adm.locator(".grade").inner_text()
+    assert "NÃO marcou a autorização" in adm.locator(".cartao .aviso.erro").inner_text()
+    if os.environ.get("GPU2GO_CAPTURAS"):
+        adm.screenshot(path=os.path.join(os.environ["GPU2GO_CAPTURAS"], "aprovar.png"), full_page=True)
+    adm.click(".acoes button.primario")
     adm.wait_for_selector("text=Nada aguardando revisão.")
 
     # o worker termina (simulado no banco) e o cliente vê os links

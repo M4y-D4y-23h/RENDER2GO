@@ -163,3 +163,32 @@ def test_work_summary_and_verification_fields(banco):
     assert banco.fotos_total(banco.lote(lid)["cliente_id"]) == 2
     with pytest.raises(BancoError):
         banco.criar_cliente("y", plano="vip")
+
+
+def test_schema_upgrade_adds_new_columns_to_an_existing_database(tmp_path):
+    import sqlite3
+
+    from gpu2go_servico.db import Banco
+
+    caminho = tmp_path / "antigo.db"
+    con = sqlite3.connect(caminho)  # tabela de fotos como na primeira implantação, sem "analise"
+    con.execute(
+        "CREATE TABLE fotos (id TEXT PRIMARY KEY, lote_id TEXT NOT NULL, nome TEXT NOT NULL, tipo TEXT NOT NULL,"
+        " bytes INTEGER NOT NULL, chave TEXT NOT NULL, enviada INTEGER NOT NULL DEFAULT 0, UNIQUE (lote_id, nome))"
+    )
+    con.commit()
+    con.close()
+    b = Banco(f"sqlite:///{caminho}")
+    b.criar_esquema()
+    b.criar_esquema()  # de novo: nada muda
+    with b.tx() as c:
+        assert "analise" in [r["name"] for r in c.all("PRAGMA table_info(fotos)")]
+
+
+def test_photo_analysis_is_saved(banco):
+    _, _, lid = _lote(banco, n_fotos=1)
+    (f,) = banco.fotos(lid)
+    assert f["analise"] is None
+    banco.salvar_analise(f["id"], {"pessoas": 1, "rostos": 1})
+    banco.criar_esquema()  # reaplicar o esquema (IF NOT EXISTS no Postgres) não apaga nada
+    assert '"pessoas": 1' in banco.fotos(lid)[0]["analise"]

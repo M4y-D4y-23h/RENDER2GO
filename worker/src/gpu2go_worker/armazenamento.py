@@ -194,6 +194,17 @@ class Armazenamento:
         except OSError as e:
             raise ArmazenamentoError(f"HEAD {chave}: {e}") from e
 
+    def ler(self, chave: str, limite: int) -> bytes:
+        """Conteúdo do objeto (GET assinado), recusando o que passar de `limite` bytes."""
+        try:
+            with urllib.request.urlopen(self.url("GET", chave, 300), timeout=60) as r:
+                dados = r.read(limite + 1)
+        except (urllib.error.HTTPError, OSError) as e:
+            raise ArmazenamentoError(f"GET {chave}: {e}") from e
+        if len(dados) > limite:
+            raise ArmazenamentoError(f"GET {chave}: acima de {limite} bytes")
+        return dados
+
     def apagar(self, chave: str) -> None:
         req = urllib.request.Request(self.url("DELETE", chave, 60), method="DELETE")
         try:

@@ -74,6 +74,9 @@ class Armazem:
         b = self.objetos.get(chave)
         return None if b is None else len(b)
 
+    def ler(self, chave, limite):
+        return self.objetos[chave]
+
     def apagar(self, chave):
         self.objetos.pop(chave, None)
 
@@ -104,7 +107,9 @@ def ambiente(tmp_path, monkeypatch):
         time.sleep(0.05)
     monkeypatch.setattr(media, "check_url", lambda url: None)  # local: http em 127.0.0.1
     monkeypatch.setenv("GPU2GO_SAFETY", "c1-revisao-humana")
-    yield SimpleNamespace(url=f"http://127.0.0.1:{porta}", banco=banco, objetos=Deposito.objetos, armazem=armazem)
+    yield SimpleNamespace(
+        url=f"http://127.0.0.1:{porta}", banco=banco, objetos=Deposito.objetos, armazem=armazem, cfg=cfg
+    )
     srv.should_exit = True
     dep.shutdown()
 

@@ -48,7 +48,7 @@ ESQUEMA = [
     """CREATE TABLE IF NOT EXISTS fotos (
         id TEXT PRIMARY KEY, lote_id TEXT NOT NULL REFERENCES lotes(id), nome TEXT NOT NULL,
         tipo TEXT NOT NULL, bytes INTEGER NOT NULL, chave TEXT NOT NULL, enviada INTEGER NOT NULL DEFAULT 0,
-        UNIQUE (lote_id, nome))""",
+        analise TEXT, UNIQUE (lote_id, nome))""",
     """CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY, lote_id TEXT NOT NULL REFERENCES lotes(id), tipo TEXT NOT NULL,
         foto_id TEXT REFERENCES fotos(id), variacao INTEGER, seed BIGINT, arquivo TEXT,
@@ -59,6 +59,10 @@ ESQUEMA = [
     "CREATE INDEX IF NOT EXISTS jobs_fila ON jobs (status, criado)",
     """CREATE TABLE IF NOT EXISTS eventos (
         lote_id TEXT, quando DOUBLE PRECISION NOT NULL, tipo TEXT NOT NULL, detalhe TEXT)""",
+]
+# colunas que entraram depois da primeira implantação: (tabela, coluna, tipo)
+COLUNAS_NOVAS = [
+    ("fotos", "analise", "TEXT"),  # aviso de pessoas no /aprovar (gpu2go_servico.pessoas)
 ]
 
 
@@ -115,6 +119,11 @@ class Banco:
         with self.tx() as c:
             for sql in ESQUEMA:
                 c.run(sql if self.pg else sql.replace("DOUBLE PRECISION", "REAL").replace("BIGINT", "INTEGER"))
+            for tabela, coluna, tipo in COLUNAS_NOVAS:
+                if self.pg:  # IF NOT EXISTS: a API e o orquestrador sobem juntos
+                    c.run(f"ALTER TABLE {tabela} ADD COLUMN IF NOT EXISTS {coluna} {tipo}")
+                elif not any(r["name"] == coluna for r in c.all(f"PRAGMA table_info({tabela})")):
+                    c.run(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
 
     def evento(self, c, lote_id: str | None, tipo: str, detalhe: Any = None) -> None:
         c.run(
@@ -214,6 +223,10 @@ class Banco:
     def fotos(self, lote_id: str) -> list[dict]:
         with self.tx() as c:
             return c.all("SELECT * FROM fotos WHERE lote_id = ? ORDER BY nome", (lote_id,))
+
+    def salvar_analise(self, foto_id: str, analise: dict) -> None:
+        with self.tx() as c:
+            c.run("UPDATE fotos SET analise = ? WHERE id = ?", (json.dumps(analise, ensure_ascii=False), foto_id))
 
     def confirmar_envio(self, lote_id: str, tamanhos: dict[str, int | None]) -> list[str]:
         """tamanhos: chave → bytes no armazenamento (None = ausente). Devolve os problemas."""

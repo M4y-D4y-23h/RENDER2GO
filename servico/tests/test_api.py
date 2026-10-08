@@ -22,6 +22,11 @@ class Armazem:
     def tamanho(self, chave):
         return self.objetos.get(chave)
 
+    def ler(self, chave, limite):
+        if chave not in self.objetos:
+            raise OSError(f"{chave}: não existe")
+        return f"foto {chave}".encode()
+
     def apagar(self, chave):
         self.apagados.append(chave)
         self.objetos.pop(chave, None)
@@ -213,6 +218,44 @@ def test_refusal_and_admin_client_creation(api):
     assert r.json()["status"] == "recusado"
     assert api.get(f"/api/lotes/{lid}", headers=h(tok)).json()["motivo"] == "foto sem autorização"
     assert api.post("/api/admin/clientes", json={"nome": "X", "plano": "vip"}, headers=h(ADMIN)).status_code == 422
+
+
+def test_people_warning_is_computed_after_upload_and_shown_to_the_reviewer(banco):
+    armazem = Armazem()
+
+    def analisar(dados):  # detector falso: "pessoas" na foto 0, foto 1 ilegível
+        if b"foto-1" in dados:
+            raise ValueError("imagem ilegível")
+        return {"versao": "pessoas-v1", "pessoas": 2 if b"foto-0" in dados else 0, "rostos": 1, "maior": 0.3}
+
+    cfg = Config(
+        banco=banco,
+        armazenamento=armazem,
+        admin_tokens=[ADMIN],
+        worker_tokens=[WORKER],
+        segredo_aprovacao="s" * 40,
+        analisar=analisar,
+    )
+    api = TestClient(criar_app(cfg))
+    api.armazem = armazem
+    tok = _cliente(api)
+    r = _lote(api, tok, n=3)
+    lid = r.json()["lote"]
+    assert _enviar_tudo(api, tok, lid, r.json()["envios"]).status_code == 200
+    cfg.analises.esperar()
+    (p,) = api.get("/api/admin/lotes", headers=h(ADMIN)).json()
+    assert p["analise_ligada"] is True and p["pedido"]["consentimento"] is False
+    por_nome = {f["nome"]: f["analise"] for f in p["fotos"]}
+    assert por_nome["foto-0"]["pessoas"] == 2 and por_nome["foto-2"]["pessoas"] == 0
+    assert "ilegível" in por_nome["foto-1"]["erro"]  # erro aparece como erro, nunca como "sem pessoas"
+
+    # foto sem análise (ex.: a API reiniciou no meio): a próxima listagem agenda de novo
+    with banco.tx() as c:
+        c.run("UPDATE fotos SET analise = NULL WHERE lote_id = ?", (lid,))
+    assert all(f["analise"] is None for f in api.get("/api/admin/lotes", headers=h(ADMIN)).json()[0]["fotos"])
+    cfg.analises.esperar()
+    fotos = api.get("/api/admin/lotes", headers=h(ADMIN)).json()[0]["fotos"]
+    assert all(f["analise"] is not None for f in fotos)
 
 
 def test_app_configured_from_environment(monkeypatch, tmp_path):

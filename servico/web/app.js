@@ -237,13 +237,47 @@ function iniciarCliente() {
     });
 }
 // -- aprovador -----------------------------------------------------------------------------
+function seloAnalise(a) {
+    if (a == null)
+        return criar("span", { className: "selo", textContent: "analisando…" });
+    if (a.erro)
+        return criar("span", { className: "selo erro", textContent: "análise indisponível: confira", title: a.erro });
+    if (!a.pessoas && !a.rostos)
+        return criar("span", { className: "selo", textContent: "sem pessoas detectadas" });
+    const partes = [`contém pessoas (${Math.max(a.pessoas ?? 0, a.rostos ?? 0)})`];
+    if (a.rostos)
+        partes.push(`${a.rostos} rosto(s)`);
+    return criar("span", { className: "selo pessoas", textContent: `⚠ ${partes.join(" · ")}` });
+}
+// resumo do lote: pessoas detectadas × autorização marcada pelo cliente (ADR 0004, item 5)
+function resumoPessoas(p) {
+    if (!p.analise_ligada)
+        return null;
+    const com = p.fotos.filter((f) => f.analise && !f.analise.erro && ((f.analise.pessoas ?? 0) > 0 || (f.analise.rostos ?? 0) > 0)).length;
+    const pendentes = p.fotos.filter((f) => f.analise == null).length;
+    if (!com) {
+        const texto = pendentes ? `Analisando ${pendentes} foto(s)…` : "Nenhuma pessoa detectada (a análise pode errar; confira as miniaturas).";
+        return criar("p", { className: "fraco", textContent: texto });
+    }
+    const autorizado = p.pedido.consentimento === true;
+    return criar("p", {
+        className: autorizado ? "aviso alerta" : "aviso erro",
+        textContent: autorizado
+            ? `⚠ Pessoas em ${com} de ${p.fotos.length} foto(s). O cliente marcou ter autorização por escrito.`
+            : `⚠ Pessoas em ${com} de ${p.fotos.length} foto(s) e o cliente NÃO marcou a autorização por escrito. Recuse, ou peça a autorização antes de aprovar.`,
+    });
+}
 function cartaoPendente(p, token, aoMudar) {
     const msg = criar("p", { className: "aviso", hidden: true });
     const fotos = criar("div", { className: "grade" });
     for (const f of p.fotos) {
-        fotos.append(criar("a", { href: f.url, target: "_blank", rel: "noopener" }, [criar("img", { src: f.url, alt: f.nome, loading: "lazy" })]));
+        const filhos = [criar("img", { src: f.url, alt: f.nome, loading: "lazy" })];
+        if (p.analise_ligada)
+            filhos.push(seloAnalise(f.analise));
+        fotos.append(criar("a", { href: f.url, target: "_blank", rel: "noopener", className: "foto" }, filhos));
     }
     const pedido = p.pedido;
+    const pessoas = resumoPessoas(p);
     const aprovar = criar("button", { textContent: "Aprovar", className: "primario" });
     const recusar = criar("button", { textContent: "Recusar" });
     const motivo = criar("input", { placeholder: "Motivo da recusa (o cliente vê)", maxLength: 500 });
@@ -275,6 +309,7 @@ function cartaoPendente(p, token, aoMudar) {
             className: "fraco",
             textContent: `${pedido.receita} · ${pedido.qualidade} · ${pedido.duracao ?? "padrão"} s · ${pedido.variacoes} variação(ões) · filtro C1: ${p.filtro_c1 || "ok"}`,
         }),
+        ...(pessoas ? [pessoas] : []),
         fotos,
         criar("div", { className: "acoes" }, [aprovar, motivo, recusar]),
         msg,

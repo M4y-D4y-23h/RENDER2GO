@@ -95,6 +95,8 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
   docker compose exec api gpu2go-servico cliente "Padaria do Bairro" --plano teste
   ```
 - **Aprovar pedidos:** em `/aprovar`. Nada vai para a GPU sem aprovação (ADR 0004). O cliente acompanha em `/`.
+  - Cada foto ganha um selo "contém pessoas" ou "sem pessoas detectadas" segundos depois do envio (detector no próprio servidor, sem custo de GPU). Com pessoas e sem a caixa de autorização marcada, o lote mostra um aviso em vermelho.
+  - O selo é uma ajuda: confira sempre as miniaturas.
 - **Parar tudo e encerrar os pods:**
   ```bash
   docker compose stop orquestrador

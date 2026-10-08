@@ -7,7 +7,7 @@
 
 No serviço de marketing SFW, a segurança fica assim até o C2 existir:
 
-1. **C1 em três pontos** (`gpu2go_worker/filtros.py`, listas em `filtros/c1.v1.json`):
+1. **C1 em três pontos** (`gpu2go_worker/filtros.py`, listas em `filtros/c1.v2.json`; a v2, de 08/10/2026, mantém a v1 e acrescenta despir, roupa íntima e movimentos sexualizados):
    - na entrada do pedido, pela API;
    - no prompt compilado, pelo worker;
    - no prompt compilado de novo, pela API, antes de liberar os renders.
@@ -20,6 +20,8 @@ No serviço de marketing SFW, a segurança fica assim até o C2 existir:
 3. **Worker da fila só com `GPU2GO_SAFETY=c1-revisao-humana`.** O modo de testes SFW (`disabled-sfw-tests`) não sobe a fila.
 4. **O compilador continua sem ser camada de segurança:** a regra `REFUSED` segue no system prompt, e a recusa dele vira erro do lote.
 5. **Pessoas nas fotos:** receitas com pessoas exigem a caixa de autorização por escrito (`exige_consentimento`). O aprovador recusa quando a foto mostra pessoas e a caixa não foi marcada.
+   - Desde 08/10/2026, o servidor analisa cada foto depois do envio (`gpu2go_servico/pessoas.py`: YOLOX-tiny para pessoas, inclusive de costas, e YuNet para rostos) e o `/aprovar` mostra "contém pessoas" por foto e um resumo do lote, em vermelho quando a caixa de autorização não foi marcada.
+   - É um aviso, não uma barreira: a análise pode errar, e a falha aparece como "análise indisponível", nunca como "sem pessoas".
 6. **Conferência do vídeo** (docs/08): só é entregue o vídeo cujo 1º quadro bate com a foto do job (similaridade ≥ 0,9). A API apaga e repete o que não bate.
 7. **Retenção no R2, por regra de ciclo de vida do bucket:** fotos de entrada apagadas em 7 dias; vídeos e folhas de conferência, em 30 dias.
 8. **Registro:** criação, envio, aprovação ou recusa (com quem), prompt, conclusão e falhas ficam na tabela `eventos`.

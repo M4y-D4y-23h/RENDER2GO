@@ -27,9 +27,11 @@ import hashlib
 import hmac
 import json
 import os
+import queue
 import re
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,7 +43,7 @@ from fastapi.responses import FileResponse, Response
 from gpu2go_worker import conferencia, filtros, lote, presets
 from pydantic import BaseModel, Field
 
-from gpu2go_servico import SERVICO_DIR
+from gpu2go_servico import SERVICO_DIR, pessoas
 from gpu2go_servico.armazenamento import Armazenamento, chave_entrada, chave_saida
 from gpu2go_servico.db import Banco, BancoError
 
@@ -56,6 +58,55 @@ NOME = re.compile(r"[^A-Za-z0-9_-]+")
 WEB = SERVICO_DIR / "web"
 
 
+class AnaliseFotos:
+    """Análise das fotos em segundo plano (aviso de pessoas no /aprovar): um thread, fila por lote.
+
+    Agendada no envio e de novo quando o /aprovar lista um lote com foto ainda sem análise
+    (assim uma reinicialização da API no meio não deixa foto para trás)."""
+
+    def __init__(self, banco: Banco, armazenamento: Any, analisar: Callable[[bytes], dict]):
+        self.banco, self.armazenamento, self.analisar = banco, armazenamento, analisar
+        self.fila: queue.Queue[str] = queue.Queue()
+        self.agendados: set[str] = set()
+        self.lock = threading.Lock()
+        self.thread: threading.Thread | None = None
+
+    def agendar(self, lote_id: str) -> None:
+        with self.lock:
+            if lote_id in self.agendados:
+                return
+            self.agendados.add(lote_id)
+            if self.thread is None:
+                self.thread = threading.Thread(target=self._rodar, name="analise-fotos", daemon=True)
+                self.thread.start()
+        self.fila.put(lote_id)
+
+    def esperar(self) -> None:
+        self.fila.join()
+
+    def _rodar(self) -> None:
+        while True:
+            lote_id = self.fila.get()
+            try:
+                self._lote(lote_id)
+            except Exception as e:  # noqa: BLE001 (o thread não pode morrer; a próxima listagem reagenda)
+                print(f"[analise] AVISO: lote {lote_id}: {e}", flush=True)
+            finally:
+                with self.lock:
+                    self.agendados.discard(lote_id)
+                self.fila.task_done()
+
+    def _lote(self, lote_id: str) -> None:
+        for f in self.banco.fotos(lote_id):
+            if f["analise"] is not None or not f["enviada"]:
+                continue
+            try:
+                a = self.analisar(self.armazenamento.ler(f["chave"], MAX_BYTES_FOTO))
+            except Exception as e:  # noqa: BLE001 (foto ilegível ou armazenamento fora: o revisor vê o erro)
+                a = {"versao": pessoas.VERSAO, "erro": str(e)[:200]}
+            self.banco.salvar_analise(f["id"], a)
+
+
 @dataclass
 class Config:
     banco: Banco
@@ -64,8 +115,19 @@ class Config:
     worker_tokens: list[str]
     segredo_aprovacao: str
     limite_por_minuto: int = 120
+    analisar: Callable[[bytes], dict] | None = None  # None: sem aviso de pessoas
     _janelas: dict = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _analises: AnaliseFotos | None = None
+
+    @property
+    def analises(self) -> AnaliseFotos | None:
+        if self.analisar is None:
+            return None
+        with self._lock:
+            if self._analises is None:
+                self._analises = AnaliseFotos(self.banco, self.armazenamento, self.analisar)
+            return self._analises
 
     @classmethod
     def do_ambiente(cls) -> Config:
@@ -86,6 +148,7 @@ class Config:
             admin_tokens=lista("GPU2GO_ADMIN_TOKENS"),
             worker_tokens=lista("GPU2GO_WORKER_TOKENS"),
             segredo_aprovacao=segredo,
+            analisar=pessoas.analisador(),
         )
 
     def limitar(self, chave: str) -> None:
@@ -324,6 +387,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(409, str(e)) from e
         if problemas:
             raise HTTPException(422, {"problemas": problemas})
+        if c.analises is not None:  # aviso de pessoas para o revisor, em segundo plano
+            c.analises.agendar(lote_id)
         return {"lote": lote_id, "status": "aguardando_aprovacao"}
 
     def _resumo(lt: dict, c: Config, cliente_id: str) -> dict:
@@ -366,6 +431,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         out = []
         for lt in c.banco.lotes(status=status, limite=50):
             fotos = c.banco.fotos(lt["id"])
+            if c.analises is not None and any(f["analise"] is None and f["enviada"] for f in fotos):
+                c.analises.agendar(lt["id"])  # a API pode ter reiniciado no meio da análise
             out.append(
                 {
                     "lote": lt["id"],
@@ -373,7 +440,15 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "criado": lt["criado"],
                     "pedido": json.loads(lt["pedido"]),
                     "filtro_c1": filtros.avaliar(json.loads(lt["pedido"])["prompt"]).reason,
-                    "fotos": [{"nome": f["nome"], "url": c.armazenamento.url("GET", f["chave"], 3600)} for f in fotos],
+                    "analise_ligada": c.analises is not None,
+                    "fotos": [
+                        {
+                            "nome": f["nome"],
+                            "url": c.armazenamento.url("GET", f["chave"], 3600),
+                            "analise": json.loads(f["analise"]) if f["analise"] else None,
+                        }
+                        for f in fotos
+                    ],
                 }
             )
         return out
