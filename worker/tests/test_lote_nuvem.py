@@ -213,7 +213,7 @@ def test_first_pod_fills_the_r2_mirror_and_next_lot_gets_signed_urls(
     argv = _argv(pasta, tmp_path / "entrega", "--pods", "2")
     assert ln.main(argv, provedor=Provedor(), remoto=remoto) == ln.EXIT_OK
     err = capsys.readouterr().err
-    assert "espelho (R2): 0 de 2" in err and "enviando 2 arquivo(s) ao espelho" in err
+    assert "espelho (R2): 0 de 2" in err and "enviando 2 modelo(s) ao espelho" in err
     assert err.count("enviando") == 1  # só o pod gravador envia
     assert all(s3.tamanho(f"modelos/{m.sha256}") == m.bytes for m in entradas.values())
     # próximo lote: espelho completo; os pods recebem as URLs assinadas e ninguém envia

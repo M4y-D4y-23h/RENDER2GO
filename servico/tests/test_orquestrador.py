@@ -215,25 +215,18 @@ def test_free_trials_wait_to_be_grouped_but_paid_orders_start_now(orq, banco):
     _esperar(lambda: pago.subindo == 0)
 
 
-class EspelhoSemAmbiente:
-    """Espelho com os modelos e sem o ambiente: o 1º pod é o gravador (empacota e envia)."""
+class EspelhoIncompleto:
+    """Espelho sem um dos modelos: o 1º pod é o gravador (envia o que falta depois do PRONTO)."""
 
     presentes = {"x"}
-    ambiente = None
 
     def faltando(self):
-        return []
-
-    def ambiente_falta(self):
-        return True
+        return ["um-modelo"]
 
     def tsv(self):
         return "modelo.safetensors\thttps://r2.teste/modelos/x\n"
 
-    def ambiente_tsv(self):
-        return ""
-
-    def plano(self, ambiente=None):
+    def plano(self):
         return {"arquivos": []}
 
     def abortar(self):
@@ -244,15 +237,14 @@ def test_mirror_writer_pod_is_closed_outside_the_cycle(orq, banco, monkeypatch):
     monkeypatch.setattr(ln, "ESPERA_GUARDAR_S", 1.5)
     _lote(banco, 2, plano="pago")
     o = orq()
-    o.pods_ln.a.espelho = EspelhoSemAmbiente()
+    o.pods_ln.a.espelho = EspelhoIncompleto()
     o.remoto.instalar = "echo PRONTO > {raiz}/estado"  # sem o "guardado": o envio não termina
     assert o.ciclo()["subindo"] == 1
     assert _esperar(lambda: len(o.ativos) == 1)
     (pf,) = o.ativos.values()
-    assert pf.pod.grava_volume  # gravador: o pod pediu para empacotar o ambiente
-    assert o.provedor.envs[0]["RENDER2GO_AMBIENTE_GRAVA"] == "1"
+    assert pf.pod.grava_volume and o.provedor.envs[0]["RENDER2GO_VOLUME_GRAVA"] == "1"  # gravador
     _, arquivos = pf.pod.agente.exec(f"ls {o.remoto.raiz}", 10)
-    assert "espelho.tsv" in arquivos and "ambiente.tsv" not in arquivos
+    assert "espelho.tsv" in arquivos
     pf.pod.agente.exec(f"echo FIM > {o.remoto.raiz}/fila.fim", 10)
     with banco.tx() as c:
         c.run("UPDATE jobs SET status = 'ok'")

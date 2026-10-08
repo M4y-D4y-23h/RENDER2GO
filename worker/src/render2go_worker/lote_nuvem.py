@@ -627,15 +627,12 @@ class Orquestrador:
         }
         esp = getattr(self.a, "espelho", None)
         with self.lock:  # o 1º pod (ou o substituto dele) grava o cache no volume e no espelho
-            falta_no_espelho = bool(esp and (esp.faltando() or esp.ambiente_falta()))
-            grava = bool(getattr(self.a, "volume", None) or falta_no_espelho) and not (
+            grava = bool(getattr(self.a, "volume", None) or (esp and esp.faltando())) and not (
                 self.gravador or self.gravador_pendente
             )
             self.gravador_pendente |= grava
         if grava:
             env["RENDER2GO_VOLUME_GRAVA"] = "1"
-            if esp and esp.ambiente_falta():  # empacota o ambiente para o espelho (R2)
-                env["RENDER2GO_AMBIENTE_GRAVA"] = "1"
         try:
             info = self.provedor.criar(
                 f"render2go-lote-{i}", self.a.opcoes, self.a.gpus_por_pod, env
@@ -694,20 +691,24 @@ class Orquestrador:
             if time.monotonic() > limite:
                 raise NuvemError(f"agente não respondeu em {ESPERA_AGENTE_S // 60} min")
             time.sleep(CONSULTA_S)
-        so_espelho = False  # origem lenta e espelho bom: os modelos vêm só do espelho
+        so_espelho = False  # espelho aprovado no teste de rede: os modelos vêm só dele
         if r.verificar_cuda:
             _, out = ag.exec(CUINIT, 30)
             problema = cuda_ok(out, pod.info.gpus)
             if problema:
                 raise NuvemError(problema)
-            _, out = ag.exec(REDE.format(url=url_teste_rede()), 60)
-            problema = rede_ok(out)
+            # Espelho (R2) primeiro: em 08/10/2026 ele baixou os 37 GB em 40 s (~925 MB/s), com o
+            # Hugging Face a 25–39 MB/s nos mesmos hosts. Com ele aprovado, a origem nem é testada.
             url_espelho = self._url_teste_espelho()
-            if problema and url_espelho:  # Hugging Face fora ou lento: vale a rede até o espelho
-                _, out2 = ag.exec(REDE.format(url=url_espelho), 60)
-                if not rede_ok(out2):
-                    _log(f"pod {pod.nome}: origem com problema ({problema}); usando o espelho")
-                    out, problema, so_espelho = out2, None, True
+            if url_espelho:
+                _, out = ag.exec(REDE.format(url=url_espelho), 60)
+                problema = rede_ok(out)
+                so_espelho = problema is None
+                if problema:
+                    _log(f"pod {pod.nome}: espelho com problema ({problema}); testando a origem")
+            if not so_espelho:
+                _, out = ag.exec(REDE.format(url=url_teste_rede()), 60)
+                problema = rede_ok(out)
             m = re.search(r"rede ([\d.]+)", out)
             lembrar_datacentro(
                 pod.info.datacentro, float(m.group(1)) if m else None, problema or ""
@@ -721,10 +722,8 @@ class Orquestrador:
         esp = getattr(self.a, "espelho", None)
         if esp and esp.presentes:  # URLs assinadas do espelho (GET, 6 h), uma por modelo
             self._enviar_texto(pod, esp.tsv(), "espelho.tsv")
-            if so_espelho:  # no host de 08/10, a origem a 25 MB/s segurou o download inteiro
+            if so_espelho:  # no host de 08/10, a origem a 25 MB/s segurou o download misto
                 self._enviar_texto(pod, "1\n", "so_espelho")
-        if esp and esp.ambiente:  # ambiente pronto no espelho: URL, SHA-256 e bytes
-            self._enviar_texto(pod, esp.ambiente_tsv(), "ambiente.tsv")
         ag.bg(r.instalar.format(raiz=r.raiz), f"{r.raiz}/instalar.log")
         # cedo: o pod gravador (volume/espelho) não, porque grava os modelos depois do PRONTO
         cedo = cedo and not pod.grava_volume
@@ -735,7 +734,7 @@ class Orquestrador:
             raise NuvemError(f"instalação: {estado.strip()} | {log[-300:]}")
         modelos_prontos = estado.startswith("PRONTO")
         if modelos_prontos:
-            if pod.grava_volume and esp and (esp.faltando() or esp.ambiente_falta()):
+            if pod.grava_volume and esp and esp.faltando():
                 self._espelhar(pod)
             _, tempos = ag.exec(f"cat {r.raiz}/tempos 2>/dev/null", 30)
             if tempos.strip():  # etapas em s desde o início da instalação (para medir o cache)
@@ -778,17 +777,11 @@ class Orquestrador:
         return next((u for m in esp.modelos if (u := esp.url(m))), None)
 
     def _espelhar(self, pod: Pod) -> None:
-        """Pod gravador: envia ao espelho, em segundo plano, os modelos e o ambiente que faltam."""
+        """Pod gravador: envia ao espelho, em segundo plano, os modelos que faltam lá."""
         esp, r = self.a.espelho, self.remoto
         try:
-            ambiente = None
-            if esp.ambiente_falta():  # o bootstrap empacotou: <sha256> <bytes>
-                _, txt = pod.agente.exec(f"cat {r.raiz}/ambiente.tar.zst.sha256 2>/dev/null", 30)
-                campos = txt.split()
-                if len(campos) >= 2 and len(campos[0]) == 64 and campos[1].isdigit():
-                    ambiente = {"sha256": campos[0], "bytes": int(campos[1])}
             with self.lock:
-                plano = esp.plano(ambiente)
+                plano = esp.plano()
             if not plano["arquivos"]:
                 return
             arq = self.a.saida / ESTADO / f"espelho-plano-{pod.info.id}.json"
@@ -803,7 +796,7 @@ class Orquestrador:
             )
             pod.espelhando = True
             n = len(plano["arquivos"])
-            _log(f"pod {pod.nome}: enviando {n} arquivo(s) ao espelho (R2) em segundo plano")
+            _log(f"pod {pod.nome}: enviando {n} modelo(s) ao espelho (R2) em segundo plano")
         except (ArmazenamentoError, NuvemError, OSError) as e:
             _log(f"AVISO: espelho não iniciado: {e}")
             with self.lock:

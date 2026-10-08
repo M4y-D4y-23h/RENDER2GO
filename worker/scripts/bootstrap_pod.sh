@@ -14,11 +14,8 @@
 # instalam enquanto os modelos baixam (08/10/2026: o apt inteiro levava 14–23 s antes do download).
 # Com /root/render2go/espelho.tsv (<arquivo>\t<URL assinada>, do lote_nuvem), cada modelo também vem
 # do espelho no R2, ao mesmo tempo que da origem (reserva se o Hugging Face cair). Com
-# /root/render2go/so_espelho (o teste de rede achou a origem lenta), só do espelho.
-# Com /root/render2go/ambiente.tsv (<URL assinada>\t<sha256>\t<bytes>), o ambiente (venv, ComfyUI
-# e Ollama) vem pronto do espelho, num tar.zst conferido pelo SHA-256; se falhar, é instalado da
-# origem. Com RENDER2GO_AMBIENTE_GRAVA=1, o ambiente instalado é empacotado para o espelho
-# (ambiente.tar.zst e .sha256 em /root/render2go; o lote_nuvem envia depois do PRONTO).
+# /root/render2go/so_espelho (o espelho passou no teste de rede), só do espelho: em 08/10/2026 ele
+# baixou os 37 GB em 40 s, com o Hugging Face a 25–39 MB/s no mesmo host.
 #
 # Com RENDER2GO_VOLUME=1 (volume de rede do RunPod em /workspace), o cache fica em
 # /workspace/render2go-cache:
@@ -79,7 +76,7 @@ um() {  # reserva: curl numa conexão só, com retomada; da origem e, se falhar,
   mkdir -p "$(dirname "$2")"
   local u m; m=$(espelho "$2")
   local ordem=("$1" "$1" "$1" ${m:+"$m" "$m"})
-  [[ -n "$m" && -f $R/so_espelho ]] && ordem=("$m" "$m" "$1" "$1")  # origem lenta: espelho antes
+  [[ -n "$m" && -f $R/so_espelho ]] && ordem=("$m" "$m" "$1" "$1")  # espelho aprovado: ele antes
   for u in "${ordem[@]}"; do
     curl -fsSL -C - --retry 5 -o "$2" "$u" && return 0; sleep 5
   done
@@ -114,7 +111,7 @@ PY
   while IFS=$'\t' read -r url dest _ _; do
     mkdir -p "$(dirname "$dest")"
     m=$(espelho "$dest")  # com espelho, o aria2 baixa das duas origens ao mesmo tempo
-    if [[ -n "$m" && -f $R/so_espelho ]]; then  # origem lenta neste host (teste de rede): só o espelho
+    if [[ -n "$m" && -f $R/so_espelho ]]; then  # espelho aprovado no teste de rede: só ele
       printf '%s\n  dir=%s\n  out=%s\n' "$m" "$(dirname "$dest")" "$(basename "$dest")"
     else
       printf '%s%s\n  dir=%s\n  out=%s\n' "$url" "${m:+$'\t'$m}" "$(dirname "$dest")" "$(basename "$dest")"
@@ -167,43 +164,12 @@ ambiente_do_volume() {
   touch $R/vol/ambiente && echo "ambiente do volume ($CHAVE)"
 }
 
-# ambiente do espelho (R2): $R/ambiente.tsv tem <URL assinada>\t<sha256>\t<bytes> (lote_nuvem).
-# Baixa em partes, confere bytes e SHA-256, extrai e confere que o venv e o Ollama funcionam.
-# Qualquer falha apaga o arquivo e o venv, e o ambiente é instalado da origem (como antes).
-ambiente_do_espelho() {
-  [[ -s $R/ambiente.tsv ]] || return 1
-  local url sha bytes
-  IFS=$'\t' read -r url sha bytes < $R/ambiente.tsv || return 1
-  [[ -n "$url" && ${#sha} == 64 && "$bytes" =~ ^[0-9]+$ ]] || return 1
-  rm -f $R/ambiente.tar.zst
-  if aria2c ${SSL_CERT_FILE:+--ca-certificate=$SSL_CERT_FILE} -x 8 -s 8 -k 64M --file-allocation=none \
-      --max-tries=5 --retry-wait=3 --console-log-level=warn --summary-interval=0 \
-      -d $R -o ambiente.tar.zst "$url" \
-    && [ "$(stat -c %s $R/ambiente.tar.zst 2>/dev/null)" = "$bytes" ] \
-    && echo "$sha  $R/ambiente.tar.zst" | sha256sum -c --quiet - \
-    && tar --zstd -xf $R/ambiente.tar.zst -C / \
-    && /opt/venv/bin/python -c "import torch" \
-    && [[ -f $COMFY_DIR/main.py && -x /usr/local/bin/ollama ]]; then
-    rm -f $R/ambiente.tar.zst
-    touch $R/vol/ambiente && echo "ambiente do espelho ($CHAVE)"
-    return 0
-  fi
-  echo "ambiente do espelho não serviu; instalando da origem"
-  rm -rf $R/ambiente.tar.zst /opt/venv
-  return 1
-}
-
 ambiente() {
   export VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH UV_HTTP_TIMEOUT=300
-  if ambiente_do_volume; then
-    marca ambiente_volume
-  elif ambiente_do_espelho; then
-    marca ambiente_espelho
-  else
+  if ! ambiente_do_volume; then
     instalar_ambiente || return 1
     marca ambiente_instalado
-    # empacota agora, antes de qualquer serviço escrever no ComfyUI: para o volume ou para o espelho
-    if [[ $GRAVA == 1 || "${RENDER2GO_AMBIENTE_GRAVA:-0}" == "1" ]]; then
+    if [[ $GRAVA == 1 ]]; then  # empacota agora, antes de qualquer serviço escrever no ComfyUI
       tar -C / -cf - --exclude='opt/comfyui/models/*/*' --exclude='opt/comfyui/output' \
         --exclude='opt/comfyui/input' --exclude='opt/comfyui/temp' --exclude='opt/comfyui/user' \
         opt/venv opt/comfyui usr/local/bin/ollama usr/local/lib/ollama \
@@ -213,6 +179,8 @@ ambiente() {
         || { echo "AVISO: não empacotou o ambiente"; rm -f $R/ambiente.tar.zst*; }
       marca ambiente_empacotado
     fi
+  else
+    marca ambiente_volume
   fi
   mkdir -p $OLLAMA_MODELS
   if [[ -n "$CACHE" ]]; then  # blobs do volume, conferidos pelo SHA-256 do nome; ruim é apagado
