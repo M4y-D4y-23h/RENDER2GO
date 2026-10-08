@@ -1115,6 +1115,11 @@ dialog.confirmacao {
   color: var(--cor-alerta);
 }
 
+.tabela > .vazio-tabela {
+  margin: 0;
+  padding: var(--esp-3) var(--esp-4);
+}
+
 /* -- filtros (botões de alternância) -------------------------------------------------------- */
 
 .filtros {

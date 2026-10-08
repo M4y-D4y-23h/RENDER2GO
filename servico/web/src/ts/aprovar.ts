@@ -195,7 +195,7 @@ function cartaoPendente(p: Pendente, token: string, aoMudar: () => void, imagens
       QUALIDADES[pedido.qualidade] ?? pedido.qualidade,
       pedido.duracao ? `${pedido.duracao} s` : "duração padrão",
       plural(pedido.variacoes, "variação", "variações"),
-      `filtro C1: ${p.filtro_c1 || "ok"}`,
+      `filtro ${p.filtro_c1 || "C1: ok"}`, // o motivo já vem como "C1: ..."
       `IP ${p.ip ?? "—"}`,
     ]),
     criar("p", {
