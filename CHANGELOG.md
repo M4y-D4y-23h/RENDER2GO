@@ -28,7 +28,7 @@ Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técni
 - **Acessibilidade:** WCAG 2.2 AA conferido pelo axe-core no CI, em claro e escuro; "Pular para o conteúdo", foco visível, teclado completo e anúncios curtos para leitores de tela (a atualização automática não repete nada).
 - **Segurança:** CSP com Trusted Types, COOP, CORP e Permissions-Policy; `no-store` nas respostas da API; pedido que muda algo na API vindo de outro site é recusado (CSRF por Fetch Metadata).
 - **Indexação:** descrição, canonical, Open Graph, `robots.txt`, `sitemap.xml`, manifesto e JSON-LD.
-- **Testes:** `test_web.py` (cabeçalhos, cache, SRI, 404, CSRF, indexação, contraste) e, no navegador, acessibilidade, celular (320 e 390 px), teclado, sessão e antecipação das chamadas da API.
+- **Testes:** `test_web.py` (cabeçalhos, cache, SRI, 404, CSRF, indexação, contraste) e, no navegador, acessibilidade, celular (320 e 390 px, também com fonte larga), teclado, sessão e antecipação das chamadas da API.
 - **Atualizar o servidor:** `git pull && docker compose up -d --build && docker compose restart caddy` (docs/09).
 
 ## 08/10/2026: Render2Go no ar, segurança e experiência do cliente

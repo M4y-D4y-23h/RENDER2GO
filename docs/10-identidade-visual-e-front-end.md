@@ -93,7 +93,7 @@ Os tokens ficam em `servico/web/src/css/tokens.css`. O modo escuro segue o apare
    - revisão: menu de seções (13rem) | conteúdo.
 4. **Espaço em múltiplos de 4 px** (tokens `--esp-1` a `--esp-8`): 16 px entre campos, 24 a 32 px entre blocos, 48 px entre seções da revisão.
 5. **Alvos de toque com pelo menos 44 px** (botões, campos, navegação). Em telas de toque, até os botões pequenos crescem para 44 px. Campos têm 48 px de altura. O botão de remover uma foto da prévia tem 32 px, acima dos 24 px do WCAG 2.2 AA, para não cobrir a miniatura.
-6. **Nada de rolagem lateral, nem em 320 px.** Tabelas largas rolam dentro da própria caixa, que recebe foco pelo teclado.
+6. **Nada de rolagem lateral, nem em 320 px, nem com fonte larga.** Toda grade de uma coluna usa `minmax(0, 1fr)`: conteúdo comprido (a opção mais longa de um `<select>`, um endereço) não empurra a página para o lado. Tabelas largas rolam dentro da própria caixa, que recebe foco pelo teclado. O teste de celular confere também com a DejaVu Sans, mais larga, que é a fonte padrão de muitos Linux.
 7. **Cabeçalho fixo de 60 px:** logo (leva ao início) e navegação. Abaixo de 480 px, a navegação fica só com ícones (o rótulo continua para o leitor de tela); até 360 px, o logo vira só o símbolo.
 8. **Texto corrido com até 68 caracteres por linha.**
 9. **Pedido em passos numerados:** Fotos → Estilo e descrição → Ajustes → Autorização → Enviar. Cada passo é um `<fieldset>` com legenda.
@@ -184,10 +184,11 @@ Todos em `servico/web/src/css/componentes.css`, usados pelas três páginas:
 - **Cor nova:** token em `src/css/tokens.css`, nos dois temas, e o par em `PARES` no `test_web.py`.
 - **Marca (logo, ícones, `og.jpg`, fonte):** `tools/marca.py` (precisa de rede e do Chromium; comando no cabeçalho do arquivo). `--check` confere a fonte e os SVGs versionados.
 - **Endereço público** (canonical, Open Graph, sitemap): `https://app.render2go.com`. Outro domínio: `RENDER2GO_URL_PUBLICA=https://... npm run build`.
+- **Navegadores:** Chrome, Edge e Firefox 100 ou mais novos e Safari 15.4 ou mais novo (iPhone com iOS 15.4+), que é o alvo do esbuild em `construir.mjs`. Recursos mais novos entram só como melhoria: sem `:has()`, a caixa de autorização marcada não muda de cor; sem `createImageBitmap` com redução, a prévia usa a própria foto.
 - **Regras que a CSP impõe:** nada de `innerHTML`, `style=` no HTML, `<script>` embutido ou `eval`. Textos novos por `textContent`; elementos por `criar()` (`src/ts/comum.ts`).
 - **Testes:**
   - `cd servico && uv run pytest -q`: cabeçalhos, cache, CSRF, indexação, contraste;
-  - `uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py`: fluxo completo, axe-core em claro e escuro, celular em 320 e 390 px, teclado e sessão (precisa de `npm ci` em `servico/web`, por causa do axe-core);
+  - `uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py`: fluxo completo, axe-core em claro e escuro, celular em 320 e 390 px (também com fonte larga), teclado e sessão (precisa de `npm ci` em `servico/web`, por causa do axe-core);
   - `RENDER2GO_CAPTURAS=<pasta>` grava capturas das telas.
 
 ## 7. Fora deste trabalho e próximos passos
