@@ -4,6 +4,10 @@
     render2go-servico orquestrar                  sobe e encerra pods conforme a fila
     render2go-servico limpar                      encerra pods registrados pelo orquestrador
     render2go-servico cliente NOME [--plano teste] [--cota 500]   cadastra e mostra o token
+    render2go-servico apagar-historico [--confirmar] [--cookies] [--forcar]
+        apaga pedidos, prompts, trabalhos, autorizações, eventos, suporte e registro de pods, e
+        os arquivos dos clientes no R2 (entrada/ e saida/; nunca o espelho dos modelos). Os
+        clientes e os códigos de acesso ficam. Sem --confirmar, só mostra o que seria apagado.
 
 Configuração por variáveis de ambiente (ver docs/09-implantacao.md):
     RENDER2GO_DB_URL, RENDER2GO_R2_*, RENDER2GO_SEGREDO_APROVACAO, RENDER2GO_ADMIN_TOKENS,
@@ -29,6 +33,50 @@ def _banco():
     return b
 
 
+# prefixos dos arquivos dos clientes no R2; o espelho dos modelos (modelos/) nunca entra
+PREFIXOS_CLIENTES = ("entrada/", "saida/")
+
+
+def apagar_historico(banco, armazenamento, confirmar: bool, cookies: bool, forcar: bool) -> int:
+    contagem = banco.contar_historico(cookies)
+    print("no banco: " + ", ".join(f"{t} {n}" for t, n in contagem.items()))
+    arquivos: list[str] = []
+    if armazenamento is None:
+        print("R2 não configurado (RENDER2GO_R2_*): os arquivos ficam como estão")
+    else:
+        for prefixo in PREFIXOS_CLIENTES:
+            achados = armazenamento.listar(prefixo)
+            print(f"no R2: {len(achados)} arquivo(s) em {prefixo}")
+            arquivos += achados
+    if n := banco.em_geracao():
+        print(f"AVISO: {n} pedido(s) em geração agora" + ("" if forcar else "; espere terminar ou use --forcar"))
+        if not forcar:
+            return 1
+    if not confirmar:
+        print("nada foi apagado; para apagar, rode de novo com --confirmar")
+        return 0
+    apagados = banco.apagar_historico(cookies=cookies, forcar=forcar)
+    banco.compactar()  # reescreve as tabelas: as linhas apagadas não ficam no disco do banco
+    print("apagado do banco: " + ", ".join(f"{t} {n}" for t, n in apagados.items()))
+    falhas = []
+    if armazenamento is not None and arquivos:
+        from concurrent.futures import ThreadPoolExecutor
+
+        def apagar(chave: str) -> str | None:
+            try:
+                armazenamento.apagar(chave)
+                return None
+            except Exception as e:  # noqa: BLE001 (lista as falhas no fim; o resto continua)
+                return f"{chave}: {e}"
+
+        with ThreadPoolExecutor(max_workers=16) as ex:
+            falhas = [f for f in ex.map(apagar, arquivos) if f]
+        print(f"apagados do R2: {len(arquivos) - len(falhas)} arquivo(s)")
+        for f in falhas[:20]:
+            print(f"  falhou: {f}")
+    return 1 if falhas else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="render2go-servico", description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -41,6 +89,13 @@ def main(argv: list[str] | None = None) -> int:
     s_cli.add_argument("nome")
     s_cli.add_argument("--plano", choices=["pago", "teste"], default="pago")
     s_cli.add_argument("--cota", type=int, default=500, help="fotos por dia")
+    s_hist = sub.add_parser(
+        "apagar-historico",
+        help="apaga pedidos, prompts, auditoria, suporte e os arquivos dos clientes (os clientes ficam)",
+    )
+    s_hist.add_argument("--confirmar", action="store_true", help="apaga de verdade (sem isso, só conta)")
+    s_hist.add_argument("--cookies", action="store_true", help="apaga também as escolhas do aviso de cookies")
+    s_hist.add_argument("--forcar", action="store_true", help="apaga mesmo com pedido em geração")
     a = p.parse_args(argv)
 
     if a.cmd == "api":
@@ -54,6 +109,10 @@ def main(argv: list[str] | None = None) -> int:
         cid, token = _banco().criar_cliente(a.nome, a.cota, a.plano)
         print(f"cliente {cid} ({a.plano}); token (guarde, não aparece de novo):\n{token}")
         return 0
+    if a.cmd == "apagar-historico":
+        from render2go_servico.armazenamento import Armazenamento
+
+        return apagar_historico(_banco(), Armazenamento.do_ambiente(), a.confirmar, a.cookies, a.forcar)
 
     from render2go_worker import lote_nuvem as ln
 

@@ -225,6 +225,54 @@ def test_a_video_of_the_wrong_photo_never_reaches_the_client(ambiente, monkeypat
     assert "url" not in lote["videos"][0]
 
 
+@com_ffmpeg
+def test_worker_translates_while_models_download_and_renders_after_ready(ambiente, monkeypatch, tmp_path):
+    import requests
+
+    monkeypatch.setattr(fila, "ESPERA_S", 0.1)
+    monkeypatch.setattr(fila, "ESPERA_MODELOS_S", 0.05)
+    estado = tmp_path / "estado"
+    estado.write_text("AMBIENTE\n")
+    lid, hc = _lote_aprovado(ambiente, {"bolo.png": _png((40, 90, 160), "circulo")})
+    api = fila.ApiFila(ambiente.url, WORKER, "pod-teste")
+    w = fila.WorkerFila(
+        api,
+        fila.Config(comfy=["http://127.0.0.1:1"], ocioso_s=1.0, modelos=estado),
+        submit=_submit_de(),
+        compile_fn=_compilar,
+    )
+    t = threading.Thread(target=w.rodar, daemon=True)
+    t.start()
+    deadline = time.monotonic() + 20
+    while ambiente.banco.lote(lid)["prompt_en"] is None and time.monotonic() < deadline:
+        time.sleep(0.05)
+    time.sleep(1.5)  # mais que o tempo de pod quente: esperando os modelos, o worker não sai
+    assert ambiente.banco.lote(lid)["prompt_en"]  # traduzido antes dos modelos
+    assert t.is_alive()
+    assert all(j["status"] == "pendente" for j in ambiente.banco.jobs(lid) if j["tipo"] == "render")
+    estado.write_text("PRONTO\n")
+    t.join(30)
+    assert not t.is_alive()
+    lote = requests.get(f"{ambiente.url}/api/lotes/{lid}", headers=hc).json()
+    assert lote["status"] == "concluido" and lote["prontos"] == 1
+
+
+def test_worker_leaves_when_the_model_install_fails_or_times_out(monkeypatch, tmp_path):
+    monkeypatch.setenv("RENDER2GO_SAFETY", "c1-revisao-humana")
+    estado = tmp_path / "estado"
+    estado.write_text("FALHOU modelos (ver modelos.log)\n")
+
+    class Api:
+        def reivindicar(self, tipos=None):
+            raise AssertionError("não pede job com a instalação falha")
+
+    assert fila.WorkerFila(Api(), fila.Config(comfy=["x"], modelos=estado)).rodar() == 0
+    estado.write_text("AMBIENTE\n")
+    w = fila.WorkerFila(Api(), fila.Config(comfy=["x"], modelos=estado, modelos_ate=time.time() - 1))
+    assert w.estado_modelos() == "falhou"
+    assert fila.WorkerFila(Api(), fila.Config(comfy=["x"])).estado_modelos() == "ok"  # sem o arquivo
+
+
 def test_worker_refuses_to_start_without_filters(monkeypatch):
     monkeypatch.delenv("RENDER2GO_SAFETY", raising=False)
     with pytest.raises(Exception, match="filtros"):

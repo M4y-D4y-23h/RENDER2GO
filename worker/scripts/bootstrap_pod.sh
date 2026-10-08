@@ -6,8 +6,12 @@
 # por arquivo) e 77 s com o cache do volume.
 #
 # Uso: bootstrap_pod.sh <repo.tgz> <conjuntos de modelos, ex.: i2v_r1v2>
-# Estado em /root/render2go/estado: INSTALANDO → PRONTO | FALHOU <motivo>
+# Estado em /root/render2go/estado: INSTALANDO → AMBIENTE → PRONTO | FALHOU <motivo>
+#   AMBIENTE: venv, ComfyUI, Ollama e o modelo do compilador prontos; os modelos de vídeo ainda
+#   baixam. Os serviços já podem subir e o pedido já pode ser traduzido; renderizar, só no PRONTO.
 # Tempos por etapa (s desde o início) em /root/render2go/tempos.
+# Os pacotes que o download usa (aria2, curl, rsync) vêm primeiro; os outros (git, ffmpeg...)
+# instalam enquanto os modelos baixam (08/10/2026: o apt inteiro levava 14–23 s antes do download).
 # Com /root/render2go/espelho.tsv (<arquivo>\t<URL assinada>, do lote_nuvem), cada modelo também vem
 # do espelho no R2, ao mesmo tempo que da origem (reserva se o Hugging Face cair).
 #
@@ -33,8 +37,8 @@ W=/opt/render2go/worker COMFY_DIR=/opt/comfyui OLLAMA_MODELS=/opt/ollama/models
 export OLLAMA_MODELS R
 
 apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-  git curl ffmpeg zstd unzip ca-certificates procps rsync aria2 >/dev/null || falha "apt"
-marca apt
+  curl ca-certificates rsync aria2 >/dev/null || falha "apt"
+marca apt_download
 CACHE="" GRAVA=0
 if [[ "${RENDER2GO_VOLUME:-0}" == "1" && -d /workspace ]]; then
   CACHE=/workspace/render2go-cache
@@ -203,7 +207,12 @@ guardar() {
 
 modelos > $R/modelos.log 2>&1 &
 MPID=$!
+apt-get install -y -qq --no-install-recommends git ffmpeg zstd unzip procps >/dev/null \
+  || { kill $MPID 2>/dev/null; falha "apt"; }
+marca apt
 ambiente > $R/ambiente.log 2>&1 || { kill $MPID 2>/dev/null; falha "ambiente (ver ambiente.log)"; }
+marca ambiente_pronto
+echo AMBIENTE > $EST
 wait $MPID || falha "modelos (ver modelos.log)"
 marca pronto
 echo PRONTO > $EST

@@ -50,6 +50,7 @@ def api(banco):
     )
     cli = TestClient(criar_app(cfg))
     cli.armazem = armazem
+    cli.banco = banco
     return cli
 
 
@@ -343,9 +344,16 @@ def test_client_sees_a_time_estimate_and_open_or_download_links(api):
     assert lote["previsao"] == {"fase": "analise", "inicio_max_s": api_mod.PRAZO_ANALISE_S}
     api.post(f"/api/admin/lotes/{lid}/aprovar", headers=h(ADMIN))
     prev = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()["previsao"]
-    # nenhum gerador ligado: preparo + espera de juntar testes (até 10 min) + 2 vídeos
-    assert prev["fase"] == "fila" and api_mod.PREPARO_S < prev["inicio_s"] <= api_mod.PREPARO_S + 600
+    # nenhum gerador ligado: subida + ciclo do orquestrador + espera de juntar testes (até 10 min)
+    teto = api_mod.PREPARO_S + api_mod.CICLO_S / 2 + 600
+    assert prev["fase"] == "fila" and api_mod.PREPARO_S < prev["inicio_s"] <= math.ceil(teto)
     assert prev["fim_s"] == prev["inicio_s"] + math.ceil(2 * api_mod.VIDEO_PADRAO_S)
+    # o orquestrador decidiu subir um pod há 100 s: falta o resto da subida (sem a espera do grupo)
+    gid = api.banco.gerador_subindo("NVIDIA L40S")
+    with api.banco.tx() as cur:
+        cur.run("UPDATE geradores SET criado = criado - 100 WHERE id = ?", (gid,))
+    prev = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()["previsao"]
+    assert api_mod.PREPARO_S - 102 <= prev["inicio_s"] <= api_mod.PREPARO_S - 99
 
     comp = _job(api)  # o gerador liga e pega o trabalho
     api.post(

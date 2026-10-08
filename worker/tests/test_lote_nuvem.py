@@ -100,7 +100,8 @@ def sem_git(monkeypatch, tmp_path):
     monkeypatch.setattr(ln, "CACHE", tmp_path / "cache")
     monkeypatch.setattr(ln, "ESPERA_VAGA_S", 0)
     monkeypatch.setattr(ln, "ESPERA_AGENTE_S", 3)
-    monkeypatch.setattr(ln.time, "sleep", lambda s: None if s >= 10 else _dormir(s))
+    # esperas de consulta (CONSULTA_S, 10 s) e de vaga não dormem; as curtas (repetições) dormem
+    monkeypatch.setattr(ln.time, "sleep", lambda s: None if s >= ln.CONSULTA_S else _dormir(s))
 
 
 _dormir = __import__("time").sleep
@@ -274,7 +275,8 @@ def test_invalid_request_budget_and_no_gpu_create_nothing(pasta, tmp_path, sem_g
 def test_estimate_and_simulation(pasta, tmp_path, capsys):
     assert ln.main(_argv(pasta, tmp_path / "s", "--simular")) == ln.EXIT_OK
     err = capsys.readouterr().err
-    assert "5 foto(s), 5 vídeo(s) em 1 GPU(s)" in err and "~28 s por vídeo" in err
+    assert "5 foto(s), 5 vídeo(s) em 1 GPU(s)" in err and "(NVIDIA L40S, ~55 s por vídeo)" in err
+    assert f"US$ {ln.PRECO_RESERVA_USD_H:.2f}/h" in err  # sem consulta de preço: o lado seguro
     e = ln.estimar(50, 4, 1, 55, 0.79)
     assert e.gpus == 4 and round(e.minutos) == round((ln.SUBIDA_S + 50 * 55 / 4) / 60)
     assert ln.segundos_por_video("NVIDIA L40S", "alta", 7) == pytest.approx(180 * 1.4**1.6)
@@ -343,11 +345,15 @@ def test_no_package_starts_without_safe_time_before_the_2h_limit(
 def test_default_gpu_order_is_secure_l40s_first():
     a = ln.build_parser().parse_args(["--saida", "s"])
     assert a.nuvem == "secure"
-    assert ln.GPUS_PADRAO[:3] == [
-        "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+    # 08/10/2026: a RTX PRO 6000 subiu para US$ 2,49/h e virou reserva das de 48 GB
+    assert ln.GPUS_PADRAO == [
         "NVIDIA L40S",
-        "NVIDIA L40",
+        "NVIDIA RTX 6000 Ada Generation",
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "NVIDIA GeForce RTX 4090",
     ]
+    medidas = ("NVIDIA L40S", "NVIDIA RTX PRO 6000 Blackwell Server Edition")
+    assert all(g in ln.MEDIDO_S for g in medidas)
 
 
 def test_cuda_check_requires_working_gpus_and_driver_12_8():

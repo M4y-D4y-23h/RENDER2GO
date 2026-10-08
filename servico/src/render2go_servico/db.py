@@ -14,9 +14,14 @@ volta para a fila, até MAX_TENTATIVAS. No Postgres a reivindicação usa
 `FOR UPDATE SKIP LOCKED` (vários workers sem disputa); no SQLite, `BEGIN IMMEDIATE`.
 
 Ordem da fila (docs/08): compilações primeiro; depois lotes pagos antes de testes gratuitos
-(`lotes.prioridade`); dentro da mesma prioridade, **intercalado por lote**: vai primeiro o job do
-lote com menos vídeos já iniciados, para o vídeo 1 de cada cliente sair antes do vídeo 2 de
-qualquer um.
+(`lotes.prioridade`); dentro da mesma prioridade, **intercalado por cliente**: vai primeiro o
+cliente com menos vídeos já iniciados nos pedidos em andamento, para o vídeo 1 de cada cliente
+sair antes do vídeo 2 de qualquer um. Os pedidos de um mesmo cliente seguem a **ordem de
+chegada**: o pedido novo espera os anteriores (até 08/10/2026 a vez era por pedido, e o pedido
+novo de uma conta passava na frente do antigo da mesma conta).
+
+Geradores (`geradores`): o orquestrador registra cada pod (subindo, pronto, encerrado) e a API usa
+esse estado e as subidas medidas na previsão mostrada ao cliente.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ import hashlib
 import json
 import secrets
 import sqlite3
+import statistics
 import threading
 import time
 from collections.abc import Iterator
@@ -77,7 +83,20 @@ ESQUEMA = [
     """CREATE TABLE IF NOT EXISTS cookies (
         id TEXT PRIMARY KEY, dispositivo TEXT, ip TEXT, agente TEXT, versao TEXT NOT NULL,
         escolha TEXT NOT NULL, quando DOUBLE PRECISION NOT NULL)""",
+    # pods do orquestrador: estado atual (previsão para o cliente) e tempos de subida medidos
+    """CREATE TABLE IF NOT EXISTS geradores (
+        id TEXT PRIMARY KEY, worker TEXT, gpu TEXT, usd_h DOUBLE PRECISION, estado TEXT NOT NULL,
+        criado DOUBLE PRECISION NOT NULL, pronto_em DOUBLE PRECISION, primeiro_video_em DOUBLE PRECISION,
+        encerrado_em DOUBLE PRECISION, motivo TEXT)""",
 ]
+# vídeos já iniciados (ou prontos) do cliente nos pedidos em andamento: a vez na fila é por cliente
+INICIADOS_DO_CLIENTE = (
+    "SELECT COUNT(*) FROM jobs k JOIN lotes m ON m.id = k.lote_id WHERE m.cliente_id = l.cliente_id"
+    " AND m.status IN ('aprovado', 'processando') AND k.tipo = 'render' AND k.status <> 'pendente'"
+)
+TIPOS_JOB = ("compilar", "render")
+# tabelas do histórico (pedidos e tudo o que vem deles), na ordem de apagar (chaves estrangeiras)
+HISTORICO = ("jobs", "consentimentos", "fotos", "eventos", "lotes", "suporte", "geradores")
 # colunas que entraram depois da primeira implantação: (tabela, coluna, tipo)
 COLUNAS_NOVAS = [
     ("fotos", "analise", "TEXT"),  # aviso de pessoas no /aprovar (render2go_servico.pessoas)
@@ -516,27 +535,121 @@ class Banco:
             )
         return sum(float(r["segundos"]) for r in linhas) / len(linhas) if linhas else None
 
-    def geradores_ativos(self, janela_s: float = 600) -> int:
-        """Quantos workers mexeram em vídeos na janela (inclui o que espera pedido novo)."""
-        with self.tx() as c:
-            r = c.one(
-                "SELECT COUNT(DISTINCT worker) AS n FROM jobs WHERE tipo = 'render' AND worker IS NOT NULL"
-                " AND atualizado > ?",
-                (time.time() - janela_s,),
-            )
-        return int(r["n"])
+    def videos_a_frente(self, lote: dict) -> dict[str, int]:
+        """Na ordem da fila (ver `reivindicar`), quantos vídeos saem antes do 1º vídeo pendente deste
+        lote ("primeiro") e quantos, contando os do próprio lote, até o último dele ("ultimo").
 
-    def videos_a_frente(self, lote: dict) -> int:
-        """Vídeos na fila antes deste lote (prioridade menor, ou a mesma e criado antes)."""
+        Entram os vídeos em andamento (ocupam as GPUs agora), os de prioridade melhor, os pedidos
+        anteriores do mesmo cliente e, dos outros clientes da mesma prioridade, a vez intercalada:
+        cada um anda até alcançar os vídeos iniciados deste cliente (no empate, quem pediu antes)."""
         with self.tx() as c:
-            r = c.one(
-                "SELECT COUNT(*) AS n FROM jobs j JOIN lotes l ON l.id = j.lote_id"
-                " WHERE j.tipo = 'render' AND j.status IN ('pendente', 'em_andamento')"
-                " AND l.status IN ('aprovado', 'processando') AND l.id <> ?"
-                " AND (l.prioridade < ? OR (l.prioridade = ? AND l.criado < ?))",
-                (lote["id"], lote["prioridade"], lote["prioridade"], lote["criado"]),
+            linhas = c.all(
+                "SELECT l.id, l.cliente_id, l.prioridade, l.criado,"
+                " SUM(CASE WHEN j.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,"
+                " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS andamento,"
+                " SUM(CASE WHEN j.status <> 'pendente' THEN 1 ELSE 0 END) AS iniciados"
+                " FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                " WHERE j.tipo = 'render' AND l.status IN ('aprovado', 'processando')"
+                " GROUP BY l.id, l.cliente_id, l.prioridade, l.criado"
             )
-        return int(r["n"])
+        p, cli, este = lote["prioridade"], lote["cliente_id"], (lote["criado"], lote["id"])
+        fixos = meus_antes = meus_pendentes = iniciados_meus = pend_lote = anda_lote = 0
+        outros: dict[str, list[float]] = {}  # cliente → [pendentes, iniciados, pedido pendente mais antigo]
+        for r in linhas:
+            pend, anda, inic = (int(r[k] or 0) for k in ("pendentes", "andamento", "iniciados"))
+            if r["id"] == lote["id"]:
+                pend_lote, anda_lote, iniciados_meus = pend, anda, iniciados_meus + inic
+            elif r["cliente_id"] == cli and r["prioridade"] == p:
+                iniciados_meus += inic
+                if (r["criado"], r["id"]) < este:
+                    meus_antes += pend + anda
+                    meus_pendentes += pend
+                else:
+                    fixos += anda
+            elif r["prioridade"] < p:
+                fixos += pend + anda
+            else:
+                fixos += anda
+                if r["prioridade"] == p and pend:
+                    o = outros.setdefault(r["cliente_id"], [0, 0, float("inf")])
+                    o[0] += pend
+                    o[1] += inic
+                    o[2] = min(o[2], float(r["criado"]))
+                elif r["prioridade"] == p:
+                    outros.setdefault(r["cliente_id"], [0, 0, float("inf")])[1] += inic
+
+        def vez_dos_outros(alvo: int) -> int:
+            return sum(
+                int(min(pend, max(0, alvo - inic + (1 if criado < lote["criado"] else 0))))
+                for pend, inic, criado in outros.values()
+            )
+
+        alvo = iniciados_meus + meus_pendentes  # vídeos deste cliente iniciados quando o lote começar
+        primeiro = fixos + meus_antes + vez_dos_outros(alvo)
+        ultimo = fixos + meus_antes + pend_lote + anda_lote + vez_dos_outros(alvo + max(0, pend_lote - 1))
+        return {"primeiro": primeiro, "ultimo": ultimo}
+
+    # -- geradores (pods do orquestrador) --------------------------------------------------
+
+    def gerador_subindo(self, gpu: str | None = None) -> str:
+        gid = novo_id("ger")
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO geradores (id, gpu, estado, criado) VALUES (?, ?, 'subindo', ?)",
+                (gid, gpu, time.time()),
+            )
+        return gid
+
+    def gerador_pronto(self, gid: str, worker: str, gpu: str | None, usd_h: float | None) -> None:
+        with self.tx() as c:
+            c.run(
+                "UPDATE geradores SET estado = 'pronto', worker = ?, gpu = ?, usd_h = ?, pronto_em = ? WHERE id = ?",
+                (worker, gpu, usd_h, time.time(), gid),
+            )
+
+    def gerador_fim(self, gid: str, motivo: str, falhou: bool = False) -> None:
+        with self.tx() as c:
+            c.run(
+                "UPDATE geradores SET estado = ?, encerrado_em = ?, motivo = ?"
+                " WHERE id = ? AND estado IN ('subindo', 'pronto')",
+                ("falhou" if falhou else "encerrado", time.time(), motivo[:300], gid),
+            )
+
+    def geradores_reiniciar(self, motivo: str = "orquestrador reiniciado") -> int:
+        """Na partida do orquestrador: os pods do processo anterior já foram encerrados por ele (ou
+        pelo desligamento automático); nenhum continua contando como ligado."""
+        with self.tx() as c:
+            return c.run(
+                "UPDATE geradores SET estado = 'encerrado', encerrado_em = ?, motivo = ?"
+                " WHERE estado IN ('subindo', 'pronto')",
+                (time.time(), motivo),
+            )
+
+    def estado_geradores(self, amostras: int = 10) -> dict[str, Any]:
+        """Para a previsão: pods prontos, início das subidas em andamento e a subida típica medida
+        (da decisão de subir até o 1º vídeo começar, já com a tradução do pedido; mediana das últimas
+        `amostras`, com pelo menos 3). Registro com mais de 2 h 15 min é ignorado: nenhum pod passa de
+        2 h (desligamento automático), então é resto de um orquestrador que caiu."""
+        agora = time.time()
+        with self.tx() as c:
+            ativos = c.all(
+                "SELECT estado, criado, primeiro_video_em FROM geradores"
+                " WHERE estado IN ('subindo', 'pronto') AND criado > ?",
+                (agora - 8100,),
+            )
+            medidas = c.all(
+                "SELECT primeiro_video_em - criado AS s FROM geradores WHERE primeiro_video_em IS NOT NULL"
+                " ORDER BY criado DESC LIMIT ?",
+                (amostras,),
+            )
+        subidas = [float(m["s"]) for m in medidas]
+        # o worker começa antes de os modelos terminarem de baixar: a subida só acaba no 1º vídeo
+        gerando = [a for a in ativos if a["estado"] == "pronto" and a["primeiro_video_em"] is not None]
+        return {
+            "prontos": len(gerando),
+            "subindo": sorted(float(a["criado"]) for a in ativos if a not in gerando),
+            "subida_s": statistics.median(subidas) if len(subidas) >= 3 else None,
+        }
 
     def lote(self, lote_id: str, cliente_id: str | None = None) -> dict | None:
         with self.tx() as c:
@@ -638,8 +751,13 @@ class Banco:
 
     # -- fila -----------------------------------------------------------------------------
 
-    def reivindicar(self, worker: str, lease_s: float = 900) -> dict | None:
-        """Próximo job (compilar antes de render; render só com o prompt pronto)."""
+    def reivindicar(self, worker: str, lease_s: float = 900, tipos: list[str] | None = None) -> dict | None:
+        """Próximo job (compilar antes de render; render só com o prompt pronto).
+
+        `tipos`: só esses tipos de job (o pod que ainda baixa os modelos pega só "compilar")."""
+        tipos = list(tipos or TIPOS_JOB)
+        if not tipos or not set(tipos) <= set(TIPOS_JOB):
+            raise BancoError(f"tipos de job inválidos: {tipos}")
         agora = time.time()
         trava = " FOR UPDATE OF j SKIP LOCKED" if self.pg else ""
         with self.tx() as c:
@@ -660,13 +778,16 @@ class Banco:
                 " WHERE status = 'em_andamento' AND lease_ate < ?",
                 (agora, agora),
             )
+            # vez por cliente (menos vídeos iniciados primeiro); no mesmo cliente, o pedido mais antigo;
+            # no mesmo pedido, a ordem da lista que o cliente vê (arquivo)
             job = c.one(
                 "SELECT j.* FROM jobs j JOIN lotes l ON l.id = j.lote_id"
                 " WHERE j.status = 'pendente' AND l.status IN ('aprovado', 'processando')"
                 " AND (j.tipo = 'compilar' OR l.prompt_en IS NOT NULL)"
+                f" AND j.tipo IN ({', '.join('?' * len(tipos))})"
                 " ORDER BY CASE j.tipo WHEN 'compilar' THEN 0 ELSE 1 END, l.prioridade,"
-                " (SELECT COUNT(*) FROM jobs k WHERE k.lote_id = j.lote_id AND k.status <> 'pendente'),"
-                " j.criado, j.id LIMIT 1" + trava,
+                f" ({INICIADOS_DO_CLIENTE}), l.criado, l.id, j.criado, j.arquivo, j.id LIMIT 1" + trava,
+                tuple(tipos),
             )
             if job is None:
                 return None
@@ -675,6 +796,11 @@ class Banco:
                 " atualizado = ? WHERE id = ?",
                 (worker, agora + lease_s, agora, job["id"]),
             )
+            if job["tipo"] == "render":  # fim da subida deste pod (previsão para o cliente)
+                c.run(
+                    "UPDATE geradores SET primeiro_video_em = ? WHERE worker = ? AND primeiro_video_em IS NULL",
+                    (agora, worker),
+                )
             job.update(status="em_andamento", worker=worker, tentativas=job["tentativas"] + 1)
             return job
 
@@ -726,6 +852,45 @@ class Banco:
                 (final, agora, lote_id),
             )
             self.evento(c, lote_id, final, {"ok": int(r["ok"]), "total": int(r["total"])})
+
+    # -- limpeza do histórico ---------------------------------------------------------------
+
+    def contar_historico(self, cookies: bool = False) -> dict[str, int]:
+        tabelas = HISTORICO + (("cookies",) if cookies else ())
+        with self.tx() as c:
+            return {t: int(c.one(f"SELECT COUNT(*) AS n FROM {t}")["n"]) for t in tabelas}
+
+    def em_geracao(self) -> int:
+        with self.tx() as c:
+            return int(c.one("SELECT COUNT(*) AS n FROM lotes WHERE status IN ('aprovado', 'processando')")["n"])
+
+    def apagar_historico(self, cookies: bool = False, forcar: bool = False) -> dict[str, int]:
+        """Apaga os pedidos e tudo o que vem deles (trabalhos, fotos, autorizações, eventos), as
+        mensagens de suporte e o registro dos pods. Os clientes (códigos de acesso) ficam. Com
+        `cookies`, também as escolhas do aviso de cookies. Pedido em geração bloqueia, salvo `forcar`
+        (o worker que estiver com um job recebe erro ao concluir)."""
+        tabelas = HISTORICO + (("cookies",) if cookies else ())
+        with self.tx() as c:
+            n = int(c.one("SELECT COUNT(*) AS n FROM lotes WHERE status IN ('aprovado', 'processando')")["n"])
+            if n and not forcar:
+                raise BancoError(f"{n} pedido(s) em geração: espere terminar (ou use --forcar)")
+            apagados = {}
+            for t in tabelas:
+                apagados[t] = int(c.one(f"SELECT COUNT(*) AS n FROM {t}")["n"])
+                c.run(f"DELETE FROM {t}")
+        return apagados
+
+    def compactar(self, tabelas: tuple[str, ...] = HISTORICO + ("cookies",)) -> None:
+        """Reescreve as tabelas sem as linhas apagadas (o DELETE só marca as linhas como mortas)."""
+        if self.pg:
+            import psycopg
+
+            with psycopg.connect(self.url, autocommit=True) as con:
+                for t in tabelas:
+                    con.execute(f"VACUUM FULL {t}")
+            return
+        with self._lock:
+            self._sq.execute("VACUUM")
 
     def jobs(self, lote_id: str) -> list[dict]:
         with self.tx() as c:

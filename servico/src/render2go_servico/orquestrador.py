@@ -1,6 +1,6 @@
 """Orquestrador de pods da fila (ADR 0003, fase 3): lê a fila, sobe e encerra pods.
 
-A cada ciclo (30 s):
+A cada ciclo (RENDER2GO_CICLO_S, padrão 10 s):
 1. lê o trabalho pendente no banco (renders por lote, com qualidade e duração);
 2. decide quantos pods a fila pede, com a mesma regra do `lote_nuvem --pods auto`:
    - cada pod com ≥ 10 min de vídeos;
@@ -8,8 +8,14 @@ A cada ciclo (30 s):
    - até RENDER2GO_MAX_PODS e RENDER2GO_MAX_USD_H;
 3. sobe os pods que faltam com a instalação do `lote_nuvem` (CUDA, teste de rede, memória de
    datacenter, download em partes, espelho R2) e inicia neles o worker da fila
-   (`render2go_worker.fila`);
-4. encerra os pods cujo worker terminou (fila vazia por 3 min = "pod quente" vencido).
+   (`render2go_worker.fila`). As GPUs vêm de RENDER2GO_GPUS, em ordem de preferência (padrão:
+   `lote_nuvem.GPUS_PADRAO`). Os serviços e o worker sobem assim que o ambiente fica pronto, e o
+   pedido é traduzido enquanto os modelos de vídeo terminam de baixar (`subir_pod(cedo=True)`);
+4. encerra os pods cujo worker terminou (fila vazia por RENDER2GO_POD_OCIOSO_MIN, padrão 3 min =
+   "pod quente" vencido).
+
+Cada pod fica registrado na tabela `geradores` (subindo, pronto, encerrado): a API usa esse estado
+e as subidas medidas para a previsão mostrada ao cliente.
 
 Testes gratuitos em grupo (docs/08): com só testes na fila e nenhum pod ligado, o pod espera
 juntar RENDER2GO_AGRUPAR_TESTE_VIDEOS vídeos (padrão 20) ou o teste mais antigo esperar
@@ -47,9 +53,17 @@ from render2go_servico.db import Banco
 FILA_CMD = (
     "set -a; . {raiz}/fila.env; set +a; cd /opt/render2go/worker && "
     "PATH=/opt/venv/bin:$PATH PYTHONPATH=/opt/render2go/worker/src "
-    "python -m render2go_worker.fila --api {api} --worker {worker} --gpus {gpus} --ate {ate}"
+    "python -m render2go_worker.fila --api {api} --worker {worker} --gpus {gpus} --ate {ate} "
+    "--ocioso {ocioso} --modelos-prontos {raiz}/estado --modelos-ate {modelos_ate}"
 )
 VIVO = "vivo"  # tocado a cada ciclo bem-sucedido (healthcheck do contêiner)
+
+
+def _gpus_do_ambiente() -> list[str]:
+    """RENDER2GO_GPUS: ids do RunPod separados por vírgula, em ordem de preferência (padrão:
+    lote_nuvem.GPUS_PADRAO). Trocar a GPU = editar o .env e reiniciar o orquestrador."""
+    gpus = [g.strip() for g in os.environ.get("RENDER2GO_GPUS", "").split(",") if g.strip()]
+    return gpus or list(ln.GPUS_PADRAO)
 
 
 def _log(msg: str) -> None:
@@ -65,12 +79,13 @@ class ConfigOrq:
     max_pods: int = ln.MAX_PODS_AUTO
     max_usd_h: float = 20.0
     prazo_min: int | None = None
-    intervalo_s: float = 30
+    intervalo_s: float = 10  # até 08/10/2026 eram 30 s: o pedido aprovado esperava até 30 s pelo ciclo
     estado: Path = ln.CACHE / "orquestrador"
     segredo_aprovacao: str | None = None
     fila_cmd: str = FILA_CMD
     agrupar_teste_s: float = 10 * 60
     agrupar_teste_videos: int = 20
+    ocioso_s: float = 180  # pod quente: sem jobs por esse tempo, o worker sai e o pod é encerrado
 
     @classmethod
     def do_ambiente(cls) -> ConfigOrq:
@@ -86,12 +101,15 @@ class ConfigOrq:
             api_url=api.rstrip("/"),
             worker_token=token,
             hosts_permitidos=r2,
+            gpus=_gpus_do_ambiente(),
             max_pods=int(os.environ.get("RENDER2GO_MAX_PODS", ln.MAX_PODS_AUTO)),
             max_usd_h=float(os.environ.get("RENDER2GO_MAX_USD_H", 20)),
             prazo_min=int(prazo) if prazo else None,
+            intervalo_s=max(5.0, float(os.environ.get("RENDER2GO_CICLO_S", 10))),
             segredo_aprovacao=os.environ.get("RENDER2GO_SEGREDO_APROVACAO") or None,
             agrupar_teste_s=float(os.environ.get("RENDER2GO_AGRUPAR_TESTE_MIN", 10)) * 60,
             agrupar_teste_videos=int(os.environ.get("RENDER2GO_AGRUPAR_TESTE_VIDEOS", 20)),
+            ocioso_s=max(60.0, float(os.environ.get("RENDER2GO_POD_OCIOSO_MIN", 3)) * 60),
         )
 
 
@@ -99,6 +117,7 @@ class ConfigOrq:
 class PodFila:
     pod: ln.Pod
     ate: float  # epoch em que o worker para de pegar jobs
+    gerador: str | None = None  # linha na tabela geradores (previsão para o cliente)
 
 
 class Orquestrador:
@@ -171,10 +190,10 @@ class Orquestrador:
         return min(pods, self.cfg.max_pods)
 
     def _preco(self) -> float:
-        for o in self.pods_ln.a.opcoes:
-            if (x := self.provedor.preco(o.gpu, o.nuvem)) is not None:
-                return x
-        return 2.09
+        """US$/h para o teto por hora e o desligamento automático: a opção mais cara com preço
+        agora, porque o pod pode cair em qualquer uma (a mais barata vem primeiro na lista)."""
+        precos = [x for o in self.pods_ln.a.opcoes if (x := self.provedor.preco(o.gpu, o.nuvem)) is not None]
+        return max(precos) if precos else ln.PRECO_RESERVA_USD_H
 
     def _deadman(self, usd_h: float) -> int | None:
         """Prazo do desligamento automático do próximo pod; None se o saldo não paga 15 min."""
@@ -204,24 +223,30 @@ class Orquestrador:
             ag.put(env, f"{r.raiz}/fila.env")
         finally:
             env.unlink(missing_ok=True)
-        ate = time.time() + deadman_s - ln.MARGEM_S - (time.monotonic() - pod.criado)
+        vivo_s = time.monotonic() - pod.criado
+        ate = time.time() + deadman_s - ln.MARGEM_S - vivo_s
         cmd = self.cfg.fila_cmd.format(
             raiz=r.raiz,
             api=shlex.quote(self.cfg.api_url),
             worker=f"pod-{pod.info.id}",
             gpus=pod.info.gpus,
             ate=int(ate),
+            ocioso=int(self.cfg.ocioso_s),
+            # o mesmo prazo da instalação inteira, contado da criação do pod
+            modelos_ate=int(time.time() + ln.ESPERA_INSTALACAO_S - vivo_s),
         )
         ag.bg(f"{cmd}; echo FIM > {r.raiz}/fila.fim", f"{r.raiz}/fila.log")
         _log(f"pod {pod.nome}: worker da fila iniciado")
         return PodFila(pod, ate)
 
-    def _subir(self, deadman_s: int) -> None:
+    def _subir(self, deadman_s: int, gerador: str | None = None) -> None:
+        pronto = False
         try:
             with self.lock:
                 self.n += 1
                 i = self.n
-            pod = self.pods_ln.subir_pod(i, deadman_s)
+            # serviços já durante o download dos modelos: o pedido é traduzido enquanto ele termina
+            pod = self.pods_ln.subir_pod(i, deadman_s, cedo=True)
             if pod is None:
                 return
             try:
@@ -230,11 +255,25 @@ class Orquestrador:
                 _log(f"pod {pod.nome}: worker não iniciou ({e})")
                 self.pods_ln.encerrar(pod, "worker não iniciou")
                 return
+            pf.gerador = gerador
             with self.lock:
                 self.ativos[pod.info.id] = pf
+            pronto = True
+            self._registrar("gerador_pronto", gerador, f"pod-{pod.info.id}", pod.info.gpu, pod.info.usd_h)
         finally:
             with self.lock:
                 self.subindo -= 1
+            if not pronto:
+                self._registrar("gerador_fim", gerador, "não subiu", falhou=True)
+
+    def _registrar(self, acao: str, gerador: str | None, *args, **kw) -> None:
+        """Registro do pod na tabela geradores (previsão para o cliente): nunca derruba o fluxo."""
+        if not gerador:
+            return
+        try:
+            getattr(self.banco, acao)(gerador, *args, **kw)
+        except Exception as e:  # noqa: BLE001 (só a previsão depende disso)
+            _log(f"AVISO: registro do gerador ({acao}): {e}")
 
     def _revisar(self) -> None:
         """Encerra pods cujo worker terminou ou cujo agente sumiu."""
@@ -249,6 +288,7 @@ class Orquestrador:
                 self.pods_ln.encerrar(pf.pod, "fila vazia")
                 with self.lock:
                     self.ativos.pop(pid, None)
+                self._registrar("gerador_fim", pf.gerador, "fila vazia")
 
     def ciclo(self) -> dict:
         self._revisar()
@@ -270,17 +310,28 @@ class Orquestrador:
             if deadman is None:
                 _log("saldo da conta não paga mais um pod: não sobe")
                 break
+            try:  # registro para a previsão do cliente; sem ele, o pod sobe do mesmo jeito
+                gerador = self.banco.gerador_subindo(self.cfg.gpus[0])
+            except Exception as e:  # noqa: BLE001
+                _log(f"AVISO: registro do gerador: {e}")
+                gerador = None
             with self.lock:
                 self.subindo += 1
             gasto_h += usd_h
             subiu += 1
-            threading.Thread(target=self._subir, args=(deadman,), daemon=True).start()
+            threading.Thread(target=self._subir, args=(deadman, gerador), daemon=True).start()
         if subiu:
             _log(f"fila pede {querem} pod(s); subindo {subiu}")
         return {"desejados": querem, "ativos": len(self.ativos), "subindo": self.subindo}
 
     def rodar(self) -> None:
-        _log(f"rodando; até {self.cfg.max_pods} pods e US$ {self.cfg.max_usd_h:.2f}/h")
+        _log(
+            f"rodando; até {self.cfg.max_pods} pods e US$ {self.cfg.max_usd_h:.2f}/h; GPUs: " + ", ".join(self.cfg.gpus)
+        )
+        try:
+            self.banco.geradores_reiniciar()  # pods de um processo anterior não contam mais
+        except Exception as e:  # noqa: BLE001 (só a previsão depende disso)
+            _log(f"AVISO: registro dos geradores: {e}")
         try:
             while not self.parar.is_set():
                 try:
@@ -295,6 +346,7 @@ class Orquestrador:
     def encerrar_todos(self, motivo: str) -> None:
         for pf in list(self.ativos.values()):
             self.pods_ln.encerrar(pf.pod, motivo)
+            self._registrar("gerador_fim", pf.gerador, motivo)
         self.ativos.clear()
 
 

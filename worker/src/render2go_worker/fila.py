@@ -12,6 +12,11 @@ para o armazenamento (URLs assinadas, uma por arquivo). Por job:
 Um laço por ComfyUI (uma GPU cada). Sem jobs por `--ocioso` segundos (o "pod quente", docs/08),
 o worker sai e o pod se desliga (desligamento automático do lote_nuvem / orquestrador).
 
+Com `--modelos-prontos ESTADO` (o arquivo de estado do bootstrap_pod.sh), o worker começa antes
+de os modelos de vídeo terminarem de baixar: até o estado dizer PRONTO, ele só pega jobs
+`compilar` (traduz o pedido enquanto o download termina); FALHOU, ou passar de `--modelos-ate`,
+e ele sai (o orquestrador encerra o pod).
+
 Uso no pod: python -m render2go_worker.fila --api https://... --worker pod-<id> [--gpus N]
 Token em RENDER2GO_WORKER_TOKEN. Filtros: RENDER2GO_SAFETY=c1-revisao-humana (ADR 0004).
 """
@@ -49,6 +54,7 @@ MAX_BYTES_FOTO = 50 * 1024**2
 # pedido de outro modelo é recusado sem repetir: fail-closed
 MODELOS = {"wan2.2-i2v"}
 ESPERA_S = 5  # fila vazia: tempo entre consultas
+ESPERA_MODELOS_S = 2  # modelos baixando: confere o estado de novo logo
 OCIOSO_S = 180  # ~ o tempo de uma subida de pod: depois disso, sair custa menos que esperar
 TIPOS = {"jpg": ".jpg", "png": ".png", "webp": ".webp"}
 
@@ -84,8 +90,11 @@ class ApiFila:
             time.sleep(min(30, 2**i))
         raise FilaError(f"API inacessível ({rota}): {erro}")
 
-    def reivindicar(self) -> dict | None:
-        r = self._post("/api/worker/reivindicar", {"worker": self.worker})
+    def reivindicar(self, tipos: list[str] | None = None) -> dict | None:
+        corpo: dict[str, Any] = {"worker": self.worker}
+        if tipos:
+            corpo["tipos"] = tipos
+        r = self._post("/api/worker/reivindicar", corpo)
         if r.status_code != 200:
             raise FilaError(f"reivindicar: HTTP {r.status_code} {r.text[:200]}")
         return r.json().get("job")
@@ -126,6 +135,8 @@ class Config:
     ocioso_s: float = OCIOSO_S
     segredo: str | None = None
     ate: float | None = None  # epoch: não pega job novo depois disso (limite de 2 h do pod)
+    modelos: Path | None = None  # estado do bootstrap: renderiza só depois de PRONTO
+    modelos_ate: float | None = None  # epoch: modelos não ficaram prontos até aqui = sai
 
 
 class WorkerFila:
@@ -142,6 +153,30 @@ class WorkerFila:
         self.ultimo_job = time.monotonic()
         self.lock = threading.Lock()
         self.feitos = self.falhas = 0
+        self.modelos_ok = cfg.modelos is None
+
+    def estado_modelos(self) -> str:
+        """Estado dos modelos: "ok" (renderiza), "esperando" (só traduz) ou "falhou" (sai)."""
+        if self.modelos_ok:
+            return "ok"
+        try:
+            estado = self.cfg.modelos.read_text().strip()
+        except OSError:
+            estado = ""
+        if estado.startswith("PRONTO"):
+            with self.lock:
+                if not self.modelos_ok:
+                    self.modelos_ok = True
+                    self.ultimo_job = time.monotonic()  # o pod quente conta a partir daqui
+                    _log("modelos prontos: renderizando")
+            return "ok"
+        if estado.startswith("FALHOU"):
+            _log(f"a instalação falhou ({estado[:200]}): o worker sai")
+            return "falhou"
+        if self.cfg.modelos_ate and time.time() > self.cfg.modelos_ate:
+            _log("os modelos não ficaram prontos no prazo: o worker sai")
+            return "falhou"
+        return "esperando"
 
     # -- jobs -----------------------------------------------------------------------------
 
@@ -285,12 +320,18 @@ class WorkerFila:
             if self.cfg.ate and time.time() > self.cfg.ate:
                 _log("perto do limite de tempo do pod: não pega mais jobs")
                 return
-            try:
-                job = self.api.reivindicar()
+            modelos = self.estado_modelos()
+            if modelos == "falhou":
+                return
+            try:  # modelos ainda baixando: só traduz pedidos
+                job = self.api.reivindicar(None if modelos == "ok" else ["compilar"])
             except FilaError as e:
                 _log(f"AVISO: {e}")
                 job = None
             if job is None:
+                if modelos == "esperando":  # o tempo de pod quente só conta com os modelos prontos
+                    time.sleep(ESPERA_MODELOS_S)
+                    continue
                 with self.lock:
                     ocioso = time.monotonic() - self.ultimo_job
                 if ocioso > self.cfg.ocioso_s:
@@ -330,6 +371,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ollama", default="http://127.0.0.1:11434")
     p.add_argument("--ocioso", type=float, default=OCIOSO_S, help="sai após N s sem jobs")
     p.add_argument("--ate", type=float, help="epoch: não pega jobs novos depois disso")
+    p.add_argument(
+        "--modelos-prontos",
+        type=Path,
+        help="estado da instalação (bootstrap_pod.sh): até PRONTO, só traduz pedidos",
+    )
+    p.add_argument("--modelos-ate", type=float, help="epoch: sem PRONTO até aqui, o worker sai")
     a = p.parse_args(argv)
     token = os.environ.get("RENDER2GO_WORKER_TOKEN", "")
     if len(token) < 32:
@@ -345,6 +392,8 @@ def main(argv: list[str] | None = None) -> int:
         ocioso_s=a.ocioso,
         segredo=os.environ.get("RENDER2GO_SEGREDO_APROVACAO") or None,
         ate=a.ate,
+        modelos=a.modelos_prontos,
+        modelos_ate=a.modelos_ate,
     )
     return WorkerFila(ApiFila(a.api, token, a.worker), cfg).rodar()
 

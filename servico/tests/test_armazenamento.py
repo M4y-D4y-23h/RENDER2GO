@@ -32,3 +32,56 @@ def test_validation():
     u = r2.url("PUT", "entrada/c1/l1/f.jpg", content_type="image/jpeg")
     assert u.startswith("https://conta.r2.cloudflarestorage.com/render2go/entrada/c1/l1/f.jpg?")
     assert "X-Amz-SignedHeaders=content-type%3Bhost" in u
+
+
+def _s3_listagem(paginas):
+    """S3 local que responde ListObjectsV2 em páginas e guarda o que recebeu."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlsplit
+
+    pedidos = []
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            u = urlsplit(self.path)
+            q = {k: v[0] for k, v in parse_qs(u.query, keep_blank_values=True).items()}
+            pedidos.append((u.path, q, self.headers.get("Authorization", "")))
+            i = int(q.get("continuation-token", "0"))
+            chaves, prox = paginas[i], (str(i + 1) if i + 1 < len(paginas) else None)
+            corpo = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+                f"<Name>render2go</Name><Prefix>{q['prefix']}</Prefix><KeyCount>{len(chaves)}</KeyCount>"
+                f"<IsTruncated>{'true' if prox else 'false'}</IsTruncated>"
+                + (f"<NextContinuationToken>{prox}</NextContinuationToken>" if prox else "")
+                + "".join(f"<Contents><Key>{k}</Key><Size>10</Size></Contents>" for k in chaves)
+                + "</ListBucketResult>"
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(corpo)))
+            self.end_headers()
+            self.wfile.write(corpo)
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, pedidos
+
+
+def test_listing_follows_pages_and_only_whole_folders():
+    srv, pedidos = _s3_listagem([["saida/c1/l1/a.mp4", "saida/c1/l1/b.mp4"], ["saida/c2/l2/c.mp4"]])
+    try:
+        s3 = Armazenamento(f"http://127.0.0.1:{srv.server_address[1]}", "render2go", "k", "s")
+        assert s3.listar("saida/") == ["saida/c1/l1/a.mp4", "saida/c1/l1/b.mp4", "saida/c2/l2/c.mp4"]
+    finally:
+        srv.shutdown()
+    assert [p[0] for p in pedidos] == ["/render2go", "/render2go"]  # o bucket, não um objeto
+    assert pedidos[0][1]["list-type"] == "2" and pedidos[0][1]["prefix"] == "saida/"
+    assert pedidos[1][1]["continuation-token"] == "1"
+    assert all(p[2].startswith("AWS4-HMAC-SHA256 Credential=k/") for p in pedidos)  # assinado
+    for ruim in ("saida", "", "../x/", "a b/"):  # só "pastas" inteiras e chaves válidas
+        with pytest.raises(ArmazenamentoError):
+            s3.listar(ruim)

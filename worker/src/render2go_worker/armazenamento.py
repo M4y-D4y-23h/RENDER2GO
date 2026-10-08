@@ -66,10 +66,13 @@ class Armazenamento:
 
     # -- assinatura ------------------------------------------------------------------------
 
-    def _caminho(self, chave: str) -> tuple[str, str, str]:
+    def _caminho(self, chave: str | None) -> tuple[str, str, str]:
+        """chave None = o próprio bucket (listagem)."""
+        base = urlsplit(self.endpoint)
+        if chave is None:
+            return base.scheme, base.netloc, f"/{self.bucket}" if self.bucket else "/"
         if not CHAVE_VALIDA.match(chave) or ".." in chave:
             raise ArmazenamentoError(f"chave inválida: {chave!r}")
-        base = urlsplit(self.endpoint)
         objeto = quote(chave, safe="/~")
         # R2: bucket no caminho; bucket vazio = estilo "virtual host" (bucket já no endpoint)
         caminho = f"/{self.bucket}/{objeto}" if self.bucket else f"/{objeto}"
@@ -135,7 +138,7 @@ class Armazenamento:
     def _chamar(
         self,
         metodo: str,
-        chave: str,
+        chave: str | None,
         query: dict[str, str],
         corpo: bytes = b"",
         timeout: float = 60,
@@ -213,6 +216,30 @@ class Armazenamento:
             if e.code != 404:
                 raise ArmazenamentoError(f"DELETE {chave}: HTTP {e.code}") from e
 
+    def listar(self, prefixo: str, maximo: int = 1_000_000) -> list[str]:
+        """Chaves sob o prefixo (ListObjectsV2 assinado, de 1000 em 1000). O prefixo termina em "/"
+        (uma "pasta" inteira, nunca um começo de nome solto)."""
+        if not prefixo.endswith("/") or not CHAVE_VALIDA.match(prefixo) or ".." in prefixo:
+            raise ArmazenamentoError(f"prefixo inválido: {prefixo!r}")
+        chaves: list[str] = []
+        token = None
+        while len(chaves) < maximo:
+            query = {"list-type": "2", "prefix": prefixo, "max-keys": "1000"}
+            if token:
+                query["continuation-token"] = token
+            raiz = ElementTree.fromstring(self._chamar("GET", None, query))
+            for el in raiz:
+                if el.tag.rsplit("}", 1)[-1] == "Contents":
+                    chave = next((c.text for c in el if c.tag.rsplit("}", 1)[-1] == "Key"), None)
+                    if chave and chave.startswith(prefixo):
+                        chaves.append(chave)
+            if _texto_xml_raiz(raiz, "IsTruncated") != "true":
+                break
+            token = _texto_xml_raiz(raiz, "NextContinuationToken")
+            if not token:
+                break
+        return chaves[:maximo]
+
     # -- envio em partes (arquivos acima de 5 GB) ------------------------------------------
 
     def iniciar_partes(self, chave: str) -> str:
@@ -245,4 +272,12 @@ def _texto_xml(xml: bytes, tag: str) -> str | None:
     for el in ElementTree.fromstring(xml).iter():
         if el.tag.rsplit("}", 1)[-1] == tag:
             return el.text
+    return None
+
+
+def _texto_xml_raiz(raiz: ElementTree.Element, tag: str) -> str | None:
+    """Texto de um filho direto da raiz (na listagem, "Key" também existe dentro de Contents)."""
+    for el in raiz:
+        if el.tag.rsplit("}", 1)[-1] == tag:
+            return (el.text or "").strip()
     return None

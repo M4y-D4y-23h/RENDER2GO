@@ -70,16 +70,25 @@ MEDIDO_S = {
 }
 PIOR_S = {"rapida": 80, "alta": 213}
 EXPOENTE_DURACAO = 1.6  # 160 s / 93 s para 7 s / 5 s (720p, RTX PRO 6000)
-# Ordem padrão (07/10/2026), sempre na nuvem secure: RTX PRO 6000 (medida: ~28 s, mesmo custo
-# por vídeo da L40S e metade do tempo); L40S (~55 s); L40 e RTX 6000 Ada (mesmo chip da L40S,
-# ~metade do cálculo de IA; sem medição, usam o pior caso); RTX 4090 por último (troca modelo).
+# Ordem padrão (08/10/2026), sempre na nuvem secure. A RTX PRO 6000 subiu de US$ 2,09 para
+# US$ 2,49/h e deixou de ser a 1ª: a subida (~3 min) e o pod quente (3 min) são pagos por hora em
+# todo pedido, e a L40S cobra menos da metade por hora com custo por vídeo ~14% menor.
+#   1. L40S, 48 GB (medida: ~55 s, US$ 1,09/h);
+#   2. RTX 6000 Ada, 48 GB (o mesmo chip AD102 e o mesmo cálculo de IA da L40S, US$ 0,99/h; sem
+#      medição, as estimativas usam o pior caso);
+#   3. RTX PRO 6000, 96 GB (medida: ~28 s, a mais rápida), quando as de 48 GB não têm vaga;
+#   4. RTX 4090, 24 GB, por último (troca de modelo a cada vídeo).
+# Fora: L40 (metade do cálculo de IA da L40S) e as Ampere (A40, A100, A6000: sem fp8).
+# O orquestrador do serviço troca a ordem por RENDER2GO_GPUS, sem mudar o código.
 GPUS_PADRAO = [
-    "NVIDIA RTX PRO 6000 Blackwell Server Edition",
     "NVIDIA L40S",
-    "NVIDIA L40",
     "NVIDIA RTX 6000 Ada Generation",
+    "NVIDIA RTX PRO 6000 Blackwell Server Edition",
     "NVIDIA GeForce RTX 4090",
 ]
+# sem preço na consulta: o da mais cara da lista (orçamento e desligamento automático ficam do lado
+# seguro, já que a mais barata vem primeiro)
+PRECO_RESERVA_USD_H = 2.49
 SUBIDA_S = 5 * 60  # agente + instalação + serviços (medido em 07/10, download em partes: 2,5–3 min)
 # Regra do dono do projeto (07/10/2026): pod nenhum fica ligado mais de 2 h. O lote para
 # de mandar pacotes a tempo de baixar tudo (MARGEM_S) antes do desligamento automático.
@@ -99,6 +108,8 @@ RESERVA_SALDO_USD = 1.0  # nunca gastar o saldo da conta até o fim
 MIN_POD_S = 15 * 60  # se o saldo/orçamento não pagam nem isso, não sobe
 ESPERA_SERVICOS_S = 600
 ESPERA_GUARDAR_S = 15 * 60  # pod gravador: prazo para terminar o cache no volume
+# intervalo das consultas ao agente durante a subida (era 10 s: perdia ~5 s em média por etapa)
+CONSULTA_S = 3
 FOTOS_POR_GPU = 2
 ESTADO = ".nuvem"
 
@@ -605,7 +616,7 @@ class Orquestrador:
         with self.lock:
             self._salvar_estado()
 
-    def _subir_pod(self, i: int, deadman_s: int) -> Pod | None:
+    def _subir_pod(self, i: int, deadman_s: int, cedo: bool = False) -> Pod | None:
         token = secrets.token_urlsafe(32)
         env = {
             "AGENT_TOKEN": token,
@@ -643,7 +654,7 @@ class Orquestrador:
             self._salvar_estado()
         _log(f"pod {pod.nome} criado, US$ {info.usd_h:.2f}/h; esperando o agente...")
         try:
-            self._instalar(pod)
+            self._instalar(pod, cedo)
         except (NuvemError, OSError) as e:
             _log(f"pod {pod.nome} descartado: {e}")
             if "tempo esgotado" in str(e):
@@ -657,9 +668,13 @@ class Orquestrador:
 
     # -- uso pelo orquestrador da fila (servico/orquestrador.py) ----------------------------
 
-    def subir_pod(self, i: int, deadman_s: int) -> Pod | None:
-        """Cria, testa (CUDA, rede, datacenter) e instala um pod; None se não conseguiu."""
-        return self._subir_pod(i, deadman_s)
+    def subir_pod(self, i: int, deadman_s: int, cedo: bool = False) -> Pod | None:
+        """Cria, testa (CUDA, rede, datacenter) e instala um pod; None se não conseguiu.
+
+        `cedo`: sobe os serviços (Ollama e ComfyUI) assim que o ambiente fica pronto (estado
+        AMBIENTE), enquanto os modelos ainda baixam, e devolve o pod nesse ponto. Quem usa o pod
+        só renderiza depois do estado PRONTO (o worker da fila, com --modelos-prontos)."""
+        return self._subir_pod(i, deadman_s, cedo)
 
     def encerrar(self, pod: Pod, motivo: str) -> None:
         """Encerra; se o pod grava o cache (volume/espelho), espera terminar antes (com prazo)."""
@@ -667,13 +682,13 @@ class Orquestrador:
             self._esperar_guardar(pod)
         self._encerrar(pod, motivo)
 
-    def _instalar(self, pod: Pod) -> None:
+    def _instalar(self, pod: Pod, cedo: bool = False) -> None:
         r, ag = self.remoto, pod.agente
         limite = time.monotonic() + ESPERA_AGENTE_S
         while not ag.saude():
             if time.monotonic() > limite:
                 raise NuvemError(f"agente não respondeu em {ESPERA_AGENTE_S // 60} min")
-            time.sleep(10)
+            time.sleep(CONSULTA_S)
         if r.verificar_cuda:
             _, out = ag.exec(CUINIT, 30)
             problema = cuda_ok(out, pod.info.gpus)
@@ -704,19 +719,27 @@ class Orquestrador:
             ag.put(tsv, f"{r.raiz}/espelho.tsv")
             tsv.unlink()
         ag.bg(r.instalar.format(raiz=r.raiz), f"{r.raiz}/instalar.log")
-        estado = self._esperar(
-            pod, f"cat {r.raiz}/estado 2>/dev/null", ("PRONTO", "FALHOU"), ESPERA_INSTALACAO_S
-        )
-        if not estado.startswith("PRONTO"):
+        # cedo: o pod gravador (volume/espelho) não, porque grava os modelos depois do PRONTO
+        cedo = cedo and not pod.grava_volume
+        fins = ("AMBIENTE", "PRONTO", "FALHOU") if cedo else ("PRONTO", "FALHOU")
+        estado = self._esperar(pod, f"cat {r.raiz}/estado 2>/dev/null", fins, ESPERA_INSTALACAO_S)
+        if not estado.startswith(fins[:-1]):
             _, log = ag.exec(f"tail -5 {r.raiz}/bootstrap.log {r.raiz}/*.log 2>/dev/null", 30)
             raise NuvemError(f"instalação: {estado.strip()} | {log[-300:]}")
-        if pod.grava_volume and esp and esp.faltando():
-            self._espelhar(pod)
-        _, tempos = ag.exec(f"cat {r.raiz}/tempos 2>/dev/null", 30)
-        if tempos.strip():  # etapas em s desde o início da instalação (para medir o cache)
-            _log(f"pod {pod.nome}: tempos da instalação: {' | '.join(tempos.strip().splitlines())}")
+        modelos_prontos = estado.startswith("PRONTO")
+        if modelos_prontos:
+            if pod.grava_volume and esp and esp.faltando():
+                self._espelhar(pod)
+            _, tempos = ag.exec(f"cat {r.raiz}/tempos 2>/dev/null", 30)
+            if tempos.strip():  # etapas em s desde o início da instalação (para medir o cache)
+                etapas = " | ".join(tempos.strip().splitlines())
+                _log(f"pod {pod.nome}: tempos da instalação: {etapas}")
+        # sem os modelos ainda, o entrypoint sobe mesmo assim (REQUIRE_MODELS=0): ninguém renderiza
+        # antes do PRONTO, e o pedido já pode ser traduzido (Ollama) enquanto o download termina
+        sem_modelos = "" if modelos_prontos else "export REQUIRE_MODELS=0; "
         ag.bg(
-            f"export COMFY_POR_GPU={self.a.comfy_por_gpu}; {r.servicos}", f"{r.raiz}/servicos.log"
+            f"export COMFY_POR_GPU={self.a.comfy_por_gpu}; {sem_modelos}{r.servicos}",
+            f"{r.raiz}/servicos.log",
         )
         self._esperar(
             pod,
@@ -726,7 +749,10 @@ class Orquestrador:
             ESPERA_SERVICOS_S,
             falha="ERRO",
         )
-        _log(f"pod {pod.nome}: pronto ({pod.info.gpus} GPU)")
+        if modelos_prontos:
+            _log(f"pod {pod.nome}: pronto ({pod.info.gpus} GPU)")
+        else:
+            _log(f"pod {pod.nome}: serviços no ar ({pod.info.gpus} GPU); modelos ainda baixando")
 
     def _url_teste_espelho(self) -> str | None:
         esp = getattr(self.a, "espelho", None)
@@ -785,7 +811,7 @@ class Orquestrador:
                 raise NuvemError(f"falhou: {cmd.split()[0]}")
             if any(out.startswith(f) for f in fins):
                 return out
-            time.sleep(10)
+            time.sleep(CONSULTA_S)
         raise NuvemError(f"tempo esgotado ({limite_s // 60} min)")
 
     def _compilar(self, pod: Pod) -> None:
@@ -1243,9 +1269,10 @@ def main(
     n_videos = sum(len(f.tarefas) for f in fotos)
     s_video = segundos_por_video(gpus[0], a.qualidade, fotos[0].tarefas[0].duracao)
     usd_h = None
-    if provedor is not None:
-        usd_h = next((x for o in a.opcoes if (x := provedor.preco(o.gpu, o.nuvem))), None)
-    usd_h = usd_h or 1.10
+    if provedor is not None:  # a opção mais cara com preço agora: o pod pode cair em qualquer uma
+        precos = [x for o in a.opcoes if (x := provedor.preco(o.gpu, o.nuvem))]
+        usd_h = max(precos) if precos else None
+    usd_h = usd_h or PRECO_RESERVA_USD_H
     n_pacotes = -(-len(fotos) // (FOTOS_POR_GPU * a.gpus_por_pod * a.comfy_por_gpu))
     if a.pods == "auto":
         a.pods, motivo = escolher_pods(n_videos, n_pacotes, a.gpus_por_pod, s_video, a.prazo)

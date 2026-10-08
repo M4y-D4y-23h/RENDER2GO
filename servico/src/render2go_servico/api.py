@@ -53,7 +53,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -93,8 +93,12 @@ AUTORIZACAO = {
 }
 # previsão mostrada ao cliente (sem detalhar as etapas internas)
 PRAZO_ANALISE_S = int(os.environ.get("RENDER2GO_PRAZO_REVISAO_MIN", 60)) * 60  # tempo típico da revisão
-PREPARO_S = 4 * 60  # medido em 08/10: gerador pronto em ~2 min 40 s, mais a tradução do pedido
+# subida típica enquanto não há 3 subidas medidas (tabela geradores): da decisão de ligar o pod até o
+# 1º vídeo começar, já com a tradução do pedido (07–08/10/2026: 3,5 a 4,5 min)
+PREPARO_S = 4 * 60
 VIDEO_PADRAO_S = 30.0  # sem histórico: ~25–30 s por vídeo de 3 s (medido em 08/10)
+TRADUCAO_S = 45.0  # tradução do pedido num gerador já ligado, antes do 1º vídeo
+CICLO_S = float(os.environ.get("RENDER2GO_CICLO_S", 10))  # o orquestrador olha a fila a cada CICLO_S
 # os mesmos padrões do orquestrador (testes gratuitos esperam juntar vídeos antes de começar)
 AGRUPAR_TESTE_S = float(os.environ.get("RENDER2GO_AGRUPAR_TESTE_MIN", 10)) * 60
 AGRUPAR_TESTE_VIDEOS = int(os.environ.get("RENDER2GO_AGRUPAR_TESTE_VIDEOS", 20))
@@ -459,6 +463,8 @@ class RecusaIn(BaseModel):
 
 class ReivindicarIn(BaseModel):
     worker: str = Field(min_length=3, max_length=100)
+    # o pod que ainda baixa os modelos pede só "compilar" (traduz o pedido enquanto o download termina)
+    tipos: list[Literal["compilar", "render"]] | None = Field(None, min_length=1, max_length=2)
 
 
 class ClienteIn(BaseModel):
@@ -744,29 +750,40 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         }
 
     def _previsao(c: Config, lt: dict, jobs: list[dict]) -> dict | None:
-        """Quanto falta para começar e para terminar, em segundos (o cliente vê só o tempo)."""
+        """Quanto falta para começar e para terminar, em segundos (o cliente vê só o tempo).
+
+        Usa o estado real dos pods (o orquestrador registra cada um na tabela geradores) e a subida
+        medida: pod desligado, a subida típica inteira; pod subindo, o que falta dela; pod pronto,
+        só a tradução do pedido, se ainda faltar. A fila segue a ordem de `Banco.reivindicar`."""
         if lt["status"] == "aguardando_aprovacao":
             return {"fase": "analise", "inicio_max_s": PRAZO_ANALISE_S}
         if lt["status"] not in ("aprovado", "processando"):
             return None
-        restantes = sum(j["status"] in ("pendente", "em_andamento") for j in jobs)
         por_video = c.banco.segundos_por_video() or VIDEO_PADRAO_S
-        ativos = c.banco.geradores_ativos()
-        vazao = por_video / max(1, ativos)
+        g = c.banco.estado_geradores()
+        vazao = por_video / max(1, g["prontos"] + len(g["subindo"]))
+        fila = c.banco.videos_a_frente(lt)
         if any(j["status"] in ("em_andamento", "ok") for j in jobs):
-            return {"fase": "gerando", "fim_s": math.ceil(restantes * vazao)}
-        espera = 0.0 if ativos else PREPARO_S
-        if lt["prompt_en"] is None and ativos:
-            espera += 60  # a tradução do pedido roda antes dos vídeos
-        if not ativos and lt["prioridade"] > 0:  # teste gratuito: espera juntar com outros testes
-            trabalho = c.banco.trabalho()
-            if trabalho and not any(t["prioridade"] == 0 for t in trabalho):
-                videos = sum(int(t["pendentes"] or 0) + int(t["em_andamento"] or 0) for t in trabalho)
-                idade = time.time() - min(float(t["mais_antigo"]) for t in trabalho)
-                if videos < AGRUPAR_TESTE_VIDEOS:
-                    espera += max(0.0, AGRUPAR_TESTE_S - idade)
-        inicio = espera + c.banco.videos_a_frente(lt) * vazao
-        return {"fase": "fila", "inicio_s": math.ceil(inicio), "fim_s": math.ceil(inicio + restantes * vazao)}
+            return {"fase": "gerando", "fim_s": math.ceil(fila["ultimo"] * vazao)}
+        subida = g["subida_s"] or PREPARO_S
+        if g["prontos"]:
+            espera = TRADUCAO_S if lt["prompt_en"] is None else 0.0
+        elif g["subindo"]:  # o pod mais adiantado já andou parte da subida
+            espera = max(TRADUCAO_S, subida - (time.time() - g["subindo"][0]))
+        else:
+            espera = subida + CICLO_S / 2
+            if lt["prioridade"] > 0:  # teste gratuito: espera juntar com outros testes
+                trabalho = c.banco.trabalho()
+                if trabalho and not any(t["prioridade"] == 0 for t in trabalho):
+                    videos = sum(int(t["pendentes"] or 0) + int(t["em_andamento"] or 0) for t in trabalho)
+                    idade = time.time() - min(float(t["mais_antigo"]) for t in trabalho)
+                    if videos < AGRUPAR_TESTE_VIDEOS:
+                        espera += max(0.0, AGRUPAR_TESTE_S - idade)
+        return {
+            "fase": "fila",
+            "inicio_s": math.ceil(espera + fila["primeiro"] * vazao),
+            "fim_s": math.ceil(espera + fila["ultimo"] * vazao),
+        }
 
     @app.post("/api/suporte")
     def mensagem_suporte(
@@ -975,7 +992,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @app.post("/api/worker/reivindicar", dependencies=[Depends(worker_auth)])
     def reivindicar(body: ReivindicarIn, c: Config = Depends(config)):
-        job = c.banco.reivindicar(body.worker)
+        job = c.banco.reivindicar(body.worker, tipos=body.tipos)
         if job is None:
             return {"job": None, "fila": c.banco.fila()}
         lt = c.banco.lote(job["lote_id"])

@@ -118,7 +118,7 @@ def test_each_cycle_marks_the_loop_alive(orq):
 
 
 def test_pods_follow_the_queue_and_shut_down_when_the_worker_ends(orq, banco):
-    _lote(banco, 100)  # 100 vídeos de 3 s: ~21 min de GPU → 2 pods (cada um com ≥ 10 min)
+    _lote(banco, 50)  # 50 vídeos de 3 s na L40S: ~20 min de GPU → 2 pods (cada um com ≥ 10 min)
     o = orq()
     assert o.ciclo()["desejados"] == 2
     assert _esperar(lambda: len(o.ativos) == 2)
@@ -138,6 +138,51 @@ def test_pods_follow_the_queue_and_shut_down_when_the_worker_ends(orq, banco):
     )
     assert o.ciclo() == {"desejados": 0, "ativos": 0, "subindo": 0}
     assert sorted(o.provedor.encerrados) == ["p1", "p2"]
+    # cada pod ficou registrado para a previsão do cliente: subiu, ficou pronto e foi encerrado
+    with banco.tx() as c:
+        linhas = c.all("SELECT worker, estado, pronto_em FROM geradores ORDER BY worker")
+    assert [(x["worker"], x["estado"]) for x in linhas] == [("pod-p1", "encerrado"), ("pod-p2", "encerrado")]
+    assert all(x["pronto_em"] for x in linhas)
+
+
+def test_services_and_worker_start_while_models_still_download(orq, banco, tmp_path):
+    _lote(banco, 2, plano="pago")
+    o = orq(fila_cmd="echo '{raiz} {modelos_ate} {ocioso}' > {raiz}/fila.args; sleep 30")
+    pronto = tmp_path / "libera"
+    o.remoto.instalar = (  # o ambiente fica pronto logo; os modelos só quando o teste liberar
+        "echo AMBIENTE > {raiz}/estado; (while [ ! -e " + str(pronto) + " ]; do sleep 0.05; done;"
+        " echo PRONTO > {raiz}/estado) > /dev/null 2>&1 &"
+    )
+    o.remoto.servicos = "echo REQUIRE_MODELS=${REQUIRE_MODELS:-1}; echo '[render2go] pronto'"
+    assert o.ciclo()["subindo"] == 1
+    assert _esperar(lambda: len(o.ativos) == 1)  # worker no ar antes do PRONTO
+    pf = next(iter(o.ativos.values()))
+    raiz = o.remoto.raiz
+    assert pf.pod.agente.exec(f"cat {raiz}/estado", 10)[1].strip() == "AMBIENTE"
+    assert "REQUIRE_MODELS=0" in pf.pod.agente.exec(f"cat {raiz}/servicos.log", 10)[1]
+    args = pf.pod.agente.exec(f"cat {raiz}/fila.args", 10)[1].split()
+    assert args[0] == raiz and int(args[1]) > time.time() + 600 and args[2] == "180"
+    pronto.touch()
+    assert _esperar(lambda: "PRONTO" in pf.pod.agente.exec(f"cat {raiz}/estado", 10)[1])
+    o.encerrar_todos("fim do teste")
+    with banco.tx() as c:
+        assert c.one("SELECT estado FROM geradores")["estado"] == "encerrado"
+
+
+def test_gpu_list_cycle_and_warm_time_come_from_the_environment(monkeypatch):
+    for k, v in {
+        "RENDER2GO_API_URL": "https://api.teste",
+        "RENDER2GO_WORKER_TOKENS": "w" * 40,
+        "RENDER2GO_R2_ENDPOINT": "https://conta.r2.cloudflarestorage.com",
+    }.items():
+        monkeypatch.setenv(k, v)
+    c = ConfigOrq.do_ambiente()
+    assert c.gpus == ln.GPUS_PADRAO and c.intervalo_s == 10 and c.ocioso_s == 180
+    monkeypatch.setenv("RENDER2GO_GPUS", " NVIDIA L40S , NVIDIA GeForce RTX 4090,")
+    monkeypatch.setenv("RENDER2GO_CICLO_S", "1")  # mínimo de 5 s
+    monkeypatch.setenv("RENDER2GO_POD_OCIOSO_MIN", "5")
+    c = ConfigOrq.do_ambiente()
+    assert c.gpus == ["NVIDIA L40S", "NVIDIA GeForce RTX 4090"] and c.intervalo_s == 5 and c.ocioso_s == 300
 
 
 def test_deadline_hourly_cap_and_balance(orq, banco):

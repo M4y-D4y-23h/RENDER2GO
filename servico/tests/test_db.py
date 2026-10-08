@@ -152,6 +152,110 @@ def test_queue_interleaves_clients_and_puts_paid_before_trials(banco):
     assert banco.reivindicar("w")["lote_id"] == p
 
 
+def _lote_do_cliente(b, cid, prefixo, n_fotos):
+    fotos = [
+        {"nome": f"{prefixo}{i}", "tipo": "image/jpeg", "bytes": 100, "chave": f"entrada/{cid}/{{lote}}/{i}.jpg"}
+        for i in range(n_fotos)
+    ]
+    lid = b.criar_lote(cid, {"prompt": "a câmera se aproxima", "qualidade": "rapida"}, fotos)
+    _aprovar(b, lid)
+    c = b.reivindicar("compilador", tipos=["compilar"])
+    b.definir_prompt(c["lote_id"], "p", "i2v@5")
+    b.concluir(c["id"], "compilador", "ok")
+    return lid
+
+
+def test_same_client_orders_run_in_arrival_order_and_clients_still_interleave(banco):
+    a, _ = banco.criar_cliente("A")
+    b, _ = banco.criar_cliente("B")
+    a1 = _lote_do_cliente(banco, a, "a1-", 3)
+    j = banco.reivindicar("w")  # o 1º vídeo do pedido antigo já saiu
+    banco.concluir(j["id"], "w", "ok")
+    a2 = _lote_do_cliente(banco, a, "a2-", 2)  # o mesmo cliente pede de novo
+    b1 = _lote_do_cliente(banco, b, "b1-", 2)  # e outro cliente chega depois
+    previsto = {x: banco.videos_a_frente(banco.lote(x)) for x in (a2, b1)}
+    ordem = []
+    while (j := banco.reivindicar("w")) is not None:
+        ordem.append(j["lote_id"])
+        banco.concluir(j["id"], "w", "ok")
+    # B ainda não tinha vídeo nenhum: vai primeiro; o pedido novo de A espera o antigo terminar
+    assert ordem == [b1, a1, b1, a1, a2, a2]
+    # a previsão segue a mesma ordem: vídeos antes do 1º e até o último de cada pedido
+    assert previsto[a2] == {"primeiro": 4, "ultimo": 6}
+    assert previsto[b1] == {"primeiro": 0, "ultimo": 3}
+
+
+def test_videos_of_one_order_follow_the_list_order(banco):
+    cid, _ = banco.criar_cliente("Loja")
+    lid = _lote_do_cliente(banco, cid, "foto-", 4)
+    arquivos = []
+    while (j := banco.reivindicar("w")) is not None:
+        arquivos.append(j["arquivo"])
+        banco.concluir(j["id"], "w", "ok")
+    assert arquivos == sorted(arquivos) and banco.lote(lid)["status"] == "concluido"
+
+
+def test_worker_still_downloading_models_only_takes_compile_jobs(banco):
+    _, _, lid = _lote(banco, n_fotos=1)
+    _aprovar(banco, lid)
+    with pytest.raises(BancoError):
+        banco.reivindicar("w", tipos=["outro"])
+    c = banco.reivindicar("pod-1", tipos=["compilar"])
+    assert c["tipo"] == "compilar"
+    banco.definir_prompt(lid, "p", "i2v@5")
+    banco.concluir(c["id"], "pod-1", "ok")
+    assert banco.reivindicar("pod-1", tipos=["compilar"]) is None  # o render espera os modelos
+    assert banco.reivindicar("pod-1")["tipo"] == "render"
+
+
+def test_generators_state_for_the_estimate(banco):
+    assert banco.estado_geradores() == {"prontos": 0, "subindo": [], "subida_s": None}
+    g = banco.gerador_subindo("NVIDIA L40S")
+    est = banco.estado_geradores()
+    assert est["prontos"] == 0 and len(est["subindo"]) == 1
+    banco.gerador_pronto(g, "pod-1", "NVIDIA L40S", 1.09)
+    assert len(banco.estado_geradores()["subindo"]) == 1  # worker no ar, mas ainda sem vídeo
+    _, _, lid = _lote(banco, n_fotos=1)
+    _aprovar(banco, lid)
+    c = banco.reivindicar("pod-1")
+    banco.definir_prompt(lid, "p", "i2v@5")
+    banco.concluir(c["id"], "pod-1", "ok")
+    banco.reivindicar("pod-1")  # 1º vídeo: fim da subida
+    assert banco.estado_geradores()["prontos"] == 1
+    with banco.tx() as cur:  # subidas medidas: a de cima (~0 s) e 200, 250, 300 e 350 s
+        for i, s in enumerate((200, 250, 300, 350)):
+            cur.run(
+                "INSERT INTO geradores (id, estado, criado, primeiro_video_em) VALUES (?, 'encerrado', ?, ?)",
+                (f"ger_{i}", 1000.0 + i, 1000.0 + i + s),
+            )
+    assert banco.estado_geradores()["subida_s"] == 250
+    banco.gerador_fim(g, "fila vazia")
+    assert banco.estado_geradores()["prontos"] == 0
+    g2 = banco.gerador_subindo()
+    assert banco.geradores_reiniciar() == 1 and banco.estado_geradores()["subindo"] == []
+    banco.gerador_fim(g2, "de novo")  # já encerrado: nada muda
+
+
+def test_history_cleanup_keeps_clients_and_refuses_while_generating(banco):
+    cid, token, lid = _lote(banco, n_fotos=2)
+    banco.registrar_suporte(cid, {"ip": "1.2.3.4"}, "a@b.co", "dúvida", "mensagem de teste")
+    banco.registrar_cookies({"ip": "1.2.3.4"}, "1", {"estatisticas": False})
+    banco.gerador_subindo()
+    _aprovar(banco, lid)  # em geração: bloqueia
+    with pytest.raises(BancoError):
+        banco.apagar_historico()
+    contagem = banco.contar_historico()
+    assert contagem["lotes"] == 1 and contagem["jobs"] == 3 and contagem["suporte"] == 1
+    apagados = banco.apagar_historico(forcar=True)
+    assert apagados["lotes"] == 1 and apagados["fotos"] == 2 and apagados["eventos"] >= 2
+    assert all(n == 0 for n in banco.contar_historico().values())
+    assert banco.cliente_por_token(token)["id"] == cid  # o código de acesso continua valendo
+    assert banco.contar_historico(cookies=True)["cookies"] == 1  # cookies só com a opção
+    banco.apagar_historico(cookies=True)
+    assert banco.contar_historico(cookies=True)["cookies"] == 0
+    banco.compactar()
+
+
 def test_work_summary_and_verification_fields(banco):
     lid = _lote_de(banco, "x", 2)
     (w,) = banco.trabalho()
