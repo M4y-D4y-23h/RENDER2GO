@@ -55,7 +55,7 @@ Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técni
 - **Servidor:** os passos estão no [`docs/09`](docs/09-implantacao.md), seção 0.
 
 ### Correções
-- **Envio ao espelho no modo fila:** a espera pelo envio terminava na hora e o abortava, porque o prazo de desligamento do pod não chegava até ela. Agora cada pod guarda o seu. O pod que envia é encerrado fora do ciclo do orquestrador.
+- **Envio ao espelho no modo fila:** a espera pelo envio terminava na hora e o abortava, porque o prazo de desligamento do pod não chegava até ela. Agora cada pod guarda o seu. O pod que envia é encerrado fora do ciclo do orquestrador e sai da previsão assim que o worker termina.
 - **Testes sem o R2 de verdade:** as credenciais do ambiente ficam de fora dos testes.
 - **Tabela nova criada sem disputa:** a API e o orquestrador sobem juntos e criam as tabelas novas ao mesmo tempo. No Postgres, isso podia derrubar um dos dois na 1ª subida depois de uma atualização (ele voltava sozinho, reiniciado pelo Docker). Agora um espera o outro.
 

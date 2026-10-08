@@ -251,6 +251,6 @@ def test_mirror_writer_pod_is_closed_outside_the_cycle(orq, banco, monkeypatch):
     t0 = time.monotonic()
     o.ciclo()  # o gravador espera o envio em outra thread; o ciclo não fica preso
     assert time.monotonic() - t0 < 1.0 and o.encerrando and not o.ativos
-    assert _esperar(lambda: not o.encerrando) and o.provedor.encerrados == ["p1"]
-    with banco.tx() as c:
+    with banco.tx() as c:  # ainda enviando ao espelho, mas já fora da previsão (não gera mais vídeos)
         assert c.one("SELECT estado FROM geradores")["estado"] == "encerrado"
+    assert _esperar(lambda: not o.encerrando) and o.provedor.encerrados == ["p1"]

@@ -288,6 +288,8 @@ class Orquestrador:
             if fim:
                 with self.lock:
                     self.ativos.pop(pid, None)
+                # o worker saiu: o pod já não gera vídeos (a previsão não pode contar com ele)
+                self._registrar("gerador_fim", pf.gerador, "fila vazia")
                 if pf.pod.grava_volume:  # o envio ao espelho pode levar minutos: fora do ciclo
                     with self.lock:
                         self.encerrando[pid] = pf
