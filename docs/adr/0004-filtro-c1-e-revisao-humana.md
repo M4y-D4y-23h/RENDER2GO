@@ -17,11 +17,17 @@ No serviço de marketing SFW, a segurança fica assim até o C2 existir:
    - Nenhum job nasce antes da aprovação (`db.aprovar`).
    - O aprovador vê, em `/aprovar`, as miniaturas, o pedido e o resultado do C1, e aprova ou recusa com motivo. O cliente vê o motivo.
    - A aprovação gera um carimbo HMAC que o worker pode conferir.
+   - **Exceção: plano interno** (08/10/2026). Os pedidos do próprio dono do serviço são aprovados automaticamente no envio (`aprovado_por = auto:interno`), porque quem pede é o próprio revisor. Continuam valendo o C1, o aviso de pessoas, o registro de autorização e a conferência do 1º quadro. O plano é criado só com o token de administração e não deve ser dado a clientes.
 3. **Worker da fila só com `GPU2GO_SAFETY=c1-revisao-humana`.** O modo de testes SFW (`disabled-sfw-tests`) não sobe a fila.
 4. **O compilador continua sem ser camada de segurança:** a regra `REFUSED` segue no system prompt, e a recusa dele vira erro do lote.
 5. **Pessoas nas fotos:** receitas com pessoas exigem a caixa de autorização por escrito (`exige_consentimento`). O aprovador recusa quando a foto mostra pessoas e a caixa não foi marcada.
    - Desde 08/10/2026, o servidor analisa cada foto depois do envio (`gpu2go_servico/pessoas.py`: YOLOX-tiny para pessoas, inclusive de costas, e YuNet para rostos) e o `/aprovar` mostra "contém pessoas" por foto e um resumo do lote, em vermelho quando a caixa de autorização não foi marcada.
    - É um aviso, não uma barreira: a análise pode errar, e a falha aparece como "análise indisponível", nunca como "sem pessoas".
+   - **Registro de auditoria da autorização** (08/10/2026), em todos os planos, inclusive o teste:
+     - marcar a caixa exige o nome completo de quem declara;
+     - a tabela `consentimentos` (só inserção) guarda: declarante, cliente, texto exibido e sua versão (`autorizacao-v1`) com o SHA-256, IP, identificador do dispositivo, User-Agent, fuso horário, lista de fotos e data;
+     - cada foto guarda a impressão SHA-256 (`fotos.sha256`), que continua no banco depois que a foto é apagada;
+     - o `/aprovar` mostra a declaração no pedido e exporta o registro completo do lote (`GET /api/admin/lotes/{id}/auditoria`, com os eventos).
 6. **Conferência do vídeo** (docs/08): só é entregue o vídeo cujo 1º quadro bate com a foto do job (similaridade ≥ 0,9). A API apaga e repete o que não bate.
 7. **Retenção no R2, por regra de ciclo de vida do bucket:** fotos de entrada apagadas em 7 dias; vídeos e folhas de conferência, em 30 dias.
 8. **Registro:** criação, envio, aprovação ou recusa (com quem), prompt, conclusão e falhas ficam na tabela `eventos`.

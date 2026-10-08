@@ -77,3 +77,7 @@ progress { width: 100%; max-width: 320px; height: 10px; accent-color: var(--marc
 .tabela table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .tabela th, .tabela td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--borda); white-space: nowrap; }
 .tabela td.num, .tabela th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* teste gratuito em destaque, sinais de dispositivo e autorização */
+.aviso.info strong { font-weight: 700; }
+.tabela tr.sinal td { color: var(--alerta); background: var(--alerta-fundo); }
+.autorizacao { font-size: 14px; margin: 4px 0; }

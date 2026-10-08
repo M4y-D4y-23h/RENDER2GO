@@ -33,7 +33,9 @@ from typing import Any
 
 MAX_TENTATIVAS = 3
 FINAIS = ("ok", "erro", "cancelado")
-PLANOS = {"pago": 0, "teste": 1}  # plano do cliente → prioridade dos lotes (menor sai antes)
+# plano do cliente → prioridade dos lotes (menor sai antes). "interno": acesso do dono do serviço,
+# sem limites de teste e com aprovação automática (ADR 0004); o C1 continua valendo.
+PLANOS = {"interno": 0, "pago": 0, "teste": 1}
 
 ESQUEMA = [
     """CREATE TABLE IF NOT EXISTS clientes (
@@ -45,11 +47,11 @@ ESQUEMA = [
         status TEXT NOT NULL, pedido TEXT NOT NULL, prompt_en TEXT, compilador TEXT,
         n_fotos INTEGER NOT NULL, prioridade INTEGER NOT NULL DEFAULT 0, criado DOUBLE PRECISION NOT NULL,
         aprovado_em DOUBLE PRECISION, aprovado_por TEXT, concluido_em DOUBLE PRECISION, motivo TEXT,
-        ip TEXT, fotos_apagadas DOUBLE PRECISION)""",
+        ip TEXT, fotos_apagadas DOUBLE PRECISION, dispositivo TEXT, agente TEXT, fuso TEXT)""",
     """CREATE TABLE IF NOT EXISTS fotos (
         id TEXT PRIMARY KEY, lote_id TEXT NOT NULL REFERENCES lotes(id), nome TEXT NOT NULL,
         tipo TEXT NOT NULL, bytes INTEGER NOT NULL, chave TEXT NOT NULL, enviada INTEGER NOT NULL DEFAULT 0,
-        analise TEXT, UNIQUE (lote_id, nome))""",
+        analise TEXT, sha256 TEXT, UNIQUE (lote_id, nome))""",
     """CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY, lote_id TEXT NOT NULL REFERENCES lotes(id), tipo TEXT NOT NULL,
         foto_id TEXT REFERENCES fotos(id), variacao INTEGER, seed BIGINT, arquivo TEXT,
@@ -60,12 +62,22 @@ ESQUEMA = [
     "CREATE INDEX IF NOT EXISTS jobs_fila ON jobs (status, criado)",
     """CREATE TABLE IF NOT EXISTS eventos (
         lote_id TEXT, quando DOUBLE PRECISION NOT NULL, tipo TEXT NOT NULL, detalhe TEXT)""",
+    # declaração de autorização das pessoas das fotos (auditoria): só inserção, nunca alteração
+    """CREATE TABLE IF NOT EXISTS consentimentos (
+        id TEXT PRIMARY KEY, lote_id TEXT NOT NULL REFERENCES lotes(id), cliente_id TEXT NOT NULL,
+        cliente_nome TEXT NOT NULL, declarante TEXT NOT NULL, texto_versao TEXT NOT NULL,
+        texto_sha256 TEXT NOT NULL, texto TEXT NOT NULL, ip TEXT, dispositivo TEXT, agente TEXT, fuso TEXT,
+        fotos TEXT NOT NULL, quando DOUBLE PRECISION NOT NULL)""",
 ]
 # colunas que entraram depois da primeira implantação: (tabela, coluna, tipo)
 COLUNAS_NOVAS = [
     ("fotos", "analise", "TEXT"),  # aviso de pessoas no /aprovar (gpu2go_servico.pessoas)
     ("lotes", "ip", "TEXT"),  # IP de quem criou o pedido (limite do teste gratuito por IP)
     ("lotes", "fotos_apagadas", "DOUBLE PRECISION"),  # fotos de entrada apagadas ao fechar o lote
+    ("lotes", "dispositivo", "TEXT"),  # identificador do navegador (limite do teste por dispositivo)
+    ("lotes", "agente", "TEXT"),  # User-Agent do navegador
+    ("lotes", "fuso", "TEXT"),  # fuso horário informado pelo navegador (sinal de VPN)
+    ("fotos", "sha256", "TEXT"),  # impressão da foto, que fica depois que a foto é apagada
 ]
 # lote que já passou do envio e não foi recusado: conta nos limites do teste gratuito
 ATIVO = "status NOT IN ('aguardando_envio', 'recusado')"
@@ -182,6 +194,16 @@ class Banco:
             )
         return int(r["n"])
 
+    def fotos_teste_dispositivo(self, dispositivo: str, exceto: str | None = None) -> int:
+        """Fotos de teste gratuito pedidas a partir deste dispositivo (navegador)."""
+        with self.tx() as c:
+            r = c.one(
+                "SELECT COALESCE(SUM(l.n_fotos), 0) AS n FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
+                f" WHERE l.dispositivo = ? AND k.plano = 'teste' AND {ATIVO_L} AND l.id <> ?",
+                (dispositivo, exceto or ""),
+            )
+        return int(r["n"])
+
     def substituir_envios(self, cliente_id: str) -> int:
         """Pedidos do cliente cujo envio não terminou viram "recusado" (o teste vale um pedido só)."""
         with self.tx() as c:
@@ -217,11 +239,12 @@ class Banco:
             return c.all(
                 "SELECT l.id, l.cliente_id, k.nome AS cliente_nome, k.plano, k.ativo AS cliente_ativo, l.status,"
                 " l.pedido, l.n_fotos, l.ip, l.criado, l.aprovado_em, l.aprovado_por, l.concluido_em, l.motivo,"
-                " l.fotos_apagadas,"
+                " l.fotos_apagadas, l.dispositivo, l.fuso, a.declarante, a.quando AS autorizado_em,"
                 " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render' AND j.status = 'ok')"
                 " AS prontos,"
                 " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render') AS total"
-                f" FROM lotes l JOIN clientes k ON k.id = l.cliente_id WHERE {onde}"
+                " FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
+                f" LEFT JOIN consentimentos a ON a.lote_id = l.id WHERE {onde}"
                 " ORDER BY l.criado DESC LIMIT ?",
                 (*args, limite),
             )
@@ -232,11 +255,71 @@ class Banco:
             return c.all(
                 "SELECT l.ip, COUNT(*) AS pedidos, COALESCE(SUM(l.n_fotos), 0) AS fotos,"
                 " COALESCE(SUM(CASE WHEN k.plano = 'teste' THEN l.n_fotos ELSE 0 END), 0) AS fotos_teste,"
-                " COUNT(DISTINCT l.cliente_id) AS clientes, MAX(l.criado) AS ultimo"
-                " FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
+                " COUNT(DISTINCT l.cliente_id) AS clientes, COUNT(DISTINCT l.dispositivo) AS dispositivos,"
+                " MAX(l.criado) AS ultimo FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
                 f" WHERE l.ip IS NOT NULL AND {ATIVO_L}"
                 " GROUP BY l.ip ORDER BY ultimo DESC LIMIT ?",
                 (limite,),
+            )
+
+    def uso_por_dispositivo(self, dias: int = 90, limite: int = 50) -> list[dict]:
+        """Por dispositivo: IPs, códigos de cliente e fusos usados (todos os pedidos dos últimos
+        `dias`), e fotos de teste ativas. Mais de um IP ou de um código no mesmo dispositivo é sinal
+        de troca de IP (VPN, celular) ou de alguém juntando testes."""
+        with self.tx() as c:
+            linhas = c.all(
+                "SELECT l.dispositivo, l.ip, l.cliente_id, l.n_fotos, l.status, l.criado, l.fuso, k.plano"
+                " FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
+                " WHERE l.dispositivo IS NOT NULL AND l.criado > ? ORDER BY l.criado",
+                (time.time() - dias * 86400,),
+            )
+        por: dict[str, dict] = {}
+        for r in linhas:
+            d = por.setdefault(
+                r["dispositivo"],
+                {
+                    "dispositivo": r["dispositivo"],
+                    "ips": [],
+                    "clientes": [],
+                    "fusos": [],
+                    "pedidos": 0,
+                    "fotos_teste": 0,
+                },
+            )
+            for campo, valor in (("ips", r["ip"]), ("clientes", r["cliente_id"]), ("fusos", r["fuso"])):
+                if valor and valor not in d[campo]:
+                    d[campo].append(valor)
+            d["pedidos"] += 1
+            if r["plano"] == "teste" and r["status"] not in ("aguardando_envio", "recusado"):
+                d["fotos_teste"] += int(r["n_fotos"])
+            d["ultimo"] = r["criado"]
+        return sorted(por.values(), key=lambda d: d["ultimo"], reverse=True)[:limite]
+
+    def auditoria(self, lote_id: str) -> dict | None:
+        """Tudo o que existe sobre um lote: pedido, origem, autorização, fotos (impressões) e eventos."""
+        with self.tx() as c:
+            lt = c.one("SELECT * FROM lotes WHERE id = ?", (lote_id,))
+            if lt is None:
+                return None
+            return {
+                "lote": lt,
+                "cliente": c.one(
+                    "SELECT id, nome, plano, ativo, criado FROM clientes WHERE id = ?", (lt["cliente_id"],)
+                ),
+                "autorizacao": c.one("SELECT * FROM consentimentos WHERE lote_id = ?", (lote_id,)),
+                "fotos": c.all(
+                    "SELECT nome, tipo, bytes, sha256, analise FROM fotos WHERE lote_id = ? ORDER BY nome", (lote_id,)
+                ),
+                "eventos": c.all(
+                    "SELECT quando, tipo, detalhe FROM eventos WHERE lote_id = ? ORDER BY quando", (lote_id,)
+                ),
+            }
+
+    def autorizacao(self, lote_id: str) -> dict | None:
+        with self.tx() as c:
+            return c.one(
+                "SELECT declarante, quando, ip, dispositivo, texto_versao FROM consentimentos WHERE lote_id = ?",
+                (lote_id,),
             )
 
     def marcar_fotos_apagadas(self, lote_id: str) -> None:
@@ -263,17 +346,28 @@ class Banco:
 
     # -- lotes ----------------------------------------------------------------------------
 
-    def criar_lote(self, cliente_id: str, pedido: dict, fotos: list[dict], ip: str | None = None) -> str:
-        """fotos: [{nome, tipo, bytes, chave}] (já validadas pela API); ip: de quem pediu."""
+    def criar_lote(
+        self,
+        cliente_id: str,
+        pedido: dict,
+        fotos: list[dict],
+        origem: dict | None = None,
+        autorizacao: dict | None = None,
+    ) -> str:
+        """fotos: [{nome, tipo, bytes, chave}] (já validadas pela API).
+        origem: {ip, dispositivo, agente, fuso} de quem pediu.
+        autorizacao: {declarante, texto_versao, texto} quando a caixa de autorização foi marcada;
+        gravada na mesma transação, com a origem e a lista de fotos (auditoria)."""
         lid = novo_id("lote")
         agora = time.time()
+        o = origem or {}
         with self.tx() as c:
-            cli = c.one("SELECT plano FROM clientes WHERE id = ?", (cliente_id,))
+            cli = c.one("SELECT nome, plano FROM clientes WHERE id = ?", (cliente_id,))
             if cli is None:
                 raise BancoError("cliente não encontrado")
             c.run(
-                "INSERT INTO lotes (id, cliente_id, status, pedido, n_fotos, prioridade, criado, ip)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO lotes (id, cliente_id, status, pedido, n_fotos, prioridade, criado, ip, dispositivo,"
+                " agente, fuso) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     lid,
                     cliente_id,
@@ -282,9 +376,34 @@ class Banco:
                     len(fotos),
                     PLANOS[cli["plano"]],
                     agora,
-                    ip,
+                    o.get("ip"),
+                    o.get("dispositivo"),
+                    o.get("agente"),
+                    o.get("fuso"),
                 ),
             )
+            if autorizacao:
+                c.run(
+                    "INSERT INTO consentimentos (id, lote_id, cliente_id, cliente_nome, declarante, texto_versao,"
+                    " texto_sha256, texto, ip, dispositivo, agente, fuso, fotos, quando)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        novo_id("aut"),
+                        lid,
+                        cliente_id,
+                        cli["nome"],
+                        autorizacao["declarante"],
+                        autorizacao["texto_versao"],
+                        hashlib.sha256(autorizacao["texto"].encode()).hexdigest(),
+                        autorizacao["texto"],
+                        o.get("ip"),
+                        o.get("dispositivo"),
+                        o.get("agente"),
+                        o.get("fuso"),
+                        json.dumps([{"nome": f["nome"], "bytes": f["bytes"]} for f in fotos], ensure_ascii=False),
+                        agora,
+                    ),
+                )
             for f in fotos:
                 c.run(
                     "INSERT INTO fotos (id, lote_id, nome, tipo, bytes, chave) VALUES (?, ?, ?, ?, ?, ?)",
@@ -297,7 +416,7 @@ class Banco:
                         f["chave"].replace("{lote}", lid),
                     ),
                 )
-            self.evento(c, lid, "criado", {"fotos": len(fotos)})
+            self.evento(c, lid, "criado", {"fotos": len(fotos), "autorizacao": bool(autorizacao), **o})
         return lid
 
     def lote(self, lote_id: str, cliente_id: str | None = None) -> dict | None:
@@ -319,9 +438,12 @@ class Banco:
         with self.tx() as c:
             return c.all("SELECT * FROM fotos WHERE lote_id = ? ORDER BY nome", (lote_id,))
 
-    def salvar_analise(self, foto_id: str, analise: dict) -> None:
+    def salvar_analise(self, foto_id: str, analise: dict, sha256: str | None = None) -> None:
         with self.tx() as c:
-            c.run("UPDATE fotos SET analise = ? WHERE id = ?", (json.dumps(analise, ensure_ascii=False), foto_id))
+            c.run(
+                "UPDATE fotos SET analise = ?, sha256 = COALESCE(?, sha256) WHERE id = ?",
+                (json.dumps(analise, ensure_ascii=False), sha256, foto_id),
+            )
 
     def confirmar_envio(self, lote_id: str, tamanhos: dict[str, int | None]) -> list[str]:
         """tamanhos: chave → bytes no armazenamento (None = ausente). Devolve os problemas."""

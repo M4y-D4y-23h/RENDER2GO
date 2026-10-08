@@ -9,13 +9,17 @@ Cliente (Authorization: Bearer <token do cliente>):
 Aprovação (Bearer <token de administração>), ADR 0004:
     GET  /api/admin/lotes              lotes aguardando aprovação, com miniaturas e aviso de pessoas
     POST /api/admin/lotes/{id}/aprovar | /recusar
-    GET  /api/admin/historico          pedidos feitos, aprovados e recusados, e o uso por IP
+    GET  /api/admin/historico          pedidos feitos, aprovados e recusados; uso por IP e por dispositivo
+    GET  /api/admin/lotes/{id}/auditoria  registro completo de um lote (origem, autorização, fotos, eventos)
     POST /api/admin/clientes           cadastra um cliente (plano pago ou teste); o token aparece uma vez
     POST /api/admin/clientes/{id}/desativar   o código de acesso do cliente deixa de valer
 
-Teste gratuito (docs/08): um pedido só, até 10 fotos, vídeos de 3 s em 480p, e no máximo 10 fotos
-de teste por IP somando todos os clientes de teste. As fotos de entrada são apagadas quando o
-lote fecha (pronto, com falhas ou recusado); os vídeos ficam até a regra de retenção do bucket.
+Teste gratuito (docs/08): um pedido só, até 10 fotos, vídeos de 3 s em 480p; no máximo 10 fotos de
+teste por dispositivo (navegador) e 50 por IP (uma empresa com várias pessoas na mesma rede).
+Plano interno (o dono do serviço): sem limites de teste e com aprovação automática; o C1 continua.
+As fotos de entrada são apagadas quando o lote fecha (pronto, com falhas ou recusado); os vídeos
+ficam até a regra de retenção do bucket. A caixa de autorização gera um registro de auditoria
+(quem declarou, texto e versão, IP, dispositivo, fotos e suas impressões SHA-256).
 
 Workers (Bearer <token de worker>), sem porta de entrada nos pods (eles puxam):
     POST /api/worker/reivindicar       próximo job, com URLs assinadas e carimbo de aprovação
@@ -60,7 +64,25 @@ URL_ENVIO_S = 3600
 URL_DOWNLOAD_S = 24 * 3600
 # teste gratuito (docs/08): um pedido só, qualidade rápida (480p), vídeos de 3 s, uma variação,
 # até 10 fotos; e no máximo 10 fotos de teste por IP, somando todos os clientes de teste
-TESTE = {"qualidade": "rapida", "duracao": 3, "variacoes": 1, "fotos": 10, "fotos_ip": 10}
+TESTE = {
+    "qualidade": "rapida",
+    "duracao": 3,
+    "variacoes": 1,
+    "fotos": 10,
+    "fotos_dispositivo": 10,
+    "fotos_ip": int(os.environ.get("GPU2GO_TESTE_FOTOS_IP", 50)),
+}
+# texto da caixa de autorização: a página mostra este, e o registro guarda o texto e o SHA-256.
+# Mudou o texto = versão nova (o registro antigo continua apontando para o texto que a pessoa viu).
+AUTORIZACAO = {
+    "versao": "autorizacao-v1",
+    "texto": (
+        "Declaro que tenho autorização por escrito de todas as pessoas que aparecem nestas fotos "
+        "(ou de seus responsáveis legais) para criar e usar os vídeos, e que posso apresentá-la se for pedida."
+    ),
+}
+DISPOSITIVO = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+FUSO = re.compile(r"^[A-Za-z0-9_+\-/]{1,64}$")
 LOTE_FECHADO = ("concluido", "concluido_com_falhas", "recusado")
 NOME = re.compile(r"[^A-Za-z0-9_-]+")
 WEB = SERVICO_DIR / "web"
@@ -108,11 +130,14 @@ class AnaliseFotos:
         for f in self.banco.fotos(lote_id):
             if f["analise"] is not None or not f["enviada"]:
                 continue
+            impressao = None
             try:
-                a = self.analisar(self.armazenamento.ler(f["chave"], MAX_BYTES_FOTO))
+                dados = self.armazenamento.ler(f["chave"], MAX_BYTES_FOTO)
+                impressao = hashlib.sha256(dados).hexdigest()  # fica no banco depois que a foto é apagada
+                a = self.analisar(dados)
             except Exception as e:  # noqa: BLE001 (foto ilegível ou armazenamento fora: o revisor vê o erro)
                 a = {"versao": pessoas.VERSAO, "erro": str(e)[:200]}
-            self.banco.salvar_analise(f["id"], a)
+            self.banco.salvar_analise(f["id"], a, impressao)
 
 
 @dataclass
@@ -208,6 +233,19 @@ def ip_de(request: Request) -> str:
     return ip or (request.client.host if request.client else "desconhecido")
 
 
+def origem_de(request: Request) -> dict:
+    """De onde veio o pedido: IP (do Caddy), dispositivo (identificador que a página guarda no
+    navegador), User-Agent e fuso horário do navegador. Valores fora do formato viram None."""
+    disp = request.headers.get("x-dispositivo", "").strip().lower()
+    fuso = request.headers.get("x-fuso", "").strip()
+    return {
+        "ip": ip_de(request),
+        "dispositivo": disp if DISPOSITIVO.match(disp) else None,
+        "agente": request.headers.get("user-agent", "")[:300] or None,
+        "fuso": fuso if FUSO.match(fuso) else None,
+    }
+
+
 def _apagar_fotos(c: Config, lote_id: str) -> None:
     """Fotos de entrada de um lote fechado: apagadas do armazenamento (minimiza o que guardamos)."""
     falhas = 0
@@ -227,14 +265,18 @@ def _se_fechou(c: Config, lote_id: str) -> None:
         c.em_segundo_plano(_apagar_fotos, c, lote_id)
 
 
-def _limites_teste(c: Config, cli: dict, ip: str, n_fotos: int, exceto: str | None = None) -> None:
-    """Teste gratuito: um pedido só (todas as fotos de uma vez) e até 10 fotos por IP."""
+def _limites_teste(c: Config, cli: dict, origem: dict, n_fotos: int, exceto: str | None = None) -> None:
+    """Teste gratuito: um pedido só (todas as fotos de uma vez), até 10 fotos por dispositivo e 50
+    por IP (várias pessoas de uma empresa dividem o IP; o teto por IP segura quem troca de navegador)."""
     if c.banco.pedidos_ativos(cli["id"], exceto) > 0:
         raise HTTPException(
             429, "o teste gratuito é um pedido só, com até 10 fotos; para mais vídeos, fale com a gente"
         )
-    if c.banco.fotos_teste_ip(ip, exceto) + n_fotos > TESTE["fotos_ip"]:
-        raise HTTPException(429, f"este endereço de internet já usou o teste gratuito ({TESTE['fotos_ip']} fotos)")
+    disp = origem.get("dispositivo")
+    if disp and c.banco.fotos_teste_dispositivo(disp, exceto) + n_fotos > TESTE["fotos_dispositivo"]:
+        raise HTTPException(429, f"este dispositivo já usou o teste gratuito ({TESTE['fotos_dispositivo']} fotos)")
+    if c.banco.fotos_teste_ip(origem["ip"], exceto) + n_fotos > TESTE["fotos_ip"]:
+        raise HTTPException(429, "esta rede já usou todos os testes gratuitos disponíveis; fale com a gente")
 
 
 class FotoIn(BaseModel):
@@ -251,6 +293,7 @@ class LoteIn(BaseModel):
     duracao: int | None = None
     variacoes: int = Field(1, ge=1, le=lote.MAX_VARIACOES)
     consentimento: bool = False
+    declarante: str | None = Field(None, max_length=120)  # nome de quem marca a autorização
     fotos: list[FotoIn]
 
 
@@ -347,7 +390,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if cli["plano"] == "teste":
             motivo = None
             try:
-                _limites_teste(c, cli, ip_de(request), 1)
+                _limites_teste(c, cli, origem_de(request), 1)
             except HTTPException as e:
                 motivo = e.detail
             plano.update(
@@ -359,6 +402,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             )
         return {
             "plano": plano,
+            "autorizacao": AUTORIZACAO,
             "receitas": [
                 {
                     "id": k,
@@ -380,7 +424,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @app.post("/api/lotes")
     def criar_lote(body: LoteIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
-        ip = ip_de(request)
+        origem = origem_de(request)
+        declarante = (body.declarante or "").strip()
+        if body.consentimento and len(declarante) < 3:
+            raise HTTPException(422, "informe o nome completo de quem declara a autorização")
         d = filtros.avaliar(body.prompt)
         if not d.allowed:  # C1 já na entrada (ADR 0004)
             raise HTTPException(422, f"pedido recusado pelo filtro de conteúdo: {d.reason}")
@@ -406,9 +453,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 raise HTTPException(422, "teste gratuito: qualidade rápida (480p), vídeos de 3 s, 1 variação")
             if len(body.fotos) > TESTE["fotos"]:
                 raise HTTPException(429, f"o teste gratuito vale para até {TESTE['fotos']} fotos, num pedido só")
-            _limites_teste(c, cli, ip, len(body.fotos))
+            _limites_teste(c, cli, origem, len(body.fotos))
             body.duracao = TESTE["duracao"]
-        if c.banco.fotos_hoje(cli["id"]) + len(body.fotos) > cli["cota_fotos_dia"]:
+        if cli["plano"] != "interno" and c.banco.fotos_hoje(cli["id"]) + len(body.fotos) > cli["cota_fotos_dia"]:
             raise HTTPException(429, f"cota diária de {cli['cota_fotos_dia']} fotos atingida")
         fotos, usados = [], set()
         for f in body.fotos:
@@ -431,10 +478,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "original": f.nome,
                 }
             )
-        pedido = body.model_dump(exclude={"fotos"})
+        pedido = body.model_dump(exclude={"fotos", "declarante"})
+        autorizacao = None
+        if body.consentimento:  # registro de auditoria: quem declarou, de onde, qual texto, quais fotos
+            autorizacao = {
+                "declarante": declarante,
+                "texto_versao": AUTORIZACAO["versao"],
+                "texto": AUTORIZACAO["texto"],
+            }
         if cli["plano"] == "teste":  # envio anterior que não terminou não segura o teste
             c.banco.substituir_envios(cli["id"])
-        lid = c.banco.criar_lote(cli["id"], pedido, fotos, ip=ip)
+        lid = c.banco.criar_lote(cli["id"], pedido, fotos, origem=origem, autorizacao=autorizacao)
         envios = []
         for f in c.banco.fotos(lid):
             original = next(x["original"] for x in fotos if x["nome"] == f["nome"])
@@ -453,7 +507,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if lt is None:
             raise HTTPException(404, "lote não encontrado")
         if cli["plano"] == "teste":  # de novo aqui: dois pedidos enviados ao mesmo tempo
-            _limites_teste(c, cli, lt["ip"] or "desconhecido", lt["n_fotos"], exceto=lote_id)
+            origem = {"ip": lt["ip"] or "desconhecido", "dispositivo": lt["dispositivo"]}
+            _limites_teste(c, cli, origem, lt["n_fotos"], exceto=lote_id)
         fotos = c.banco.fotos(lote_id)
         with ThreadPoolExecutor(max_workers=16) as ex:
             tamanhos = dict(
@@ -471,6 +526,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(422, {"problemas": problemas})
         if c.analises is not None:  # aviso de pessoas para o revisor, em segundo plano
             c.analises.agendar(lote_id)
+        if cli["plano"] == "interno":  # o dono do serviço revisa o próprio pedido ao fazê-lo (ADR 0004)
+            r = _aprovar(c, lote_id, "auto:interno")
+            return {"lote": lote_id, "status": "aprovado", "videos": r["videos"]}
         return {"lote": lote_id, "status": "aguardando_aprovacao"}
 
     def _resumo(lt: dict, c: Config, cliente_id: str) -> dict:
@@ -523,6 +581,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "cliente_nome": cli.get("nome"),
                     "plano": cli.get("plano"),
                     "ip": lt["ip"],
+                    "dispositivo": lt["dispositivo"],
+                    "autorizacao": c.banco.autorizacao(lt["id"]),
                     "criado": lt["criado"],
                     "pedido": json.loads(lt["pedido"]),
                     "filtro_c1": filtros.avaliar(json.loads(lt["pedido"])["prompt"]).reason,
@@ -541,6 +601,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @app.post("/api/admin/lotes/{lote_id}/aprovar")
     def aprovar(lote_id: str, quem: str = Depends(admin), c: Config = Depends(config)):
+        return _aprovar(c, lote_id, quem)
+
+    def _aprovar(c: Config, lote_id: str, quem: str) -> dict:
         lt = c.banco.lote(lote_id)
         if lt is None:
             raise HTTPException(404, "lote não encontrado")
@@ -564,7 +627,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     @app.post("/api/admin/clientes")
     def novo_cliente(body: ClienteIn, quem: str = Depends(admin), c: Config = Depends(config)):
         try:
-            cid, token = c.banco.criar_cliente(body.nome, body.cota_fotos_dia, body.plano)
+            cota = 100_000 if body.plano == "interno" else body.cota_fotos_dia
+            cid, token = c.banco.criar_cliente(body.nome, cota, body.plano)
         except BancoError as e:
             raise HTTPException(422, str(e)) from e
         return {"cliente": cid, "token": token, "aviso": "guarde o token: ele não aparece de novo"}
@@ -602,13 +666,36 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "concluido_em": lt["concluido_em"],
                     "motivo": lt["motivo"],
                     "fotos_apagadas": lt["fotos_apagadas"],
+                    "dispositivo": lt["dispositivo"],
+                    "fuso": lt["fuso"],
+                    "declarante": lt["declarante"],
+                    "autorizado_em": lt["autorizado_em"],
                     "prontos": lt["prontos"],
                     "total": lt["total"],
                 }
                 for lt in lotes
             ],
             "ips": c.banco.uso_por_ip(),
+            "dispositivos": c.banco.uso_por_dispositivo(),
         }
+
+    @app.get("/api/admin/lotes/{lote_id}/auditoria")
+    def auditoria(lote_id: str, _: str = Depends(admin), c: Config = Depends(config)):
+        a = c.banco.auditoria(lote_id)
+        if a is None:
+            raise HTTPException(404, "lote não encontrado")
+
+        def js(v):
+            return json.loads(v) if isinstance(v, str) and v[:1] in "[{" else v
+
+        a["lote"]["pedido"] = js(a["lote"]["pedido"])
+        if a["autorizacao"]:
+            a["autorizacao"]["fotos"] = js(a["autorizacao"]["fotos"])
+        for f in a["fotos"]:
+            f["analise"] = js(f["analise"])
+        for e in a["eventos"]:
+            e["detalhe"] = js(e["detalhe"])
+        return a
 
     @app.post("/api/admin/clientes/{cliente_id}/desativar")
     def desativar(cliente_id: str, quem: str = Depends(admin), c: Config = Depends(config)):

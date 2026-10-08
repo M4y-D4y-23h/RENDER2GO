@@ -1,6 +1,7 @@
 """Páginas no navegador (Chromium headless): fluxo completo, sem erros no console nem bloqueios
 da política de segurança (CSP). Precisa do pacote playwright e de um Chromium; senão, pula."""
 
+import json
 import os
 import re
 from pathlib import Path
@@ -64,9 +65,16 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     # teste gratuito: só 480p e 3 s, e o aviso das regras
     assert cli.locator("#qualidade option").all_inner_texts() == ["Rápida (prévia, 480p)"]
     assert cli.locator("#duracao option").all_inner_texts() == ["3 s"]
-    assert "um pedido só" in cli.locator("#plano-aviso").inner_text()
+    assert "envie todas juntas, em um único pedido" in cli.locator("#plano-aviso").inner_text()
     cli.set_input_files("#fotos", [str(tmp_path / "bolo.png"), str(tmp_path / "loja.png")])
-    assert "2 foto(s)" in cli.locator("#contagem").inner_text()
+    assert "2 de 10 fotos escolhidas · ainda cabem 8" in cli.locator("#contagem").inner_text()
+    assert cli.locator("#enviar").inner_text() == "Enviar pedido com 2 foto(s)"
+    # autorização: marcar a caixa pede o nome de quem declara (vai para o registro de auditoria)
+    assert cli.locator("#bloco-declarante").is_hidden()
+    cli.check("#consentimento")
+    cli.fill("#declarante", "Maria da Silva")
+    if os.environ.get("GPU2GO_CAPTURAS"):
+        cli.screenshot(path=os.path.join(os.environ["GPU2GO_CAPTURAS"], "cliente-teste.png"), full_page=True)
     cli.fill("#prompt", "a câmera se aproxima devagar do produto")
     cli.select_option("#duracao", "3")
     cli.click("#enviar")
@@ -83,7 +91,8 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     assert adm.locator(".grade img").count() == 2
     assert adm.locator(".selo.pessoas").count() == 1
     assert "sem pessoas detectadas" in adm.locator(".grade").inner_text()
-    assert "NÃO marcou a autorização" in adm.locator(".cartao .aviso.erro").inner_text()
+    assert "Autorização declarada por Maria da Silva" in adm.locator("#pendentes .autorizacao").inner_text()
+    assert "marcou ter autorização" in adm.locator("#pendentes .aviso.alerta").inner_text()
     if os.environ.get("GPU2GO_CAPTURAS"):
         adm.screenshot(path=os.path.join(os.environ["GPU2GO_CAPTURAS"], "aprovar.png"), full_page=True)
     adm.click(".acoes button.primario")
@@ -93,6 +102,11 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     assert "Padaria do Bairro" in hist.inner_text() and "IP 127.0.0.1" in hist.inner_text()
     assert "Na fila" in hist.inner_text()
     assert "127.0.0.1" in adm.locator("#ips table").inner_text()
+    assert adm.locator("#dispositivos table tbody tr").count() == 1  # o navegador do cliente
+    with adm.expect_download() as baixado:
+        adm.click("#historico .hist button:has-text('auditoria')")
+    registro = json.loads(Path(baixado.value.path()).read_text())
+    assert registro["autorizacao"]["declarante"] == "Maria da Silva" and registro["autorizacao"]["dispositivo"]
     adm.click("#filtros-historico button[data-grupo=recusados]")
     adm.wait_for_selector("text=Nenhum pedido neste filtro.")
     adm.click("#filtros-historico button[data-grupo=todos]")

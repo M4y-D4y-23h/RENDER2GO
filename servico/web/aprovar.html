@@ -40,6 +40,10 @@
       <p class="fraco">Fotos de pedidos que passaram do envio e não foram recusados. O teste gratuito vale até 10 fotos por IP, somando todos os clientes de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
       <div id="ips" class="tabela"></div>
 
+      <h2>Dispositivos</h2>
+      <p class="fraco">Cada navegador recebe um identificador guardado nele mesmo. Um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes. Uma janela anônima ou limpar os dados do navegador gera um identificador novo, mas o teto por IP continua valendo.</p>
+      <div id="dispositivos" class="tabela"></div>
+
       <h2>Novo cliente</h2>
       <form id="form-cliente">
         <div class="duas">
@@ -52,6 +56,7 @@
             <select id="cliente-plano">
               <option value="teste">Teste gratuito (um pedido, até 10 fotos, 3 s, 480p)</option>
               <option value="pago">Pago</option>
+              <option value="interno">Interno (só você: sem limites e sem revisão)</option>
             </select>
           </div>
         </div>

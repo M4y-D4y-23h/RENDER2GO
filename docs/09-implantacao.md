@@ -117,8 +117,20 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 - **Regras** (a API impõe; a página só mostra):
   - um pedido só, com até 10 fotos;
   - vídeos de 3 s em 480p;
-  - no máximo 10 fotos de teste por IP, somando todos os clientes de teste.
+  - no máximo 10 fotos de teste **por dispositivo** (navegador);
+  - no máximo 50 fotos de teste **por IP** (`GPU2GO_TESTE_FOTOS_IP`). Assim cinco pessoas da mesma empresa, na mesma rede, conseguem fazer o teste cada uma, e quem troca de navegador para juntar testes esbarra no teto da rede.
+- **Dispositivo:** a página cria um identificador aleatório e guarda no próprio navegador. Janela anônima ou dados apagados geram outro; por isso existe o teto por IP.
+- **Sinais no `/aprovar`, tabela "Dispositivos":** um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes; fusos horários diferentes também são sinal de VPN.
 - **Pedido recusado libera o teste** do cliente, para ele corrigir e mandar de novo.
+- **Autorização das pessoas das fotos:** marcar a caixa pede o nome completo de quem declara. O registro de auditoria fica no banco (ADR 0004, item 5) e sai em JSON pelo botão "Baixar registro de auditoria" no histórico.
+- **Dados pessoais** guardados (IP, identificador do dispositivo, navegador, fuso, nome de quem declara) precisam constar da política de privacidade (LGPD).
+
+## 5.1.1 Acesso interno (só o dono)
+
+Para testar sem os limites do teste gratuito e sem esperar revisão, cadastre um cliente com o plano **Interno** em `/aprovar` ("Novo cliente").
+- Os pedidos desse código são aprovados automaticamente no envio e sobem pods na hora, sem a janela de agrupamento.
+- O filtro de conteúdo (C1), o aviso de pessoas e o registro de autorização continuam valendo.
+- Não entregue esse código a clientes; se vazar, desative no histórico.
 - **Agrupamento:** com só testes na fila e nenhum pod ligado, o orquestrador espera juntar 20 vídeos ou 10 min.
   - Cada subida de pod custa ~US$ 0,20 (subida + 3 min de pod quente), e um vídeo de teste ~US$ 0,015.
   - Dez pedidos de 1 foto em horários diferentes custariam ~US$ 2,15; juntos, ~US$ 0,35.

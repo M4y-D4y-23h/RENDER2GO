@@ -1,8 +1,11 @@
 """API de ponta a ponta com armazenamento falso (sem rede) e o banco dos testes."""
 
+import hashlib
+
 import pytest
 from fastapi.testclient import TestClient
 
+from gpu2go_servico import api as api_mod
 from gpu2go_servico.api import Config, criar_app
 
 ADMIN = "a" * 40
@@ -182,7 +185,24 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
     assert len([k for k in api.armazem.objetos if k.startswith("saida/")]) == 2
 
 
-def test_free_trial_limits(api):
+D1, D2, D3 = (f"{n}{n}{n}{n}{n}{n}{n}{n}-0000-4000-8000-000000000000" for n in "123")
+
+
+def _pedir(api, token, n=1, dispositivo=None, ip=None, **pedido):
+    corpo = {
+        "prompt": "a câmera se aproxima devagar do produto",
+        "fotos": [{"nome": f"foto {i}.jpg", "tipo": "image/jpeg", "bytes": 1000 + i} for i in range(n)],
+        **pedido,
+    }
+    hd = {**h(token), "X-Fuso": "America/Sao_Paulo"}
+    if dispositivo:
+        hd["X-Dispositivo"] = dispositivo
+    if ip:
+        hd["X-Forwarded-For"] = ip
+    return api.post("/api/lotes", json=corpo, headers=hd)
+
+
+def test_free_trial_limits(api, monkeypatch):
     tok = _cliente(api, "Teste", plano="teste")
     plano = api.get("/api/receitas", headers=h(tok)).json()["plano"]
     assert plano == {
@@ -193,35 +213,109 @@ def test_free_trial_limits(api):
         "disponivel": True,
         "motivo": None,
     }
-    assert _lote(api, tok, qualidade="alta").status_code == 422  # 720p fica para o plano pago
-    assert _lote(api, tok, duracao=5).status_code == 422
-    assert _lote(api, tok, n=11).status_code == 429
-    a = _lote(api, tok, n=6).json()["lote"]  # envio que não terminou...
-    r = _lote(api, tok, n=4)  # ...é substituído pelo pedido novo
+    assert _pedir(api, tok, qualidade="alta").status_code == 422  # 720p fica para o plano pago
+    assert _pedir(api, tok, duracao=5).status_code == 422
+    assert _pedir(api, tok, n=11).status_code == 429
+    a = _pedir(api, tok, n=6, dispositivo=D1).json()["lote"]  # envio que não terminou...
+    r = _pedir(api, tok, n=4, dispositivo=D1)  # ...é substituído pelo pedido novo
     assert r.status_code == 200 and api.get(f"/api/lotes/{a}", headers=h(tok)).json()["status"] == "recusado"
     b = r.json()["lote"]
     assert _enviar_tudo(api, tok, b, r.json()["envios"]).status_code == 200
     assert api.get(f"/api/lotes/{b}", headers=h(tok)).json()["pedido"]["duracao"] == 3
     # um pedido só por cliente de teste
-    assert _lote(api, tok, n=1).status_code == 429
+    assert _pedir(api, tok, n=1, dispositivo=D1).status_code == 429
     assert api.get("/api/receitas", headers=h(tok)).json()["plano"]["disponivel"] is False
 
-    # outro cliente de teste no mesmo IP: o IP já tem 4 fotos de teste, o teto é 10
+    # outro código de teste no MESMO dispositivo: o dispositivo já tem 4 fotos, o teto é 10
     tok2 = _cliente(api, "Teste 2", plano="teste")
-    r = _lote(api, tok2, n=7)
-    assert r.status_code == 429 and "endereço de internet" in r.json()["detail"]
-    assert _lote(api, tok2, n=6).status_code == 200
-    # outro IP (o Caddy põe o IP real no X-Forwarded-For): conta à parte
+    r = _pedir(api, tok2, n=7, dispositivo=D1)
+    assert r.status_code == 429 and "dispositivo" in r.json()["detail"]
+    assert _pedir(api, tok2, n=6, dispositivo=D1).status_code == 200
+    # colega da mesma empresa (mesmo IP), outro dispositivo: tem o teste dele
     tok3 = _cliente(api, "Teste 3", plano="teste")
-    corpo = {
-        "prompt": "a câmera se aproxima devagar do produto",
-        "fotos": [{"nome": f"f{i}.jpg", "tipo": "image/jpeg", "bytes": 100} for i in range(10)],
-    }
-    r = api.post("/api/lotes", json=corpo, headers={**h(tok3), "X-Forwarded-For": "203.0.113.7"})
+    r = _pedir(api, tok3, n=10, dispositivo=D2)
     assert r.status_code == 200
+    _enviar_tudo(api, tok3, r.json()["lote"], r.json()["envios"])
+    # teto por rede (IP): segura quem troca de navegador para juntar testes
+    monkeypatch.setitem(api_mod.TESTE, "fotos_ip", 15)
+    tok4 = _cliente(api, "Teste 4", plano="teste")
+    r = _pedir(api, tok4, n=2, dispositivo=D3)
+    assert r.status_code == 429 and "rede" in r.json()["detail"]
+    assert _pedir(api, tok4, n=2, dispositivo=D3, ip="203.0.113.7").status_code == 200  # outra rede
     # pedido recusado libera o teste do cliente
     api.post(f"/api/admin/lotes/{b}/recusar", json={"motivo": "foto com pessoa sem autorização"}, headers=h(ADMIN))
-    assert _lote(api, tok, n=2).status_code == 200
+    assert _pedir(api, tok, n=2, dispositivo=D1).status_code == 200
+
+
+def test_authorization_is_recorded_for_audit_with_origin_and_photo_prints(banco):
+    armazem = Armazem()
+    cfg = Config(
+        banco=banco,
+        armazenamento=armazem,
+        admin_tokens=[ADMIN],
+        worker_tokens=[WORKER],
+        segredo_aprovacao="s" * 40,
+        analisar=lambda dados: {"versao": "pessoas-v1", "pessoas": 1, "rostos": 1, "maior": 0.2},
+    )
+    api = TestClient(criar_app(cfg))
+    api.armazem = armazem
+    tok = _cliente(api, "Estúdio", plano="teste")
+    texto = api.get("/api/receitas", headers=h(tok)).json()["autorizacao"]
+    assert texto["versao"] == "autorizacao-v1" and "autorização por escrito" in texto["texto"]
+    # marcar a caixa exige o nome de quem declara
+    assert _pedir(api, tok, n=2, dispositivo=D1, consentimento=True).status_code == 422
+    r = _pedir(api, tok, n=2, dispositivo=D1, consentimento=True, declarante="  Maria da Silva  ")
+    assert r.status_code == 200
+    lid = r.json()["lote"]
+    _enviar_tudo(api, tok, lid, r.json()["envios"])
+    cfg.analises.esperar()
+    (pend,) = api.get("/api/admin/lotes", headers=h(ADMIN)).json()
+    assert pend["autorizacao"]["declarante"] == "Maria da Silva" and pend["dispositivo"] == D1
+
+    a = api.get(f"/api/admin/lotes/{lid}/auditoria", headers=h(ADMIN)).json()
+    aut = a["autorizacao"]
+    assert aut["declarante"] == "Maria da Silva" and aut["texto"] == texto["texto"]
+    assert aut["texto_sha256"] == hashlib.sha256(texto["texto"].encode()).hexdigest()
+    assert (aut["ip"], aut["dispositivo"], aut["fuso"]) == ("testclient", D1, "America/Sao_Paulo")
+    assert aut["agente"] and [f["nome"] for f in aut["fotos"]] == ["foto-0", "foto-1"]
+    assert all(len(f["sha256"]) == 64 for f in a["fotos"])  # impressão fica depois que a foto é apagada
+    assert a["lote"]["pedido"]["consentimento"] is True and "declarante" not in a["lote"]["pedido"]
+    criado = a["eventos"][0]
+    assert criado["tipo"] == "criado" and criado["detalhe"]["autorizacao"] is True
+    assert criado["detalhe"]["dispositivo"] == D1 and criado["detalhe"]["ip"] == "testclient"
+    assert api.get("/api/admin/lotes/lote_x/auditoria", headers=h(ADMIN)).status_code == 404
+    assert api.get(f"/api/admin/lotes/{lid}/auditoria", headers=h(tok)).status_code == 401
+
+
+def test_internal_plan_has_no_trial_limits_and_is_approved_automatically(api):
+    tok = _cliente(api, "Dono", plano="interno")
+    assert api.get("/api/receitas", headers=h(tok)).json()["plano"] == {"nome": "interno"}
+    lotes = []
+    for _ in range(3):  # 3 pedidos de 10 fotos ao mesmo tempo, 720p e 5 s
+        r = _pedir(api, tok, n=10, dispositivo=D1, qualidade="alta", duracao=5)
+        assert r.status_code == 200, r.text
+        lid = r.json()["lote"]
+        r = _enviar_tudo(api, tok, lid, r.json()["envios"])
+        assert r.json() == {"lote": lid, "status": "aprovado", "videos": 10}
+        lotes.append(lid)
+    assert api.get("/api/admin/lotes", headers=h(ADMIN)).json() == []  # nada esperando revisão
+    hist = {x["lote"]: x for x in api.get("/api/admin/historico", headers=h(ADMIN)).json()["lotes"]}
+    assert all(hist[lid]["aprovado_por"] == "auto:interno" for lid in lotes)
+    assert _job(api)["tipo"] == "compilar"  # já na fila
+    # o filtro de conteúdo continua valendo
+    assert _pedir(api, tok, prompt="um homem segura uma arma").status_code == 422
+
+
+def test_device_table_flags_ip_changes_and_several_codes(api):
+    a, b = _cliente(api, "Loja A", plano="teste"), _cliente(api, "Loja B", plano="teste")
+    for tok, ip in ((a, "198.51.100.1"), (b, "198.51.100.2")):  # mesmo dispositivo, dois IPs e dois códigos
+        r = _pedir(api, tok, n=2, dispositivo=D1, ip=ip)
+        _enviar_tudo(api, tok, r.json()["lote"], r.json()["envios"])
+    (d,) = api.get("/api/admin/historico", headers=h(ADMIN)).json()["dispositivos"]
+    assert d["dispositivo"] == D1 and sorted(d["ips"]) == ["198.51.100.1", "198.51.100.2"]
+    assert len(d["clientes"]) == 2 and d["fotos_teste"] == 4 and d["fusos"] == ["America/Sao_Paulo"]
+    ips = api.get("/api/admin/historico", headers=h(ADMIN)).json()["ips"]
+    assert all(u["dispositivos"] == 1 for u in ips)
 
 
 def test_history_ip_usage_and_client_deactivation(api):
