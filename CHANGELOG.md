@@ -17,11 +17,17 @@ Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técni
   - Antes, um pod desligado havia menos de 10 min contava como ligado ("começa em instantes"), e um pod no meio da subida não descontava o tempo já passado.
 
 ### Subida do pod mais rápida ([`docs/07`](docs/07-guia-tecnico-gpus-e-pods.md), seção 9)
+- **Modelos só do espelho (R2) quando ele passa no teste de rede:**
+  - o espelho é testado primeiro;
+  - os 37 GB baixaram em 44 s num host em que o Hugging Face dava 39 MB/s;
+  - antes, as duas origens misturadas levaram 175 s.
 - **Durante o download dos modelos:** ComfyUI e Ollama sobem, e o worker já traduz o pedido. O render só começa com os modelos conferidos (estado `PRONTO`).
 - **Orquestrador:** olha a fila a cada 10 s (eram 30 s).
 - **Consultas ao pod:** a cada 3 s (eram 10 s).
 - **apt:** instala primeiro só o que o download usa.
-- **Ganho esperado:** ~1 a 1,5 min por subida, a confirmar no próximo pedido real.
+- **Medido em 3 pods reais** (`worker/evals/gpu-2026-10-08-subida/`): do pedido do pod ao 1º vídeo, de **6,8 min** para **4,2 min** (RTX PRO 6000) e **5,1 min** (L40S).
+- **Tentado e retirado:** o ambiente pronto no R2, porque o envio pelo pod não terminou em 15 min.
+- **Os testes custaram ~US$ 1,00 do saldo do RunPod:** o envio que não terminou deixou um pod RTX PRO 6000 ligado 19 min.
 
 ### GPU
 - **A RTX PRO 6000 subiu de US$ 2,09 para US$ 2,49/h.** A nova ordem é L40S (US$ 1,09/h, medida) → RTX 6000 Ada (US$ 0,99/h) → RTX PRO 6000 → RTX 4090.
@@ -48,7 +54,9 @@ Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técni
   - Os clientes e os códigos de acesso ficam. Sem `--confirmar`, só mostra o que seria apagado.
 - **Servidor:** os passos estão no [`docs/09`](docs/09-implantacao.md), seção 0.
 
-### Correção
+### Correções
+- **Envio ao espelho no modo fila:** a espera pelo envio terminava na hora e o abortava, porque o prazo de desligamento do pod não chegava até ela. Agora cada pod guarda o seu. O pod que envia é encerrado fora do ciclo do orquestrador.
+- **Testes sem o R2 de verdade:** as credenciais do ambiente ficam de fora dos testes.
 - **Tabela nova criada sem disputa:** a API e o orquestrador sobem juntos e criam as tabelas novas ao mesmo tempo. No Postgres, isso podia derrubar um dos dois na 1ª subida depois de uma atualização (ele voltava sozinho, reiniciado pelo Docker). Agora um espera o outro.
 
 ## 08/10/2026: identidade visual e front-end das páginas

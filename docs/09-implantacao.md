@@ -21,7 +21,7 @@ docker compose ps --format "table {{.Service}}\t{{.Status}}"
 - **O que muda:**
   - **Fila:** pedidos de uma mesma conta saem na ordem em que chegaram. Entre contas diferentes, a vez continua intercalada.
   - **Previsão:** usa o estado real dos pods (desligado, subindo, pronto) e as subidas medidas (seção 5.1.3).
-  - **Subida mais rápida:** os serviços sobem e o pedido é traduzido enquanto os modelos ainda baixam. O orquestrador olha a fila a cada 10 s (eram 30 s).
+  - **Subida mais rápida:** os modelos vêm só do espelho no R2 quando ele passa no teste de rede (37 GB em 44 s num host bom); os serviços sobem e o pedido é traduzido enquanto os modelos ainda baixam; o orquestrador olha a fila a cada 10 s (eram 30 s). Medido em pods reais: de 6,8 para 4,2–5,1 min até o 1º vídeo (seção 5.1.6).
   - **GPU:** a 1ª opção passa a ser a L40S, porque a RTX PRO 6000 subiu para US$ 2,49/h (seção 4, `RENDER2GO_GPUS`, e `docs/07`).
   - **Custos e planos:** `docs/11`.
 - **`apagar-historico`** apaga os pedidos, os textos dos pedidos (prompts), os trabalhos, as autorizações, os eventos, as mensagens de suporte e o registro dos pods. Também apaga os arquivos dos clientes no R2 (`entrada/` e `saida/`); o espelho dos modelos (`modelos/`) fica.
@@ -272,19 +272,19 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **No mesmo cliente, ordem de chegada:** o pedido novo espera o anterior terminar. Até 08/10 a vez era por pedido, e o pedido novo de uma conta passava na frente do antigo da mesma conta.
 - **No mesmo pedido:** os vídeos saem na ordem da lista que o cliente vê.
 
-## 5.1.6 Subida do pod (o que acontece nos ~3 min)
+## 5.1.6 Subida do pod (do pedido aprovado ao 1º vídeo)
 
 1. O orquestrador vê o pedido aprovado em até 10 s (`RENDER2GO_CICLO_S`).
-2. O RunPod liga o pod na 1ª GPU da lista com vaga. Antes de instalar, o pod passa no teste de CUDA e de rede.
-3. O pod instala o ambiente e baixa os modelos (37 GB) ao mesmo tempo. Os pacotes do download vêm primeiro.
+2. O RunPod liga o pod na 1ª GPU da lista com vaga. Antes de instalar, o pod passa no teste de CUDA e no de rede; o espelho dos modelos no R2 é testado primeiro.
+3. O pod instala o ambiente (venv, ComfyUI e Ollama) e baixa os modelos (37 GB) ao mesmo tempo. Com o espelho aprovado, os modelos vêm só do R2: em 08/10, 44 s num host bom.
 4. Com o ambiente pronto, sobem o ComfyUI e o Ollama, e o worker já traduz o pedido. Os modelos ainda podem estar baixando.
 5. Com os modelos conferidos (bytes e SHA-256), começa o 1º vídeo.
 
-- **O que levava mais tempo:**
-  - o pedido esperava até 30 s pelo ciclo do orquestrador;
-  - cada etapa esperava até 10 s pela próxima consulta ao pod;
-  - os serviços e a tradução (~1 min) só começavam depois do download.
-- **Fica para medir no próximo pedido real:** cada subida fica na tabela `geradores` e já entra na previsão. Para ver as últimas:
+- **Medido em 08/10** (`worker/evals/gpu-2026-10-08-subida/`): do pedido do pod ao 1º vídeo de 3 s pronto, **4,2 a 5,1 min**. Antes das mudanças, 6,8 min num host lento.
+- **O que mais pesa agora:**
+  - a instalação do ambiente pelo PyPI e pelo GitHub: 1 a 3 min, conforme o host;
+  - o 1º vídeo, que carrega os modelos na GPU: ~30 a 55 s.
+- **Cada subida fica registrada** na tabela `geradores` e já entra na previsão. Para ver as últimas:
   ```bash
   docker compose exec postgres psql -U gpu2go gpu2go -c "SELECT gpu, round(primeiro_video_em - criado) AS subida_s, to_timestamp(criado) AS quando FROM geradores ORDER BY criado DESC LIMIT 10"
   ```

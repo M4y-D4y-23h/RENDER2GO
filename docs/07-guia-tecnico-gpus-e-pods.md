@@ -127,22 +127,32 @@ python tools/lote_nuvem.py FOTOS --saida ENTREGA --prompt "..." --volume <id-do-
 python tools/lote_nuvem.py --saida ENTREGA --limpar
 ```
 
-## 9. Subida mais rápida no serviço (08/10/2026)
+## 9. Subida mais rápida no serviço (08/10/2026, medida em 3 pods reais)
 
-No primeiro uso real, um pedido com o pod desligado chegou a levar ~6 min até 3 vídeos prontos. A conta, pelos registros de 07 e 08/10:
+No primeiro uso real, um pedido com o pod desligado chegou a levar ~6 min até 3 vídeos prontos. As mudanças e os testes estão em `worker/evals/gpu-2026-10-08-subida/`.
 
 | Etapa | Antes | Agora |
 |---|---|---|
 | Pedido aprovado até o orquestrador ver | até 30 s (ciclo) | até 10 s (`RENDER2GO_CICLO_S`) |
-| Pod criado até o agente responder, CUDA e teste de rede | ~40–50 s | igual |
-| Instalação: apt antes de tudo (14–23 s), depois ambiente e modelos em paralelo | 77–151 s | o apt do download (aria2, curl, rsync) vem primeiro; git e ffmpeg instalam durante o download |
-| Cada espera do orquestrador pelo pod | consulta a cada 10 s (~5 s perdidos por etapa) | a cada 3 s (`CONSULTA_S`) |
-| ComfyUI e Ollama no ar (~20–25 s) e tradução do pedido (~30 s) | só depois de os 37 GB baixarem | assim que o ambiente fica pronto (estado `AMBIENTE`), durante o download |
+| Teste de rede | Hugging Face primeiro; o espelho (R2) só se ele fosse reprovado | o espelho primeiro; aprovado, a origem nem é testada |
+| Modelos (37 GB) | das duas origens ao mesmo tempo: 175 s num host com o Hugging Face a 25 MB/s | só do espelho (`so_espelho`): **44 s** (~925 MB/s) num host com o Hugging Face a 39 MB/s; 123 s num host pior |
+| apt | 14–23 s antes de qualquer download | o que o download usa fica pronto em 3 s; git e ffmpeg durante o download |
+| Cada espera do orquestrador pelo pod | consulta a cada 10 s | a cada 3 s (`CONSULTA_S`) |
+| ComfyUI e Ollama no ar e tradução do pedido | só depois de os modelos baixarem | assim que o ambiente fica pronto (estado `AMBIENTE`), durante o download |
 | 1º vídeo | depois de tudo | assim que os modelos são conferidos (estado `PRONTO`) |
 
-- **Ganho esperado:** ~1 a 1,5 min a menos por subida. A conta é por etapa; a medição real fica para o próximo pedido, na tabela `geradores` (`docs/09`, seção 5.1.6).
-- **Fail-closed continua igual:** o worker da fila só pede jobs de tradução até o estado `PRONTO` (`--modelos-prontos`). Nenhum vídeo é renderizado com modelo baixado pela metade ou sem conferir o SHA-256. Se a instalação falha ou passa do prazo de 18 min, o worker sai e o pod é encerrado.
+- **Medido (do pedido do pod ao 1º vídeo de 3 s pronto):**
+  - **6,8 min** antes, num host lento (L40S);
+  - **4,2 min** (RTX PRO 6000) e **5,1 min** (L40S) depois.
+- **O que mais pesa agora:**
+  - a instalação do ambiente pelo PyPI e pelo GitHub: 60 a 189 s, conforme o host;
+  - o 1º vídeo, que carrega os 37 GB na GPU: ~27 s na RTX PRO 6000 e ~53 s na L40S.
+- **Tentado e retirado:** guardar o ambiente pronto no R2. O envio feito pelo pod não terminou em 15 min. Se voltar, deve ser montado e enviado de uma máquina com boa saída de rede, como o CI.
+- **Fail-closed continua igual:**
+  - o worker da fila só pede jobs de tradução até o estado `PRONTO` (`--modelos-prontos`);
+  - nenhum vídeo é renderizado com modelo baixado pela metade ou sem conferir o SHA-256;
+  - se a instalação falha ou passa do prazo de 18 min, o worker sai e o pod é encerrado.
 - **O que mais encurtaria, com custo:**
   - um pod ligado no horário comercial (`docs/11`, seção 3.4);
   - um pod quente mais longo (`RENDER2GO_POD_OCIOSO_MIN`);
-  - endpoints serverless com FlashBoot (ADR 0002, Etapa 3), cuja subida pode cair para segundos quando a máquina já tem a imagem. Exigem a imagem com os modelos e outra forma de cobrança; ficam para quando houver fila constante.
+  - endpoints serverless com FlashBoot (ADR 0002, Etapa 3), cuja subida pode cair para segundos quando a máquina já tem a imagem. Exigem a imagem com os modelos; ficam para quando houver fila constante.

@@ -77,6 +77,6 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
 - US$ 0,24 no total.
 
 7. **Previsão com o estado real dos pods** (08/10/2026, noite): o orquestrador registra cada pod na tabela `geradores`, e a previsão do cliente usa a subida medida e os vídeos à frente na mesma ordem da fila (`docs/09`, seção 5.1.3).
-8. **Subida mais rápida** (08/10/2026, noite): serviços e tradução do pedido durante o download dos modelos, ciclo de 10 s e consultas de 3 s (`docs/07`, seção 9).
+8. **Subida mais rápida** (08/10/2026, noite): modelos só do espelho no R2 quando ele passa no teste de rede, serviços e tradução do pedido durante o download, ciclo de 10 s e consultas de 3 s. Medido em pods reais: 4,2–5,1 min do pedido do pod ao 1º vídeo, contra 6,8 min (`docs/07`, seção 9).
 
 **Ainda por fazer:** medir em pods reais a fila com vários clientes ao mesmo tempo.

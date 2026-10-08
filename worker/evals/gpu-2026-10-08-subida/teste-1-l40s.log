@@ -1,0 +1,26 @@
+18:29:15 1 foto(s), 1 vídeo(s) em 1 GPU(s) (NVIDIA L40S, ~24 s por vídeo): ~5 min e ~US$ 0.22 (US$ 2.49/h por GPU; subida de ~5 min incluída)
+18:29:16 espelho (R2): 4 de 4 modelo(s)
+18:29:17 saldo da conta: US$ 4.80 (reserva US$ 1.00)
+18:29:17 desligamento automático de cada pod em 28 min (limite: orçamento)
+18:29:17 MARCA pedido_de_pod: 4 s
+18:29:19 pod yoh0cecin4dyeh (NVIDIA L40S (secure)) criado, US$ 1.09/h; esperando o agente...
+18:30:18 pod yoh0cecin4dyeh (NVIDIA L40S (secure)): origem com problema (rede lenta (24.9 MB/s; mínimo 40)); usando o espelho
+18:30:18 pod yoh0cecin4dyeh (NVIDIA L40S (secure)): rede 272.5 MB/s
+18:30:18 pod yoh0cecin4dyeh (NVIDIA L40S (secure)): agente, CUDA e rede ok; instalando o worker (~1–3 min)
+18:34:04 pod yoh0cecin4dyeh (NVIDIA L40S (secure)): tempos da instalação: apt_download 3 | modelos_volume 3 | apt 23 | modelos_download 175 | ambiente_instalado 189 | modelos_conferidos 216 | compilador 218 | ambiente_pronto 221 | pronto 221 | guardado 221
+18:34:26 pod yoh0cecin4dyeh (NVIDIA L40S (secure)): pronto (1 GPU)
+18:34:26 MARCA servicos_no_ar: 314 s
+18:34:27 estado ao subir os serviços: PRONTO
+18:35:09 prompt do lote: The camera slowly dollies in toward the coffee cup, getting a close-up view. Even studio lighting with soft shadows enhances the vibrant, natural colors. The focus is sharp and detailed. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.
+18:35:09 MARCA traducao_pronta: 356 s
+18:35:09 estado depois da tradução: PRONTO
+18:35:10 MARCA modelos_prontos: 357 s
+18:35:10 tempos da instalação: apt_download 3 | modelos_volume 3 | apt 23 | modelos_download 175 | ambiente_instalado 189 | modelos_conferidos 216 | compilador 218 | ambiente_pronto 221 | pronto 221 | guardado 221
+18:35:11 servicos.log: [render2go] desligamento automático em 2 h / [render2go] checando a GPU... / [render2go] subindo o Ollama em 127.0.0.1:11434 / [render2go] subindo o ComfyUI 0 na GPU 0 em 127.0.0.1:8188 (--reserve-vram 6) / [render2go] pronto
+18:35:59 [1/1] produto-cafe-v1.mp4: ok (yoh0cecin4dyeh)
+18:35:59 pod yoh0cecin4dyeh (NVIDIA L40S (secure)): ~44 s de GPU por vídeo (medido: ~24 s)
+18:35:59 MARCA primeiro_pacote_pronto: 407 s
+18:36:00 pod yoh0cecin4dyeh (NVIDIA L40S (secure)) encerrado (fim do trabalho)
+18:36:00 fim em 6.7 min; custo estimado dos pods ~US$ 0.12; relatório em ./saida/relatorio.csv
+18:36:00 MARCAS: {'pedido_de_pod': 4.057740281999941, 'servicos_no_ar': 313.8638657440001, 'traducao_pronta': 356.07059005699966, 'modelos_prontos': 357.26281920799966, 'primeiro_pacote_pronto': 406.69017374199984}
+saida=0

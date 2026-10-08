@@ -1,0 +1,30 @@
+18:52:32 1 foto(s), 1 vídeo(s) em 1 GPU(s) (NVIDIA L40S, ~24 s por vídeo): ~5 min e ~US$ 0.22 (US$ 2.49/h por GPU; subida de ~5 min incluída)
+18:52:34 espelho (R2): 4 de 4 modelo(s)
+18:52:34 saldo da conta: US$ 4.68 (reserva US$ 1.00)
+18:52:34 desligamento automático de cada pod em 28 min (limite: orçamento)
+18:52:34 MARCA pedido_de_pod: 4 s
+18:52:37 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) criado, US$ 2.49/h; esperando o agente...
+18:53:39 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): origem com problema (rede lenta (39.0 MB/s; mínimo 40)); usando o espelho
+18:53:39 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): rede 307.1 MB/s
+18:53:39 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): agente, CUDA e rede ok; instalando o worker (~1–3 min)
+18:55:19 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): enviando 1 arquivo(s) ao espelho (R2) em segundo plano
+18:55:19 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): tempos da instalação: apt_download 4 | modelos_volume 4 | apt 26 | modelos_download 44 | ambiente_instalado 60 | modelos_conferidos 71 | ambiente_empacotado 75 | compilador 91 | ambiente_pronto 94 | pronto 94 | guardado 94
+18:55:35 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): pronto (1 GPU)
+18:55:35 MARCA servicos_no_ar: 185 s
+18:55:35 estado ao subir os serviços: PRONTO
+18:56:10 prompt do lote: The camera slowly dollies in toward the coffee cup, getting a close-up view. Even studio lighting with soft shadows highlights the cup’s details. The vibrant, natural colors and sharp focus create a clean, commercial look. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.
+18:56:10 MARCA traducao_pronta: 220 s
+18:56:11 estado depois da tradução: PRONTO
+18:56:12 MARCA modelos_prontos: 222 s
+18:56:13 tempos da instalação: apt_download 4 | modelos_volume 4 | apt 26 | modelos_download 44 | ambiente_instalado 60 | modelos_conferidos 71 | ambiente_empacotado 75 | compilador 91 | ambiente_pronto 94 | pronto 94 | guardado 94
+18:56:13 servicos.log: [render2go] desligamento automático em 2 h / [render2go] checando a GPU... / [render2go] subindo o Ollama em 127.0.0.1:11434 / [render2go] subindo o ComfyUI 0 na GPU 0 em 127.0.0.1:8188 (--reserve-vram 6) / [render2go] pronto
+18:56:39 [1/1] produto-cafe-v1.mp4: ok (0pkvv4g0x03fqv)
+18:56:40 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): ~22 s de GPU por vídeo (medido: ~12 s)
+18:56:40 MARCA primeiro_pacote_pronto: 249 s
+18:56:40 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): terminando de gravar o cache (volume/espelho)
+19:11:49 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)): AVISO: o cache não terminou de gravar; o próximo pod completa
+19:11:49 AVISO: espelho incompleto (GUARDADO); o próximo lote completa
+19:11:50 pod 0pkvv4g0x03fqv (NVIDIA RTX PRO 6000 Blackwell Server Edition (secure)) encerrado (fim do trabalho)
+19:11:50 fim em 19.3 min; custo estimado dos pods ~US$ 0.80; relatório em ./saida-a/relatorio.csv
+19:11:50 MARCAS: {'pedido_de_pod': 3.83800159600014, 'servicos_no_ar': 184.72865823600023, 'traducao_pronta': 220.2705641169996, 'modelos_prontos': 221.67789376499968, 'primeiro_pacote_pronto': 249.41788290899967}
+saida=0

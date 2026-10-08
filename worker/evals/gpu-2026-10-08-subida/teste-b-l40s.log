@@ -1,0 +1,24 @@
+19:16:17 1 foto(s), 1 vídeo(s) em 1 GPU(s) (NVIDIA L40S, ~24 s por vídeo): ~5 min e ~US$ 0.10 (US$ 1.09/h por GPU; subida de ~5 min incluída)
+19:16:18 espelho (R2): 4 de 4 modelo(s)
+19:16:18 saldo da conta: US$ 3.87 (reserva US$ 1.00)
+19:16:18 desligamento automático de cada pod em 30 min (limite: estimativa)
+19:16:18 MARCA pedido_de_pod: 3 s
+19:16:20 pod q5rumzuqlwnflc (NVIDIA L40S (secure)) criado, US$ 1.09/h; esperando o agente...
+19:17:11 pod q5rumzuqlwnflc (NVIDIA L40S (secure)): rede 73.1 MB/s
+19:17:11 pod q5rumzuqlwnflc (NVIDIA L40S (secure)): agente, CUDA e rede ok; instalando o worker (~1–3 min)
+19:19:48 pod q5rumzuqlwnflc (NVIDIA L40S (secure)): serviços no ar (1 GPU); modelos ainda baixando
+19:19:48 MARCA servicos_no_ar: 213 s
+19:19:50 estado ao subir os serviços: AMBIENTE
+19:20:28 prompt do lote: The camera slowly dollies in toward the close-up of the coffee cup, maintaining a smooth and continuous motion. Even studio lighting with soft shadows enhances the vibrant, natural colors. The focus is sharp and high in detail. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus.
+19:20:28 MARCA traducao_pronta: 253 s
+19:20:29 estado depois da tradução: PRONTO
+19:20:30 MARCA modelos_prontos: 254 s
+19:20:31 tempos da instalação: apt_download 3 | modelos_volume 3 | apt 27 | ambiente_instalado 104 | modelos_download 123 | compilador 126 | ambiente_pronto 129 | modelos_conferidos 160 | pronto 160 | guardado 160
+19:20:31 servicos.log: [render2go] desligamento automático em 2 h / [render2go] checando a GPU... / [render2go] subindo o Ollama em 127.0.0.1:11434 / [render2go] subindo o ComfyUI 0 na GPU 0 em 127.0.0.1:8188 (--reserve-vram 6) / [render2go] pronto
+19:21:22 [1/1] produto-cafe-v1.mp4: ok (q5rumzuqlwnflc)
+19:21:22 pod q5rumzuqlwnflc (NVIDIA L40S (secure)): ~45 s de GPU por vídeo (medido: ~24 s)
+19:21:22 MARCA primeiro_pacote_pronto: 307 s
+19:21:24 pod q5rumzuqlwnflc (NVIDIA L40S (secure)) encerrado (fim do trabalho)
+19:21:24 fim em 5.1 min; custo estimado dos pods ~US$ 0.09; relatório em ./saida-b/relatorio.csv
+19:21:24 MARCAS: {'pedido_de_pod': 2.9712130059997435, 'servicos_no_ar': 213.18677144199955, 'traducao_pronta': 252.6507002440003, 'modelos_prontos': 254.46114502799992, 'primeiro_pacote_pronto': 306.9983449909996}
+saida=0
