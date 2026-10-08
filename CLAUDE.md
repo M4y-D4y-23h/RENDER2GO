@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-Projeto Render2Go: plataforma web de geração de vídeo com IA (ver `README.md`).
-**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); imagem montada pelo RunPod a partir do GitHub (ADR 0002, aceito); medições pendentes da primeira build lá. **Caminho escolhido (docs/05): A, serviço de marketing com IA para pequenos negócios**: foco em **lotes de 50+ fotos com um pedido só**, renderizados em vários pods (docs/05, seção 5.1; `lote.py`, `acabamento.py`, presets v2, receitas); fase 2 (`lote_nuvem.py`) validada em GPU; **fase 3 implantada** em `servico/` (API, fila, orquestrador, páginas; ADR 0004 proposto) em https://app.render2go.com (Hetzner, docs/09; 1º lote real em 08/10); aviso de pessoas, histórico e teste gratuito com limite por IP e agrupamento; filtro de imagem reservado (ADR 0005 proposto); Etapas 4–6 em pausa. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
+Projeto Render2Go (antes GPU2GO): serviço de vídeos curtos com IA para pequenos negócios (ver `README.md`; mudanças em `CHANGELOG.md`).
+**Status:** Etapas 1 e 2 concluídas em `worker/` e medidas numa RTX 4090 (`worker/evals/gpu-2026-10-05/`). T2V de produção: A14B fp8 + Lightning (ADR 0001, aceito). Etapa 3: código pronto (handler serverless, endpoints como código, bench); imagem montada pelo RunPod a partir do GitHub (ADR 0002, aceito); medições pendentes da primeira build lá. **Caminho escolhido (docs/05): A, serviço de marketing com IA para pequenos negócios**: foco em **lotes de 50+ fotos com um pedido só**, renderizados em vários pods (docs/05, seção 5.1; `lote.py`, `acabamento.py`, presets v2, receitas); fase 2 (`lote_nuvem.py`) validada em GPU; **fase 3 implantada** em `servico/` (API, fila, orquestrador, páginas; ADR 0004 proposto) em https://app.render2go.com (Hetzner, docs/09; 1º lote real em 08/10); aviso de pessoas, histórico, auditoria da autorização, teste gratuito (por dispositivo e por IP, em grupo), plano interno, previsão para o cliente, `/suporte` com e-mail, aviso de cookies e estilo livre; filtro de imagem reservado (ADR 0005 proposto); Etapas 4–6 em pausa. Decisões D1–D5 e D7 da Etapa 0 pendentes (docs/04); D1 (termos do RunPod) segue bloqueando qualquer uso adulto.
 
 ## Fontes de verdade
 
@@ -44,6 +44,9 @@ Projeto Render2Go: plataforma web de geração de vídeo com IA (ver `README.md`
 - Fidelidade do compilador (precisa de Ollama): `python tools/eval_compiler.py --out saida/fid` (ver `worker/README.md`)
 
 ## Convenções
+
+- Nome: Render2Go. Pacotes `render2go_worker`/`render2go_servico`, variáveis `RENDER2GO_*` (as antigas `GPU2GO_*` ainda valem, por compatibilidade, em `render2go_worker/__init__.py`). Ficam com o nome antigo, de propósito: bucket R2 `gpu2go`, banco/usuário Postgres `gpu2go`, volumes `gpu2go_*` do compose, endereço do repositório e os registros em `worker/evals/gpu-*`.
+- Toda mudança relevante entra no `CHANGELOG.md`.
 
 - Python 3.12 + `uv` + `ruff` + `pytest`; TypeScript no frontend.
 - Documentação e textos para o usuário em pt-BR.

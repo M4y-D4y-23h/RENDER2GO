@@ -2,6 +2,40 @@
 
 Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as fotos pela página, o aprovador libera, os pods renderizam e o cliente baixa os vídeos.
 
+## 0. Servidor já instalado: migrar para o nome Render2Go (08/10/2026)
+
+O projeto passou a se chamar Render2Go, e o código novo está na `main`. No servidor:
+
+```bash
+cd ~/GPU2GO
+git fetch origin && git checkout main && git pull
+cd servico/implantacao
+docker compose -p gpu2go down             # para os contêineres com o nome antigo; os dados ficam nos volumes
+sed -i 's/^GPU2GO_/RENDER2GO_/' .env      # opcional: os nomes antigos continuam valendo
+docker compose up -d --build
+docker compose ps --format "table {{.Service}}\t{{.Status}}"
+```
+
+- **O que não muda:**
+  - o banco, o estado do orquestrador e os certificados, porque o `compose.yaml` usa os mesmos volumes (`gpu2go_*`);
+  - o bucket R2 `gpu2go`;
+  - o usuário e o banco Postgres `gpu2go`.
+- **Aviso esperado:** o Compose mostra `volume "gpu2go_postgres" already exists but was created for project "gpu2go"`. Ele só informa e segue usando o volume.
+- **Repositório no GitHub (opcional):** para trocar o nome do repositório, vá em Settings → General → Repository name. O GitHub redireciona o endereço antigo, mas atualize o servidor com `git remote set-url origin git@github.com:M4y-D4y-23h/<nome-novo>.git`.
+
+## 0.1 Rodar 24 horas sem o PowerShell aberto
+
+O serviço já roda sozinho no servidor. O PowerShell é só o controle remoto.
+- **Fechar a conexão não para nada:**
+  - os contêineres sobem com `docker compose up -d` (o `-d` solta do terminal) e têm `restart: unless-stopped`;
+  - o Docker liga junto com o servidor (`systemctl is-enabled docker` responde `enabled`), então, depois de um reinício, tudo volta sozinho;
+  - `docker compose logs -f` só mostra os registros, e Ctrl+C fecha a visualização sem parar o serviço.
+- **O que para o serviço:**
+  - `docker compose down` ou `docker compose stop`;
+  - desligar o servidor no painel da Hetzner;
+  - `docker compose up` sem o `-d`, que prende o serviço ao terminal: se o terminal fechar, ele para. Use sempre `-d`.
+- **Conferir de fora:** abra https://app.render2go.com com o PowerShell fechado. Para checar a saúde: `curl -s https://app.render2go.com/saude`.
+
 ## 1. O que roda onde
 
 ```
@@ -141,7 +175,9 @@ Para testar sem os limites do teste gratuito e sem esperar revisão, cadastre um
 
 ## 5.1.2 Suporte por e-mail
 
-A página do cliente tem um formulário de suporte.
+A página do cliente tem um link para **https://app.render2go.com/suporte**. A página de suporte funciona de dois jeitos:
+- **com o código de acesso** (o navegador já conectado): a mensagem vai ligada à conta;
+- **sem código** (quem perdeu o código ou não consegue entrar): o e-mail é obrigatório, e os limites são menores (2 por hora por dispositivo; 3 por hora e 10 por dia por IP).
 - **Toda mensagem fica no banco** e aparece no `/aprovar`, em "Mensagens de suporte". Isso vale mesmo sem e-mail configurado.
 - **Limite contra spam:** 3 mensagens por hora e 10 por dia por dispositivo; 5 por hora e 20 por dia por IP; 5 por hora e 15 por dia por cliente.
 - **Para receber no seu e-mail**, configure no `.env`:
@@ -167,7 +203,19 @@ A página do cliente tem um formulário de suporte.
 - **Gerando:** "termina em cerca de N min", pela média dos últimos vídeos prontos.
 - **Sempre:** um ponto pulsando e "Atualizado às HH:MM:SS". A página se atualiza sozinha a cada 10 s. Nenhuma etapa interna aparece.
 - **Vídeos prontos:** o nome abre o vídeo numa aba nova; "baixar" salva o arquivo.
+- **Estilo "Livre (descreva o que quiser)":** o primeiro da lista, para pedidos que não se encaixam nos outros. Ele usa só ritmo e estilo naturais, e o texto do cliente decide o movimento (`worker/presets/receitas.v2.json`). Foto com pessoa continua exigindo a autorização, e o `/aprovar` avisa.
 - **Modelo de geração:** a página mostra os modelos oferecidos (hoje só o Wan 2.2) e o pedido guarda qual foi usado. Para acrescentar um modelo, veja `servico/src/render2go_servico/modelos.py`. O worker recusa modelo que não conhece.
+
+## 5.1.4 Aviso de cookies
+
+- **Quando aparece:** em todo navegador novo, na página do cliente e no `/suporte`.
+- **Opções:** "Aceitar todos", "Só os necessários" ou "Gerenciar".
+- **Categorias:**
+  - **Necessários**, sempre ativos: manter o cliente conectado com o código, segurança e prevenção de abuso (identificador do dispositivo, limite do teste) e lembrar a escolha;
+  - **Estatísticas e marketing:** desligados, e nada disso carrega hoje. Se um dia você puser Google Analytics, Plausible ou pixel de anúncio, ele só pode carregar quando a escolha guardada permitir (`render2go-cookies` no navegador).
+- **Registro:** cada escolha fica gravada no servidor (tabela `cookies`: dispositivo, IP, navegador, versão e escolha), como prova do consentimento.
+- **Mudar a escolha:** pelo link "Preferências de cookies", no rodapé.
+- **Falta:** a política de privacidade e os termos de uso, que devem explicar esses dados (LGPD).
 
 ## 5.2 O que fica guardado
 

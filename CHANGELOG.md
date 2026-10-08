@@ -1,0 +1,111 @@
+# Histórico de mudanças
+
+Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
+
+## 08/10/2026: Render2Go no ar, segurança e experiência do cliente
+
+### Implantação
+- **Serviço em produção** em https://app.render2go.com:
+  - servidor Hetzner CX23 em Nuremberg;
+  - Docker Compose com API, orquestrador, Postgres e Caddy (HTTPS automático);
+  - guia passo a passo no [`docs/09`](docs/09-implantacao.md).
+- **1º lote real** (9 fotos de teste): pod pronto em 2 min 40 s, 9 vídeos de 3 s conferidos, pod encerrado 3,5 min depois do último vídeo, US$ 0,24 no total.
+- **Correções achadas na implantação:**
+  - a consulta de preço das GPUs leva a chave do RunPod (no servidor não há o proxy que a incluía);
+  - a imagem não copia mais o `.env`;
+  - o orquestrador funciona com código baixado sob `umask 077`;
+  - o orquestrador tem um healthcheck próprio;
+  - com a fila vazia, não há consulta de preço a cada 30 s.
+
+### Nome do projeto: GPU2GO → Render2Go
+- **Trocou:**
+  - pacotes `render2go_worker` e `render2go_servico`;
+  - comandos `render2go-*` e imagens;
+  - variáveis `RENDER2GO_*`;
+  - caminhos `/opt/render2go` e `~/.cache/render2go`;
+  - páginas e documentação.
+- **Compatibilidade:** variáveis com o prefixo antigo `GPU2GO_*` continuam valendo, sem sobrescrever as novas. O navegador migra o código de acesso e o identificador do dispositivo.
+- **Mantidos de propósito:**
+  - o bucket R2 `gpu2go`, porque renomear exigiria copiar o espelho de 36,6 GB;
+  - o banco e o usuário Postgres `gpu2go` e os volumes da 1ª implantação, onde estão os dados;
+  - o endereço do repositório no GitHub;
+  - os registros históricos dos testes em GPU (`worker/evals/gpu-*`).
+- Os passos para migrar o servidor estão no [`docs/09`](docs/09-implantacao.md), seção 0.
+
+### Segurança e auditoria
+- **Filtro de texto C1 v2** (`worker/filtros/c1.v2.json`): bloqueia também despir, roupa íntima e movimentos sexualizados ("tire a roupa", "sem roupa", "remove her bikini", "rebolando"…), inclusive com as letras separadas. Palavras comuns em marketing, como gostoso, sedução e decote, ficaram de fora.
+- **Aviso "contém pessoas" no `/aprovar`:**
+  - o detector roda no próprio servidor: YOLOX-tiny para pessoas, inclusive de costas, e YuNet para rostos;
+  - a página mostra um selo por foto e um resumo do lote, em vermelho quando falta a autorização.
+- **Registro de auditoria da autorização das pessoas das fotos:**
+  - texto exibido e sua versão, com o SHA-256;
+  - conta do cliente, IP, dispositivo, navegador, fuso e hora do clique;
+  - SHA-256 de cada foto, que fica no banco mesmo depois que a foto é apagada;
+  - exportação em JSON por pedido;
+  - a caixa não pede nome.
+- **ADR 0005 (proposto):** reserva um filtro de imagem nas fotos e nos quadros dos vídeos.
+- **Fotos de entrada apagadas** do R2 assim que o pedido fecha.
+
+### Teste gratuito e custo
+- **Regras:**
+  - um pedido só, com até 10 fotos, vídeos de 3 s em 480p;
+  - até 10 fotos por dispositivo e 50 por rede (IP), para que várias pessoas de uma empresa consigam testar.
+- **Agrupamento:** os testes esperam juntar 20 vídeos ou 10 minutos antes de subir um pod. Dez testes de 1 foto pagam uma subida em vez de dez.
+- **Sinais no `/aprovar`:** tabela de dispositivos (troca de IP, vários códigos, mesmo navegador com outro identificador) e uso por IP.
+- **Plano interno** (só o dono): sem limites e com aprovação automática; os filtros continuam valendo.
+
+### Página do cliente
+- **Previsão de tempo** sem expor as etapas internas ("começa em cerca de N min", "termina em cerca de N min"), com um indicador de atividade.
+- **Vídeos:** o nome abre numa aba nova; "baixar" salva o arquivo.
+- **Modelo de geração visível** (hoje o Wan 2.2), pronto para mais modelos; o gerador recusa modelo que não tem.
+- **Estilo "Livre (descreva o que quiser)"** (`receitas.v2.json`), para pedidos que não se encaixam nos outros estilos.
+- **Suporte** em https://app.render2go.com/suporte:
+  - funciona com ou sem código de acesso;
+  - tem limite contra spam;
+  - envia por e-mail quando configurado (SMTP) e guarda a mensagem no `/aprovar`.
+- **Aviso de cookies** em navegador novo: aceitar todos, só os necessários ou gerenciar. A escolha fica registrada no servidor.
+
+### `/aprovar` (revisão)
+- **Histórico** de pedidos feitos, aprovados e recusados, com cliente, IP, dispositivo, modelo, autorização e andamento.
+- **Desativar o código** de um cliente.
+- **Mensagens de suporte.**
+
+## 07/10/2026: escala, subida rápida e fase 3
+
+- **GPUs medidas:**
+  - RTX PRO 6000: ~28 s por vídeo de 5 s em 480p, 1,9× a L40S pelo mesmo custo; virou a 1ª opção;
+  - 720p: ~93 s;
+  - 7 s de vídeo: ~160 s.
+- **Pods:**
+  - só nuvem secure, limite de 2 h e desligamento automático pelo menor entre tempo, orçamento e saldo;
+  - teste de rede na subida, que descarta servidor lento;
+  - troca automática de pod que falha ou fica lento.
+- **Subida mais rápida:** download em partes (aria2) e SHA-256 em paralelo. A instalação caiu de ~5,5 min para 91 s.
+- **Espelho dos modelos no R2** (36,6 GB) como reserva do Hugging Face; o Network Volume de teste foi apagado.
+- **Pods automáticos pelo tamanho do lote** (`--pods auto`) e prazo de entrega (`--prazo`).
+- **Fase 2 validada em pods reais:** 8 vídeos, 16,9 min, ~US$ 0,40.
+- **Fase 3:**
+  - API, banco e fila (pagos antes de testes, clientes intercalados);
+  - conferência do 1º quadro, para que um vídeo trocado nunca chegue ao cliente;
+  - worker da fila, orquestrador de pods e páginas do cliente e do aprovador;
+  - ADR 0004 (filtro C1 e revisão humana), CI e guia de implantação.
+- **Documentos:** [`docs/07`](docs/07-guia-tecnico-gpus-e-pods.md) (guia técnico) e [`docs/08`](docs/08-varios-clientes-e-demanda-alta.md) (vários clientes e isolamento).
+
+## 06/10/2026: caminho A (marketing para pequenos negócios)
+
+- **Etapa 2 concluída:**
+  - medições numa RTX 4090;
+  - compilador I2V v5 e T2V v3;
+  - ADR 0001 aceito (T2V A14B fp8 + Lightning).
+- **Etapa 3:** handler serverless, endpoints como código, bench e custos; imagem montada pelo RunPod a partir do GitHub (ADR 0002 aceito).
+- **Caminho A escolhido** ([`docs/05`](docs/05-analise-de-negocio.md)):
+  - presets v2, receitas e lote (pasta de fotos + um pedido);
+  - preparo da foto, folha de conferência e acabamento (interpolação, altura, zoom);
+  - várias GPUs por pod.
+- **Rodada L40S:** ~55 s por vídeo. Análise de qualidade, velocidade e custo em [`docs/06`](docs/06-qualidade-velocidade-custo.md); ADR 0003 (arquitetura em escala).
+
+## 05/10/2026: proposta e primeiras etapas
+
+- **Proposta:** verificações, arquitetura, segurança e conformidade, e plano ([`docs/01`](docs/01-verificacoes.md) a [`docs/04`](docs/04-plano-de-implementacao.md)).
+- **Etapa 1:** imagem Docker do worker (ComfyUI 0.38.0) e script de envio do workflow.
+- **Etapa 2 (início):** presets, compilador versionado, candidatos T2V e "continuar vídeo".
