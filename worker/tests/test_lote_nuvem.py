@@ -180,7 +180,9 @@ def test_only_one_pod_writes_the_volume_cache_and_waits_for_it(
     )
     assert code == ln.EXIT_OK
     grava = [e.get("RENDER2GO_VOLUME_GRAVA") for e in prov.envs]
-    assert grava[:2] == ["1", None] and grava.count("1") == 2  # p1 e o substituto dele
+    # p1 gravava; quando ele cai, o papel passa para o próximo pod criado (o substituto dele ou o
+    # do outro posto, conforme a ordem das threads): sempre um gravador só, e o papel não se perde
+    assert len(grava) == 3 and grava[0] == "1" and grava.count("1") == 2
     assert "cache gravado no volume" in capsys.readouterr().err
 
 
