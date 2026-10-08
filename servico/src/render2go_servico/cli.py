@@ -44,10 +44,14 @@ def apagar_historico(banco, armazenamento, confirmar: bool, cookies: bool, forca
     if armazenamento is None:
         print("R2 não configurado (RENDER2GO_R2_*): os arquivos ficam como estão")
     else:
-        for prefixo in PREFIXOS_CLIENTES:
-            achados = armazenamento.listar(prefixo)
-            print(f"no R2: {len(achados)} arquivo(s) em {prefixo}")
-            arquivos += achados
+        try:
+            for prefixo in PREFIXOS_CLIENTES:
+                achados = armazenamento.listar(prefixo)
+                print(f"no R2: {len(achados)} arquivo(s) em {prefixo}")
+                arquivos += achados
+        except Exception as e:  # noqa: BLE001 (o banco é apagado do mesmo jeito)
+            print(f"AVISO: não deu para listar o R2 ({e}); os arquivos ficam (os vídeos somem em 30 dias)")
+            armazenamento, arquivos = None, []
     if n := banco.em_geracao():
         print(f"AVISO: {n} pedido(s) em geração agora" + ("" if forcar else "; espere terminar ou use --forcar"))
         if not forcar:

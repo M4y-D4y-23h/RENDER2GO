@@ -46,3 +46,38 @@ def test_cleanup_refuses_while_an_order_is_generating(banco, capsys):
     assert banco.lote(lid) is not None and "espere terminar" in capsys.readouterr().out
     assert cli.apagar_historico(banco, None, confirmar=True, cookies=False, forcar=True) == 0
     assert banco.lote(lid) is None
+
+
+def test_cleanup_still_clears_the_database_when_the_storage_listing_fails(banco, capsys):
+    _, _, lid = _historico(banco)
+
+    class SemPermissao:
+        def listar(self, prefixo):
+            raise OSError("HTTP 403")
+
+        def apagar(self, chave):
+            raise AssertionError("não apaga sem a listagem")
+
+    assert cli.apagar_historico(banco, SemPermissao(), confirmar=True, cookies=False, forcar=False) == 0
+    assert "não deu para listar o R2" in capsys.readouterr().out and banco.lote(lid) is None
+
+
+def test_schema_creation_runs_twice_at_the_same_time(banco):
+    import threading
+
+    with banco.tx() as c:  # como na 1ª subida depois de uma atualização: tabela nova ainda não existe
+        c.run("DROP TABLE geradores")
+    erros = []
+
+    def criar():
+        try:
+            banco.criar_esquema()
+        except Exception as e:  # noqa: BLE001
+            erros.append(e)
+
+    ts = [threading.Thread(target=criar) for _ in range(4)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert erros == []

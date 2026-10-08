@@ -95,6 +95,8 @@ INICIADOS_DO_CLIENTE = (
     " AND m.status IN ('aprovado', 'processando') AND k.tipo = 'render' AND k.status <> 'pendente'"
 )
 TIPOS_JOB = ("compilar", "render")
+# dois CREATE TABLE IF NOT EXISTS ao mesmo tempo podem falhar no Postgres (pg_type duplicado)
+TRAVA_ESQUEMA = 20261008
 # tabelas do histórico (pedidos e tudo o que vem deles), na ordem de apagar (chaves estrangeiras)
 HISTORICO = ("jobs", "consentimentos", "fotos", "eventos", "lotes", "suporte", "geradores")
 # colunas que entraram depois da primeira implantação: (tabela, coluna, tipo)
@@ -166,6 +168,8 @@ class Banco:
 
     def criar_esquema(self) -> None:
         with self.tx() as c:
+            if self.pg:  # a API e o orquestrador sobem juntos: um cria as tabelas novas, o outro espera
+                c.run("SELECT pg_advisory_xact_lock(?)", (TRAVA_ESQUEMA,))
             for sql in ESQUEMA:
                 c.run(sql if self.pg else sql.replace("DOUBLE PRECISION", "REAL").replace("BIGINT", "INTEGER"))
             for tabela, coluna, tipo in COLUNAS_NOVAS:
