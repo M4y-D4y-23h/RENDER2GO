@@ -98,6 +98,11 @@ def _esperar(cond, s=20):
 
 def test_no_work_no_pods(orq):
     o = orq()
+
+    def sem_consulta(gpu, nuvem):
+        raise AssertionError("fila vazia não consulta o preço")
+
+    o.provedor.preco = sem_consulta
     assert o.ciclo() == {"desejados": 0, "ativos": 0, "subindo": 0}
     assert o.provedor.criados == []
 

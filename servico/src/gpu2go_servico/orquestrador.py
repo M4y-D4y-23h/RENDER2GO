@@ -227,9 +227,11 @@ class Orquestrador:
         with self.lock:
             existentes = len(self.ativos) + self.subindo
         faltam = max(0, querem - existentes)
+        subiu = 0
+        if not faltam:  # fila vazia ou já atendida: sem consulta de preço a cada 30 s
+            return {"desejados": querem, "ativos": len(self.ativos), "subindo": self.subindo}
         usd_h = self._preco()
         gasto_h = sum(p.pod.info.usd_h for p in self.ativos.values()) + self.subindo * usd_h
-        subiu = 0
         for _ in range(faltam):
             if gasto_h + usd_h > self.cfg.max_usd_h:
                 _log(f"teto de US$ {self.cfg.max_usd_h:.2f}/h: não sobe mais pods agora")
