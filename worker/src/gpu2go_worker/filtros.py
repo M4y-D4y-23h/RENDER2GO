@@ -2,7 +2,7 @@
 
 Normaliza o texto (minúsculas, sem acento, troca de números e símbolos usados para
 disfarçar letras, pontuação vira espaço) e procura termos e expressões inteiras de
-`filtros/c1.v1.json`. Bloqueia na dúvida (fail-closed). Nunca usa o compilador, que é um
+`filtros/c1.v2.json`. Bloqueia na dúvida (fail-closed). Nunca usa o compilador, que é um
 modelo abliterado.
 
 O C2 (classificador) ainda não existe. No modo `c1-revisao-humana` (ADR 0004), o C1 roda
@@ -21,7 +21,7 @@ from pathlib import Path
 from gpu2go_worker import WORKER_DIR
 from gpu2go_worker.safety import Decision, Filters
 
-ARQUIVO = WORKER_DIR / "filtros" / "c1.v1.json"
+ARQUIVO = WORKER_DIR / "filtros" / "c1.v2.json"
 MODO = "c1-revisao-humana"
 DISFARCE = str.maketrans(
     {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"}
@@ -49,7 +49,8 @@ def avaliar(texto: str) -> Decision:
     colado = " " + re.sub(r"(?<=\b\w) (?=\w\b)", "", alvo.strip()) + " "
     for cat, termos in _termos().items():
         for termo in termos:
-            if f" {termo} " in alvo or f" {termo} " in colado:
+            junto = termo.replace(" ", "")  # "s e m r o u p a" colado vira "semroupa"
+            if f" {termo} " in alvo or f" {termo} " in colado or f" {junto} " in colado:
                 return Decision(False, f"C1: termo bloqueado ({cat})")
     return Decision(True, "C1: ok")
 
