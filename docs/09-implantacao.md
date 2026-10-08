@@ -2,7 +2,49 @@
 
 Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as fotos pela página, o aprovador libera, os pods renderizam e o cliente baixa os vídeos.
 
-## 0. Servidor já instalado: migrar para o nome Render2Go (08/10/2026)
+## 0. Atualização de 08/10/2026 (noite): fila, previsão, subida, GPU e limpeza do histórico
+
+No servidor:
+
+```bash
+cd ~/GPU2GO && git pull
+cd servico/implantacao
+docker compose up -d --build
+# limpeza do histórico dos testes: primeiro só mostra o que seria apagado, depois apaga
+docker compose exec api render2go-servico apagar-historico
+docker compose exec api render2go-servico apagar-historico --confirmar
+# recria os contêineres: os registros (logs) antigos de cada um somem junto
+docker compose up -d --force-recreate
+docker compose ps --format "table {{.Service}}\t{{.Status}}"
+```
+
+- **O que muda:**
+  - **Fila:** pedidos de uma mesma conta saem na ordem em que chegaram. Entre contas diferentes, a vez continua intercalada.
+  - **Previsão:** usa o estado real dos pods (desligado, subindo, pronto) e as subidas medidas (seção 5.1.3).
+  - **Subida mais rápida:** os serviços sobem e o pedido é traduzido enquanto os modelos ainda baixam. O orquestrador olha a fila a cada 10 s (eram 30 s).
+  - **GPU:** a 1ª opção passa a ser a L40S, porque a RTX PRO 6000 subiu para US$ 2,49/h (seção 4, `RENDER2GO_GPUS`, e `docs/07`).
+  - **Custos e planos:** `docs/11`.
+- **`apagar-historico`** apaga os pedidos, os textos dos pedidos (prompts), os trabalhos, as autorizações, os eventos, as mensagens de suporte e o registro dos pods. Também apaga os arquivos dos clientes no R2 (`entrada/` e `saida/`); o espelho dos modelos (`modelos/`) fica.
+  - Os **clientes e os códigos de acesso continuam valendo**. As escolhas de cookies ficam, salvo com `--cookies`.
+  - Com um pedido em geração, ele recusa; espere terminar (ou use `--forcar`).
+  - Depois de apagar, ele reescreve as tabelas (`VACUUM FULL`), para as linhas apagadas não ficarem no disco do banco.
+  - Se você fez backups com `pg_dump` (seção 5), apague os arquivos `backup-*.sql.gz` antigos também.
+- **Pods do RunPod:** não guardam nada. O disco de cada pod é apagado quando ele é encerrado.
+
+## 0.1 Rodar 24 horas sem o PowerShell aberto
+
+O serviço já roda sozinho no servidor. O PowerShell é só o controle remoto.
+- **Fechar a conexão não para nada:**
+  - os contêineres sobem com `docker compose up -d` (o `-d` solta do terminal) e têm `restart: unless-stopped`;
+  - o Docker liga junto com o servidor (`systemctl is-enabled docker` responde `enabled`), então, depois de um reinício, tudo volta sozinho;
+  - `docker compose logs -f` só mostra os registros, e Ctrl+C fecha a visualização sem parar o serviço.
+- **O que para o serviço:**
+  - `docker compose down` ou `docker compose stop`;
+  - desligar o servidor no painel da Hetzner;
+  - `docker compose up` sem o `-d`, que prende o serviço ao terminal: se o terminal fechar, ele para. Use sempre `-d`.
+- **Conferir de fora:** abra https://app.render2go.com com o PowerShell fechado. Para checar a saúde: `curl -s https://app.render2go.com/saude`.
+
+## 0.2 Servidor já instalado: migrar para o nome Render2Go (08/10/2026, já feito)
 
 O projeto passou a se chamar Render2Go, e o código novo está na `main`. No servidor:
 
@@ -22,19 +64,6 @@ docker compose ps --format "table {{.Service}}\t{{.Status}}"
   - o usuário e o banco Postgres `gpu2go`.
 - **Aviso esperado:** o Compose mostra `volume "gpu2go_postgres" already exists but was created for project "gpu2go"`. Ele só informa e segue usando o volume.
 - **Repositório no GitHub (opcional):** para trocar o nome do repositório, vá em Settings → General → Repository name. O GitHub redireciona o endereço antigo, mas atualize o servidor com `git remote set-url origin git@github.com:M4y-D4y-23h/<nome-novo>.git`.
-
-## 0.1 Rodar 24 horas sem o PowerShell aberto
-
-O serviço já roda sozinho no servidor. O PowerShell é só o controle remoto.
-- **Fechar a conexão não para nada:**
-  - os contêineres sobem com `docker compose up -d` (o `-d` solta do terminal) e têm `restart: unless-stopped`;
-  - o Docker liga junto com o servidor (`systemctl is-enabled docker` responde `enabled`), então, depois de um reinício, tudo volta sozinho;
-  - `docker compose logs -f` só mostra os registros, e Ctrl+C fecha a visualização sem parar o serviço.
-- **O que para o serviço:**
-  - `docker compose down` ou `docker compose stop`;
-  - desligar o servidor no painel da Hetzner;
-  - `docker compose up` sem o `-d`, que prende o serviço ao terminal: se o terminal fechar, ele para. Use sempre `-d`.
-- **Conferir de fora:** abra https://app.render2go.com com o PowerShell fechado. Para checar a saúde: `curl -s https://app.render2go.com/saude`.
 
 ## 1. O que roda onde
 
@@ -117,9 +146,12 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 | `RENDER2GO_WORKER_TOKENS` | Token dos pods; o orquestrador usa o primeiro |
 | `RENDER2GO_API_URL` | `https://` + domínio; é por ela que os pods falam com a API |
 | `RUNPOD_API_KEY` | O orquestrador cria e encerra pods |
-| `RENDER2GO_MAX_PODS`, `RENDER2GO_MAX_USD_H` | Teto de pods e de gasto por hora |
+| `RENDER2GO_MAX_PODS`, `RENDER2GO_MAX_USD_H` | Teto de pods e de gasto por hora (o gasto de um pod novo conta pelo preço da GPU mais cara da lista que tiver vaga) |
 | `RENDER2GO_PRAZO_MIN` | Opcional: prazo de entrega em minutos (mais pods, mais custo) |
 | `RENDER2GO_AGRUPAR_TESTE_MIN`, `RENDER2GO_AGRUPAR_TESTE_VIDEOS` | Opcional: testes gratuitos esperam juntar 20 vídeos ou 10 min antes de subir um pod (padrões) |
+| `RENDER2GO_GPUS` | Opcional: GPUs em ordem de preferência, separadas por vírgula, com o nome exato do RunPod. Padrão: `NVIDIA L40S,NVIDIA RTX 6000 Ada Generation,NVIDIA RTX PRO 6000 Blackwell Server Edition,NVIDIA GeForce RTX 4090`. Para trocar: edite e rode `docker compose up -d orquestrador` |
+| `RENDER2GO_CICLO_S` | Opcional: de quantos em quantos segundos o orquestrador olha a fila (padrão 10, mínimo 5) |
+| `RENDER2GO_POD_OCIOSO_MIN` | Opcional: minutos que o pod fica ligado esperando o próximo pedido depois que a fila esvazia (padrão 3). Mais tempo = menos subidas, mais custo parado |
 
 **Banco gerenciado (opcional):** troque o Postgres local por um serviço como Neon ou Supabase. Basta pôr `RENDER2GO_DB_URL` no `.env` e apagar as linhas `RENDER2GO_DB_URL` do `compose.yaml`. O esquema é criado sozinho na primeira subida.
 
@@ -146,7 +178,14 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
   ```bash
   docker compose exec -T postgres pg_dump -U gpu2go gpu2go | gzip > backup-$(date +%F).sql.gz
   ```
+- **Apagar o histórico** (pedidos, prompts, auditoria, suporte e arquivos dos clientes; os clientes ficam):
+  ```bash
+  docker compose exec api render2go-servico apagar-historico              # só mostra o que seria apagado
+  docker compose exec api render2go-servico apagar-historico --confirmar  # apaga
+  ```
+  Antes de usar com clientes de verdade, confira os termos de uso: o registro de autorização (auditoria) também é apagado.
 - **Gasto:** o painel do RunPod mostra os pods. O orquestrador respeita `RENDER2GO_MAX_USD_H` e o saldo da conta, e cada pod se desliga sozinho em no máximo 2 h.
+- **Trocar a GPU:** `RENDER2GO_GPUS` no `.env` e `docker compose up -d orquestrador`. Os preços do dia saem em `docker compose exec orquestrador python -m render2go_worker.runpod_pods disponibilidade --gpu "NVIDIA L40S"`.
 
 ## 5.1 Teste gratuito e custo
 
@@ -168,8 +207,8 @@ Para testar sem os limites do teste gratuito e sem esperar revisão, cadastre um
 - O filtro de conteúdo (C1), o aviso de pessoas e o registro de autorização continuam valendo.
 - Não entregue esse código a clientes; se vazar, desative no histórico.
 - **Agrupamento:** com só testes na fila e nenhum pod ligado, o orquestrador espera juntar 20 vídeos ou 10 min.
-  - Cada subida de pod custa ~US$ 0,20 (subida + 3 min de pod quente), e um vídeo de teste ~US$ 0,015.
-  - Dez pedidos de 1 foto em horários diferentes custariam ~US$ 2,15; juntos, ~US$ 0,35.
+  - Cada subida de pod custa ~US$ 0,11 na L40S (subida + 3 min de pod quente), e um vídeo de teste ~US$ 0,011.
+  - Dez pedidos de 1 foto em horários diferentes custariam ~US$ 1,24; juntos, ~US$ 0,23.
   - Pedidos pagos sobem na hora (e levam os testes da fila junto).
 - **O IP vem do Caddy:** ele troca o `X-Forwarded-For` recebido de fora pelo IP real da conexão.
   - Se um dia o proxy da Cloudflare (nuvem laranja) for ligado, o IP passa a ser o da Cloudflare, e é preciso ler o `CF-Connecting-IP`.
@@ -201,8 +240,13 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 ## 5.1.3 O que o cliente vê enquanto espera
 
 - **Em análise:** "começa em até N min". O tempo vem de `RENDER2GO_PRAZO_REVISAO_MIN` (padrão 60); ajuste ao seu ritmo de revisão.
-- **Na fila:** "começa em cerca de N min". A conta considera o preparo do gerador, a espera de juntar testes gratuitos e os vídeos à frente.
-- **Gerando:** "termina em cerca de N min", pela média dos últimos vídeos prontos.
+- **Na fila:** "começa em cerca de N min". Desde 08/10 (noite), a conta usa o estado real dos pods, que o orquestrador registra na tabela `geradores`:
+  - **nenhum pod ligado:** a subida inteira. É a mediana das últimas 10 subidas medidas, da decisão de ligar o pod até o 1º vídeo começar, com a tradução do pedido; até haver 3 medidas, vale 4 min. Soma-se o ciclo do orquestrador e, nos testes grátis, a espera de juntar testes;
+  - **pod subindo:** só o que falta da subida;
+  - **pod pronto:** a tradução do pedido (~45 s), se ainda não foi feita;
+  - **vídeos à frente:** contados na mesma ordem da fila (seção 5.1.5).
+  - Antes, um pod desligado havia menos de 10 min contava como ligado, e a página prometia "em instantes" para um pedido que ainda ia esperar a subida inteira.
+- **Gerando:** "termina em cerca de N min", pela média dos últimos vídeos prontos e pelos vídeos de outros clientes que se intercalam com os dele.
 - **Sempre:** um ponto pulsando e "Atualizado às HH:MM:SS". A página se atualiza sozinha a cada 10 s. Nenhuma etapa interna aparece.
 - **Vídeos prontos:** "Assistir" abre o vídeo na própria página (com "Abrir em outra aba" e "Baixar" ao lado); "Baixar" também aparece em cada vídeo da lista.
 - **Antes de enviar:** o cliente vê as miniaturas das fotos escolhidas (pode tirar uma por uma), um exemplo de texto para o estilo escolhido e o envio em bytes e porcentagem, com um ✓ em cada foto que terminou de subir. Fechar a página no meio do envio pede confirmação.
@@ -220,6 +264,31 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **Mudar a escolha:** pelo link "Preferências de cookies", no rodapé. O aviso é o primeiro item no teclado (logo depois de "Pular para o conteúdo"); aberto pelo rodapé, Esc fecha sem salvar.
 - **Falta:** a política de privacidade e os termos de uso, que devem explicar esses dados (LGPD).
 
+## 5.1.5 Ordem da fila
+
+- **Compilações primeiro:** a tradução de cada pedido é rápida e libera os vídeos dele.
+- **Pagos e internos antes dos testes grátis.**
+- **Entre clientes, a vez é intercalada:** vai primeiro quem tem menos vídeos começados nos pedidos em andamento. O vídeo 1 de cada cliente sai antes do vídeo 2 de qualquer um.
+- **No mesmo cliente, ordem de chegada:** o pedido novo espera o anterior terminar. Até 08/10 a vez era por pedido, e o pedido novo de uma conta passava na frente do antigo da mesma conta.
+- **No mesmo pedido:** os vídeos saem na ordem da lista que o cliente vê.
+
+## 5.1.6 Subida do pod (o que acontece nos ~3 min)
+
+1. O orquestrador vê o pedido aprovado em até 10 s (`RENDER2GO_CICLO_S`).
+2. O RunPod liga o pod na 1ª GPU da lista com vaga. Antes de instalar, o pod passa no teste de CUDA e de rede.
+3. O pod instala o ambiente e baixa os modelos (37 GB) ao mesmo tempo. Os pacotes do download vêm primeiro.
+4. Com o ambiente pronto, sobem o ComfyUI e o Ollama, e o worker já traduz o pedido. Os modelos ainda podem estar baixando.
+5. Com os modelos conferidos (bytes e SHA-256), começa o 1º vídeo.
+
+- **O que levava mais tempo:**
+  - o pedido esperava até 30 s pelo ciclo do orquestrador;
+  - cada etapa esperava até 10 s pela próxima consulta ao pod;
+  - os serviços e a tradução (~1 min) só começavam depois do download.
+- **Fica para medir no próximo pedido real:** cada subida fica na tabela `geradores` e já entra na previsão. Para ver as últimas:
+  ```bash
+  docker compose exec postgres psql -U gpu2go gpu2go -c "SELECT gpu, round(primeiro_video_em - criado) AS subida_s, to_timestamp(criado) AS quando FROM geradores ORDER BY criado DESC LIMIT 10"
+  ```
+
 ## 5.2 O que fica guardado
 
 - **Fotos de entrada:** apagadas pela API assim que o lote fecha (pronto, com falhas ou recusado). A regra `fotos-7-dias` do bucket fica como rede de segurança, para lotes que nunca fecham ou que esperam revisão por dias. Não use menos de 7 dias: um lote parado na revisão perderia as fotos antes de chegar à GPU.
@@ -232,7 +301,7 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 2. Envie 2–3 fotos com vídeos de 3 s.
 3. Aprove em `/aprovar`.
 4. Acompanhe com `docker compose logs -f orquestrador`: um pod sobe (~3 min), renderiza, confere e envia os vídeos, e é encerrado ~3 min depois de a fila esvaziar.
-5. Custo esperado: ~US$ 0,15–0,25.
+5. Custo esperado: ~US$ 0,10–0,20 na L40S (`docs/11`).
 
 ## 7. Segurança (resumo)
 

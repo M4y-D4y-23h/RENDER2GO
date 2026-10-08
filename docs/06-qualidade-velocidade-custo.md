@@ -51,7 +51,7 @@ Para custo baixo, o que importa é o **custo por vídeo** (preço por hora × te
 | H100 SXM | 80 GB | sim | 3,49 | *~25–35 s (estimativa)* | *~US$ 0,024–0,034* |
 
 - **A40 não serve para "velocidade extrema".** É uma geração anterior (Ampere), sem fp8 nativo. Deve ser mais lenta por vídeo que a 4090. Pode compensar pelo preço, mas só medindo.
-- **A L40S foi medida** (`worker/evals/gpu-2026-10-06-l40s/`): ~55 s por vídeo, 30% mais rápida que a 4090 secure de hoje, com custo por vídeo igual ou menor. É a **recomendação para lotes**, sempre na nuvem **secure** (decisão de 07/10/2026). Ordem padrão do `lote_nuvem`: **RTX PRO 6000 → L40S → L40 → RTX 6000 Ada → RTX 4090**. A L40 e a 6000 Ada (US$ 0,82–0,84/h) usam o mesmo chip da L40S, com 48 GB e cerca de metade do cálculo de IA: estimativa de 70–85 s por vídeo e custo por vídeo parecido, a medir no primeiro lote que cair nelas. **Nenhum pod fica ligado mais de 2 h.**
+- **A L40S foi medida** (`worker/evals/gpu-2026-10-06-l40s/`): ~55 s por vídeo, 30% mais rápida que a 4090 secure de hoje, com custo por vídeo igual ou menor. É a **recomendação para lotes**, sempre na nuvem **secure** (decisão de 07/10/2026). Ordem padrão do `lote_nuvem` desde 08/10/2026 (a RTX PRO 6000 subiu para US$ 2,49/h; `docs/07`, seção 1): **L40S → RTX 6000 Ada → RTX PRO 6000 → RTX 4090**. A RTX 6000 Ada (US$ 0,99/h) usa o mesmo chip da L40S, com 48 GB e o mesmo cálculo de IA no papel, e ainda não foi medida. A L40 saiu da lista: tem metade do cálculo de IA da L40S. **Nenhum pod fica ligado mais de 2 h.**
 
 ## 3. Upscale e limpeza da imagem antes do render
 

@@ -4,13 +4,20 @@ Consolida as medições de 05 a 07/10/2026. Detalhes e relatórios em `worker/ev
 
 ## 1. GPUs (vídeo I2V de 5 s; RunPod secure)
 
+Preços da nuvem secure em **08/10/2026** (consulta à API do RunPod). Os tempos foram medidos em 06 e 07/10.
+
 | GPU | VRAM | US$/h | Rápida (480p) | Alta (720p) | Alta 7 s | Custo/vídeo rápida | Custo/vídeo alta |
 |---|---|---|---|---|---|---|---|
-| **RTX PRO 6000** (Blackwell) | 96 GB | 2,09 | **28 s** | **93 s** | **160 s** | US$ 0,017 | US$ 0,054 |
-| L40S | 48 GB | 1,09 | 55 s | 180 s | — | US$ 0,017 | US$ 0,055 |
-| RTX 4090 | 24 GB | 0,74 | 56–80 s | 213 s | — | US$ 0,016 | US$ 0,044 |
+| **L40S** (Ada) | 48 GB | **1,09** | 55 s | 180 s | — | **US$ 0,017** | US$ 0,055 |
+| RTX 6000 Ada | 48 GB | 0,99 | (sem medição; mesmo chip da L40S) | — | — | ~US$ 0,015–0,018 | — |
+| RTX PRO 6000 (Blackwell) | 96 GB | 2,49 (era 2,09 até 07/10) | **28 s** | **93 s** | **160 s** | US$ 0,019 | US$ 0,064 |
+| RTX 4090 | 24 GB | 0,89 | 56–80 s | 213 s | — | US$ 0,014–0,020 | US$ 0,053 |
 
-- **Ordem padrão:** RTX PRO 6000 → L40S → L40 → RTX 6000 Ada → RTX 4090, só secure. A RTX PRO 6000 tem o mesmo custo por vídeo da L40S em metade do tempo.
+- **Ordem padrão (desde 08/10):** L40S → RTX 6000 Ada → RTX PRO 6000 → RTX 4090, só secure. Para trocar no serviço: `RENDER2GO_GPUS` no `.env` (`docs/09`).
+- **Por que a L40S passou a ser a 1ª:** com a alta, a RTX PRO 6000 ficou ~14% mais cara por vídeo. Pior: cada pedido paga por hora a subida (~3 min) e o pod quente (3 min). Na L40S, isso custa ~US$ 0,11 por vez, contra ~US$ 0,26 na RTX PRO 6000. Em pedidos pequenos, como os testes grátis, essa parte pesa mais que os vídeos.
+- **O que se perde:** cada vídeo leva ~2× o tempo (55 s contra 28 s em 480p, 5 s). Em lotes grandes, o orquestrador compensa subindo mais pods (cada um com ≥ 10 min de trabalho), quase com o mesmo custo por vídeo. Nos pedidos de 3 a 10 vídeos, o total muda pouco, porque a subida domina, e ela ficou mais curta (seção 9).
+- **RTX 6000 Ada:** é o mesmo chip AD102 da L40S, com o mesmo cálculo de IA no papel, e entra como 2ª opção quando a L40S não tem vaga. Ainda não foi medida, então as estimativas usam o pior caso (80 s). A L40 (sem "S") ficou de fora: tem metade do cálculo de IA.
+- **Orçamento e desligamento automático** contam o preço da opção mais cara com vaga, porque o pod pode cair em qualquer uma da lista.
 - **Community:** fora de uso. Os 3 hosts RTX 4090 que sorteamos tinham CUDA quebrado.
 - **A40:** não serve (Ampere, sem fp8; o container também não subiu).
 - **Pior caso para estimar:** GPU sem medição usa 80 s (rápida) e 213 s (alta).
@@ -119,3 +126,23 @@ python tools/lote_nuvem.py FOTOS --saida ENTREGA --prompt "..." --volume <id-do-
 # encerrar pods de uma execução interrompida
 python tools/lote_nuvem.py --saida ENTREGA --limpar
 ```
+
+## 9. Subida mais rápida no serviço (08/10/2026)
+
+No primeiro uso real, um pedido com o pod desligado chegou a levar ~6 min até 3 vídeos prontos. A conta, pelos registros de 07 e 08/10:
+
+| Etapa | Antes | Agora |
+|---|---|---|
+| Pedido aprovado até o orquestrador ver | até 30 s (ciclo) | até 10 s (`RENDER2GO_CICLO_S`) |
+| Pod criado até o agente responder, CUDA e teste de rede | ~40–50 s | igual |
+| Instalação: apt antes de tudo (14–23 s), depois ambiente e modelos em paralelo | 77–151 s | o apt do download (aria2, curl, rsync) vem primeiro; git e ffmpeg instalam durante o download |
+| Cada espera do orquestrador pelo pod | consulta a cada 10 s (~5 s perdidos por etapa) | a cada 3 s (`CONSULTA_S`) |
+| ComfyUI e Ollama no ar (~20–25 s) e tradução do pedido (~30 s) | só depois de os 37 GB baixarem | assim que o ambiente fica pronto (estado `AMBIENTE`), durante o download |
+| 1º vídeo | depois de tudo | assim que os modelos são conferidos (estado `PRONTO`) |
+
+- **Ganho esperado:** ~1 a 1,5 min a menos por subida. A conta é por etapa; a medição real fica para o próximo pedido, na tabela `geradores` (`docs/09`, seção 5.1.6).
+- **Fail-closed continua igual:** o worker da fila só pede jobs de tradução até o estado `PRONTO` (`--modelos-prontos`). Nenhum vídeo é renderizado com modelo baixado pela metade ou sem conferir o SHA-256. Se a instalação falha ou passa do prazo de 18 min, o worker sai e o pod é encerrado.
+- **O que mais encurtaria, com custo:**
+  - um pod ligado no horário comercial (`docs/11`, seção 3.4);
+  - um pod quente mais longo (`RENDER2GO_POD_OCIOSO_MIN`);
+  - endpoints serverless com FlashBoot (ADR 0002, Etapa 3), cuja subida pode cair para segundos quando a máquina já tem a imagem. Exigem a imagem com os modelos e outra forma de cobrança; ficam para quando houver fila constante.

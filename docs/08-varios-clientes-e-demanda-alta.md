@@ -42,9 +42,9 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
 - **Pods automáticos pelo tamanho da fila:**
   - pods = trabalho na fila ÷ prazo desejado (ex.: 15 min), com mínimo de 1 e um teto (custo por hora que o saldo aguenta);
   - cada pod precisa ter trabalho para pelo menos ~3× a subida (~10 min); senão, o trabalho vai para menos pods. Já feito no `lote_nuvem` (`--pods auto`, padrão, e `--prazo`).
-- **Sem volume quando a demanda é alta:** o volume prende o lote a um datacenter e ganha só ~14 s. Sem ele, os pods sobem onde houver vaga, em qualquer datacenter bom, seguindo a ordem RTX PRO 6000 → L40S → L40 → RTX 6000 Ada → RTX 4090.
+- **Sem volume quando a demanda é alta:** o volume prende o lote a um datacenter e ganha só ~14 s. Sem ele, os pods sobem onde houver vaga, em qualquer datacenter bom, seguindo a ordem L40S → RTX 6000 Ada → RTX PRO 6000 → RTX 4090 (desde 08/10/2026; `docs/07`, seção 1).
 - **Pod quente:** quando a fila esvazia, o pod espera até ~3 min (o tempo de uma subida) antes de desligar. Pedidos em sequência saem sem subida nenhuma.
-- **Prioridade:** pacotes pagos na frente; testes gratuitos intercalados entre si, numa faixa separada.
+- **Prioridade:** pacotes pagos na frente; testes gratuitos intercalados entre si, numa faixa separada. No mesmo cliente, os pedidos saem na ordem de chegada.
 - **Limites por cliente:** cota diária de fotos (já existe: `cota_fotos_dia`) e um teste gratuito por cliente.
 - **Prazo visível:** o cliente vê a posição na fila e o tempo estimado.
 - **Limite da conta no RunPod:** o número de GPUs simultâneas e o saldo limitam a escala; a regra de saldo já trava antes de gastar o que não existe. Para picos maiores, recarregar o saldo e pedir aumento de limite.
@@ -52,7 +52,7 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
 
 ## 4. Implementado na fase 3 (07/10/2026)
 
-1. **Clientes intercalados na fila:** `db.reivindicar` dá preferência ao lote com menos vídeos já iniciados, e lotes pagos passam na frente de testes gratuitos.
+1. **Clientes intercalados na fila:** `db.reivindicar` dá a vez ao cliente com menos vídeos já iniciados nos pedidos em andamento, e lotes pagos passam na frente de testes gratuitos. Desde 08/10/2026 a vez é por **cliente**, não por pedido: o pedido novo de uma conta espera o anterior da mesma conta (antes ele passava na frente).
 2. **Conferência do 1º quadro:**
    - o worker só envia o vídeo que bate com a foto (`render2go_worker/conferencia.py`);
    - a API recusa "ok" sem a similaridade ou sem o vídeo no armazenamento, apaga o vídeo e repete o job.
@@ -75,5 +75,8 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
 - 9 vídeos de 3 s conferidos.
 - Pod encerrado 3,5 min depois do último vídeo.
 - US$ 0,24 no total.
+
+7. **Previsão com o estado real dos pods** (08/10/2026, noite): o orquestrador registra cada pod na tabela `geradores`, e a previsão do cliente usa a subida medida e os vídeos à frente na mesma ordem da fila (`docs/09`, seção 5.1.3).
+8. **Subida mais rápida** (08/10/2026, noite): serviços e tradução do pedido durante o download dos modelos, ciclo de 10 s e consultas de 3 s (`docs/07`, seção 9).
 
 **Ainda por fazer:** medir em pods reais a fila com vários clientes ao mesmo tempo.

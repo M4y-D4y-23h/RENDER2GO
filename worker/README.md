@@ -208,7 +208,7 @@ Também:
 ```bash
 # só planeja e estima (sem pods)
 python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" --simular
-# pods automáticos (padrão), secure (RTX PRO 6000 → L40S → L40 → RTX 6000 Ada → RTX 4090), orçamento máximo US$ 3
+# pods automáticos (padrão), secure (L40S → RTX 6000 Ada → RTX PRO 6000 → RTX 4090, desde 08/10/2026), orçamento máximo US$ 3
 python tools/lote_nuvem.py fotos/loja --saida entregas/loja --prompt "a câmera se aproxima devagar do produto" \
   --receita produto-close --orcamento-usd 3 --interpolar --altura 1280
 # cliente com pressa: o mínimo de pods para entregar em 20 min (custa mais)

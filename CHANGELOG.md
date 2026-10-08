@@ -2,6 +2,52 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 08/10/2026 (noite): fila, previsão, subida mais rápida, GPU, custos e limpeza
+
+### Fila e previsão
+- **Pedidos da mesma conta em ordem de chegada:**
+  - a vez na fila passou a ser por cliente: vai primeiro quem tem menos vídeos começados;
+  - no mesmo cliente, o pedido mais antigo sai antes;
+  - no mesmo pedido, os vídeos saem na ordem da lista.
+  - Antes a vez era por pedido, e o pedido novo de uma conta passava na frente do antigo da mesma conta ([`docs/09`](docs/09-implantacao.md), seção 5.1.5).
+- **Previsão fiel com o pod desligado:**
+  - o orquestrador registra cada pod (tabela `geradores`: subindo, pronto, encerrado);
+  - a previsão usa esse estado e a subida medida (mediana das últimas 10, da decisão de ligar até o 1º vídeo);
+  - os vídeos à frente são contados na mesma ordem da fila.
+  - Antes, um pod desligado havia menos de 10 min contava como ligado ("começa em instantes"), e um pod no meio da subida não descontava o tempo já passado.
+
+### Subida do pod mais rápida ([`docs/07`](docs/07-guia-tecnico-gpus-e-pods.md), seção 9)
+- **Durante o download dos modelos:** ComfyUI e Ollama sobem, e o worker já traduz o pedido. O render só começa com os modelos conferidos (estado `PRONTO`).
+- **Orquestrador:** olha a fila a cada 10 s (eram 30 s).
+- **Consultas ao pod:** a cada 3 s (eram 10 s).
+- **apt:** instala primeiro só o que o download usa.
+- **Ganho esperado:** ~1 a 1,5 min por subida, a confirmar no próximo pedido real.
+
+### GPU
+- **A RTX PRO 6000 subiu de US$ 2,09 para US$ 2,49/h.** A nova ordem é L40S (US$ 1,09/h, medida) → RTX 6000 Ada (US$ 0,99/h) → RTX PRO 6000 → RTX 4090.
+  - Subida e pod quente custam menos da metade por pedido (~US$ 0,11 contra ~US$ 0,26), e o vídeo ~14% menos.
+  - Em troca, cada vídeo leva ~2× mais; nos lotes grandes, o orquestrador sobe mais pods.
+- **Configurável no `.env`, sem mudar o código:**
+  - `RENDER2GO_GPUS`: ordem das GPUs;
+  - `RENDER2GO_CICLO_S`: intervalo do ciclo;
+  - `RENDER2GO_POD_OCIOSO_MIN`: tempo de pod quente.
+- **Orçamento e desligamento automático** passam a contar o preço da opção mais cara com vaga.
+
+### Custos e planos ([`docs/11`](docs/11-custos-e-planos.md))
+- **Custos mensais:**
+  - parado: ~R$ 43;
+  - escala pequena (300 vídeos/mês): ~R$ 136;
+  - demanda alta (30 mil vídeos/mês): ~R$ 7.400, ~96% de GPU.
+- **Proposta de planos por créditos (não aplicada):** Avulso R$ 19,90, Essencial R$ 49,90, Profissional R$ 129,90 e Agência R$ 349,90. O custo de referência é o medido pelo dono, ~US$ 0,03 por vídeo.
+
+### Limpeza do histórico
+- **`render2go-servico apagar-historico`:**
+  - apaga pedidos, prompts, trabalhos, autorizações, eventos, suporte e registro dos pods;
+  - apaga os arquivos dos clientes no R2 (`entrada/` e `saida/`; nunca o espelho dos modelos);
+  - reescreve as tabelas (`VACUUM FULL`).
+  - Os clientes e os códigos de acesso ficam. Sem `--confirmar`, só mostra o que seria apagado.
+- **Servidor:** os passos estão no [`docs/09`](docs/09-implantacao.md), seção 0.
+
 ## 08/10/2026: identidade visual e front-end das páginas
 
 ### Identidade visual ([`docs/10`](docs/10-identidade-visual-e-front-end.md))
