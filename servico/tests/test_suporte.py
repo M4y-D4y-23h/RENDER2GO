@@ -112,8 +112,24 @@ def test_invalid_input_and_failed_email_are_handled(banco):
     tok = _cliente(api)
     assert _mandar(api, tok, email="nao-e-email").status_code == 422
     assert _mandar(api, tok, mensagem="oi").status_code == 422  # curta demais
-    assert api.post("/api/suporte", json={"mensagem": "x" * 20}).status_code == 401  # só cliente logado
+    assert api.post("/api/suporte", json={"mensagem": "x" * 20}).status_code == 422  # sem código: pede e-mail
     assert _mandar(api, tok).status_code == 200  # o cliente não vê a falha do e-mail
     cfg.esperar_fundo()
     (m,) = api.get("/api/admin/suporte", headers=h(ADMIN)).json()["mensagens"]
     assert m["enviado"] == 0 and "conexão recusada" in m["erro"]  # fica no banco e o /aprovar mostra
+
+
+def test_support_page_works_without_an_access_code_with_stricter_limits(banco):
+    api, _ = _api(banco)
+    assert api.get("/suporte").status_code == 200 and 'data-pagina="suporte"' in api.get("/suporte").text
+    sem = {"X-Dispositivo": D1}
+    corpo = {"mensagem": "Perdi o meu código de acesso, como recupero?"}
+    r = api.post("/api/suporte", json=corpo, headers=sem)
+    assert r.status_code == 422 and "e-mail" in r.json()["detail"]  # sem código, o e-mail é obrigatório
+    for _ in range(2):
+        assert api.post("/api/suporte", json={**corpo, "email": "dona@loja.com"}, headers=sem).status_code == 200
+    assert api.post("/api/suporte", json={**corpo, "email": "dona@loja.com"}, headers=sem).status_code == 429
+    (m, _) = api.get("/api/admin/suporte", headers=h(ADMIN)).json()["mensagens"]
+    assert m["cliente_id"] == "" and m["email"] == "dona@loja.com"
+    # código inválido continua sendo recusado (não vira mensagem anônima)
+    assert api.post("/api/suporte", json=corpo, headers={"Authorization": "Bearer " + "x" * 40}).status_code == 401

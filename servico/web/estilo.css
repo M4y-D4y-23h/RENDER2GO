@@ -90,3 +90,14 @@ progress { width: 100%; max-width: 320px; height: 10px; accent-color: var(--marc
 .videos .baixar { font-size: 14px; }
 .msg-suporte { padding: 12px 14px; margin-bottom: 8px; }
 .msg-suporte .texto { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
+/* link de suporte, rodapé e aviso de cookies */
+.suporte-link { margin: 20px 0; }
+.suporte-link a, footer a, a.botao-link { color: var(--marca); }
+footer { max-width: 760px; margin: 24px auto 120px; padding: 0 16px; }
+button.link { background: none; border: none; padding: 0; color: var(--marca); text-decoration: underline; cursor: pointer; font-size: 14px; }
+.cookies { position: fixed; left: 16px; right: 16px; bottom: 16px; max-width: 720px; margin: 0 auto; z-index: 10;
+  background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 16px; box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
+.cookies h2 { margin: 0 0 6px; font-size: 17px; }
+.cookies p { margin: 0 0 10px; font-size: 14px; }
+.cookies .opcoes label { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; margin: 8px 0; font-size: 14px; }
+.cookies .opcoes input { width: auto; margin-top: 3px; }

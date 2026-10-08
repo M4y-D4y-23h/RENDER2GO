@@ -1,0 +1,153 @@
+{
+  "_comment": "Receitas de vídeo de divulgação (docs/05, caminho A). Cada receita fixa o modo, os presets (v2) e uma ação padrão, para quem opera o lote só escolher a foto e a receita. A ação pode ser trocada por linha no pedidos.csv. Nenhuma receita foi validada em GPU ainda: testar num pod antes de vender (docs/05, seção 7). Receitas com pessoa exigem consentimento=sim no pedido (foto da própria pessoa, com autorização dela por escrito). Qualidade: 'rapida' é a medida (~56 s por vídeo de 5 s na RTX 4090, em 640x640); 'alta' usa a área máxima do contrato (921.600 px) e ainda não foi medida em tempo nem em VRAM. v2 (08/10/2026): mantém todas as receitas da v1 e acrescenta 'livre', para pedidos que não se encaixam nas outras: só ritmo e estilo naturais, e o texto do cliente decide o movimento. Foto com pessoa continua exigindo a autorização (o /aprovar avisa).",
+  "version": 2,
+  "presets_version": 2,
+  "receitas": {
+    "livre": {
+      "label": "Livre (descreva o que quiser)",
+      "nicho": "geral",
+      "modo": "i2v",
+      "acao": "a cena ganha movimento natural e suave",
+      "presets": {
+        "ritmo": "natural",
+        "estilo": "natural"
+      },
+      "formato": "vertical",
+      "duracao": 5
+    },
+    "produto-giro": {
+      "label": "Produto girando",
+      "nicho": "produto",
+      "modo": "i2v",
+      "acao": "o produto gira devagar sobre a superfície, mostrando os detalhes",
+      "presets": {
+        "ritmo": "lento",
+        "camera": "orbita-produto",
+        "luz": "estudio",
+        "estilo": "comercial"
+      },
+      "formato": "quadrado",
+      "duracao": 5
+    },
+    "produto-close": {
+      "label": "Produto em close",
+      "nicho": "produto",
+      "modo": "i2v",
+      "acao": "a câmera se aproxima do produto, que fica parado, com reflexos suaves na superfície",
+      "presets": {
+        "ritmo": "lento",
+        "camera": "aproximacao-produto",
+        "luz": "estudio",
+        "estilo": "comercial"
+      },
+      "formato": "vertical",
+      "duracao": 5
+    },
+    "imovel-sala": {
+      "label": "Imóvel: ambiente interno",
+      "nicho": "imovel",
+      "modo": "i2v",
+      "acao": "a câmera avança devagar pelo ambiente vazio e arrumado",
+      "presets": {
+        "ritmo": "lento",
+        "camera": "avanco-ambiente",
+        "luz": "luz-do-dia",
+        "estilo": "comercial"
+      },
+      "formato": "horizontal",
+      "duracao": 5
+    },
+    "imovel-fachada": {
+      "label": "Imóvel: fachada",
+      "nicho": "imovel",
+      "modo": "i2v",
+      "acao": "a câmera sobe devagar mostrando a fachada, com folhas balançando ao vento",
+      "presets": {
+        "ritmo": "lento",
+        "camera": "subida-lenta",
+        "luz": "por-do-sol",
+        "estilo": "comercial"
+      },
+      "formato": "vertical",
+      "duracao": 5
+    },
+    "comida-prato": {
+      "label": "Comida: prato servido",
+      "nicho": "comida",
+      "modo": "i2v",
+      "acao": "vapor sobe do prato quente, a câmera se aproxima devagar",
+      "presets": {
+        "ritmo": "lento",
+        "camera": "aproximacao-produto",
+        "luz": "aconchegante",
+        "estilo": "comercial"
+      },
+      "formato": "vertical",
+      "duracao": 5
+    },
+    "comida-bebida": {
+      "label": "Comida: bebida",
+      "nicho": "comida",
+      "modo": "i2v",
+      "acao": "bolhas sobem no copo e gotas escorrem pelo vidro",
+      "presets": {
+        "ritmo": "lento",
+        "camera": "parada-close",
+        "luz": "aconchegante",
+        "estilo": "comercial"
+      },
+      "formato": "vertical",
+      "duracao": 5
+    },
+    "pessoa-apresentacao": {
+      "label": "Pessoa: apresentação do negócio",
+      "nicho": "pessoa",
+      "modo": "i2v",
+      "acao": "a pessoa sorri, acena para a câmera e gesticula como quem dá boas-vindas",
+      "presets": {
+        "ritmo": "natural",
+        "camera": "aproximacao-plano-medio",
+        "luz": "luz-do-dia",
+        "estilo": "natural"
+      },
+      "formato": "vertical",
+      "duracao": 5,
+      "exige_consentimento": true
+    }
+  },
+  "formatos": {
+    "vertical": {
+      "label": "Vertical (Reels, Stories, TikTok)",
+      "rapida": {
+        "width": 480,
+        "height": 832
+      },
+      "alta": {
+        "width": 720,
+        "height": 1280
+      }
+    },
+    "quadrado": {
+      "label": "Quadrado (feed)",
+      "rapida": {
+        "width": 640,
+        "height": 640
+      },
+      "alta": {
+        "width": 960,
+        "height": 960
+      }
+    },
+    "horizontal": {
+      "label": "Horizontal (YouTube, site)",
+      "rapida": {
+        "width": 832,
+        "height": 480
+      },
+      "alta": {
+        "width": 1280,
+        "height": 720
+      }
+    }
+  }
+}

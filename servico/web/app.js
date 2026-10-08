@@ -1,5 +1,5 @@
 "use strict";
-// Páginas do serviço Render2Go (ADR 0003, fase 3): cliente (/) e aprovador (/aprovar).
+// Páginas do serviço Render2Go (ADR 0003, fase 3): cliente (/), suporte (/suporte) e aprovador (/aprovar).
 // Os arquivos nunca passam pela API: as fotos vão direto ao armazenamento (R2) por URLs
 // assinadas, uma por foto; os vídeos voltam por links assinados que expiram em 24 h.
 // Compilar: cd servico/web && npm ci && npm run build  (gera app.js)
@@ -115,7 +115,7 @@ async function api(caminho, token, init = {}) {
     const r = await fetch(caminho, {
         ...init,
         headers: {
-            Authorization: `Bearer ${token}`,
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
             "Content-Type": "application/json",
             "X-Dispositivo": dispositivo(),
             "X-Fuso": fuso(),
@@ -337,6 +337,7 @@ function iniciarCliente() {
     });
     el("fotos").addEventListener("change", (ev) => escolher(ev.target.files));
     el("pasta").addEventListener("change", (ev) => escolher(ev.target.files));
+    el("link-suporte").textContent = `${location.host}/suporte`;
     el("limpar").addEventListener("click", () => {
         arquivos.clear();
         atualizarContagem();
@@ -344,30 +345,6 @@ function iniciarCliente() {
     let marcadoEm = null; // momento do clique na caixa de autorização (vai no registro)
     el("consentimento").addEventListener("change", (ev) => {
         marcadoEm = ev.target.checked ? new Date().toISOString() : null;
-    });
-    el("form-suporte").addEventListener("submit", async (ev) => {
-        ev.preventDefault();
-        const saida = el("suporte-msg");
-        const botao = el("suporte-enviar");
-        botao.disabled = true;
-        try {
-            await api("/api/suporte", token, {
-                method: "POST",
-                body: JSON.stringify({
-                    assunto: el("suporte-assunto").value.trim(),
-                    mensagem: el("suporte-mensagem").value.trim(),
-                    email: el("suporte-email").value.trim() || null,
-                }),
-            });
-            aviso(saida, "Mensagem enviada. Respondemos assim que possível.", "ok");
-            el("form-suporte").reset();
-        }
-        catch (e) {
-            aviso(saida, e.message, "erro");
-        }
-        finally {
-            botao.disabled = false;
-        }
     });
     el("form-lote").addEventListener("submit", async (ev) => {
         ev.preventDefault();
@@ -707,9 +684,111 @@ function iniciarAprovador() {
         }
     });
 }
+// -- suporte (/suporte) ---------------------------------------------------------------------
+function iniciarSuporte() {
+    const token = lerToken("render2go-token-cliente"); // conectado: a mensagem vai ligada à conta
+    const conta = el("suporte-conta");
+    const email = el("suporte-email");
+    if (token) {
+        aviso(conta, "Você está conectado com o seu código de acesso: a mensagem vai junto com os seus pedidos.");
+    }
+    else {
+        email.required = true;
+    }
+    el("form-suporte").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const saida = el("suporte-msg");
+        const botao = el("suporte-enviar");
+        botao.disabled = true;
+        try {
+            await api("/api/suporte", token, {
+                method: "POST",
+                body: JSON.stringify({
+                    assunto: el("suporte-assunto").value.trim(),
+                    mensagem: el("suporte-mensagem").value.trim(),
+                    email: email.value.trim() || null,
+                }),
+            });
+            aviso(saida, "Mensagem enviada. Respondemos assim que possível.", "ok");
+            el("form-suporte").reset();
+        }
+        catch (e) {
+            aviso(saida, e.message, "erro");
+        }
+        finally {
+            botao.disabled = false;
+        }
+    });
+}
+// -- aviso de cookies (LGPD) -------------------------------------------------------------------
+// Necessários: código de acesso, identificador do dispositivo (segurança e limite do teste) e esta
+// escolha. Estatísticas e marketing: nada carrega hoje; quando houver, só com a permissão guardada aqui.
+const COOKIES_VERSAO = "1";
+function escolhaCookies() {
+    try {
+        const e = JSON.parse(localStorage.getItem("render2go-cookies") ?? "null");
+        return e && e.versao === COOKIES_VERSAO ? e : null;
+    }
+    catch {
+        return null;
+    }
+}
+function salvarCookies(estatisticas, marketing) {
+    const e = { versao: COOKIES_VERSAO, estatisticas, marketing, quando: new Date().toISOString() };
+    try {
+        localStorage.setItem("render2go-cookies", JSON.stringify(e));
+    }
+    catch {
+        /* sem armazenamento: o aviso volta na próxima visita */
+    }
+    // registro no servidor (prova do consentimento); falha não atrapalha a página
+    api("/api/cookies", "", { method: "POST", body: JSON.stringify({ versao: COOKIES_VERSAO, estatisticas, marketing }) }).catch(() => undefined);
+    document.getElementById("aviso-cookies")?.remove();
+}
+function avisoCookies(forcar = false) {
+    const atual = escolhaCookies();
+    if (atual && !forcar)
+        return;
+    document.getElementById("aviso-cookies")?.remove();
+    const caixa = (id, marcado, desativado = false) => criar("input", { type: "checkbox", id, checked: marcado, disabled: desativado });
+    const est = caixa("ck-estatisticas", atual?.estatisticas ?? false);
+    const mkt = caixa("ck-marketing", atual?.marketing ?? false);
+    const opcoes = criar("div", { className: "opcoes", hidden: !forcar }, [
+        criar("label", {}, [caixa("ck-necessarios", true, true), "Necessários (sempre ativos): manter você conectado com o seu código, segurança e prevenção de abuso, e lembrar esta escolha."]),
+        criar("label", {}, [est, "Estatísticas: medir visitas para melhorar o site. Não usamos hoje."]),
+        criar("label", {}, [mkt, "Marketing: anúncios e campanhas. Não usamos hoje."]),
+    ]);
+    const aceitar = criar("button", { type: "button", className: "primario", textContent: "Aceitar todos" });
+    const necessarios = criar("button", { type: "button", textContent: "Só os necessários" });
+    const gerenciar = criar("button", { type: "button", textContent: forcar ? "Salvar escolhas" : "Gerenciar" });
+    aceitar.addEventListener("click", () => salvarCookies(true, true));
+    necessarios.addEventListener("click", () => salvarCookies(false, false));
+    gerenciar.addEventListener("click", () => {
+        if (opcoes.hidden) {
+            opcoes.hidden = false;
+            gerenciar.textContent = "Salvar escolhas";
+        }
+        else {
+            salvarCookies(est.checked, mkt.checked);
+        }
+    });
+    document.body.append(criar("section", { id: "aviso-cookies", className: "cookies", role: "dialog", ariaLabel: "Cookies e privacidade" }, [
+        criar("h2", { textContent: "Cookies e privacidade" }),
+        criar("p", {
+            textContent: "Usamos cookies e o armazenamento do navegador para o site funcionar. Os opcionais só com a sua permissão, e você pode mudar a escolha a qualquer momento em \"Preferências de cookies\", no fim da página.",
+        }),
+        opcoes,
+        criar("div", { className: "acoes" }, [aceitar, necessarios, gerenciar]),
+    ]));
+}
 document.addEventListener("DOMContentLoaded", () => {
-    if (document.body.dataset.pagina === "aprovar")
-        iniciarAprovador();
+    const pagina = document.body.dataset.pagina;
+    if (pagina === "aprovar")
+        return iniciarAprovador();
+    avisoCookies();
+    document.getElementById("preferencias-cookies")?.addEventListener("click", () => avisoCookies(true));
+    if (pagina === "suporte")
+        iniciarSuporte();
     else
         iniciarCliente();
 });

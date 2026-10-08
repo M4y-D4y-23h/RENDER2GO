@@ -18,6 +18,7 @@
       <input id="token" type="password" autocomplete="current-password" required>
       <p class="fraco">Você recebe o código quando contrata ou pede o teste gratuito. Ele fica guardado só neste navegador.</p>
       <button type="submit">Entrar</button>
+      <p class="fraco">Não consegue entrar? <a href="/suporte">Fale com o suporte</a>.</p>
     </form>
 
     <div id="painel" hidden>
@@ -70,19 +71,9 @@
       <h2>Seus pedidos</h2>
       <div id="lotes"></div>
 
-      <h2>Suporte</h2>
-      <form id="form-suporte">
-        <p class="fraco">Dúvida ou problema com um pedido? Escreva aqui. Respondemos pelo e-mail que você informar.</p>
-        <label for="suporte-assunto">Assunto (opcional)</label>
-        <input id="suporte-assunto" maxlength="120">
-        <label for="suporte-mensagem">Mensagem</label>
-        <textarea id="suporte-mensagem" required minlength="10" maxlength="2000"></textarea>
-        <label for="suporte-email">Seu e-mail para resposta (opcional)</label>
-        <input id="suporte-email" type="email" maxlength="200" autocomplete="email">
-        <button type="submit" id="suporte-enviar">Enviar mensagem</button>
-        <p id="suporte-msg" class="aviso" hidden></p>
-      </form>
+      <p class="suporte-link">Precisa de ajuda? Fale com o suporte em <a id="link-suporte" href="/suporte">app.render2go.com/suporte</a></p>
     </div>
   </main>
+  <footer><button type="button" class="link" id="preferencias-cookies">Preferências de cookies</button></footer>
 </body>
 </html>

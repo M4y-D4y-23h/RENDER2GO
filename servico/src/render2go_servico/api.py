@@ -5,7 +5,9 @@ Cliente (Authorization: Bearer <token do cliente>):
     POST /api/lotes                    cria o lote; devolve uma URL de envio por foto
     POST /api/lotes/{id}/enviado       confere no armazenamento e manda para aprovação
     GET  /api/lotes  /api/lotes/{id}   andamento, previsão e links dos vídeos (abrir e baixar)
-    POST /api/suporte                  mensagem para o suporte (e-mail), com limite contra spam
+    POST /api/suporte                  mensagem para o suporte (e-mail), com limite contra spam; sem código
+                                       de acesso, exige e-mail e tem limites menores (página /suporte)
+    POST /api/cookies                  escolha do aviso de cookies (prova do consentimento)
 
 Aprovação (Bearer <token de administração>), ADR 0004:
     GET  /api/admin/lotes              lotes aguardando aprovação, com miniaturas e aviso de pessoas
@@ -29,7 +31,7 @@ Workers (Bearer <token de worker>), sem porta de entrada nos pods (eles puxam):
     POST /api/worker/jobs/{id}/concluir  "ok" de render só com o vídeo no armazenamento e a
                                        conferência do 1º quadro acima do limiar (docs/08)
 
-Páginas: / (cliente) e /aprovar (administração).
+Páginas: / (cliente), /suporte (suporte) e /aprovar (administração).
 """
 
 from __future__ import annotations
@@ -339,6 +341,12 @@ class NavegadorIn(BaseModel):
     marcado_em: str | None = Field(None, max_length=40)  # quando a caixa de autorização foi marcada
 
 
+class CookiesIn(BaseModel):
+    versao: str = Field(min_length=1, max_length=20)
+    estatisticas: bool = False
+    marketing: bool = False
+
+
 class SuporteIn(BaseModel):
     assunto: str = Field("", max_length=120)
     mensagem: str = Field(min_length=10, max_length=2000)
@@ -407,6 +415,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         c.limitar(cli["id"])
         return cli
 
+    def cliente_opcional(authorization: str | None = Header(None), c: Config = Depends(config)) -> dict | None:
+        """Cliente logado, ou None sem código de acesso (página /suporte)."""
+        if not authorization:
+            return None
+        return cliente(authorization, c)
+
     def admin(authorization: str | None = Header(None), c: Config = Depends(config)) -> str:
         tok = _token(authorization)
         if not _um_de(tok, c.admin_tokens):
@@ -422,6 +436,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     @app.get("/", include_in_schema=False)
     def pagina_cliente():
         return FileResponse(WEB / "index.html")
+
+    @app.get("/suporte", include_in_schema=False)
+    def pagina_suporte():
+        return FileResponse(WEB / "suporte.html", media_type="text/html")
 
     @app.get("/aprovar", include_in_schema=False)
     def pagina_aprovar():
@@ -655,24 +673,32 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         return {"fase": "fila", "inicio_s": math.ceil(inicio), "fim_s": math.ceil(inicio + restantes * vazao)}
 
     @app.post("/api/suporte")
-    def mensagem_suporte(body: SuporteIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+    def mensagem_suporte(
+        body: SuporteIn,
+        request: Request,
+        cli: dict | None = Depends(cliente_opcional),
+        c: Config = Depends(config),
+    ):
         origem = origem_de(request)
         email = (body.email or "").strip() or None
         if email and not suporte.EMAIL.match(email):
             raise HTTPException(422, "e-mail para resposta inválido")
-        valores = {"ip": origem["ip"], "dispositivo": origem["dispositivo"], "cliente_id": cli["id"]}
-        for campo, janela, maximo in suporte.LIMITES:
+        if cli is None and not email:
+            raise HTTPException(422, "informe o seu e-mail para podermos responder")
+        cliente_id = cli["id"] if cli else ""
+        valores = {"ip": origem["ip"], "dispositivo": origem["dispositivo"], "cliente_id": cliente_id}
+        for campo, janela, maximo in suporte.LIMITES if cli else suporte.LIMITES_ANONIMO:
             if c.banco.contar_suporte(campo, valores[campo], janela) >= maximo:
                 espera = "uma hora" if janela <= 3600 else "amanhã"
                 raise HTTPException(429, f"muitas mensagens seguidas; tente de novo em {espera}")
         mensagem = body.mensagem.strip()
-        sid = c.banco.registrar_suporte(cli["id"], origem, email, body.assunto.strip(), mensagem)
+        sid = c.banco.registrar_suporte(cliente_id, origem, email, body.assunto.strip(), mensagem)
         if c.email is not None:
             dados = {
                 "id": sid,
-                "cliente_id": cli["id"],
-                "cliente_nome": cli["nome"],
-                "plano": cli["plano"],
+                "cliente_id": cliente_id,
+                "cliente_nome": cli["nome"] if cli else None,
+                "plano": cli["plano"] if cli else None,
                 "email": email,
                 "assunto": body.assunto.strip(),
                 "mensagem": mensagem,
@@ -682,6 +708,15 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             }
             c.em_segundo_plano(_enviar_suporte, c, sid, dados)
         return {"ok": True, "id": sid}
+
+    @app.post("/api/cookies")
+    def escolha_cookies(body: CookiesIn, request: Request, c: Config = Depends(config)):
+        """Guarda a escolha do aviso de cookies (sem login). Os necessários não têm escolha."""
+        origem = origem_de(request)
+        if c.banco.contar_cookies(origem["ip"], 3600) >= 60:  # contra quem tenta encher o banco
+            raise HTTPException(429, "muitas escolhas seguidas")
+        escolha = {"necessarios": True, "estatisticas": body.estatisticas, "marketing": body.marketing}
+        return {"ok": True, "id": c.banco.registrar_cookies(origem, body.versao, escolha)}
 
     @app.get("/api/lotes")
     def meus_lotes(cli: dict = Depends(cliente), c: Config = Depends(config)):

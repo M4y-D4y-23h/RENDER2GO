@@ -160,7 +160,7 @@ python tools/video.py concat saida/clipe1.mp4 saida/clipe2.mp4 -o saida/final.mp
 
 Ferramentas do caminho A ([docs/05](../docs/05-analise-de-negocio.md)): vídeos para pequenos negócios a partir das fotos do cliente. Rodam num pod (modo `pod`, ComfyUI e Ollama em `127.0.0.1`), de dentro dele ou por túnel SSH.
 
-**1. Receitas** ([`presets/receitas.v1.json`](presets/receitas.v1.json)): cada uma fixa os presets, uma ação padrão, o formato e a duração.
+**1. Receitas** ([`presets/receitas.v2.json`](presets/receitas.v2.json); a v2 acrescenta `livre`): cada uma fixa os presets, uma ação padrão, o formato e a duração.
 
 | Receita | Nicho | Formato padrão |
 |---|---|---|

@@ -30,7 +30,7 @@ def banco(request, tmp_path):
         import psycopg
 
         with psycopg.connect(PG_URL, autocommit=True) as con:
-            for t in ("suporte", "consentimentos", "eventos", "jobs", "fotos", "lotes", "clientes"):
+            for t in ("cookies", "suporte", "consentimentos", "eventos", "jobs", "fotos", "lotes", "clientes"):
                 con.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
         b = Banco(PG_URL)
     b.criar_esquema()

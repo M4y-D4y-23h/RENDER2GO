@@ -1,6 +1,7 @@
 """API de ponta a ponta com armazenamento falso (sem rede) e o banco dos testes."""
 
 import hashlib
+import json
 import math
 
 import pytest
@@ -301,6 +302,26 @@ def test_authorization_is_recorded_for_audit_with_origin_and_photo_prints(banco)
     assert criado["detalhe"]["dispositivo"] == D1 and criado["detalhe"]["ip"] == "testclient"
     assert api.get("/api/admin/lotes/lote_x/auditoria", headers=h(ADMIN)).status_code == 404
     assert api.get(f"/api/admin/lotes/{lid}/auditoria", headers=h(tok)).status_code == 401
+
+
+def test_cookie_choice_is_recorded_and_free_style_is_offered(api, banco):
+    r = api.post(
+        "/api/cookies",
+        json={"versao": "1", "estatisticas": False, "marketing": False},
+        headers={"X-Dispositivo": D1},
+    )
+    assert r.status_code == 200
+    with banco.tx() as c:
+        (ck,) = c.all("SELECT * FROM cookies")
+    assert ck["dispositivo"] == D1 and json.loads(ck["escolha"]) == {
+        "necessarios": True,
+        "estatisticas": False,
+        "marketing": False,
+    }
+    tok = _cliente(api)
+    receitas = api.get("/api/receitas", headers=h(tok)).json()["receitas"]
+    assert receitas[0]["id"] == "livre" and receitas[0]["label"].startswith("Livre")
+    assert _pedir(api, tok, n=1, receita="livre", prompt="as folhas balançam com o vento").status_code == 200
 
 
 def test_generation_model_is_listed_validated_and_shown(api):

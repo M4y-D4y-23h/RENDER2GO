@@ -28,6 +28,12 @@ LIMITES = [
     ("cliente_id", 3600, 5),
     ("cliente_id", 86400, 15),
 ]
+# sem código de acesso (quem não consegue entrar): e-mail obrigatório e limites menores
+LIMITES_ANONIMO = [
+    ("dispositivo", 3600, 2),
+    ("ip", 3600, 3),
+    ("ip", 86400, 10),
+]
 EMAIL = re.compile(r"^[^@\s<>\"',;]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$")
 
 
@@ -76,8 +82,13 @@ def montar(cfg: ConfigEmail, msg: dict) -> EmailMessage:
     if msg.get("email"):
         e["Reply-To"] = msg["email"]  # responder vai direto para o cliente
     quando = time.strftime("%d/%m/%Y %H:%M UTC", time.gmtime(msg["quando"]))
+    cliente = (
+        f"{msg.get('cliente_nome') or '?'} ({msg['cliente_id']}, plano {msg.get('plano') or '?'})"
+        if msg.get("cliente_id")
+        else "sem código de acesso (página de suporte)"
+    )
     e.set_content(
-        f"Cliente: {msg.get('cliente_nome') or '?'} ({msg['cliente_id']}, plano {msg.get('plano') or '?'})\n"
+        f"Cliente: {cliente}\n"
         f"E-mail para resposta: {msg.get('email') or 'não informado'}\n"
         f"Quando: {quando}\n"
         f"IP: {msg.get('ip') or '?'} · dispositivo: {msg.get('dispositivo') or '?'}\n"

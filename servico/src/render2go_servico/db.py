@@ -73,6 +73,10 @@ ESQUEMA = [
         id TEXT PRIMARY KEY, cliente_id TEXT NOT NULL, ip TEXT, dispositivo TEXT, email TEXT,
         assunto TEXT, mensagem TEXT NOT NULL, quando DOUBLE PRECISION NOT NULL,
         enviado INTEGER NOT NULL DEFAULT 0, erro TEXT)""",
+    # escolhas do aviso de cookies (prova do consentimento, LGPD): só inserção
+    """CREATE TABLE IF NOT EXISTS cookies (
+        id TEXT PRIMARY KEY, dispositivo TEXT, ip TEXT, agente TEXT, versao TEXT NOT NULL,
+        escolha TEXT NOT NULL, quando DOUBLE PRECISION NOT NULL)""",
 ]
 # colunas que entraram depois da primeira implantação: (tabela, coluna, tipo)
 COLUNAS_NOVAS = [
@@ -463,6 +467,29 @@ class Banco:
             r = c.one(
                 f"SELECT COUNT(*) AS n FROM suporte WHERE {campo} = ? AND quando > ?", (valor, time.time() - desde_s)
             )
+        return int(r["n"])
+
+    def registrar_cookies(self, origem: dict, versao: str, escolha: dict) -> str:
+        cid = novo_id("ck")
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO cookies (id, dispositivo, ip, agente, versao, escolha, quando)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    cid,
+                    origem.get("dispositivo"),
+                    origem.get("ip"),
+                    origem.get("agente"),
+                    versao,
+                    json.dumps(escolha),
+                    time.time(),
+                ),
+            )
+        return cid
+
+    def contar_cookies(self, ip: str, desde_s: float) -> int:
+        with self.tx() as c:
+            r = c.one("SELECT COUNT(*) AS n FROM cookies WHERE ip = ? AND quando > ?", (ip, time.time() - desde_s))
         return int(r["n"])
 
     def marcar_suporte(self, sid: str, enviado: bool, erro: str | None = None) -> None:

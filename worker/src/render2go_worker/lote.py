@@ -55,7 +55,7 @@ from PIL import Image, UnidentifiedImageError
 
 from render2go_worker import WORKER_DIR, cli_submit, compiler, preparo, presets
 
-RECEITAS_FILE = WORKER_DIR / "presets" / "receitas.v1.json"
+RECEITAS_FILE = WORKER_DIR / "presets" / "receitas.v2.json"
 I2V_TEMPLATE = WORKER_DIR / "workflows" / "i2v_r1v2.v1.api.json"
 FOTOS = {".jpg", ".jpeg", ".png", ".webp"}
 QUALIDADES = ("rapida", "alta")

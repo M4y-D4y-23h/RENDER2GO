@@ -59,6 +59,17 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
         (tmp_path / n).write_bytes(_png(cor, forma))
     cli = _pagina(navegador, erros)
     cli.goto(ambiente.url)
+    # navegador novo: aviso de cookies; "Gerenciar" mostra as categorias, e salvar guarda só os necessários
+    cli.wait_for_selector("#aviso-cookies")
+    assert adm.locator("#aviso-cookies").count() == 0  # o /aprovar (só o dono) não mostra o aviso
+    cli.click("#aviso-cookies button:has-text('Gerenciar')")
+    assert cli.locator("#ck-necessarios").is_checked() and cli.locator("#ck-necessarios").is_disabled()
+    assert not cli.locator("#ck-estatisticas").is_checked()
+    cli.click("#aviso-cookies button:has-text('Salvar escolhas')")
+    cli.wait_for_selector("#aviso-cookies", state="detached")
+    with ambiente.banco.tx() as c:
+        (ck,) = c.all("SELECT escolha FROM cookies")
+    assert json.loads(ck["escolha"]) == {"necessarios": True, "estatisticas": False, "marketing": False}
     cli.fill("#token", token)
     cli.click("#form-token button")
     cli.wait_for_selector("#receita option", state="attached")
@@ -126,9 +137,13 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     cli.wait_for_selector("text=Pronto")
     assert cli.locator(".videos a[target=_blank]").count() == 2  # abre em outra aba
     assert cli.locator(".videos a.baixar").count() == 2  # e salva como arquivo
-    # suporte: a mensagem chega ao /aprovar
+    assert cli.locator("#aviso-cookies").count() == 0  # a escolha ficou guardada
+    # suporte: um link para a página /suporte; conectado, a mensagem vai ligada à conta
+    assert cli.locator("#link-suporte").inner_text().endswith("/suporte")
+    cli.click("#link-suporte")
+    cli.wait_for_url("**/suporte")
+    assert "conectado" in cli.locator("#suporte-conta").inner_text()
     cli.fill("#suporte-mensagem", "Preciso de ajuda com o meu pedido de teste.")
-    cli.fill("#suporte-email", "cliente@padaria.com.br")
     cli.click("#suporte-enviar")
     cli.wait_for_selector("#suporte-msg.ok")
     adm.click("#atualizar")
@@ -136,4 +151,26 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     assert "Preciso de ajuda" in adm.locator("#suporte").inner_text()
     if os.environ.get("RENDER2GO_CAPTURAS"):
         cli.screenshot(path=os.path.join(os.environ["RENDER2GO_CAPTURAS"], "cliente.png"), full_page=True)
+    assert erros == []
+
+
+def test_support_page_without_access_code_and_cookie_banner(ambiente, navegador):  # noqa: F811 (fixture)
+    erros: list[str] = []
+    pg = _pagina(navegador, erros)
+    pg.goto(f"{ambiente.url}/suporte")
+    pg.wait_for_selector("#aviso-cookies")
+    if os.environ.get("RENDER2GO_CAPTURAS"):
+        pg.screenshot(path=os.path.join(os.environ["RENDER2GO_CAPTURAS"], "suporte-cookies.png"), full_page=True)
+    pg.click("#aviso-cookies button:has-text('Aceitar todos')")
+    pg.wait_for_selector("#aviso-cookies", state="detached")
+    assert pg.locator("#suporte-email").get_attribute("required") is not None  # sem código: e-mail obrigatório
+    pg.fill("#suporte-mensagem", "Perdi o meu código de acesso, como faço?")
+    pg.fill("#suporte-email", "dona@loja.com.br")
+    pg.click("#suporte-enviar")
+    pg.wait_for_selector("#suporte-msg.ok")
+    (m,) = ambiente.banco.suporte_recente()
+    assert m["cliente_id"] == "" and m["email"] == "dona@loja.com.br"
+    # "Preferências de cookies" reabre o aviso com a escolha atual
+    pg.click("#preferencias-cookies")
+    assert pg.locator("#ck-estatisticas").is_checked() and pg.locator("#ck-marketing").is_checked()
     assert erros == []
