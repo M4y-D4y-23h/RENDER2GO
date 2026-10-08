@@ -105,6 +105,7 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
     assert _job(api) is None  # nada roda antes da aprovação
     (pend,) = api.get("/api/admin/lotes", headers=h(ADMIN)).json()
     assert pend["lote"] == lid and len(pend["fotos"]) == 2
+    assert (pend["cliente_nome"], pend["plano"], pend["ip"]) == ("Loja A", "pago", "testclient")
     assert api.post(f"/api/admin/lotes/{lid}/aprovar", headers=h(ADMIN)).json()["videos"] == 2
 
     comp = _job(api)
@@ -175,17 +176,87 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok_a)).json()
     assert lote["status"] == "concluido" and lote["prontos"] == 2
     assert all("/saida/" in v["url"] and f"/{lid}/" in v["url"] for v in lote["videos"])
+    # lote fechado: as fotos de entrada saem do armazenamento; os vídeos ficam
+    api.app.state.cfg.esperar_fundo()
+    assert not [k for k in api.armazem.objetos if k.startswith("entrada/")]
+    assert len([k for k in api.armazem.objetos if k.startswith("saida/")]) == 2
 
 
 def test_free_trial_limits(api):
     tok = _cliente(api, "Teste", plano="teste")
-    assert _lote(api, tok, qualidade="alta").status_code == 422
+    plano = api.get("/api/receitas", headers=h(tok)).json()["plano"]
+    assert plano == {
+        "nome": "teste",
+        "qualidades": ["rapida"],
+        "duracoes": [3],
+        "max_fotos": 10,
+        "disponivel": True,
+        "motivo": None,
+    }
+    assert _lote(api, tok, qualidade="alta").status_code == 422  # 720p fica para o plano pago
     assert _lote(api, tok, duracao=5).status_code == 422
     assert _lote(api, tok, n=11).status_code == 429
-    r = _lote(api, tok, n=6)
-    assert r.status_code == 200 and r.json()["envios"]
-    assert _lote(api, tok, n=5).status_code == 429  # 6 + 5 passa das 10 fotos do teste
-    assert _lote(api, tok, n=4).status_code == 200
+    a = _lote(api, tok, n=6).json()["lote"]  # envio que não terminou...
+    r = _lote(api, tok, n=4)  # ...é substituído pelo pedido novo
+    assert r.status_code == 200 and api.get(f"/api/lotes/{a}", headers=h(tok)).json()["status"] == "recusado"
+    b = r.json()["lote"]
+    assert _enviar_tudo(api, tok, b, r.json()["envios"]).status_code == 200
+    assert api.get(f"/api/lotes/{b}", headers=h(tok)).json()["pedido"]["duracao"] == 3
+    # um pedido só por cliente de teste
+    assert _lote(api, tok, n=1).status_code == 429
+    assert api.get("/api/receitas", headers=h(tok)).json()["plano"]["disponivel"] is False
+
+    # outro cliente de teste no mesmo IP: o IP já tem 4 fotos de teste, o teto é 10
+    tok2 = _cliente(api, "Teste 2", plano="teste")
+    r = _lote(api, tok2, n=7)
+    assert r.status_code == 429 and "endereço de internet" in r.json()["detail"]
+    assert _lote(api, tok2, n=6).status_code == 200
+    # outro IP (o Caddy põe o IP real no X-Forwarded-For): conta à parte
+    tok3 = _cliente(api, "Teste 3", plano="teste")
+    corpo = {
+        "prompt": "a câmera se aproxima devagar do produto",
+        "fotos": [{"nome": f"f{i}.jpg", "tipo": "image/jpeg", "bytes": 100} for i in range(10)],
+    }
+    r = api.post("/api/lotes", json=corpo, headers={**h(tok3), "X-Forwarded-For": "203.0.113.7"})
+    assert r.status_code == 200
+    # pedido recusado libera o teste do cliente
+    api.post(f"/api/admin/lotes/{b}/recusar", json={"motivo": "foto com pessoa sem autorização"}, headers=h(ADMIN))
+    assert _lote(api, tok, n=2).status_code == 200
+
+
+def test_history_ip_usage_and_client_deactivation(api):
+    tok = _cliente(api, "Loja A")
+    r = _lote(api, tok, n=2)
+    lid = r.json()["lote"]
+    _enviar_tudo(api, tok, lid, r.json()["envios"])
+    r2 = _lote(api, tok, n=1)
+    lid2 = r2.json()["lote"]
+    _enviar_tudo(api, tok, lid2, r2.json()["envios"])
+    api.post(f"/api/admin/lotes/{lid}/aprovar", headers=h(ADMIN))
+    api.post(f"/api/admin/lotes/{lid2}/recusar", json={"motivo": "foto borrada"}, headers=h(ADMIN))
+
+    todos = api.get("/api/admin/historico", headers=h(ADMIN)).json()
+    por_lote = {x["lote"]: x for x in todos["lotes"]}
+    assert por_lote[lid]["status"] == "aprovado" and por_lote[lid]["cliente_nome"] == "Loja A"
+    assert por_lote[lid]["aprovado_por"].startswith("admin-") and por_lote[lid]["total"] == 2
+    assert por_lote[lid2]["motivo"] == "foto borrada" and por_lote[lid2]["ip"] == "testclient"
+    aprovados = api.get("/api/admin/historico?grupo=aprovados", headers=h(ADMIN)).json()["lotes"]
+    recusados = api.get("/api/admin/historico?grupo=recusados", headers=h(ADMIN)).json()["lotes"]
+    assert [x["lote"] for x in aprovados] == [lid] and [x["lote"] for x in recusados] == [lid2]
+    assert api.get("/api/admin/historico?grupo=xyz", headers=h(ADMIN)).status_code == 422
+    (uso,) = todos["ips"]  # o recusado não conta
+    assert uso["ip"] == "testclient" and uso["fotos"] == 2 and uso["pedidos"] == 1
+
+    # fotos do lote recusado apagadas do armazenamento
+    api.app.state.cfg.esperar_fundo()
+    assert all(f"/{lid2}/" not in k for k in api.armazem.objetos if k.startswith("entrada/"))
+    assert api.get("/api/admin/historico?grupo=recusados", headers=h(ADMIN)).json()["lotes"][0]["fotos_apagadas"]
+
+    # código exposto: o cliente é desativado e o código deixa de valer
+    cid = por_lote[lid]["cliente"]
+    assert api.post(f"/api/admin/clientes/{cid}/desativar", headers=h(ADMIN)).status_code == 200
+    assert api.get("/api/lotes", headers=h(tok)).status_code == 401
+    assert api.post(f"/api/admin/clientes/{cid}/desativar", headers=h(ADMIN)).status_code == 404
 
 
 def test_content_filter_blocks_at_entry_and_on_compiled_prompt(api):

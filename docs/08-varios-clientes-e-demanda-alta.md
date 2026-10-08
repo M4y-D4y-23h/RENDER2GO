@@ -64,4 +64,16 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
    - páginas: `/` e `/aprovar`;
    - Dockerfile, CI e `docs/09-implantacao.md`.
 
-**Ainda por fazer:** medir em pods reais a fila com vários clientes, que só é possível depois da implantação (`docs/09`, seção 6).
+5. **Teste gratuito barato e sem abuso** (08/10/2026):
+   - um pedido só, com até 10 fotos, 480p e 3 s;
+   - até 10 fotos de teste por IP;
+   - testes esperam juntar 20 vídeos ou 10 min antes de subir um pod (`docs/09`, seção 5.1).
+6. **Fotos de entrada apagadas quando o lote fecha** (`docs/09`, seção 5.2).
+
+**Medido em 08/10/2026, no servidor de produção:** 1 lote de teste com 9 fotos.
+- Pod pronto em 2 min 40 s (instalação de 78 s).
+- 9 vídeos de 3 s conferidos.
+- Pod encerrado 3,5 min depois do último vídeo.
+- US$ 0,24 no total.
+
+**Ainda por fazer:** medir em pods reais a fila com vários clientes ao mesmo tempo.

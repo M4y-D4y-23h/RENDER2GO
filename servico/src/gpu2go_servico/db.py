@@ -44,7 +44,8 @@ ESQUEMA = [
         id TEXT PRIMARY KEY, cliente_id TEXT NOT NULL REFERENCES clientes(id),
         status TEXT NOT NULL, pedido TEXT NOT NULL, prompt_en TEXT, compilador TEXT,
         n_fotos INTEGER NOT NULL, prioridade INTEGER NOT NULL DEFAULT 0, criado DOUBLE PRECISION NOT NULL,
-        aprovado_em DOUBLE PRECISION, aprovado_por TEXT, concluido_em DOUBLE PRECISION, motivo TEXT)""",
+        aprovado_em DOUBLE PRECISION, aprovado_por TEXT, concluido_em DOUBLE PRECISION, motivo TEXT,
+        ip TEXT, fotos_apagadas DOUBLE PRECISION)""",
     """CREATE TABLE IF NOT EXISTS fotos (
         id TEXT PRIMARY KEY, lote_id TEXT NOT NULL REFERENCES lotes(id), nome TEXT NOT NULL,
         tipo TEXT NOT NULL, bytes INTEGER NOT NULL, chave TEXT NOT NULL, enviada INTEGER NOT NULL DEFAULT 0,
@@ -63,7 +64,13 @@ ESQUEMA = [
 # colunas que entraram depois da primeira implantação: (tabela, coluna, tipo)
 COLUNAS_NOVAS = [
     ("fotos", "analise", "TEXT"),  # aviso de pessoas no /aprovar (gpu2go_servico.pessoas)
+    ("lotes", "ip", "TEXT"),  # IP de quem criou o pedido (limite do teste gratuito por IP)
+    ("lotes", "fotos_apagadas", "DOUBLE PRECISION"),  # fotos de entrada apagadas ao fechar o lote
 ]
+# lote que já passou do envio e não foi recusado: conta nos limites do teste gratuito
+ATIVO = "status NOT IN ('aguardando_envio', 'recusado')"
+ATIVO_L = "l." + ATIVO  # o mesmo, com a tabela lotes como "l"
+APROVADOS = ("aprovado", "processando", "concluido", "concluido_com_falhas")
 
 
 class BancoError(Exception):
@@ -120,6 +127,7 @@ class Banco:
             for sql in ESQUEMA:
                 c.run(sql if self.pg else sql.replace("DOUBLE PRECISION", "REAL").replace("BIGINT", "INTEGER"))
             for tabela, coluna, tipo in COLUNAS_NOVAS:
+                tipo = tipo if self.pg else tipo.replace("DOUBLE PRECISION", "REAL")
                 if self.pg:  # IF NOT EXISTS: a API e o orquestrador sobem juntos
                     c.run(f"ALTER TABLE {tabela} ADD COLUMN IF NOT EXISTS {coluna} {tipo}")
                 elif not any(r["name"] == coluna for r in c.all(f"PRAGMA table_info({tabela})")):
@@ -154,6 +162,92 @@ class Banco:
             )
         return int(r["n"])
 
+    def pedidos_ativos(self, cliente_id: str, exceto: str | None = None) -> int:
+        """Lotes do cliente que já passaram do envio e não foram recusados (teste: um pedido só)."""
+        with self.tx() as c:
+            r = c.one(
+                f"SELECT COUNT(*) AS n FROM lotes WHERE cliente_id = ? AND {ATIVO} AND id <> ?",
+                (cliente_id, exceto or ""),
+            )
+        return int(r["n"])
+
+    def fotos_teste_ip(self, ip: str, exceto: str | None = None) -> int:
+        """Fotos de teste gratuito pedidas a partir deste IP, somando todos os clientes de teste."""
+        with self.tx() as c:
+            r = c.one(
+                "SELECT COALESCE(SUM(l.n_fotos), 0) AS n FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
+                f" WHERE l.ip = ? AND k.plano = 'teste' AND {ATIVO_L}"
+                " AND l.id <> ?",
+                (ip, exceto or ""),
+            )
+        return int(r["n"])
+
+    def substituir_envios(self, cliente_id: str) -> int:
+        """Pedidos do cliente cujo envio não terminou viram "recusado" (o teste vale um pedido só)."""
+        with self.tx() as c:
+            velhos = c.all("SELECT id FROM lotes WHERE cliente_id = ? AND status = 'aguardando_envio'", (cliente_id,))
+            for v in velhos:
+                c.run(
+                    "UPDATE lotes SET status = 'recusado', motivo = ? WHERE id = ?",
+                    ("envio não concluído; substituído por um pedido novo", v["id"]),
+                )
+                self.evento(c, v["id"], "substituido", None)
+        return len(velhos)
+
+    def desativar_cliente(self, cliente_id: str, quem: str) -> bool:
+        with self.tx() as c:
+            n = c.run("UPDATE clientes SET ativo = 0 WHERE id = ? AND ativo = 1", (cliente_id,))
+            if n:
+                self.evento(c, None, "cliente_desativado", {"cliente": cliente_id, "por": quem})
+        return bool(n)
+
+    def historico(self, grupo: str = "todos", limite: int = 100) -> list[dict]:
+        """Lotes mais recentes com o cliente e o andamento, para o /aprovar."""
+        filtros = {
+            "todos": ("1 = 1", ()),
+            "revisao": ("l.status = 'aguardando_aprovacao'", ()),
+            "aprovados": (f"l.status IN ({', '.join('?' * len(APROVADOS))})", APROVADOS),
+            "recusados": ("l.status = 'recusado'", ()),
+            "envio": ("l.status = 'aguardando_envio'", ()),
+        }
+        if grupo not in filtros:
+            raise BancoError(f"grupo desconhecido: {grupo}")
+        onde, args = filtros[grupo]
+        with self.tx() as c:
+            return c.all(
+                "SELECT l.id, l.cliente_id, k.nome AS cliente_nome, k.plano, k.ativo AS cliente_ativo, l.status,"
+                " l.pedido, l.n_fotos, l.ip, l.criado, l.aprovado_em, l.aprovado_por, l.concluido_em, l.motivo,"
+                " l.fotos_apagadas,"
+                " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render' AND j.status = 'ok')"
+                " AS prontos,"
+                " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render') AS total"
+                f" FROM lotes l JOIN clientes k ON k.id = l.cliente_id WHERE {onde}"
+                " ORDER BY l.criado DESC LIMIT ?",
+                (*args, limite),
+            )
+
+    def uso_por_ip(self, limite: int = 50) -> list[dict]:
+        """Fotos e pedidos por IP (só lotes que passaram do envio e não foram recusados)."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT l.ip, COUNT(*) AS pedidos, COALESCE(SUM(l.n_fotos), 0) AS fotos,"
+                " COALESCE(SUM(CASE WHEN k.plano = 'teste' THEN l.n_fotos ELSE 0 END), 0) AS fotos_teste,"
+                " COUNT(DISTINCT l.cliente_id) AS clientes, MAX(l.criado) AS ultimo"
+                " FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
+                f" WHERE l.ip IS NOT NULL AND {ATIVO_L}"
+                " GROUP BY l.ip ORDER BY ultimo DESC LIMIT ?",
+                (limite,),
+            )
+
+    def marcar_fotos_apagadas(self, lote_id: str) -> None:
+        with self.tx() as c:
+            c.run("UPDATE lotes SET fotos_apagadas = ? WHERE id = ?", (time.time(), lote_id))
+            self.evento(c, lote_id, "fotos_apagadas", None)
+
+    def cliente(self, cliente_id: str) -> dict | None:
+        with self.tx() as c:
+            return c.one("SELECT id, nome, plano, ativo FROM clientes WHERE id = ?", (cliente_id,))
+
     def cliente_por_token(self, token: str) -> dict | None:
         with self.tx() as c:
             return c.one("SELECT * FROM clientes WHERE token_sha = ? AND ativo = 1", (sha(token),))
@@ -169,8 +263,8 @@ class Banco:
 
     # -- lotes ----------------------------------------------------------------------------
 
-    def criar_lote(self, cliente_id: str, pedido: dict, fotos: list[dict]) -> str:
-        """fotos: [{nome, tipo, bytes, chave}] (já validadas pela API)."""
+    def criar_lote(self, cliente_id: str, pedido: dict, fotos: list[dict], ip: str | None = None) -> str:
+        """fotos: [{nome, tipo, bytes, chave}] (já validadas pela API); ip: de quem pediu."""
         lid = novo_id("lote")
         agora = time.time()
         with self.tx() as c:
@@ -178,8 +272,8 @@ class Banco:
             if cli is None:
                 raise BancoError("cliente não encontrado")
             c.run(
-                "INSERT INTO lotes (id, cliente_id, status, pedido, n_fotos, prioridade, criado)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO lotes (id, cliente_id, status, pedido, n_fotos, prioridade, criado, ip)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     lid,
                     cliente_id,
@@ -188,6 +282,7 @@ class Banco:
                     len(fotos),
                     PLANOS[cli["plano"]],
                     agora,
+                    ip,
                 ),
             )
             for f in fotos:
@@ -400,7 +495,7 @@ class Banco:
         (qualidade e duração decidem o tempo por vídeo) e a prioridade."""
         with self.tx() as c:
             return c.all(
-                "SELECT l.id AS lote_id, l.pedido, l.prioridade,"
+                "SELECT l.id AS lote_id, l.pedido, l.prioridade, MIN(j.criado) AS mais_antigo,"
                 " SUM(CASE WHEN j.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,"
                 " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS em_andamento"
                 " FROM jobs j JOIN lotes l ON l.id = j.lote_id"

@@ -85,6 +85,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 | `RUNPOD_API_KEY` | O orquestrador cria e encerra pods |
 | `GPU2GO_MAX_PODS`, `GPU2GO_MAX_USD_H` | Teto de pods e de gasto por hora |
 | `GPU2GO_PRAZO_MIN` | Opcional: prazo de entrega em minutos (mais pods, mais custo) |
+| `GPU2GO_AGRUPAR_TESTE_MIN`, `GPU2GO_AGRUPAR_TESTE_VIDEOS` | Opcional: testes gratuitos esperam juntar 20 vídeos ou 10 min antes de subir um pod (padrões) |
 
 **Banco gerenciado (opcional):** troque o Postgres local por um serviço como Neon ou Supabase. Basta pôr `GPU2GO_DB_URL` no `.env` e apagar as linhas `GPU2GO_DB_URL` do `compose.yaml`. O esquema é criado sozinho na primeira subida.
 
@@ -94,6 +95,8 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
   ```bash
   docker compose exec api gpu2go-servico cliente "Padaria do Bairro" --plano teste
   ```
+- **Histórico:** em `/aprovar`, abaixo dos pendentes. Mostra todos os pedidos (filtros: em revisão, aprovados, recusados), com cliente, IP, fotos, quem aprovou, motivo da recusa e andamento. A tabela "Uso por IP" soma as fotos por IP.
+- **Código de cliente vazou:** no histórico, "Desativar o código deste cliente". O código deixa de valer na hora.
 - **Aprovar pedidos:** em `/aprovar`. Nada vai para a GPU sem aprovação (ADR 0004). O cliente acompanha em `/`.
   - Cada foto ganha um selo "contém pessoas" ou "sem pessoas detectadas" segundos depois do envio (detector no próprio servidor, sem custo de GPU). Com pessoas e sem a caixa de autorização marcada, o lote mostra um aviso em vermelho.
   - O selo é uma ajuda: confira sempre as miniaturas.
@@ -108,6 +111,27 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
   docker compose exec -T postgres pg_dump -U gpu2go gpu2go | gzip > backup-$(date +%F).sql.gz
   ```
 - **Gasto:** o painel do RunPod mostra os pods. O orquestrador respeita `GPU2GO_MAX_USD_H` e o saldo da conta, e cada pod se desliga sozinho em no máximo 2 h.
+
+## 5.1 Teste gratuito e custo
+
+- **Regras** (a API impõe; a página só mostra):
+  - um pedido só, com até 10 fotos;
+  - vídeos de 3 s em 480p;
+  - no máximo 10 fotos de teste por IP, somando todos os clientes de teste.
+- **Pedido recusado libera o teste** do cliente, para ele corrigir e mandar de novo.
+- **Agrupamento:** com só testes na fila e nenhum pod ligado, o orquestrador espera juntar 20 vídeos ou 10 min.
+  - Cada subida de pod custa ~US$ 0,20 (subida + 3 min de pod quente), e um vídeo de teste ~US$ 0,015.
+  - Dez pedidos de 1 foto em horários diferentes custariam ~US$ 2,15; juntos, ~US$ 0,35.
+  - Pedidos pagos sobem na hora (e levam os testes da fila junto).
+- **O IP vem do Caddy:** ele troca o `X-Forwarded-For` recebido de fora pelo IP real da conexão.
+  - Se um dia o proxy da Cloudflare (nuvem laranja) for ligado, o IP passa a ser o da Cloudflare, e é preciso ler o `CF-Connecting-IP`.
+  - Vários clientes podem dividir um IP (escritórios, redes de celular), e uma VPN troca o IP: é um sinal, não uma prova.
+
+## 5.2 O que fica guardado
+
+- **Fotos de entrada:** apagadas pela API assim que o lote fecha (pronto, com falhas ou recusado). A regra `fotos-7-dias` do bucket fica como rede de segurança, para lotes que nunca fecham ou que esperam revisão por dias. Não use menos de 7 dias: um lote parado na revisão perderia as fotos antes de chegar à GPU.
+- **Vídeos e folhas de conferência:** pela regra `videos-30-dias` do bucket. Pode ser reduzida (ex.: 7 dias) se os termos de uso disserem que o cliente deve baixar os vídeos nesse prazo.
+- **No banco:** pedido, IP, quantidade de fotos, eventos e o resultado da análise de pessoas. Nenhuma imagem.
 
 ## 6. Primeiro teste depois de subir
 

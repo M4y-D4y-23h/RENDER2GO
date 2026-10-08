@@ -169,15 +169,47 @@ function iniciarCliente() {
         if (!lista || !receitas)
             return;
         const tipos = new Set(receitas.limites.tipos);
+        const maximo = receitas.plano?.max_fotos ?? receitas.limites.fotos;
         let ignorados = 0;
+        let excedentes = 0;
         for (const f of Array.from(lista)) {
             if (!tipos.has(f.type) || f.size > receitas.limites.bytes_foto) {
                 ignorados++;
                 continue;
             }
+            if (arquivos.size >= maximo) {
+                excedentes++;
+                continue;
+            }
             arquivos.set(f.webkitRelativePath || f.name, f);
         }
-        el("contagem").textContent = `${arquivos.size} foto(s) selecionada(s)` + (ignorados ? ` · ${ignorados} ignorada(s) (use JPG, PNG ou WebP até 50 MB)` : "");
+        el("contagem").textContent =
+            `${arquivos.size} foto(s) selecionada(s)` +
+                (ignorados ? ` · ${ignorados} ignorada(s) (use JPG, PNG ou WebP até 50 MB)` : "") +
+                (excedentes ? ` · ${excedentes} a mais ficaram de fora (máximo de ${maximo} fotos)` : "");
+    };
+    // teste gratuito: só 480p, vídeos de 3 s, um pedido com até 10 fotos (a API confere tudo de novo)
+    const aplicarPlano = (plano) => {
+        const avisoPlano = el("plano-aviso");
+        if (!plano || plano.nome !== "teste")
+            return;
+        const qualidade = el("qualidade");
+        for (const o of Array.from(qualidade.options))
+            if (!plano.qualidades?.includes(o.value))
+                o.remove();
+        const duracao = el("duracao");
+        for (const o of Array.from(duracao.options))
+            if (!plano.duracoes?.includes(Number(o.value)))
+                o.remove();
+        duracao.value = String(plano.duracoes?.[0] ?? 3);
+        if (plano.disponivel) {
+            aviso(avisoPlano, `Teste gratuito: um pedido só, com até ${plano.max_fotos} fotos, vídeos de 3 s em 480p. Escolha todas as fotos de uma vez. Os testes são gerados em grupo: os vídeos ficam prontos em até uns 20 minutos depois da revisão.`);
+        }
+        else {
+            aviso(avisoPlano, `Teste gratuito já usado: ${plano.motivo ?? ""}`.trim(), "erro");
+            for (const c of Array.from(el("form-lote").elements))
+                c.disabled = true;
+        }
     };
     painelToken("gpu2go-token-cliente", async (t) => {
         token = t;
@@ -190,6 +222,7 @@ function iniciarCliente() {
         }
         const sel = el("receita");
         sel.replaceChildren(...receitas.receitas.map((r) => criar("option", { value: r.id, textContent: `${r.label} (${r.nicho})` })));
+        aplicarPlano(receitas.plano);
         el("painel").hidden = false;
         listar();
     });
@@ -225,13 +258,17 @@ function iniciarCliente() {
             arquivos.clear();
             el("contagem").textContent = "";
             el("form-lote").reset();
+            if (receitas?.plano?.nome === "teste") {
+                receitas = await api("/api/receitas", token);
+                aplicarPlano(receitas.plano);
+            }
             listar();
         }
         catch (e) {
             aviso(msg, e.message, "erro");
         }
         finally {
-            botao.disabled = false;
+            botao.disabled = receitas?.plano?.disponivel === false;
             el("progresso").hidden = true;
         }
     });
@@ -302,7 +339,10 @@ function cartaoPendente(p, token, aoMudar) {
     return criar("article", { className: "cartao" }, [
         criar("div", { className: "cab" }, [
             criar("strong", { textContent: `${p.fotos.length} foto(s)` }),
-            criar("span", { className: "fraco", textContent: ` · cliente ${p.cliente} · ${quando(p.criado)}` }),
+            criar("span", {
+                className: "fraco",
+                textContent: ` · ${p.cliente_nome ?? p.cliente}${p.plano ? ` (${p.plano})` : ""} · IP ${p.ip ?? "—"} · ${quando(p.criado)}`,
+            }),
         ]),
         criar("p", { className: "pedido", textContent: `“${pedido.prompt}”` }),
         criar("p", {
@@ -315,9 +355,73 @@ function cartaoPendente(p, token, aoMudar) {
         msg,
     ]);
 }
+function itemHistorico(x, token, aoMudar) {
+    const linhas = [
+        criar("div", { className: "cab" }, [
+            criar("span", { className: `etiqueta ${x.status}`, textContent: ESTADOS[x.status] ?? x.status }),
+            criar("span", {
+                className: "fraco",
+                textContent: ` · ${quando(x.criado)} · ${x.cliente_nome} (${x.plano === "teste" ? "teste" : "pago"}) · ${x.fotos} foto(s) · IP ${x.ip ?? "—"}`,
+            }),
+        ]),
+        criar("p", { className: "pedido", textContent: `“${x.prompt}”` }),
+    ];
+    const detalhes = [];
+    if (x.aprovado_em)
+        detalhes.push(`aprovado em ${quando(x.aprovado_em)} por ${x.aprovado_por ?? "?"}`);
+    if (x.total)
+        detalhes.push(`${x.prontos} de ${x.total} vídeo(s) prontos`);
+    if (x.concluido_em)
+        detalhes.push(`fechado em ${quando(x.concluido_em)}`);
+    if (x.fotos_apagadas)
+        detalhes.push("fotos de entrada já apagadas");
+    if (detalhes.length)
+        linhas.push(criar("p", { className: "fraco", textContent: detalhes.join(" · ") }));
+    if (x.motivo)
+        linhas.push(criar("p", { className: "aviso erro", textContent: `Motivo: ${x.motivo}` }));
+    if (x.cliente_ativo) {
+        const botao = criar("button", { type: "button", textContent: "Desativar o código deste cliente" });
+        botao.addEventListener("click", async () => {
+            if (!window.confirm(`Desativar o código de acesso de ${x.cliente_nome}? Ele deixa de entrar na página.`))
+                return;
+            botao.disabled = true;
+            try {
+                await api(`/api/admin/clientes/${x.cliente}/desativar`, token, { method: "POST" });
+                aoMudar();
+            }
+            catch (e) {
+                botao.disabled = false;
+                window.alert(e.message);
+            }
+        });
+        linhas.push(criar("div", { className: "acoes" }, [botao]));
+    }
+    else {
+        linhas.push(criar("p", { className: "fraco", textContent: "Código do cliente desativado." }));
+    }
+    return criar("article", { className: "cartao hist" }, linhas);
+}
+function tabelaIps(ips) {
+    if (!ips.length)
+        return criar("p", { className: "fraco", textContent: "Nenhum pedido com IP registrado ainda." });
+    const th = (t, num = false) => criar("th", { textContent: t, className: num ? "num" : "", scope: "col" });
+    const td = (t, num = false) => criar("td", { textContent: String(t), className: num ? "num" : "" });
+    const cab = criar("tr", {}, [th("IP"), th("Fotos", true), th("Fotos de teste", true), th("Pedidos", true), th("Clientes", true), th("Último pedido")]);
+    const linhas = ips.map((u) => criar("tr", {}, [td(u.ip), td(u.fotos, true), td(u.fotos_teste, true), td(u.pedidos, true), td(u.clientes, true), td(quando(u.ultimo))]));
+    return criar("table", {}, [criar("thead", {}, [cab]), criar("tbody", {}, linhas)]);
+}
 function iniciarAprovador() {
     const msg = el("msg");
     let token = "";
+    let grupo = "todos";
+    const listarHistorico = async () => {
+        const r = await api(`/api/admin/historico?grupo=${grupo}`, token);
+        const alvo = el("historico");
+        alvo.replaceChildren(...r.lotes.map((x) => itemHistorico(x, token, listar)));
+        if (!r.lotes.length)
+            alvo.append(criar("p", { className: "fraco", textContent: "Nenhum pedido neste filtro." }));
+        el("ips").replaceChildren(tabelaIps(r.ips));
+    };
     const listar = async () => {
         try {
             const lotes = await api("/api/admin/lotes", token);
@@ -325,12 +429,23 @@ function iniciarAprovador() {
             alvo.replaceChildren(...lotes.map((p) => cartaoPendente(p, token, listar)));
             if (!lotes.length)
                 alvo.append(criar("p", { className: "fraco", textContent: "Nada aguardando revisão." }));
+            await listarHistorico();
             aviso(msg, "");
         }
         catch (e) {
             aviso(msg, `Não foi possível carregar: ${e.message}`, "erro");
         }
     };
+    for (const b of Array.from(el("filtros-historico").querySelectorAll("button"))) {
+        b.addEventListener("click", () => {
+            grupo = b.dataset.grupo ?? "todos";
+            for (const o of Array.from(el("filtros-historico").querySelectorAll("button"))) {
+                o.classList.toggle("ativo", o === b);
+                o.setAttribute("aria-pressed", String(o === b));
+            }
+            listarHistorico().catch((e) => aviso(msg, `Não foi possível carregar: ${e.message}`, "erro"));
+        });
+    }
     painelToken("gpu2go-token-admin", (t) => {
         token = t;
         el("painel").hidden = false;

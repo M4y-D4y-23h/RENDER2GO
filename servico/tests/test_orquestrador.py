@@ -150,3 +150,21 @@ def test_deadline_hourly_cap_and_balance(orq, banco):
 
     pobre = orq(provedor=Provedor(saldo=1.2))  # quase nada além da reserva: não sobe
     assert pobre.ciclo()["subindo"] == 0 and pobre.provedor.criados == []
+
+
+def test_free_trials_wait_to_be_grouped_but_paid_orders_start_now(orq, banco):
+    lid = _lote(banco, 3)  # 3 vídeos de teste: espera juntar 20 ou 10 min
+    o = orq()
+    assert o.ciclo()["desejados"] == 0 and o.provedor.criados == []
+    trabalho = banco.trabalho()
+    assert o.segurar_testes(trabalho, existentes=1) is False  # pod já ligado: ele pega na hora
+    with banco.tx() as c:  # o teste mais antigo já esperou 11 min
+        c.run("UPDATE jobs SET criado = criado - 660 WHERE lote_id = ?", (lid,))
+    assert o.ciclo()["desejados"] == 1
+    _esperar(lambda: o.subindo == 0)
+    o.encerrar_todos("fim do teste")
+
+    pago = orq()
+    _lote(banco, 1, plano="pago")  # pago na fila: sobe sem esperar (e leva os testes junto)
+    assert pago.segurar_testes(banco.trabalho(), existentes=0) is False
+    _esperar(lambda: pago.subindo == 0)

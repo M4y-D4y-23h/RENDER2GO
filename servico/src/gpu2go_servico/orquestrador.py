@@ -11,6 +11,12 @@ A cada ciclo (30 s):
    (`gpu2go_worker.fila`);
 4. encerra os pods cujo worker terminou (fila vazia por 3 min = "pod quente" vencido).
 
+Testes gratuitos em grupo (docs/08): com só testes na fila e nenhum pod ligado, o pod espera
+juntar GPU2GO_AGRUPAR_TESTE_VIDEOS vídeos (padrão 20) ou o teste mais antigo esperar
+GPU2GO_AGRUPAR_TESTE_MIN minutos (padrão 10). Cada subida custa ~US$ 0,20 (subida + espera do
+pod quente) e um vídeo de teste ~US$ 0,015: dez testes de 1 foto em horários diferentes
+pagariam dez subidas; juntos, pagam uma. Pedidos pagos sobem na hora.
+
 Proteções:
 - cada pod nasce com desligamento automático (≤ 2 h e o que o saldo paga);
 - o worker para de pegar jobs 10 min antes;
@@ -63,6 +69,8 @@ class ConfigOrq:
     estado: Path = ln.CACHE / "orquestrador"
     segredo_aprovacao: str | None = None
     fila_cmd: str = FILA_CMD
+    agrupar_teste_s: float = 10 * 60
+    agrupar_teste_videos: int = 20
 
     @classmethod
     def do_ambiente(cls) -> ConfigOrq:
@@ -82,6 +90,8 @@ class ConfigOrq:
             max_usd_h=float(os.environ.get("GPU2GO_MAX_USD_H", 20)),
             prazo_min=int(prazo) if prazo else None,
             segredo_aprovacao=os.environ.get("GPU2GO_SEGREDO_APROVACAO") or None,
+            agrupar_teste_s=float(os.environ.get("GPU2GO_AGRUPAR_TESTE_MIN", 10)) * 60,
+            agrupar_teste_videos=int(os.environ.get("GPU2GO_AGRUPAR_TESTE_VIDEOS", 20)),
         )
 
 
@@ -122,8 +132,26 @@ class Orquestrador:
         self.lock = threading.Lock()
         self.parar = threading.Event()
         self.n = 0
+        self._segurando: int | None = None
 
     # -- decisão --------------------------------------------------------------------------
+
+    def segurar_testes(self, trabalho: list[dict], existentes: int) -> bool:
+        """Só testes na fila e nenhum pod ligado: espera juntar mais antes de pagar uma subida."""
+        if existentes or not trabalho or any(t["prioridade"] == 0 for t in trabalho):
+            self._segurando = None
+            return False
+        videos = sum(int(t["pendentes"] or 0) + int(t["em_andamento"] or 0) for t in trabalho)
+        espera = time.time() - min(float(t["mais_antigo"]) for t in trabalho)
+        if videos >= self.cfg.agrupar_teste_videos or espera >= self.cfg.agrupar_teste_s:
+            self._segurando = None
+            return False
+        if self._segurando != videos:  # registra só quando muda
+            self._segurando = videos
+            falta = (self.cfg.agrupar_teste_s - espera) / 60
+            alvo = self.cfg.agrupar_teste_videos
+            _log(f"juntando testes gratuitos: {videos} vídeo(s); sobe com {alvo} ou em {falta:.0f} min")
+        return True
 
     def desejados(self, trabalho: list[dict]) -> int:
         """Pods que a fila pede agora (0 sem trabalho)."""
@@ -224,9 +252,10 @@ class Orquestrador:
 
     def ciclo(self) -> dict:
         self._revisar()
-        querem = self.desejados(self.banco.trabalho())
+        trabalho = self.banco.trabalho()
         with self.lock:
             existentes = len(self.ativos) + self.subindo
+        querem = 0 if self.segurar_testes(trabalho, existentes) else self.desejados(trabalho)
         faltam = max(0, querem - existentes)
         subiu = 0
         if not faltam:  # fila vazia ou já atendida: sem consulta de preço a cada 30 s

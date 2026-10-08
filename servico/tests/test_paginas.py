@@ -61,6 +61,10 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     cli.fill("#token", token)
     cli.click("#form-token button")
     cli.wait_for_selector("#receita option", state="attached")
+    # teste gratuito: só 480p e 3 s, e o aviso das regras
+    assert cli.locator("#qualidade option").all_inner_texts() == ["Rápida (prévia, 480p)"]
+    assert cli.locator("#duracao option").all_inner_texts() == ["3 s"]
+    assert "um pedido só" in cli.locator("#plano-aviso").inner_text()
     cli.set_input_files("#fotos", [str(tmp_path / "bolo.png"), str(tmp_path / "loja.png")])
     assert "2 foto(s)" in cli.locator("#contagem").inner_text()
     cli.fill("#prompt", "a câmera se aproxima devagar do produto")
@@ -69,6 +73,8 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     cli.wait_for_selector("#msg.ok", timeout=15000)
     cli.wait_for_selector("text=Em revisão")
     assert sum(k.endswith(".png") for k in ambiente.objetos) == 2  # direto no armazenamento
+    cli.wait_for_selector("#plano-aviso.erro")  # teste usado: o formulário trava
+    assert cli.locator("#enviar").is_disabled()
 
     # aprovador vê as miniaturas, o aviso de pessoas por foto e o resumo do lote, e aprova
     ambiente.cfg.analises.esperar()
@@ -82,6 +88,15 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
         adm.screenshot(path=os.path.join(os.environ["GPU2GO_CAPTURAS"], "aprovar.png"), full_page=True)
     adm.click(".acoes button.primario")
     adm.wait_for_selector("text=Nada aguardando revisão.")
+    # histórico: o pedido aprovado, com cliente e IP; e o uso por IP
+    hist = adm.locator("#historico .hist").first
+    assert "Padaria do Bairro" in hist.inner_text() and "IP 127.0.0.1" in hist.inner_text()
+    assert "Na fila" in hist.inner_text()
+    assert "127.0.0.1" in adm.locator("#ips table").inner_text()
+    adm.click("#filtros-historico button[data-grupo=recusados]")
+    adm.wait_for_selector("text=Nenhum pedido neste filtro.")
+    adm.click("#filtros-historico button[data-grupo=todos]")
+    adm.wait_for_selector("#historico .hist")
 
     # o worker termina (simulado no banco) e o cliente vê os links
     (lote,) = ambiente.banco.lotes()

@@ -7,9 +7,15 @@ Cliente (Authorization: Bearer <token do cliente>):
     GET  /api/lotes  /api/lotes/{id}   andamento e links dos vídeos
 
 Aprovação (Bearer <token de administração>), ADR 0004:
-    GET  /api/admin/lotes              lotes aguardando aprovação, com miniaturas
+    GET  /api/admin/lotes              lotes aguardando aprovação, com miniaturas e aviso de pessoas
     POST /api/admin/lotes/{id}/aprovar | /recusar
+    GET  /api/admin/historico          pedidos feitos, aprovados e recusados, e o uso por IP
     POST /api/admin/clientes           cadastra um cliente (plano pago ou teste); o token aparece uma vez
+    POST /api/admin/clientes/{id}/desativar   o código de acesso do cliente deixa de valer
+
+Teste gratuito (docs/08): um pedido só, até 10 fotos, vídeos de 3 s em 480p, e no máximo 10 fotos
+de teste por IP somando todos os clientes de teste. As fotos de entrada são apagadas quando o
+lote fecha (pronto, com falhas ou recusado); os vídeos ficam até a regra de retenção do bucket.
 
 Workers (Bearer <token de worker>), sem porta de entrada nos pods (eles puxam):
     POST /api/worker/reivindicar       próximo job, com URLs assinadas e carimbo de aprovação
@@ -52,8 +58,10 @@ MAX_FOTOS_LOTE = 1000
 MAX_BYTES_FOTO = 50 * 1024**2
 URL_ENVIO_S = 3600
 URL_DOWNLOAD_S = 24 * 3600
-# teste gratuito (docs/08): qualidade rápida, vídeos de 3 s, uma variação, até 10 fotos no total
-TESTE = {"qualidade": "rapida", "duracao": 3, "variacoes": 1, "fotos": 10}
+# teste gratuito (docs/08): um pedido só, qualidade rápida (480p), vídeos de 3 s, uma variação,
+# até 10 fotos; e no máximo 10 fotos de teste por IP, somando todos os clientes de teste
+TESTE = {"qualidade": "rapida", "duracao": 3, "variacoes": 1, "fotos": 10, "fotos_ip": 10}
+LOTE_FECHADO = ("concluido", "concluido_com_falhas", "recusado")
 NOME = re.compile(r"[^A-Za-z0-9_-]+")
 WEB = SERVICO_DIR / "web"
 
@@ -119,6 +127,21 @@ class Config:
     _janelas: dict = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _analises: AnaliseFotos | None = None
+    _fundo: ThreadPoolExecutor | None = None
+    _pendentes_fundo: list = field(default_factory=list)
+
+    def em_segundo_plano(self, fn: Callable, *args) -> None:
+        with self._lock:
+            if self._fundo is None:
+                self._fundo = ThreadPoolExecutor(max_workers=2, thread_name_prefix="fundo")
+            self._pendentes_fundo = [f for f in self._pendentes_fundo if not f.done()]
+            self._pendentes_fundo.append(self._fundo.submit(fn, *args))
+
+    def esperar_fundo(self) -> None:  # testes
+        with self._lock:
+            pendentes = list(self._pendentes_fundo)
+        for f in pendentes:
+            f.result()
 
     @property
     def analises(self) -> AnaliseFotos | None:
@@ -175,6 +198,43 @@ def _token(authorization: str | None) -> str:
 
 def _um_de(token: str, validos: list[str]) -> bool:
     return any(hmac.compare_digest(token, v) for v in validos)
+
+
+def ip_de(request: Request) -> str:
+    """IP de quem fez a requisição. A API só é alcançável pelo Caddy, que troca o
+    X-Forwarded-For recebido de fora pelo IP real da conexão; vale o último da lista."""
+    xff = request.headers.get("x-forwarded-for", "")
+    ip = xff.split(",")[-1].strip() if xff else ""
+    return ip or (request.client.host if request.client else "desconhecido")
+
+
+def _apagar_fotos(c: Config, lote_id: str) -> None:
+    """Fotos de entrada de um lote fechado: apagadas do armazenamento (minimiza o que guardamos)."""
+    falhas = 0
+    for f in c.banco.fotos(lote_id):
+        try:
+            c.armazenamento.apagar(f["chave"])
+        except Exception as e:  # noqa: BLE001 (a regra de ciclo de vida do bucket apaga depois)
+            falhas += 1
+            print(f"[fotos] AVISO: {f['chave']}: {e}", flush=True)
+    if not falhas:
+        c.banco.marcar_fotos_apagadas(lote_id)
+
+
+def _se_fechou(c: Config, lote_id: str) -> None:
+    lt = c.banco.lote(lote_id)
+    if lt and lt["status"] in LOTE_FECHADO and not lt["fotos_apagadas"]:
+        c.em_segundo_plano(_apagar_fotos, c, lote_id)
+
+
+def _limites_teste(c: Config, cli: dict, ip: str, n_fotos: int, exceto: str | None = None) -> None:
+    """Teste gratuito: um pedido só (todas as fotos de uma vez) e até 10 fotos por IP."""
+    if c.banco.pedidos_ativos(cli["id"], exceto) > 0:
+        raise HTTPException(
+            429, "o teste gratuito é um pedido só, com até 10 fotos; para mais vídeos, fale com a gente"
+        )
+    if c.banco.fotos_teste_ip(ip, exceto) + n_fotos > TESTE["fotos_ip"]:
+        raise HTTPException(429, f"este endereço de internet já usou o teste gratuito ({TESTE['fotos_ip']} fotos)")
 
 
 class FotoIn(BaseModel):
@@ -281,9 +341,24 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     # -- cliente ------------------------------------------------------------------------
 
     @app.get("/api/receitas")
-    def receitas(_: dict = Depends(cliente)):
+    def receitas(request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
         r = lote.load_receitas()
+        plano: dict[str, Any] = {"nome": cli["plano"]}
+        if cli["plano"] == "teste":
+            motivo = None
+            try:
+                _limites_teste(c, cli, ip_de(request), 1)
+            except HTTPException as e:
+                motivo = e.detail
+            plano.update(
+                qualidades=[TESTE["qualidade"]],
+                duracoes=[TESTE["duracao"]],
+                max_fotos=TESTE["fotos"],
+                disponivel=motivo is None,
+                motivo=motivo,
+            )
         return {
+            "plano": plano,
             "receitas": [
                 {
                     "id": k,
@@ -304,7 +379,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         }
 
     @app.post("/api/lotes")
-    def criar_lote(body: LoteIn, cli: dict = Depends(cliente), c: Config = Depends(config)):
+    def criar_lote(body: LoteIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        ip = ip_de(request)
         d = filtros.avaliar(body.prompt)
         if not d.allowed:  # C1 já na entrada (ADR 0004)
             raise HTTPException(422, f"pedido recusado pelo filtro de conteúdo: {d.reason}")
@@ -327,9 +403,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if cli["plano"] == "teste":
             pedido_teste = (body.qualidade, body.duracao or TESTE["duracao"], body.variacoes)
             if pedido_teste != (TESTE["qualidade"], TESTE["duracao"], TESTE["variacoes"]):
-                raise HTTPException(422, "teste gratuito: qualidade rápida, vídeos de 3 s, 1 variação")
-            if c.banco.fotos_total(cli["id"]) + len(body.fotos) > TESTE["fotos"]:
-                raise HTTPException(429, f"o teste gratuito vale para até {TESTE['fotos']} fotos")
+                raise HTTPException(422, "teste gratuito: qualidade rápida (480p), vídeos de 3 s, 1 variação")
+            if len(body.fotos) > TESTE["fotos"]:
+                raise HTTPException(429, f"o teste gratuito vale para até {TESTE['fotos']} fotos, num pedido só")
+            _limites_teste(c, cli, ip, len(body.fotos))
             body.duracao = TESTE["duracao"]
         if c.banco.fotos_hoje(cli["id"]) + len(body.fotos) > cli["cota_fotos_dia"]:
             raise HTTPException(429, f"cota diária de {cli['cota_fotos_dia']} fotos atingida")
@@ -355,7 +432,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 }
             )
         pedido = body.model_dump(exclude={"fotos"})
-        lid = c.banco.criar_lote(cli["id"], pedido, fotos)
+        if cli["plano"] == "teste":  # envio anterior que não terminou não segura o teste
+            c.banco.substituir_envios(cli["id"])
+        lid = c.banco.criar_lote(cli["id"], pedido, fotos, ip=ip)
         envios = []
         for f in c.banco.fotos(lid):
             original = next(x["original"] for x in fotos if x["nome"] == f["nome"])
@@ -370,8 +449,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @app.post("/api/lotes/{lote_id}/enviado")
     def enviado(lote_id: str, cli: dict = Depends(cliente), c: Config = Depends(config)):
-        if c.banco.lote(lote_id, cli["id"]) is None:
+        lt = c.banco.lote(lote_id, cli["id"])
+        if lt is None:
             raise HTTPException(404, "lote não encontrado")
+        if cli["plano"] == "teste":  # de novo aqui: dois pedidos enviados ao mesmo tempo
+            _limites_teste(c, cli, lt["ip"] or "desconhecido", lt["n_fotos"], exceto=lote_id)
         fotos = c.banco.fotos(lote_id)
         with ThreadPoolExecutor(max_workers=16) as ex:
             tamanhos = dict(
@@ -433,10 +515,14 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             fotos = c.banco.fotos(lt["id"])
             if c.analises is not None and any(f["analise"] is None and f["enviada"] for f in fotos):
                 c.analises.agendar(lt["id"])  # a API pode ter reiniciado no meio da análise
+            cli = c.banco.cliente(lt["cliente_id"]) or {}
             out.append(
                 {
                     "lote": lt["id"],
                     "cliente": lt["cliente_id"],
+                    "cliente_nome": cli.get("nome"),
+                    "plano": cli.get("plano"),
+                    "ip": lt["ip"],
                     "criado": lt["criado"],
                     "pedido": json.loads(lt["pedido"]),
                     "filtro_c1": filtros.avaliar(json.loads(lt["pedido"])["prompt"]).reason,
@@ -489,7 +575,46 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             c.banco.recusar(lote_id, quem, body.motivo)
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
+        _se_fechou(c, lote_id)
         return {"lote": lote_id, "status": "recusado"}
+
+    @app.get("/api/admin/historico")
+    def historico(grupo: str = "todos", _: str = Depends(admin), c: Config = Depends(config)):
+        try:
+            lotes = c.banco.historico(grupo, limite=100)
+        except BancoError as e:
+            raise HTTPException(422, str(e)) from e
+        return {
+            "lotes": [
+                {
+                    "lote": lt["id"],
+                    "cliente": lt["cliente_id"],
+                    "cliente_nome": lt["cliente_nome"],
+                    "plano": lt["plano"],
+                    "cliente_ativo": bool(lt["cliente_ativo"]),
+                    "status": lt["status"],
+                    "prompt": json.loads(lt["pedido"]).get("prompt", ""),
+                    "fotos": lt["n_fotos"],
+                    "ip": lt["ip"],
+                    "criado": lt["criado"],
+                    "aprovado_em": lt["aprovado_em"],
+                    "aprovado_por": lt["aprovado_por"],
+                    "concluido_em": lt["concluido_em"],
+                    "motivo": lt["motivo"],
+                    "fotos_apagadas": lt["fotos_apagadas"],
+                    "prontos": lt["prontos"],
+                    "total": lt["total"],
+                }
+                for lt in lotes
+            ],
+            "ips": c.banco.uso_por_ip(),
+        }
+
+    @app.post("/api/admin/clientes/{cliente_id}/desativar")
+    def desativar(cliente_id: str, quem: str = Depends(admin), c: Config = Depends(config)):
+        if not c.banco.desativar_cliente(cliente_id, quem):
+            raise HTTPException(404, "cliente não encontrado ou já desativado")
+        return {"cliente": cliente_id, "ativo": False}
 
     # -- workers --------------------------------------------------------------------------
 
@@ -547,6 +672,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             c.banco.concluir(job_id, body.worker, "erro", erro=d.reason)
             with contextlib.suppress(BancoError):  # já recusado ou já em andamento
                 c.banco.recusar(job["lote_id"], "filtro-c1", d.reason)
+            _se_fechou(c, job["lote_id"])
             raise HTTPException(422, d.reason)
         c.banco.definir_prompt(job["lote_id"], body.prompt_en, body.compilador)
         return {"ok": True}
@@ -583,6 +709,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             )
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
+        _se_fechou(c, job["lote_id"])
         return {"status": r["status"]}
 
     def origem_armazenamento() -> str:

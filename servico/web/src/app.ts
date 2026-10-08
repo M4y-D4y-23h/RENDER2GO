@@ -4,7 +4,17 @@
 // Compilar: cd servico/web && npm ci && npm run build  (gera app.js)
 
 type Receita = { id: string; label: string; nicho: string; acao: string; exige_consentimento: boolean };
+// plano do cliente; no teste gratuito, os limites que a API impõe (a página só os mostra)
+type Plano = {
+  nome: string;
+  qualidades?: string[];
+  duracoes?: number[];
+  max_fotos?: number;
+  disponivel?: boolean;
+  motivo?: string | null;
+};
 type Receitas = {
+  plano?: Plano;
   receitas: Receita[];
   formatos: string[];
   qualidades: string[];
@@ -25,9 +35,32 @@ type Lote = {
 type Envio = { original: string; url: string; tipo: string };
 // análise automática de cada foto (gpu2go_servico/pessoas.py); null = ainda analisando
 type Analise = { pessoas?: number; rostos?: number; erro?: string } | null;
+type ItemHistorico = {
+  lote: string;
+  cliente: string;
+  cliente_nome: string;
+  plano: string;
+  cliente_ativo: boolean;
+  status: string;
+  prompt: string;
+  fotos: number;
+  ip: string | null;
+  criado: number;
+  aprovado_em: number | null;
+  aprovado_por: string | null;
+  concluido_em: number | null;
+  motivo: string | null;
+  fotos_apagadas: number | null;
+  prontos: number;
+  total: number;
+};
+type UsoIp = { ip: string; pedidos: number; fotos: number; fotos_teste: number; clientes: number; ultimo: number };
 type Pendente = {
   lote: string;
   cliente: string;
+  cliente_nome?: string | null;
+  plano?: string | null;
+  ip?: string | null;
   criado: number;
   pedido: {
     prompt: string;
@@ -212,15 +245,44 @@ function iniciarCliente(): void {
   const escolher = (lista: FileList | null) => {
     if (!lista || !receitas) return;
     const tipos = new Set(receitas.limites.tipos);
+    const maximo = receitas.plano?.max_fotos ?? receitas.limites.fotos;
     let ignorados = 0;
+    let excedentes = 0;
     for (const f of Array.from(lista)) {
       if (!tipos.has(f.type) || f.size > receitas.limites.bytes_foto) {
         ignorados++;
         continue;
       }
+      if (arquivos.size >= maximo) {
+        excedentes++;
+        continue;
+      }
       arquivos.set(f.webkitRelativePath || f.name, f);
     }
-    el("contagem").textContent = `${arquivos.size} foto(s) selecionada(s)` + (ignorados ? ` · ${ignorados} ignorada(s) (use JPG, PNG ou WebP até 50 MB)` : "");
+    el("contagem").textContent =
+      `${arquivos.size} foto(s) selecionada(s)` +
+      (ignorados ? ` · ${ignorados} ignorada(s) (use JPG, PNG ou WebP até 50 MB)` : "") +
+      (excedentes ? ` · ${excedentes} a mais ficaram de fora (máximo de ${maximo} fotos)` : "");
+  };
+
+  // teste gratuito: só 480p, vídeos de 3 s, um pedido com até 10 fotos (a API confere tudo de novo)
+  const aplicarPlano = (plano: Plano | undefined) => {
+    const avisoPlano = el("plano-aviso");
+    if (!plano || plano.nome !== "teste") return;
+    const qualidade = el<HTMLSelectElement>("qualidade");
+    for (const o of Array.from(qualidade.options)) if (!plano.qualidades?.includes(o.value)) o.remove();
+    const duracao = el<HTMLSelectElement>("duracao");
+    for (const o of Array.from(duracao.options)) if (!plano.duracoes?.includes(Number(o.value))) o.remove();
+    duracao.value = String(plano.duracoes?.[0] ?? 3);
+    if (plano.disponivel) {
+      aviso(
+        avisoPlano,
+        `Teste gratuito: um pedido só, com até ${plano.max_fotos} fotos, vídeos de 3 s em 480p. Escolha todas as fotos de uma vez. Os testes são gerados em grupo: os vídeos ficam prontos em até uns 20 minutos depois da revisão.`,
+      );
+    } else {
+      aviso(avisoPlano, `Teste gratuito já usado: ${plano.motivo ?? ""}`.trim(), "erro");
+      for (const c of Array.from(el<HTMLFormElement>("form-lote").elements)) (c as HTMLInputElement).disabled = true;
+    }
   };
 
   painelToken("gpu2go-token-cliente", async (t) => {
@@ -233,6 +295,7 @@ function iniciarCliente(): void {
     }
     const sel = el<HTMLSelectElement>("receita");
     sel.replaceChildren(...receitas.receitas.map((r) => criar("option", { value: r.id, textContent: `${r.label} (${r.nicho})` })));
+    aplicarPlano(receitas.plano);
     el("painel").hidden = false;
     listar();
   });
@@ -269,11 +332,15 @@ function iniciarCliente(): void {
       arquivos.clear();
       el("contagem").textContent = "";
       el<HTMLFormElement>("form-lote").reset();
+      if (receitas?.plano?.nome === "teste") {
+        receitas = await api<Receitas>("/api/receitas", token);
+        aplicarPlano(receitas.plano);
+      }
       listar();
     } catch (e) {
       aviso(msg, (e as Error).message, "erro");
     } finally {
-      botao.disabled = false;
+      botao.disabled = receitas?.plano?.disponivel === false;
       el<HTMLProgressElement>("progresso").hidden = true;
     }
   });
@@ -340,7 +407,10 @@ function cartaoPendente(p: Pendente, token: string, aoMudar: () => void): HTMLEl
   return criar("article", { className: "cartao" }, [
     criar("div", { className: "cab" }, [
       criar("strong", { textContent: `${p.fotos.length} foto(s)` }),
-      criar("span", { className: "fraco", textContent: ` · cliente ${p.cliente} · ${quando(p.criado)}` }),
+      criar("span", {
+        className: "fraco",
+        textContent: ` · ${p.cliente_nome ?? p.cliente}${p.plano ? ` (${p.plano})` : ""} · IP ${p.ip ?? "—"} · ${quando(p.criado)}`,
+      }),
     ]),
     criar("p", { className: "pedido", textContent: `“${pedido.prompt}”` }),
     criar("p", {
@@ -354,20 +424,88 @@ function cartaoPendente(p: Pendente, token: string, aoMudar: () => void): HTMLEl
   ]);
 }
 
+function itemHistorico(x: ItemHistorico, token: string, aoMudar: () => void): HTMLElement {
+  const linhas: (Node | string)[] = [
+    criar("div", { className: "cab" }, [
+      criar("span", { className: `etiqueta ${x.status}`, textContent: ESTADOS[x.status] ?? x.status }),
+      criar("span", {
+        className: "fraco",
+        textContent: ` · ${quando(x.criado)} · ${x.cliente_nome} (${x.plano === "teste" ? "teste" : "pago"}) · ${x.fotos} foto(s) · IP ${x.ip ?? "—"}`,
+      }),
+    ]),
+    criar("p", { className: "pedido", textContent: `“${x.prompt}”` }),
+  ];
+  const detalhes: string[] = [];
+  if (x.aprovado_em) detalhes.push(`aprovado em ${quando(x.aprovado_em)} por ${x.aprovado_por ?? "?"}`);
+  if (x.total) detalhes.push(`${x.prontos} de ${x.total} vídeo(s) prontos`);
+  if (x.concluido_em) detalhes.push(`fechado em ${quando(x.concluido_em)}`);
+  if (x.fotos_apagadas) detalhes.push("fotos de entrada já apagadas");
+  if (detalhes.length) linhas.push(criar("p", { className: "fraco", textContent: detalhes.join(" · ") }));
+  if (x.motivo) linhas.push(criar("p", { className: "aviso erro", textContent: `Motivo: ${x.motivo}` }));
+  if (x.cliente_ativo) {
+    const botao = criar("button", { type: "button", textContent: "Desativar o código deste cliente" });
+    botao.addEventListener("click", async () => {
+      if (!window.confirm(`Desativar o código de acesso de ${x.cliente_nome}? Ele deixa de entrar na página.`)) return;
+      botao.disabled = true;
+      try {
+        await api(`/api/admin/clientes/${x.cliente}/desativar`, token, { method: "POST" });
+        aoMudar();
+      } catch (e) {
+        botao.disabled = false;
+        window.alert((e as Error).message);
+      }
+    });
+    linhas.push(criar("div", { className: "acoes" }, [botao]));
+  } else {
+    linhas.push(criar("p", { className: "fraco", textContent: "Código do cliente desativado." }));
+  }
+  return criar("article", { className: "cartao hist" }, linhas);
+}
+
+function tabelaIps(ips: UsoIp[]): HTMLElement {
+  if (!ips.length) return criar("p", { className: "fraco", textContent: "Nenhum pedido com IP registrado ainda." });
+  const th = (t: string, num = false) => criar("th", { textContent: t, className: num ? "num" : "", scope: "col" });
+  const td = (t: string | number, num = false) => criar("td", { textContent: String(t), className: num ? "num" : "" });
+  const cab = criar("tr", {}, [th("IP"), th("Fotos", true), th("Fotos de teste", true), th("Pedidos", true), th("Clientes", true), th("Último pedido")]);
+  const linhas = ips.map((u) =>
+    criar("tr", {}, [td(u.ip), td(u.fotos, true), td(u.fotos_teste, true), td(u.pedidos, true), td(u.clientes, true), td(quando(u.ultimo))]),
+  );
+  return criar("table", {}, [criar("thead", {}, [cab]), criar("tbody", {}, linhas)]);
+}
+
 function iniciarAprovador(): void {
   const msg = el("msg");
   let token = "";
+  let grupo = "todos";
+  const listarHistorico = async () => {
+    const r = await api<{ lotes: ItemHistorico[]; ips: UsoIp[] }>(`/api/admin/historico?grupo=${grupo}`, token);
+    const alvo = el("historico");
+    alvo.replaceChildren(...r.lotes.map((x) => itemHistorico(x, token, listar)));
+    if (!r.lotes.length) alvo.append(criar("p", { className: "fraco", textContent: "Nenhum pedido neste filtro." }));
+    el("ips").replaceChildren(tabelaIps(r.ips));
+  };
   const listar = async () => {
     try {
       const lotes = await api<Pendente[]>("/api/admin/lotes", token);
       const alvo = el("pendentes");
       alvo.replaceChildren(...lotes.map((p) => cartaoPendente(p, token, listar)));
       if (!lotes.length) alvo.append(criar("p", { className: "fraco", textContent: "Nada aguardando revisão." }));
+      await listarHistorico();
       aviso(msg, "");
     } catch (e) {
       aviso(msg, `Não foi possível carregar: ${(e as Error).message}`, "erro");
     }
   };
+  for (const b of Array.from(el("filtros-historico").querySelectorAll<HTMLButtonElement>("button"))) {
+    b.addEventListener("click", () => {
+      grupo = b.dataset.grupo ?? "todos";
+      for (const o of Array.from(el("filtros-historico").querySelectorAll<HTMLButtonElement>("button"))) {
+        o.classList.toggle("ativo", o === b);
+        o.setAttribute("aria-pressed", String(o === b));
+      }
+      listarHistorico().catch((e) => aviso(msg, `Não foi possível carregar: ${(e as Error).message}`, "erro"));
+    });
+  }
   painelToken("gpu2go-token-admin", (t) => {
     token = t;
     el("painel").hidden = false;

@@ -27,6 +27,19 @@
       <h2>Aguardando revisão</h2>
       <div id="pendentes"></div>
 
+      <h2>Histórico</h2>
+      <div class="filtros" id="filtros-historico" role="group" aria-label="Filtrar o histórico">
+        <button type="button" data-grupo="todos" class="ativo" aria-pressed="true">Todos</button>
+        <button type="button" data-grupo="revisao" aria-pressed="false">Em revisão</button>
+        <button type="button" data-grupo="aprovados" aria-pressed="false">Aprovados</button>
+        <button type="button" data-grupo="recusados" aria-pressed="false">Recusados</button>
+      </div>
+      <div id="historico"></div>
+
+      <h2>Uso por IP</h2>
+      <p class="fraco">Fotos de pedidos que passaram do envio e não foram recusados. O teste gratuito vale até 10 fotos por IP, somando todos os clientes de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
+      <div id="ips" class="tabela"></div>
+
       <h2>Novo cliente</h2>
       <form id="form-cliente">
         <div class="duas">
@@ -37,7 +50,7 @@
           <div>
             <label for="cliente-plano">Plano</label>
             <select id="cliente-plano">
-              <option value="teste">Teste gratuito (até 10 fotos, 3 s, rápida)</option>
+              <option value="teste">Teste gratuito (um pedido, até 10 fotos, 3 s, 480p)</option>
               <option value="pago">Pago</option>
             </select>
           </div>

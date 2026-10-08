@@ -63,3 +63,17 @@ progress { width: 100%; max-width: 320px; height: 10px; accent-color: var(--marc
 .selo.pessoas { color: var(--alerta); background: var(--alerta-fundo); border-color: var(--alerta); font-weight: 600; }
 .selo.erro { color: var(--erro); border-color: var(--erro); }
 .aviso.alerta { color: var(--alerta); background: var(--alerta-fundo); }
+/* histórico e uso por IP no /aprovar */
+.filtros { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.filtros button.ativo { background: var(--marca); color: var(--marca-texto); border-color: var(--marca); font-weight: 600; }
+.hist { padding: 12px 14px; margin-bottom: 8px; }
+.hist .pedido { margin: 6px 0; overflow-wrap: anywhere; }
+.hist .acoes { margin-top: 6px; }
+.etiqueta { font-weight: 600; }
+.etiqueta.recusado, .etiqueta.concluido_com_falhas { color: var(--erro); }
+.etiqueta.concluido { color: var(--ok); }
+.etiqueta.aguardando_aprovacao { color: var(--alerta); }
+.tabela { overflow-x: auto; }
+.tabela table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tabela th, .tabela td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--borda); white-space: nowrap; }
+.tabela td.num, .tabela th.num { text-align: right; font-variant-numeric: tabular-nums; }
