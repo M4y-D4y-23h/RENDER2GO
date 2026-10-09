@@ -10,7 +10,7 @@ Serviço de vídeos curtos com IA para pequenos negócios: o cliente envia as fo
 
 1. **Pedido:** o cliente entra com um código de acesso, escolhe as fotos, o estilo e a duração, e envia. As fotos vão direto para o armazenamento (Cloudflare R2), por links assinados.
 2. **Revisão:** o pedido passa pelo filtro de texto e pela revisão humana no `/aprovar`, que mostra um aviso quando há pessoas nas fotos (ADR 0004).
-3. **Geração:** o orquestrador sobe pods de GPU conforme a fila. O pod traduz o pedido, gera os vídeos, confere se cada vídeo começa na foto certa e envia ao R2. Depois que a fila esvazia, o pod se desliga sozinho.
+3. **Geração:** o orquestrador sobe pods de GPU conforme a fila. O pod traduz o pedido, gera os vídeos, confere se cada vídeo começa na foto certa e continua nela até o fim (o vídeo que troca de produto é refeito) e envia ao R2. Depois que a fila esvazia, o pod se desliga sozinho.
 4. **Entrega:** o cliente acompanha a previsão de tempo e baixa os vídeos. As fotos são apagadas quando o pedido fecha.
 
 ## Partes do repositório

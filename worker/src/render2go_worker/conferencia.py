@@ -12,7 +12,8 @@ anterior (salto); diferença = média das diferenças absolutas de R, G e B (0�
 39 vídeos (os 37 aproveitáveis de 06 a 08/10 e os 2 com troca):
 - deriva: aproveitáveis até 31,5 (tênis com aproximação forte); trocas em 54 e 86 → limite 40;
 - salto: aproveitáveis até 5,8; o corte seco deu 16,2 (a fusão, gradual, cai pela deriva) → 12.
-Limitação: a troca por um objeto da mesma cor passa (só a cor média é medida).
+Limitação: a troca por um objeto da mesma cor passa (só a cor média é medida). Medidas de cada
+vídeo e métricas descartadas: worker/evals/conferencia-2026-10-09/.
 
 O worker só envia o vídeo que passa nas duas, e a API recusa "ok" sem as medidas (fail-closed).
 O vídeo reprovado é refeito com outra seed (até as tentativas do job acabarem).

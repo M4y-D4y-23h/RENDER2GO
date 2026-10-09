@@ -191,7 +191,7 @@ O que o lote faz para ganhar tempo de GPU:
 - **Usa várias GPUs:** o `--comfy` é repetível. Se uma GPU cair, os vídeos dela voltam para a fila das outras.
 - **Escolhe o formato pela proporção de cada foto** (`--formato auto`, com a rotação do EXIF do celular aplicada): vertical, quadrado ou horizontal. O ComfyUI corta a foto no centro, e assim o corte é o menor possível.
 - **Preparo da foto** (padrão; `--sem-preparo` desliga): rotação do EXIF, corte central e Lanczos no tamanho exato do render. Foto pequena vira aviso no relatório.
-- **Folha de conferência** por vídeo em `conferencia/` (foto + 3 quadros), para revisar o lote em minutos. Nenhuma métrica automática testada pegou a mudança de cor do perfume (rodada de 06/10).
+- **Folha de conferência** por vídeo em `conferencia/` (foto + 3 quadros), para revisar o lote em minutos. Nenhuma métrica automática testada pegou a mudança de cor do perfume (rodada de 06/10). No serviço, a conferência da continuidade (`conferencia.py`, desde 09/10) barra o vídeo que troca de produto no meio, mas não uma mudança sutil como a do perfume (deriva 11 a 15, abaixo do limite de 40).
 - **Pod com várias GPUs:** `COMFY_GPUS=auto` no entrypoint sobe um ComfyUI por GPU; `--gpus N` usa as N. Dois vídeos na mesma GPU não saem mais rápido; a fila padrão é 1.
 - **Qualidade:** `--qualidade rapida` (padrão; 480×832, 640×640, 832×480; ~56 s por vídeo de 5 s na 4090) ou `alta` (720×1280, 960×960, 1280×720, a área máxima do template; **ainda sem medição** de tempo e de VRAM).
 

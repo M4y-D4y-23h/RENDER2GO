@@ -133,7 +133,7 @@ Saída do job:
   "compiled_prompt": "...",
   "seed": 731942055,
   "timings": {"input_s": 0.4, "compile_s": 3.3, "render_s": 56.2, "upload_s": 0.9, "total_s": 61.0},
-  "versions": {"image": "2026.10.1", "comfyui": "0.38.0", "template": "i2v_r1v2@1", "compiler": "i2v@5", "presets": 1},
+  "versions": {"image": "2026.10.1", "comfyui": "0.38.0", "template": "i2v_r1v2@1", "compiler": "i2v@6", "presets": 3},
   "output": {"bytes": 2345678, "sha256": "...", "uploaded": true},
   "frames": 7,
   "worker": {"uptime_s": 312.5, "job_index": 4, "safety": "..."}
@@ -223,7 +223,7 @@ Arquivos de 14,8 GB viram camadas enormes: escolher um registry que aceite camad
 
 ## 7. Compilador de prompts
 
-- Os system prompts saem dos Modelfiles e viram **arquivos de texto versionados** (`worker/prompts/compiler-<perfil>.v<N>.txt`; em produção I2V v5 e T2V v3, ver `worker/evals/compiler/RESULTADOS.md`), enviados a cada chamada pelo campo `system` da API do Ollama, com `temperature 0.3` e `num_ctx 4096`. Não é mais preciso `ollama create`.
+- Os system prompts saem dos Modelfiles e viram **arquivos de texto versionados** (`worker/prompts/compiler-<perfil>.v<N>.txt`; em produção I2V v6, desde 09/10/2026, e T2V v3, ver `worker/evals/compiler/RESULTADOS.md`), enviados a cada chamada pelo campo `system` da API do Ollama, com `temperature 0.3` e `num_ctx 4096`. Não é mais preciso `ollama create`.
 - O job indica `profile` e `version`, e a saída registra qual versão foi usada.
 - O backend monta a entrada estruturada da seção 9.3 a partir da ação digitada e dos presets escolhidos. Os termos em inglês dos presets são **anexados ao prompt pelo código**, palavra por palavra: no teste, o LLM parafraseava ou contradizia termos de câmera ("de baixo" virou "high angle").
 - Saída: normalizar espaços, exigir um parágrafo dentro da faixa de palavras; `REFUSED` encerra o job como recusado.

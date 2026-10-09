@@ -16,8 +16,9 @@ afins) fica para depois, com medição em GPU. Foto acima de MAX_PIXELS é recus
 
 Folha de conferência: a foto preparada ao lado dos quadros inicial, do meio e final do
 vídeo, num JPEG pequeno. Serve para revisar um lote inteiro em minutos (cor e rótulo do
-produto, rosto, movimento), já que nenhuma métrica automática testada separou os
-defeitos (docs/06).
+produto, rosto, movimento): das métricas automáticas testadas, só a continuidade
+(conferencia.py, 09/10/2026) pega um defeito, a troca de produto no meio do vídeo; as
+mudanças sutis, como a cor do perfume em 06/10, continuam sem métrica (docs/06).
 """
 
 from __future__ import annotations

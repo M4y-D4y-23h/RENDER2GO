@@ -35,8 +35,9 @@ ficam até a regra de retenção do bucket. A caixa de autorização gera um reg
 Workers (Bearer <token de worker>), sem porta de entrada nos pods (eles puxam):
     POST /api/worker/reivindicar       próximo job, com URLs assinadas e carimbo de aprovação
     POST /api/worker/jobs/{id}/prompt  prompt compilado (passa pelo C1 aqui também)
-    POST /api/worker/jobs/{id}/concluir  "ok" de render só com o vídeo no armazenamento e a
-                                       conferência do 1º quadro acima do limiar (docs/08)
+    POST /api/worker/jobs/{id}/concluir  "ok" de render só com o vídeo no armazenamento, a
+                                       conferência do 1º quadro acima do limiar e a da
+                                       continuidade dentro dos limites (docs/08)
 
 Páginas: / (cliente), /suporte (suporte) e /aprovar (administração), compiladas em servico/web/publico
 (docs/10). Os arquivos de /estatico/ levam ?v=<hash> e ficam um ano em cache; as páginas são revalidadas

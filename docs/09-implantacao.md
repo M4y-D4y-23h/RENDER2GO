@@ -358,7 +358,7 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 ## 5.1.9 Conferência automática dos vídeos
 
 - **1º quadro:** o vídeo começa na foto certa (similaridade ≥ 0,9).
-- **Continuidade (desde 09/10):** a cor média do centro de cada quadro não pode se afastar mais de 40 da do 1º quadro (deriva) nem pular mais de 12 de um quadro para o seguinte (salto). Pega o corte para outro produto e a fusão em outro produto de outra cor. Não pega a troca por um produto da mesma cor.
+- **Continuidade (desde 09/10):** a cor média do centro de cada quadro não pode se afastar mais de 40 da do 1º quadro (deriva) nem pular mais de 12 de um quadro para o seguinte (salto). Pega o corte para outro produto e a fusão em outro produto de outra cor. Não pega a troca por um produto da mesma cor. Calibração e medidas de cada vídeo: `worker/evals/conferencia-2026-10-09/`.
 - **Vídeo reprovado:** não é enviado; volta para a fila com outra seed. Depois de 3 tentativas, o vídeo falha (no pré-pago, volta para o saldo). O motivo fica no job (`erro`), e as medidas em `deriva_cor` e `salto_cor`, para calibrar os limites:
   ```bash
   docker compose exec postgres psql -U gpu2go gpu2go -c "SELECT arquivo, status, tentativas, round(deriva_cor::numeric, 1) AS deriva, round(salto_cor::numeric, 1) AS salto, erro FROM jobs WHERE tipo = 'render' ORDER BY atualizado DESC LIMIT 20"

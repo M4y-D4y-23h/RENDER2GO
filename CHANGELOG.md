@@ -11,6 +11,7 @@ Motivo: no teste gratuito de 08/10 (5 fotos de carros, 480p, 3 s), 2 dos 5 víde
 - **Limites calibrados em 39 vídeos:** os 37 aproveitáveis de 06 a 08/10 ficaram até 31,5 de deriva e 5,8 de salto; os 2 com troca deram 54 e 86 de deriva e 16,2 de salto no corte. Limites: deriva 40, salto 12. Os 2 seriam barrados; nenhum dos 37 bons seria.
 - **Refeito com outra seed:** o vídeo reprovado não é enviado e volta para a fila com outra variação aleatória (até 3 tentativas no total). Se não sair, não chega ao cliente e, no pré-pago, volta para o saldo.
 - **Fail-closed:** a API recusa "ok" sem as medidas. **Limitação:** a troca por um objeto da mesma cor passa.
+- **Registro:** a avaliação dos 5 vídeos do teste, as medidas dos 39 vídeos e as métricas descartadas estão em [`worker/evals/conferencia-2026-10-09/`](worker/evals/conferencia-2026-10-09/LEIAME.md).
 
 ### Pedido em cena única, para pedidos leigos e detalhados
 - **Tradutor v6** (`worker/prompts/compiler-i2v.v6.txt`): o texto vale para cada foto, uma de cada vez. Ordens ao serviço ("crie um vídeo", "pra cada foto", "para o Instagram") saem; plural que só quer dizer "as fotos" ("desses carros") vira um carro só; pedido leigo sem ação ("deixe bonito", "apresentação do carro") vira movimento suave de luz sobre o produto, com a câmera parada; pedido detalhado continua traduzido inteiro.

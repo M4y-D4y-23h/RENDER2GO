@@ -114,6 +114,8 @@ GPU em reais a ~R$ 5,70 por dólar. "Sobra" é o preço menos imposto e taxa de 
 - **Subida do pod:** ~R$ 0,63 por vez na L40S (seção 2). Num pedido de um vídeo só de 4 s, ela come quase toda a sobra; a partir de 3 ou 4 vídeos por subida, pesa pouco. Pedidos seguidos aproveitam o pod quente.
 - **Ainda não descontados:** o seu tempo de revisão, os custos fixos (~R$ 43/mês) e os vídeos refeitos por qualidade (no teste das receitas, 2 de 8 não ficaram bons).
 - **O custo medido pelo dono** (~US$ 0,03 por vídeo de 3 s, já com as subidas, na RTX PRO 6000) dá ~R$ 0,17: ainda bem abaixo do menor preço (R$ 1,00).
+- **Vídeo refeito pela conferência** (desde 09/10, o vídeo que troca de produto no meio volta com outra seed, até 3 tentativas) custa GPU de novo e não é cobrado outra vez; se não sair, volta para o saldo do cliente.
+- **Para conferir com os números reais:** `/aprovar`, seção "GPUs" (`docs/09`, seção 5.1.8), mostra o custo estimado de cada pod e o custo por vídeo do período, já com subidas, pod quente, refações e falhas na instalação.
 
 ### 4.3 Receita nos cenários da seção 3
 

@@ -84,7 +84,7 @@ As Etapas 1 e 2 podem andar em paralelo à Etapa 0, porque só usam conteúdo SF
 >
 > - **Feito:**
 >   - presets (termos anexados pelo código);
->   - compilador versionado, em produção I2V v5 e T2V v3 no 7B;
+>   - compilador versionado, em produção I2V v5 e T2V v3 no 7B (I2V v6 desde 09/10/2026, com as regras do serviço: `worker/evals/compiler/RESULTADOS.md`);
 >   - testes de fidelidade, 7B × 14B;
 >   - três templates T2V candidatos e o bake-off (36 vídeos);
 >   - "continuar vídeo", testado na GPU;
