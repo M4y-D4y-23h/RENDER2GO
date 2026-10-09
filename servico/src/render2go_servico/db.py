@@ -22,6 +22,13 @@ novo de uma conta passava na frente do antigo da mesma conta).
 
 Geradores (`geradores`): o orquestrador registra cada pod (subindo, pronto, encerrado) e a API usa
 esse estado e as subidas medidas na previsão mostrada ao cliente.
+
+Saldo pré-pago (`movimentos`, 09/10/2026): o saldo do cliente é a soma dos movimentos (recargas e
+ajustes do dono, cobranças de pedidos e estornos). O pedido do plano pago é cobrado inteiro quando as
+fotos terminam de chegar (`confirmar_envio`), com o preço por vídeo gravado no lote; o pedido
+recusado volta inteiro, e cada vídeo que termina em erro ou cancelado volta sozinho (`_fechar_lote`).
+Cada movimento tem uma referência única (ex.: `pedido:<lote>`, `estorno:<job>`): nada é cobrado ou
+devolvido duas vezes. O extrato é registro financeiro: a limpeza do histórico não o apaga.
 """
 
 from __future__ import annotations
@@ -36,6 +43,8 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
+
+from render2go_servico.precos import RESOLUCAO
 
 MAX_TENTATIVAS = 3
 FINAIS = ("ok", "erro", "cancelado")
@@ -88,6 +97,14 @@ ESQUEMA = [
         id TEXT PRIMARY KEY, worker TEXT, gpu TEXT, usd_h DOUBLE PRECISION, estado TEXT NOT NULL,
         criado DOUBLE PRECISION NOT NULL, pronto_em DOUBLE PRECISION, primeiro_video_em DOUBLE PRECISION,
         encerrado_em DOUBLE PRECISION, motivo TEXT)""",
+    # saldo pré-pago: um movimento por recarga, ajuste, cobrança de pedido ou estorno (centavos de real).
+    # Sem chave estrangeira para lotes e jobs: o extrato fica depois da limpeza do histórico.
+    """CREATE TABLE IF NOT EXISTS movimentos (
+        id TEXT PRIMARY KEY, cliente_id TEXT NOT NULL REFERENCES clientes(id), quando DOUBLE PRECISION NOT NULL,
+        tipo TEXT NOT NULL, valor BIGINT NOT NULL, referencia TEXT NOT NULL UNIQUE, lote_id TEXT, job_id TEXT,
+        descricao TEXT, por TEXT)""",
+    "CREATE INDEX IF NOT EXISTS movimentos_cliente ON movimentos (cliente_id, quando)",
+    "CREATE INDEX IF NOT EXISTS movimentos_lote ON movimentos (lote_id)",
 ]
 # vídeos já iniciados (ou prontos) do cliente nos pedidos em andamento: a vez na fila é por cliente
 INICIADOS_DO_CLIENTE = (
@@ -110,7 +127,9 @@ COLUNAS_NOVAS = [
     ("fotos", "sha256", "TEXT"),  # impressão da foto, que fica depois que a foto é apagada
     ("lotes", "impressao", "TEXT"),  # resumo dos sinais do navegador (acha o mesmo navegador sem o identificador)
     ("consentimentos", "sinais", "TEXT"),  # sinais do navegador no momento da declaração (JSON)
+    ("lotes", "preco_video", "BIGINT"),  # centavos por vídeo do pré-pago (NULL: teste ou interno)
 ]
+TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno")
 # lote que já passou do envio e não foi recusado: conta nos limites do teste gratuito
 ATIVO = "status NOT IN ('aguardando_envio', 'recusado')"
 ATIVO_L = "l." + ATIVO  # o mesmo, com a tabela lotes como "l"
@@ -119,6 +138,12 @@ APROVADOS = ("aprovado", "processando", "concluido", "concluido_com_falhas")
 
 class BancoError(Exception):
     pass
+
+
+class SaldoInsuficiente(BancoError):
+    def __init__(self, custo: int, saldo: int):
+        super().__init__(f"saldo insuficiente: o pedido custa {custo} centavos e o saldo é {saldo}")
+        self.custo, self.saldo = custo, saldo
 
 
 def sha(token: str) -> str:
@@ -384,6 +409,143 @@ class Banco:
         with self.tx() as c:
             return c.one("SELECT * FROM clientes WHERE token_sha = ? AND ativo = 1", (sha(token),))
 
+    def clientes(self) -> list[dict]:
+        """Todos os clientes com o saldo (para o /aprovar)."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT k.id, k.nome, k.plano, k.ativo, k.criado,"
+                " COALESCE((SELECT SUM(m.valor) FROM movimentos m WHERE m.cliente_id = k.id), 0) AS saldo"
+                " FROM clientes k ORDER BY k.criado DESC"
+            )
+
+    # -- saldo pré-pago ---------------------------------------------------------------------
+
+    def _travar_cliente(self, c, cliente_id: str) -> None:
+        """Um movimento por vez no saldo do cliente (no SQLite, o BEGIN IMMEDIATE já serializa)."""
+        if self.pg:
+            c.one("SELECT id FROM clientes WHERE id = ? FOR UPDATE", (cliente_id,))
+
+    def _saldo(self, c, cliente_id: str) -> int:
+        r = c.one("SELECT COALESCE(SUM(valor), 0) AS s FROM movimentos WHERE cliente_id = ?", (cliente_id,))
+        return int(r["s"])
+
+    def _movimento(
+        self,
+        c,
+        cliente_id: str,
+        tipo: str,
+        valor: int,
+        referencia: str,
+        lote_id: str | None = None,
+        job_id: str | None = None,
+        descricao: str | None = None,
+        por: str | None = None,
+    ) -> bool:
+        """Grava um movimento; False se a referência já existe (nada é cobrado ou devolvido duas vezes)."""
+        if tipo not in TIPOS_MOVIMENTO:
+            raise BancoError(f"tipo de movimento desconhecido: {tipo}")
+        n = c.run(
+            "INSERT INTO movimentos (id, cliente_id, quando, tipo, valor, referencia, lote_id, job_id, descricao, por)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (referencia) DO NOTHING",
+            (novo_id("mov"), cliente_id, time.time(), tipo, valor, referencia, lote_id, job_id, descricao, por),
+        )
+        return n > 0
+
+    def saldo(self, cliente_id: str) -> int:
+        """Saldo do cliente em centavos."""
+        with self.tx() as c:
+            return self._saldo(c, cliente_id)
+
+    def movimentar(self, cliente_id: str, valor: int, descricao: str, por: str, referencia: str | None = None) -> int:
+        """Recarga (valor > 0) ou ajuste (valor < 0) feito pelo dono do serviço; devolve o saldo novo.
+        `referencia`: identificador único do pagamento (o mesmo pagamento nunca entra duas vezes)."""
+        if not valor:
+            raise BancoError("valor zero")
+        tipo = "recarga" if valor > 0 else "ajuste"
+        with self.tx() as c:
+            if c.one("SELECT id FROM clientes WHERE id = ?", (cliente_id,)) is None:
+                raise BancoError("cliente não encontrado")
+            self._travar_cliente(c, cliente_id)
+            saldo = self._saldo(c, cliente_id) + valor
+            if saldo < 0:
+                raise BancoError("o saldo ficaria negativo")
+            ref = referencia or f"{tipo}:{novo_id('mov')}"
+            if not self._movimento(c, cliente_id, tipo, valor, ref, descricao=descricao, por=por):
+                raise BancoError(f"movimento já registrado: {ref}")
+        return saldo
+
+    def extrato(self, cliente_id: str, limite: int = 50) -> list[dict]:
+        """Movimentos do saldo, do mais recente para o mais antigo."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT quando, tipo, valor, lote_id, descricao FROM movimentos WHERE cliente_id = ?"
+                " ORDER BY quando DESC LIMIT ?",
+                (cliente_id, limite),
+            )
+
+    def cobranca(self, lote_id: str) -> dict[str, int]:
+        """Quanto o pedido custou e quanto já voltou para o saldo (vídeos que não saíram, recusa)."""
+        with self.tx() as c:
+            r = c.one(
+                "SELECT COALESCE(SUM(CASE WHEN tipo = 'pedido' THEN -valor ELSE 0 END), 0) AS cobrado,"
+                " COALESCE(SUM(CASE WHEN tipo = 'estorno' THEN valor ELSE 0 END), 0) AS devolvido"
+                " FROM movimentos WHERE lote_id = ?",
+                (lote_id,),
+            )
+        return {"cobrado": int(r["cobrado"]), "devolvido": int(r["devolvido"])}
+
+    def _cobrar(self, c, lote: dict) -> None:
+        """Cobra o pedido inteiro (fotos × variações × preço por vídeo) ou levanta SaldoInsuficiente."""
+        pedido = json.loads(lote["pedido"])
+        videos = int(lote["n_fotos"]) * int(pedido.get("variacoes", 1))
+        custo = videos * int(lote["preco_video"])
+        self._travar_cliente(c, lote["cliente_id"])
+        saldo = self._saldo(c, lote["cliente_id"])
+        if saldo < custo:
+            raise SaldoInsuficiente(custo, saldo)
+        resolucao = RESOLUCAO.get(pedido.get("qualidade"), pedido.get("qualidade"))
+        self._movimento(
+            c,
+            lote["cliente_id"],
+            "pedido",
+            -custo,
+            f"pedido:{lote['id']}",
+            lote_id=lote["id"],
+            descricao=f"{videos} vídeo(s) de {pedido.get('duracao')} s em {resolucao}",
+        )
+
+    def _estornar_lote(self, c, lote_id: str, descricao: str) -> None:
+        """Pedido recusado depois de cobrado: volta o valor inteiro (ainda não há vídeos)."""
+        cobr = c.one("SELECT cliente_id, valor FROM movimentos WHERE referencia = ?", (f"pedido:{lote_id}",))
+        if cobr:
+            ref = f"estorno-lote:{lote_id}"
+            self._movimento(c, cobr["cliente_id"], "estorno", -int(cobr["valor"]), ref, lote_id, None, descricao)
+
+    def _estornar_videos(self, c, lote_id: str) -> None:
+        """Cada vídeo que terminou em erro ou foi cancelado volta para o saldo (uma vez só)."""
+        cobr = c.one(
+            "SELECT m.cliente_id, l.preco_video FROM movimentos m JOIN lotes l ON l.id = m.lote_id"
+            " WHERE m.referencia = ?",
+            (f"pedido:{lote_id}",),
+        )
+        if not cobr or not cobr["preco_video"]:
+            return
+        falhos = c.all(
+            "SELECT id, arquivo FROM jobs WHERE lote_id = ? AND tipo = 'render' AND status IN ('erro', 'cancelado')",
+            (lote_id,),
+        )
+        for j in falhos:
+            self._movimento(
+                c,
+                cobr["cliente_id"],
+                "estorno",
+                int(cobr["preco_video"]),
+                f"estorno:{j['id']}",
+                lote_id,
+                j["id"],
+                f"{j['arquivo']}: o vídeo não saiu",
+            )
+
     def fotos_hoje(self, cliente_id: str) -> int:
         desde = time.time() - 86400
         with self.tx() as c:
@@ -402,11 +564,13 @@ class Banco:
         fotos: list[dict],
         origem: dict | None = None,
         autorizacao: dict | None = None,
+        preco_video: int | None = None,
     ) -> str:
         """fotos: [{nome, tipo, bytes, chave}] (já validadas pela API).
         origem: {ip, dispositivo, agente, fuso} de quem pediu.
         autorizacao: {declarante, texto_versao, texto} quando a caixa de autorização foi marcada;
-        gravada na mesma transação, com a origem e a lista de fotos (auditoria)."""
+        gravada na mesma transação, com a origem e a lista de fotos (auditoria).
+        preco_video: centavos por vídeo do pré-pago (cobrado em `confirmar_envio`); None não cobra."""
         lid = novo_id("lote")
         agora = time.time()
         o = origem or {}
@@ -416,7 +580,7 @@ class Banco:
                 raise BancoError("cliente não encontrado")
             c.run(
                 "INSERT INTO lotes (id, cliente_id, status, pedido, n_fotos, prioridade, criado, ip, dispositivo,"
-                " agente, fuso, impressao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " agente, fuso, impressao, preco_video) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     lid,
                     cliente_id,
@@ -430,6 +594,7 @@ class Banco:
                     o.get("agente"),
                     o.get("fuso"),
                     o.get("impressao"),
+                    preco_video,
                 ),
             )
             if autorizacao:
@@ -682,7 +847,8 @@ class Banco:
             )
 
     def confirmar_envio(self, lote_id: str, tamanhos: dict[str, int | None]) -> list[str]:
-        """tamanhos: chave → bytes no armazenamento (None = ausente). Devolve os problemas."""
+        """tamanhos: chave → bytes no armazenamento (None = ausente). Devolve os problemas.
+        Pedido do pré-pago: cobra o pedido inteiro na mesma transação (SaldoInsuficiente: nada muda)."""
         problemas = []
         with self.tx() as c:
             lote = c.one("SELECT * FROM lotes WHERE id = ?", (lote_id,))
@@ -695,6 +861,8 @@ class Banco:
                 elif t != f["bytes"]:
                     problemas.append(f"{f['nome']}: {t} bytes, esperados {f['bytes']}")
             if not problemas:
+                if lote["preco_video"] is not None:
+                    self._cobrar(c, lote)
                 c.run("UPDATE fotos SET enviada = 1 WHERE lote_id = ?", (lote_id,))
                 c.run("UPDATE lotes SET status = 'aguardando_aprovacao' WHERE id = ?", (lote_id,))
                 self.evento(c, lote_id, "enviado")
@@ -742,6 +910,7 @@ class Banco:
             )
             if not n:
                 raise BancoError("lote não pode mais ser recusado")
+            self._estornar_lote(c, lote_id, f"pedido recusado: {motivo}"[:200])
             self.evento(c, lote_id, "recusado", {"por": quem, "motivo": motivo})
 
     def definir_prompt(self, lote_id: str, prompt_en: str, compilador: str) -> None:
@@ -844,6 +1013,7 @@ class Banco:
             " (SELECT 1 FROM jobs k WHERE k.lote_id = ? AND k.tipo = 'compilar' AND k.status = 'erro')",
             (agora, lote_id, lote_id),
         )
+        self._estornar_videos(c, lote_id)
         r = c.one(
             "SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('ok', 'erro', 'cancelado') THEN 1 ELSE 0 END) AS fim,"
             " SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) AS ok FROM jobs WHERE lote_id = ?",

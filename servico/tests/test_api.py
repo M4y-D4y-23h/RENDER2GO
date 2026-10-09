@@ -58,9 +58,14 @@ def h(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def _cliente(api, nome="Padaria", plano="pago"):
+def _cliente(api, nome="Padaria", plano="pago", saldo="1000"):
+    """Cadastra o cliente; o do plano pago já recebe saldo (pré-pago), salvo saldo=None."""
     r = api.post("/api/admin/clientes", json={"nome": nome, "plano": plano}, headers=h(ADMIN))
     assert r.status_code == 200, r.text
+    if plano == "pago" and saldo:
+        corpo = {"valor": saldo, "descricao": "recarga do teste"}
+        rs = api.post(f"/api/admin/clientes/{r.json()['cliente']}/saldo", json=corpo, headers=h(ADMIN))
+        assert rs.status_code == 200, rs.text
     return r.json()["token"]
 
 
@@ -211,17 +216,17 @@ def test_free_trial_limits(api, monkeypatch):
     plano = api.get("/api/receitas", headers=h(tok)).json()["plano"]
     assert plano == {
         "nome": "teste",
-        "qualidades": ["rapida"],
         "duracoes": [3],
-        "max_fotos": 10,
+        "qualidades": ["rapida"],
+        "max_fotos": 5,
         "disponivel": True,
         "motivo": None,
     }
     assert _pedir(api, tok, qualidade="alta").status_code == 422  # 720p fica para o plano pago
     assert _pedir(api, tok, duracao=5).status_code == 422
-    assert _pedir(api, tok, n=11).status_code == 429
-    a = _pedir(api, tok, n=6, dispositivo=D1).json()["lote"]  # envio que não terminou...
-    r = _pedir(api, tok, n=4, dispositivo=D1)  # ...é substituído pelo pedido novo
+    assert _pedir(api, tok, n=6).status_code == 429
+    a = _pedir(api, tok, n=5, dispositivo=D1).json()["lote"]  # envio que não terminou...
+    r = _pedir(api, tok, n=2, dispositivo=D1)  # ...é substituído pelo pedido novo
     assert r.status_code == 200 and api.get(f"/api/lotes/{a}", headers=h(tok)).json()["status"] == "recusado"
     b = r.json()["lote"]
     assert _enviar_tudo(api, tok, b, r.json()["envios"]).status_code == 200
@@ -230,18 +235,18 @@ def test_free_trial_limits(api, monkeypatch):
     assert _pedir(api, tok, n=1, dispositivo=D1).status_code == 429
     assert api.get("/api/receitas", headers=h(tok)).json()["plano"]["disponivel"] is False
 
-    # outro código de teste no MESMO dispositivo: o dispositivo já tem 4 fotos, o teto é 10
+    # outro código de teste no MESMO dispositivo: o dispositivo já tem 2 fotos, o teto é 5
     tok2 = _cliente(api, "Teste 2", plano="teste")
-    r = _pedir(api, tok2, n=7, dispositivo=D1)
+    r = _pedir(api, tok2, n=4, dispositivo=D1)
     assert r.status_code == 429 and "dispositivo" in r.json()["detail"]
-    assert _pedir(api, tok2, n=6, dispositivo=D1).status_code == 200
+    assert _pedir(api, tok2, n=3, dispositivo=D1).status_code == 200
     # colega da mesma empresa (mesmo IP), outro dispositivo: tem o teste dele
     tok3 = _cliente(api, "Teste 3", plano="teste")
-    r = _pedir(api, tok3, n=10, dispositivo=D2)
+    r = _pedir(api, tok3, n=5, dispositivo=D2)
     assert r.status_code == 200
     _enviar_tudo(api, tok3, r.json()["lote"], r.json()["envios"])
     # teto por rede (IP): segura quem troca de navegador para juntar testes
-    monkeypatch.setitem(api_mod.TESTE, "fotos_ip", 15)
+    monkeypatch.setitem(api_mod.TESTE, "fotos_ip", 8)
     tok4 = _cliente(api, "Teste 4", plano="teste")
     r = _pedir(api, tok4, n=2, dispositivo=D3)
     assert r.status_code == 429 and "rede" in r.json()["detail"]
@@ -379,7 +384,9 @@ def test_client_sees_a_time_estimate_and_open_or_download_links(api):
 
 def test_internal_plan_has_no_trial_limits_and_is_approved_automatically(api):
     tok = _cliente(api, "Dono", plano="interno")
-    assert api.get("/api/receitas", headers=h(tok)).json()["plano"] == {"nome": "interno"}
+    # sem cobrança e sem limites de teste; vídeos de 4 a 7 s, como no plano pago
+    assert api.get("/api/receitas", headers=h(tok)).json()["plano"] == {"nome": "interno", "duracoes": [4, 5, 6, 7]}
+    assert api.get("/api/saldo", headers=h(tok)).json() == {"pre_pago": False}
     lotes = []
     for _ in range(3):  # 3 pedidos de 10 fotos ao mesmo tempo, 720p e 5 s
         r = _pedir(api, tok, n=10, dispositivo=D1, qualidade="alta", duracao=5)
@@ -530,3 +537,93 @@ def test_app_configured_from_environment(monkeypatch, tmp_path):
     csp = r.headers["Content-Security-Policy"]
     assert "connect-src 'self' https://conta.r2.cloudflarestorage.com" in csp
     assert api.get("/estilo.css").status_code == 200 and api.get("/app.js").status_code == 200
+
+
+def _concluir(api, job, **corpo):
+    return api.post(f"/api/worker/jobs/{job['job_id']}/concluir", headers=h(WORKER), json={"worker": "pod-1", **corpo})
+
+
+def test_prepaid_balance_prices_charges_refunds_and_minimum_duration(api):
+    r = api.post("/api/admin/clientes", json={"nome": "Imobiliária", "plano": "pago"}, headers=h(ADMIN)).json()
+    cid, tok = r["cliente"], r["token"]
+    plano = api.get("/api/receitas", headers=h(tok)).json()["plano"]
+    assert plano == {"nome": "pago", "duracoes": [4, 5, 6, 7], "precos": {"rapida": 25, "alta": 50}, "saldo": 0}
+    receitas = api.get("/api/receitas", headers=h(tok)).json()["receitas"]
+    assert all(x["duracao"] >= 4 for x in receitas)
+
+    # sem saldo: recusado antes de as fotos subirem, com o preço do pedido (2 vídeos × 5 s × R$ 0,25)
+    r = _lote(api, tok, n=2)
+    assert r.status_code == 402 and "R$ 2,50" in r.json()["detail"] and "R$ 0,00" in r.json()["detail"]
+
+    # recarga pelo /aprovar (valores em reais); erros de digitação e plano sem saldo são recusados
+    saldo = f"/api/admin/clientes/{cid}/saldo"
+    assert api.post(saldo, json={"valor": "abc", "descricao": "Pix"}, headers=h(ADMIN)).status_code == 422
+    assert api.post(saldo, json={"valor": "0", "descricao": "Pix"}, headers=h(ADMIN)).status_code == 422
+    assert api.post(saldo, json={"valor": "-1", "descricao": "ajuste"}, headers=h(ADMIN)).status_code == 422
+    assert api.post(saldo, json={"valor": "10", "descricao": "Pix"}, headers=h(tok)).status_code == 401
+    pix = {"valor": "10,00", "descricao": "Pix de 09/10", "referencia": "E123"}
+    assert api.post(saldo, json=pix, headers=h(ADMIN)).json() == {"cliente": cid, "saldo": 1000}
+    assert api.post(saldo, json=pix, headers=h(ADMIN)).status_code == 422  # o mesmo pagamento não entra duas vezes
+    r = api.post("/api/admin/clientes", json={"nome": "Teste", "plano": "teste"}, headers=h(ADMIN))
+    teste = r.json()["cliente"]
+    r = api.post(f"/api/admin/clientes/{teste}/saldo", json={"valor": "10", "descricao": "Pix"}, headers=h(ADMIN))
+    assert r.status_code == 422
+
+    # 3 s só no teste gratuito: no pré-pago, de 4 a 7 s
+    r = _lote(api, tok, n=1, duracao=3)
+    assert r.status_code == 422 and "4 a 7 s" in r.json()["detail"]
+
+    # 2 vídeos de 4 s em 720p: R$ 4,00, cobrados quando as fotos chegam
+    r = _lote(api, tok, n=2, duracao=4, qualidade="alta")
+    assert r.status_code == 200 and r.json()["custo"] == 400
+    lid = r.json()["lote"]
+    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 1000
+    assert _enviar_tudo(api, tok, lid, r.json()["envios"]).status_code == 200
+    s = api.get("/api/saldo", headers=h(tok)).json()
+    assert s["pre_pago"] and s["saldo"] == 600 and s["precos"] == {"rapida": 25, "alta": 50}
+    assert (s["extrato"][0]["tipo"], s["extrato"][0]["valor"]) == ("pedido", -400)
+    assert s["extrato"][0]["descricao"] == "2 vídeo(s) de 4 s em 720p"
+    assert api.get(f"/api/lotes/{lid}", headers=h(tok)).json()["cobranca"] == {"cobrado": 400, "devolvido": 0}
+
+    # pedido recusado na revisão: volta inteiro (sem duração escolhida: a do estilo, 5 s)
+    r = _lote(api, tok, n=1)
+    assert r.json()["custo"] == 125
+    rec = r.json()["lote"]
+    _enviar_tudo(api, tok, rec, r.json()["envios"])
+    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 475
+    api.post(f"/api/admin/lotes/{rec}/recusar", json={"motivo": "foto borrada"}, headers=h(ADMIN))
+    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 600
+    assert api.get(f"/api/lotes/{rec}", headers=h(tok)).json()["cobranca"] == {"cobrado": 125, "devolvido": 125}
+
+    # um vídeo pronto e outro que falha de vez: só o que falhou volta
+    api.post(f"/api/admin/lotes/{lid}/aprovar", headers=h(ADMIN))
+    comp = _job(api)
+    api.post(
+        f"/api/worker/jobs/{comp['job_id']}/prompt",
+        headers=h(WORKER),
+        json={"worker": "pod-1", "prompt_en": "The camera slowly dollies in.", "compilador": "i2v@5"},
+    )
+    _concluir(api, comp, status="ok")
+    ok = _job(api)
+    api.armazem.objetos[ok["video_url"].split("armazem.teste/")[1].split("?")[0]] = 7000
+    assert _concluir(api, ok, status="ok", bytes_video=7000, similaridade=0.99).json()["status"] == "ok"
+    assert _concluir(api, _job(api), status="erro", erro="sem memória na GPU").json()["status"] == "erro"
+    lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
+    assert lote["status"] == "concluido_com_falhas" and lote["cobranca"] == {"cobrado": 400, "devolvido": 200}
+    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 800
+
+    # o saldo acabou enquanto as fotos subiam (outro pedido, ajuste): recusado, sem cobrança
+    r = _lote(api, tok, n=2, duracao=4)  # R$ 2,00
+    corrida = r.json()["lote"]
+    api.post(saldo, json={"valor": "-7,00", "descricao": "ajuste"}, headers=h(ADMIN))
+    r = _enviar_tudo(api, tok, corrida, r.json()["envios"])
+    assert r.status_code == 402 and "R$ 1,00" in r.json()["detail"]
+    assert api.get(f"/api/lotes/{corrida}", headers=h(tok)).json()["status"] == "recusado"
+    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 100
+
+    # o dono vê o saldo de cada cliente e o extrato completo
+    clientes = {k["id"]: k for k in api.get("/api/admin/clientes", headers=h(ADMIN)).json()["clientes"]}
+    assert clientes[cid]["saldo"] == 100 and clientes[teste]["saldo"] == 0
+    extrato = api.get(f"/api/admin/clientes/{cid}/extrato", headers=h(ADMIN)).json()
+    assert extrato["saldo"] == 100 and [m["tipo"] for m in extrato["movimentos"]][-1] == "recarga"
+    assert api.get("/api/admin/clientes", headers=h(tok)).status_code == 401

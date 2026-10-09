@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0e17" media="(prefers-color-scheme: dark)">
 <meta name="format-detection" content="telephone=no">
-<link rel="stylesheet" href="/estatico/estilo.css?v=b012ce745ed0" integrity="sha384-CWEeI1OikL0CE9eSNCdbLJ6+Eq19viDq3nnEIYVkgGkXDPR/B2QEgPRBtNlafcdM">
+<link rel="stylesheet" href="/estatico/estilo.css?v=6234c297ad0e" integrity="sha384-NK3PGNR5kWSmZBKYAxbriIoPHrJME+FZRqTbbgs5JV4Fpr6pm0Ux8esl/3+E5aKZ">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -24,7 +24,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/aprovar.js?v=03437965a882" integrity="sha384-sjkt0sGiYC/oaTPgtSqwNvuHmome30KVjZ4wJfcD/FcOvXMTUyKrxXLaVPs5OBVi" defer></script>
+<script src="/estatico/aprovar.js?v=711251bb3190" integrity="sha384-dS1eY9ZfxYeuECCwO2W01x4hZUN7T2CkGxij7d+a/cOI+Gy6UlwSrop6XB3JGRAa" defer></script>
 </head>
 <body data-pagina="aprovar">
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
@@ -71,6 +71,7 @@
 <a href="#sec-ips">Uso por IP</a>
 <a href="#sec-dispositivos">Dispositivos</a>
 <a href="#sec-suporte">Suporte <span class="contagem" id="n-suporte"></span></a>
+<a href="#sec-clientes">Clientes e saldo</a>
 <a href="#sec-cliente">Novo cliente</a>
 </nav>
 <div class="admin-conteudo">
@@ -96,7 +97,7 @@
 </section>
 <section id="sec-ips" aria-labelledby="t-ips">
 <h2 id="t-ips">Uso por IP</h2>
-<p class="fraco">Fotos de pedidos que passaram do envio e não foram recusados. O teste gratuito vale até 10 fotos por IP, somando todos os clientes de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
+<p class="fraco">Fotos de pedidos que passaram do envio e não foram recusados. O teste gratuito vale até 50 fotos por IP, somando todos os clientes de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
 <div id="ips" class="tabela" role="region" aria-label="Tabela de uso por IP (role para o lado)" tabindex="0"></div>
 </section>
 <section id="sec-dispositivos" aria-labelledby="t-dispositivos">
@@ -109,6 +110,39 @@
 <p id="suporte-config" class="fraco"></p>
 <div id="suporte" class="lista"></div>
 </section>
+<section id="sec-clientes" aria-labelledby="t-clientes">
+<h2 id="t-clientes">Clientes e saldo</h2>
+<p class="fraco" id="precos-info">Pré-pago: o cliente do plano pago recarrega o saldo e paga por segundo de vídeo. O pedido é cobrado quando as fotos chegam; pedido recusado e vídeo que não sai voltam sozinhos para o saldo.</p>
+<form id="form-saldo" class="cartao form-cliente" novalidate>
+<div class="duas">
+<div class="campo">
+<label for="saldo-cliente">Cliente (plano pago)</label>
+<select id="saldo-cliente"></select>
+</div>
+<div class="campo">
+<label for="saldo-valor">Valor em reais</label>
+<input id="saldo-valor" inputmode="decimal" maxlength="12" placeholder="50,00" autocomplete="off" aria-describedby="saldo-valor-dica">
+<p class="dica" id="saldo-valor-dica">Recarga. Valor negativo desconta (ajuste).</p>
+</div>
+</div>
+<div class="duas">
+<div class="campo">
+<label for="saldo-descricao">Descrição (o cliente vê no extrato)</label>
+<input id="saldo-descricao" maxlength="200" placeholder="Pix de 09/10" autocomplete="off">
+</div>
+<div class="campo">
+<label for="saldo-referencia">Identificador do pagamento (opcional)</label>
+<input id="saldo-referencia" maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="saldo-referencia-dica">
+<p class="dica" id="saldo-referencia-dica">Ex.: o código do Pix. O mesmo pagamento não entra duas vezes.</p>
+</div>
+</div>
+<div class="acoes">
+<button type="submit" class="botao primario" id="saldo-enviar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Lançar no saldo</button>
+</div>
+<div id="saldo-msg" class="aviso" hidden></div>
+</form>
+<div id="clientes" class="tabela" role="region" aria-label="Tabela de clientes e saldo (role para o lado)" tabindex="0"></div>
+</section>
 <section id="sec-cliente" aria-labelledby="t-cliente">
 <h2 id="t-cliente">Novo cliente</h2>
 <form id="form-cliente" class="cartao form-cliente" novalidate>
@@ -120,8 +154,8 @@
 <div class="campo">
 <label for="cliente-plano">Plano</label>
 <select id="cliente-plano">
-<option value="teste">Teste gratuito (um pedido, até 10 fotos, 3 s, 480p)</option>
-<option value="pago">Pago</option>
+<option value="teste">Teste gratuito (um pedido, até 5 fotos, 3 s, 480p)</option>
+<option value="pago">Pago (pré-pago: saldo e preço por segundo, vídeos de 4 a 7 s)</option>
 <option value="interno">Interno (só você: sem limites e sem revisão)</option>
 </select>
 </div>

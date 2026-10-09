@@ -19,6 +19,7 @@ import {
   minutos,
   ocupado,
   plural,
+  reais,
   reconciliar,
   repetir,
   rotular,
@@ -30,9 +31,21 @@ import {
 } from "./comum";
 import { iniciarCookies } from "./cookies";
 
-type Receita = { id: string; label: string; nicho: string; acao: string; exige_consentimento: boolean };
-// plano do cliente; no teste gratuito, os limites que a API impõe (a página só os mostra)
-type Plano = { nome: string; qualidades?: string[]; duracoes?: number[]; max_fotos?: number; disponivel?: boolean; motivo?: string | null };
+type Receita = { id: string; label: string; nicho: string; acao: string; duracao?: number; exige_consentimento: boolean };
+// plano do cliente: durações aceitas; no teste gratuito, os limites que a API impõe (a página só os mostra);
+// no pré-pago, o preço por segundo de cada qualidade (centavos) e o saldo
+type Plano = {
+  nome: string;
+  qualidades?: string[];
+  duracoes?: number[];
+  max_fotos?: number;
+  disponivel?: boolean;
+  motivo?: string | null;
+  precos?: Record<string, number>;
+  saldo?: number;
+};
+type Movimento = { quando: number; tipo: string; valor: number; lote_id: string | null; descricao: string | null };
+type Saldo = { pre_pago: boolean; saldo?: number; precos?: Record<string, number>; extrato?: Movimento[] };
 type Modelo = { id: string; nome: string; descricao: string; disponivel: boolean };
 type Receitas = {
   plano?: Plano;
@@ -59,6 +72,7 @@ type Lote = {
   videos: Video[];
   modelo?: string;
   previsao?: Previsao;
+  cobranca?: { cobrado: number; devolvido: number } | null;
 };
 type Envio = { original: string; url: string; tipo: string };
 
@@ -66,6 +80,8 @@ const EM_ANDAMENTO = new Set(["aguardando_aprovacao", "aprovado", "processando"]
 const ENVIOS_SIMULTANEOS = 4;
 const MAX_PREVIA = 60; // miniaturas desenhadas; acima disso, um quadro "+N"
 const NICHOS: Record<string, string> = { geral: "Geral", produto: "Produtos", imovel: "Imóveis", comida: "Comida e bebida", pessoa: "Pessoas" };
+const RESOLUCAO: Record<string, string> = { rapida: "480p", alta: "720p" };
+const MOVIMENTOS: Record<string, string> = { recarga: "Recarga", ajuste: "Ajuste", pedido: "Pedido", estorno: "Devolvido" };
 
 // sinais do navegador para o registro de auditoria da autorização (nada sai para terceiros)
 function sinaisNavegador(marcadoEm: string | null): Record<string, unknown> {
@@ -244,6 +260,10 @@ function cartaoLote(l: Lote, abrir: (v: Video, origem: HTMLElement) => void): HT
   }
   const falhas = l.videos.filter((v) => v.status === "erro").length;
   if (falhas) cartao.append(criar("p", { className: "fraco", textContent: `${plural(falhas, "vídeo não saiu", "vídeos não saíram")}.` }));
+  if (l.cobranca?.cobrado) {
+    const devolvido = l.cobranca.devolvido ? ` · ${reais(l.cobranca.devolvido)} voltaram para o saldo` : "";
+    cartao.append(criar("p", { className: "fraco", textContent: `Custo do pedido: ${reais(l.cobranca.cobrado)}${devolvido}` }));
+  }
   return cartao;
 }
 
@@ -301,6 +321,78 @@ function iniciarCliente(): void {
   const estados = new Map<string, string>(); // estado anterior de cada pedido (anúncio de mudanças)
   let primeiraLista = true;
   const atualizarContador = contador(prompt, el("prompt-contador"));
+  const selDuracao = el<HTMLSelectElement>("duracao");
+  const selQualidade = el<HTMLSelectElement>("qualidade");
+
+  // -- saldo (pré-pago) --------------------------------------------------------------------------
+  let saldo: Saldo = { pre_pago: false };
+
+  const duracaoEscolhida = (): number => {
+    const r = receitas?.receitas.find((x) => x.id === selReceita.value);
+    return Number(selDuracao.value) || r?.duracao || 5;
+  };
+
+  /** Custo do pedido como está agora (centavos), ou null fora do pré-pago. */
+  const custoAtual = (): { custo: number; porVideo: number; duracao: number; resolucao: string } | null => {
+    if (!saldo.pre_pago || !saldo.precos) return null;
+    const duracao = duracaoEscolhida();
+    const porVideo = (saldo.precos[selQualidade.value] ?? 0) * duracao;
+    return { custo: porVideo * arquivos.size, porVideo, duracao, resolucao: RESOLUCAO[selQualidade.value] ?? selQualidade.value };
+  };
+
+  const atualizarCusto = () => {
+    const alvo = el("custo");
+    const c = custoAtual();
+    alvo.hidden = !c;
+    if (!c) return;
+    const disponivel = saldo.saldo ?? 0;
+    const falta = c.custo > disponivel;
+    alvo.classList.toggle("falta", falta);
+    alvo.textContent = arquivos.size
+      ? `Este pedido: ${plural(arquivos.size, "vídeo", "vídeos")} de ${c.duracao} s em ${c.resolucao} = ${reais(c.custo)}` +
+        (falta ? ` · faltam ${reais(c.custo - disponivel)} de saldo` : ` · saldo depois: ${reais(disponivel - c.custo)}`)
+      : `Cada vídeo de ${c.duracao} s em ${c.resolucao} custa ${reais(c.porVideo)}.`;
+  };
+
+  const mostrarSaldo = () => {
+    const caixa = el("saldo");
+    caixa.hidden = !saldo.pre_pago;
+    if (!saldo.pre_pago) return;
+    el("saldo-valor").textContent = reais(saldo.saldo ?? 0);
+    const precos = saldo.precos ?? {};
+    el("saldo-precos").textContent = Object.entries(RESOLUCAO)
+      .filter(([q]) => precos[q])
+      .map(([q, r]) => `${r}: ${reais(precos[q])} por segundo de vídeo`)
+      .join(" · ");
+    // o extrato vem só quando a pessoa abre "Ver extrato" (e a cada atualização do saldo depois disso)
+    const extrato = saldo.extrato;
+    const lista = el("extrato-lista");
+    if (!extrato) lista.replaceChildren(criar("li", { className: "fraco", textContent: "Carregando…" }));
+    else if (!extrato.length) lista.replaceChildren(criar("li", { className: "fraco", textContent: "Nenhum movimento ainda." }));
+    else
+      lista.replaceChildren(
+        ...extrato.map((m) =>
+          criar("li", {}, [
+            criar("span", {}, [tempo(m.quando), ` · ${MOVIMENTOS[m.tipo] ?? m.tipo}${m.descricao ? `: ${m.descricao}` : ""}`]),
+            criar("span", { className: "valor", textContent: `${m.valor > 0 ? "+" : ""}${reais(m.valor)}` }),
+          ]),
+        ),
+      );
+    atualizarCusto();
+  };
+
+  const carregarSaldo = async () => {
+    try {
+      saldo = await api<Saldo>("/api/saldo", token);
+      mostrarSaldo();
+    } catch {
+      /* fica o saldo anterior; a próxima atualização tenta de novo */
+    }
+  };
+  let assinaturaCobranca = "";
+  el("extrato").addEventListener("toggle", () => {
+    if ((el("extrato") as HTMLDetailsElement).open) void carregarSaldo();
+  });
 
   // -- pedidos ---------------------------------------------------------------------------------
   const lotesAlvo = el("lotes");
@@ -332,6 +424,10 @@ function iniciarCliente(): void {
       estados.set(l.lote, l.status);
     }
     primeiraLista = false;
+    // pré-pago: pedido cobrado ou vídeo devolvido muda o saldo
+    const cobrancas = JSON.stringify(lotes.map((l) => [l.lote, l.status, l.cobranca]));
+    if (saldo.pre_pago && assinaturaCobranca && cobrancas !== assinaturaCobranca) void carregarSaldo();
+    assinaturaCobranca = cobrancas;
     return lotes.some((l) => EM_ANDAMENTO.has(l.status));
   };
   const atualizacao = repetir(listar, 10000);
@@ -357,6 +453,7 @@ function iniciarCliente(): void {
     el("barra-fotos").hidden = !n && !ignorados && !excedentes;
     el("limpar").hidden = !n;
     rotular(enviar, n ? `Enviar pedido com ${plural(n, "foto", "fotos")}` : "Enviar pedido");
+    atualizarCusto();
     return texto;
   };
 
@@ -478,8 +575,13 @@ function iniciarCliente(): void {
     const exigida = !!r?.exige_consentimento;
     consentimento.required = exigida;
     el("caixa-consentimento").classList.toggle("exigida", exigida);
+    const padrao = Array.from(selDuracao.options).find((o) => !o.value);
+    if (padrao && r?.duracao) padrao.textContent = `Padrão do estilo (${r.duracao} s)`;
+    atualizarCusto();
   };
   selReceita.addEventListener("change", aplicarReceita);
+  selDuracao.addEventListener("change", atualizarCusto);
+  selQualidade.addEventListener("change", atualizarCusto);
   el("usar-sugestao").addEventListener("click", () => {
     prompt.value = el("sugestao-texto").textContent ?? "";
     atualizarContador();
@@ -495,15 +597,16 @@ function iniciarCliente(): void {
     marcarErro(consentimento, false);
   });
 
-  // teste gratuito: só 480p, vídeos de 3 s, um pedido com até 10 fotos (a API confere tudo de novo)
+  // durações do plano (3 s só no teste; nos outros, de 4 a 7 s); teste gratuito: só 480p, vídeos de 3 s,
+  // um pedido com até 5 fotos (a API confere tudo de novo)
   const aplicarPlano = (plano: Plano | undefined) => {
     const avisoPlano = el("plano-aviso");
-    if (!plano || plano.nome !== "teste") return;
-    const qualidade = el<HTMLSelectElement>("qualidade");
-    for (const o of Array.from(qualidade.options)) if (!plano.qualidades?.includes(o.value)) o.remove();
-    const duracao = el<HTMLSelectElement>("duracao");
-    for (const o of Array.from(duracao.options)) if (!plano.duracoes?.includes(Number(o.value))) o.remove();
-    duracao.value = String(plano.duracoes?.[0] ?? 3);
+    if (!plano) return;
+    const teste = plano.nome === "teste";
+    if (plano.duracoes) for (const o of Array.from(selDuracao.options)) if (o.value ? !plano.duracoes.includes(Number(o.value)) : teste) o.remove();
+    if (!teste) return;
+    for (const o of Array.from(selQualidade.options)) if (!plano.qualidades?.includes(o.value)) o.remove();
+    selDuracao.value = String(plano.duracoes?.[0] ?? 3);
     if (plano.disponivel) {
       aviso(
         avisoPlano,
@@ -550,6 +653,10 @@ function iniciarCliente(): void {
     el("modelo-info").textContent = modelos.length > 1 ? "" : "Novos modelos de geração vão aparecer aqui.";
     campos.disabled = false;
     aplicarPlano(receitas.plano);
+    if (receitas.plano?.precos) {
+      saldo = { pre_pago: true, saldo: receitas.plano.saldo ?? 0, precos: receitas.plano.precos };
+      mostrarSaldo();
+    }
     aplicarReceita();
     atualizarContagem();
     atualizacao.agora();
@@ -573,6 +680,11 @@ function iniciarCliente(): void {
       aviso(msg, "Escreva o que deve acontecer nos vídeos (pelo menos 3 letras).", "erro");
       return prompt;
     }
+    const c = custoAtual();
+    if (c && c.custo > (saldo.saldo ?? 0)) {
+      aviso(msg, `Saldo insuficiente: este pedido custa ${reais(c.custo)} e o seu saldo é ${reais(saldo.saldo ?? 0)}. Tire algumas fotos, escolha vídeos mais curtos ou recarregue pelo suporte.`, "erro");
+      return el("fotos");
+    }
     if (consentimento.required && !consentimento.checked) {
       marcarErro(consentimento, true);
       aviso(msg, "Este estilo mostra pessoas: marque a autorização por escrito para enviar.", "erro");
@@ -594,8 +706,8 @@ function iniciarCliente(): void {
     const corpo = {
       prompt: prompt.value.trim(),
       receita: selReceita.value,
-      qualidade: el<HTMLSelectElement>("qualidade").value,
-      duracao: Number(el<HTMLSelectElement>("duracao").value) || null,
+      qualidade: selQualidade.value,
+      duracao: Number(selDuracao.value) || null,
       consentimento: consentimento.checked,
       modelo: el<HTMLSelectElement>("modelo").value,
       navegador: sinaisNavegador(consentimento.checked ? marcadoEm : null),
@@ -656,6 +768,7 @@ function iniciarCliente(): void {
       }
       aplicarReceita();
       atualizarContagem();
+      if (saldo.pre_pago) void carregarSaldo();
       atualizacao.agora();
       if (matchMedia("(max-width: 63.99em)").matches) el("titulo-pedidos").focus();
     } catch (e) {

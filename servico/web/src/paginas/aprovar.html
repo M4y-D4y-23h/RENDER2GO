@@ -51,6 +51,7 @@
           <a href="#sec-ips">Uso por IP</a>
           <a href="#sec-dispositivos">Dispositivos</a>
           <a href="#sec-suporte">Suporte <span class="contagem" id="n-suporte"></span></a>
+          <a href="#sec-clientes">Clientes e saldo</a>
           <a href="#sec-cliente">Novo cliente</a>
         </nav>
 
@@ -80,7 +81,7 @@
 
           <section id="sec-ips" aria-labelledby="t-ips">
             <h2 id="t-ips">Uso por IP</h2>
-            <p class="fraco">Fotos de pedidos que passaram do envio e não foram recusados. O teste gratuito vale até 10 fotos por IP, somando todos os clientes de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
+            <p class="fraco">Fotos de pedidos que passaram do envio e não foram recusados. O teste gratuito vale até 50 fotos por IP, somando todos os clientes de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
             <div id="ips" class="tabela" role="region" aria-label="Tabela de uso por IP (role para o lado)" tabindex="0"></div>
           </section>
 
@@ -96,6 +97,40 @@
             <div id="suporte" class="lista"></div>
           </section>
 
+          <section id="sec-clientes" aria-labelledby="t-clientes">
+            <h2 id="t-clientes">Clientes e saldo</h2>
+            <p class="fraco" id="precos-info">Pré-pago: o cliente do plano pago recarrega o saldo e paga por segundo de vídeo. O pedido é cobrado quando as fotos chegam; pedido recusado e vídeo que não sai voltam sozinhos para o saldo.</p>
+            <form id="form-saldo" class="cartao form-cliente" novalidate>
+              <div class="duas">
+                <div class="campo">
+                  <label for="saldo-cliente">Cliente (plano pago)</label>
+                  <select id="saldo-cliente"></select>
+                </div>
+                <div class="campo">
+                  <label for="saldo-valor">Valor em reais</label>
+                  <input id="saldo-valor" inputmode="decimal" maxlength="12" placeholder="50,00" autocomplete="off" aria-describedby="saldo-valor-dica">
+                  <p class="dica" id="saldo-valor-dica">Recarga. Valor negativo desconta (ajuste).</p>
+                </div>
+              </div>
+              <div class="duas">
+                <div class="campo">
+                  <label for="saldo-descricao">Descrição (o cliente vê no extrato)</label>
+                  <input id="saldo-descricao" maxlength="200" placeholder="Pix de 09/10" autocomplete="off">
+                </div>
+                <div class="campo">
+                  <label for="saldo-referencia">Identificador do pagamento (opcional)</label>
+                  <input id="saldo-referencia" maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="saldo-referencia-dica">
+                  <p class="dica" id="saldo-referencia-dica">Ex.: o código do Pix. O mesmo pagamento não entra duas vezes.</p>
+                </div>
+              </div>
+              <div class="acoes">
+                <button type="submit" class="botao primario" id="saldo-enviar"><!--@icone ok-->Lançar no saldo</button>
+              </div>
+              <div id="saldo-msg" class="aviso" hidden></div>
+            </form>
+            <div id="clientes" class="tabela" role="region" aria-label="Tabela de clientes e saldo (role para o lado)" tabindex="0"></div>
+          </section>
+
           <section id="sec-cliente" aria-labelledby="t-cliente">
             <h2 id="t-cliente">Novo cliente</h2>
             <form id="form-cliente" class="cartao form-cliente" novalidate>
@@ -107,8 +142,8 @@
                 <div class="campo">
                   <label for="cliente-plano">Plano</label>
                   <select id="cliente-plano">
-                    <option value="teste">Teste gratuito (um pedido, até 10 fotos, 3 s, 480p)</option>
-                    <option value="pago">Pago</option>
+                    <option value="teste">Teste gratuito (um pedido, até 5 fotos, 3 s, 480p)</option>
+                    <option value="pago">Pago (pré-pago: saldo e preço por segundo, vídeos de 4 a 7 s)</option>
                     <option value="interno">Interno (só você: sem limites e sem revisão)</option>
                   </select>
                 </div>

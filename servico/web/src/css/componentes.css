@@ -264,6 +264,7 @@
 .campo {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  align-content: start; /* lado a lado (.duas), o campo sem dica não estica o próprio controle */
   gap: var(--esp-2);
   min-width: 0;
 }

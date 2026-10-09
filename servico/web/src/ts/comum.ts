@@ -162,6 +162,11 @@ export function bytes(n: number): string {
   return mb < 1024 ? `${mb.toLocaleString("pt-BR", { maximumFractionDigits: mb < 10 ? 1 : 0 })} MB` : `${(mb / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} GB`;
 }
 
+/** Centavos → "R$ 1.234,50". */
+export function reais(centavos: number): string {
+  return (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
 export function curto(id: string | null | undefined): string {
   return id ? id.slice(0, 8) : "—";
 }

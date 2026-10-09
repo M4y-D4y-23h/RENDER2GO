@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from render2go_servico.db import MAX_TENTATIVAS, BancoError
+from render2go_servico.db import MAX_TENTATIVAS, BancoError, SaldoInsuficiente
 
 
 def _lote(b, n_fotos=2, variacoes=1):
@@ -296,3 +296,58 @@ def test_photo_analysis_is_saved(banco):
     banco.salvar_analise(f["id"], {"pessoas": 1, "rostos": 1})
     banco.criar_esquema()  # reaplicar o esquema (IF NOT EXISTS no Postgres) não apaga nada
     assert '"pessoas": 1' in banco.fotos(lid)[0]["analise"]
+
+
+def _lote_pago(b, cid, n_fotos, preco_video, variacoes=1):
+    fotos = [
+        {"nome": f"f{i}", "tipo": "image/jpeg", "bytes": 100, "chave": f"entrada/{cid}/{{lote}}/f{i}.jpg"}
+        for i in range(n_fotos)
+    ]
+    pedido = {"prompt": "a câmera se aproxima", "qualidade": "rapida", "duracao": 4, "variacoes": variacoes}
+    return b.criar_lote(cid, pedido, fotos, preco_video=preco_video)
+
+
+def test_prepaid_charge_on_upload_refund_per_failed_video_and_ledger_survives_cleanup(banco):
+    cid, _ = banco.criar_cliente("Loja")
+    assert banco.saldo(cid) == 0
+    with pytest.raises(BancoError, match="negativo"):
+        banco.movimentar(cid, -1, "ajuste", "dono")
+    assert banco.movimentar(cid, 1000, "Pix", "dono", referencia="pagamento:pix-1") == 1000
+    with pytest.raises(BancoError, match="já registrado"):  # o mesmo pagamento não entra duas vezes
+        banco.movimentar(cid, 1000, "Pix", "dono", referencia="pagamento:pix-1")
+
+    # sem saldo para o pedido inteiro: nada muda (o lote continua esperando o envio)
+    caro = _lote_pago(banco, cid, 2, 600)
+    with pytest.raises(SaldoInsuficiente) as e:
+        banco.confirmar_envio(caro, {f["chave"]: 100 for f in banco.fotos(caro)})
+    assert (e.value.custo, e.value.saldo) == (1200, 1000)
+    assert banco.lote(caro)["status"] == "aguardando_envio" and banco.saldo(cid) == 1000
+
+    # 3 fotos × 2 variações × 100: cobrado quando as fotos chegam, não antes
+    lid = _lote_pago(banco, cid, 3, 100, variacoes=2)
+    assert banco.saldo(cid) == 1000
+    _aprovar(banco, lid, variacoes=2)
+    assert banco.saldo(cid) == 400 and banco.cobranca(lid) == {"cobrado": 600, "devolvido": 0}
+    (mov,) = [m for m in banco.extrato(cid) if m["tipo"] == "pedido"]
+    assert mov["valor"] == -600 and mov["descricao"] == "6 vídeo(s) de 4 s em 480p"
+
+    # a compilação falha de vez: os 6 renders são cancelados e cada um volta, uma vez só
+    comp = banco.reivindicar("w1")
+    banco.concluir(comp["id"], "w1", "erro", erro="falhou")
+    assert banco.lote(lid)["status"] == "concluido_com_falhas"
+    assert banco.saldo(cid) == 1000 and banco.cobranca(lid) == {"cobrado": 600, "devolvido": 600}
+    with banco.tx() as c:
+        banco._fechar_lote(c, lid)  # fechar de novo não devolve de novo
+    assert banco.saldo(cid) == 1000
+
+    # pedido recusado na revisão: volta inteiro
+    rec = _lote_pago(banco, cid, 2, 150)
+    banco.confirmar_envio(rec, {f["chave"]: 100 for f in banco.fotos(rec)})
+    assert banco.saldo(cid) == 700
+    banco.recusar(rec, "dono", "foto borrada")
+    assert banco.saldo(cid) == 1000 and banco.cobranca(rec) == {"cobrado": 300, "devolvido": 300}
+
+    # a limpeza do histórico apaga os pedidos, mas o extrato (registro financeiro) fica
+    banco.apagar_historico()
+    assert banco.saldo(cid) == 1000 and len(banco.extrato(cid)) == 1 + 1 + 6 + 1 + 1
+    assert [k["saldo"] for k in banco.clientes() if k["id"] == cid] == [1000]

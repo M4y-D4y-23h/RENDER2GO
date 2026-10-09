@@ -2,9 +2,10 @@
 
 Cliente (Authorization: Bearer <token do cliente>):
     GET  /api/receitas                 receitas, formatos e limites
-    POST /api/lotes                    cria o lote; devolve uma URL de envio por foto
-    POST /api/lotes/{id}/enviado       confere no armazenamento e manda para aprovação
-    GET  /api/lotes  /api/lotes/{id}   andamento, previsão e links dos vídeos (abrir e baixar)
+    POST /api/lotes                    cria o lote; devolve uma URL de envio por foto (pré-pago: confere o saldo)
+    POST /api/lotes/{id}/enviado       confere no armazenamento, cobra (pré-pago) e manda para aprovação
+    GET  /api/lotes  /api/lotes/{id}   andamento, previsão, cobrança e links dos vídeos (abrir e baixar)
+    GET  /api/saldo                    pré-pago: saldo, preços por segundo e extrato
     POST /api/suporte                  mensagem para o suporte (e-mail), com limite contra spam; sem código
                                        de acesso, exige e-mail e tem limites menores (página /suporte)
     POST /api/cookies                  escolha do aviso de cookies (prova do consentimento)
@@ -15,11 +16,16 @@ Aprovação (Bearer <token de administração>), ADR 0004:
     GET  /api/admin/historico          pedidos feitos, aprovados e recusados; uso por IP e por dispositivo
     GET  /api/admin/lotes/{id}/auditoria  registro completo de um lote (origem, autorização, fotos, eventos)
     GET  /api/admin/suporte            últimas mensagens de suporte
+    GET  /api/admin/clientes           clientes com plano e saldo
     POST /api/admin/clientes           cadastra um cliente (plano pago ou teste); o token aparece uma vez
+    POST /api/admin/clientes/{id}/saldo     recarga (valor positivo) ou ajuste (negativo) do saldo
+    GET  /api/admin/clientes/{id}/extrato   extrato completo do saldo
     POST /api/admin/clientes/{id}/desativar   o código de acesso do cliente deixa de valer
 
-Teste gratuito (docs/08): um pedido só, até 10 fotos, vídeos de 3 s em 480p; no máximo 10 fotos de
+Teste gratuito (docs/08): um pedido só, até 5 fotos, vídeos de 3 s em 480p; no máximo 5 fotos de
 teste por dispositivo (navegador) e 50 por IP (uma empresa com várias pessoas na mesma rede).
+Plano pago (pré-pago, docs/11): saldo recarregado e preço por segundo de vídeo (`precos`); vídeos de
+4 a 7 s. O pedido é cobrado quando as fotos chegam; recusa e vídeo que não sai voltam para o saldo.
 Plano interno (o dono do serviço): sem limites de teste e com aprovação automática; o C1 continua.
 As fotos de entrada são apagadas quando o lote fecha (pronto, com falhas ou recusado); os vídeos
 ficam até a regra de retenção do bucket. A caixa de autorização gera um registro de auditoria
@@ -63,9 +69,9 @@ from pydantic import BaseModel, Field
 from render2go_worker import conferencia, filtros, lote, presets
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from render2go_servico import SERVICO_DIR, modelos, pessoas, suporte
+from render2go_servico import SERVICO_DIR, modelos, pessoas, precos, suporte
 from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_saida
-from render2go_servico.db import Banco, BancoError
+from render2go_servico.db import Banco, BancoError, SaldoInsuficiente
 
 TIPOS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 MAX_FOTOS_LOTE = 1000
@@ -73,13 +79,14 @@ MAX_BYTES_FOTO = 50 * 1024**2
 URL_ENVIO_S = 3600
 URL_DOWNLOAD_S = 24 * 3600
 # teste gratuito (docs/08): um pedido só, qualidade rápida (480p), vídeos de 3 s, uma variação,
-# até 10 fotos; e no máximo 10 fotos de teste por IP, somando todos os clientes de teste
+# até 5 fotos (eram 10 até 09/10/2026); no máximo 5 fotos de teste por dispositivo e 50 por IP,
+# somando todos os clientes de teste
 TESTE = {
     "qualidade": "rapida",
     "duracao": 3,
     "variacoes": 1,
-    "fotos": 10,
-    "fotos_dispositivo": 10,
+    "fotos": 5,
+    "fotos_dispositivo": 5,
     "fotos_ip": int(os.environ.get("RENDER2GO_TESTE_FOTOS_IP", 50)),
 }
 # texto da caixa de autorização: a página mostra este, e o registro guarda o texto e o SHA-256.
@@ -382,17 +389,31 @@ def _se_fechou(c: Config, lote_id: str) -> None:
 
 
 def _limites_teste(c: Config, cli: dict, origem: dict, n_fotos: int, exceto: str | None = None) -> None:
-    """Teste gratuito: um pedido só (todas as fotos de uma vez), até 10 fotos por dispositivo e 50
+    """Teste gratuito: um pedido só (todas as fotos de uma vez), até 5 fotos por dispositivo e 50
     por IP (várias pessoas de uma empresa dividem o IP; o teto por IP segura quem troca de navegador)."""
     if c.banco.pedidos_ativos(cli["id"], exceto) > 0:
         raise HTTPException(
-            429, "o teste gratuito é um pedido só, com até 10 fotos; para mais vídeos, fale com a gente"
+            429, f"o teste gratuito é um pedido só, com até {TESTE['fotos']} fotos; para mais vídeos, fale com a gente"
         )
     disp = origem.get("dispositivo")
     if disp and c.banco.fotos_teste_dispositivo(disp, exceto) + n_fotos > TESTE["fotos_dispositivo"]:
         raise HTTPException(429, f"este dispositivo já usou o teste gratuito ({TESTE['fotos_dispositivo']} fotos)")
     if c.banco.fotos_teste_ip(origem["ip"], exceto) + n_fotos > TESTE["fotos_ip"]:
         raise HTTPException(429, "esta rede já usou todos os testes gratuitos disponíveis; fale com a gente")
+
+
+def duracoes(plano: str) -> list[int]:
+    """Durações aceitas: 3 s só no teste gratuito; nos outros planos, de 4 a 7 s."""
+    if plano == "teste":
+        return [TESTE["duracao"]]
+    return [d for d in lote.DURACOES if d >= precos.DURACAO_MIN]
+
+
+def sem_saldo(custo: int, saldo: int) -> str:
+    return (
+        f"saldo insuficiente: este pedido custa {precos.reais(custo)} e o seu saldo é {precos.reais(saldo)}. "
+        "Para recarregar, fale com a gente pelo suporte"
+    )
 
 
 class FotoIn(BaseModel):
@@ -471,6 +492,12 @@ class ClienteIn(BaseModel):
     nome: str = Field(min_length=2, max_length=120)
     plano: str = "pago"
     cota_fotos_dia: int = Field(500, ge=1, le=100_000)
+
+
+class SaldoIn(BaseModel):
+    valor: str = Field(min_length=1, max_length=20)  # reais: "50", "19,90"; negativo desconta (ajuste)
+    descricao: str = Field(min_length=3, max_length=200)  # ex.: "Pix de 09/10, comprovante 123"
+    referencia: str | None = Field(None, max_length=120)  # id do pagamento: o mesmo nunca entra duas vezes
 
 
 def criar_app(cfg: Config | None = None) -> FastAPI:
@@ -568,7 +595,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     @app.get("/api/receitas")
     def receitas(request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
         r = lote.load_receitas()
-        plano: dict[str, Any] = {"nome": cli["plano"]}
+        minima = duracoes(cli["plano"])[0]  # o "padrão do estilo" nunca fica abaixo dela
+        plano: dict[str, Any] = {"nome": cli["plano"], "duracoes": duracoes(cli["plano"])}
+        if cli["plano"] in precos.PLANOS_COBRADOS:
+            plano.update(precos=precos.PRECOS, saldo=c.banco.saldo(cli["id"]))
         if cli["plano"] == "teste":
             motivo = None
             try:
@@ -577,7 +607,6 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 motivo = e.detail
             plano.update(
                 qualidades=[TESTE["qualidade"]],
-                duracoes=[TESTE["duracao"]],
                 max_fotos=TESTE["fotos"],
                 disponivel=motivo is None,
                 motivo=motivo,
@@ -593,6 +622,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "label": v["label"],
                     "nicho": v["nicho"],
                     "acao": v["acao"],
+                    "duracao": max(v["duracao"], minima) if cli["plano"] != "teste" else minima,
                     "exige_consentimento": bool(v.get("exige_consentimento")),
                 }
                 for k, v in r["receitas"].items()
@@ -623,8 +653,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(422, "esta receita exige a autorização por escrito das pessoas das fotos")
         if body.formato not in ("auto", *rec["formatos"]) or body.qualidade not in lote.QUALIDADES:
             raise HTTPException(422, "formato ou qualidade inválidos")
-        if body.duracao is not None and body.duracao not in lote.DURACOES:
-            raise HTTPException(422, "duração de 3 a 7 s")
+        if cli["plano"] != "teste":  # sem duração escolhida: a do estilo (nunca abaixo do mínimo)
+            aceitas = duracoes(cli["plano"])
+            body.duracao = max(r["duracao"], aceitas[0]) if body.duracao is None else body.duracao
+            if body.duracao not in aceitas:
+                raise HTTPException(422, f"duração de {aceitas[0]} a {aceitas[-1]} s")
         try:
             presets.compose("i2v", body.prompt, r["presets"])
         except presets.PresetError as e:
@@ -641,6 +674,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             body.duracao = TESTE["duracao"]
         if cli["plano"] != "interno" and c.banco.fotos_hoje(cli["id"]) + len(body.fotos) > cli["cota_fotos_dia"]:
             raise HTTPException(429, f"cota diária de {cli['cota_fotos_dia']} fotos atingida")
+        preco_video, custo = None, 0
+        if cli["plano"] in precos.PLANOS_COBRADOS:  # pré-pago: confere o saldo antes de as fotos subirem
+            preco_video = precos.preco_video(body.qualidade, body.duracao)
+            custo = len(body.fotos) * body.variacoes * preco_video
+            saldo = c.banco.saldo(cli["id"])
+            if saldo < custo:
+                raise HTTPException(402, sem_saldo(custo, saldo))
         fotos, usados = [], set()
         for f in body.fotos:
             if f.tipo not in TIPOS:
@@ -676,7 +716,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             }
         if cli["plano"] == "teste":  # envio anterior que não terminou não segura o teste
             c.banco.substituir_envios(cli["id"])
-        lid = c.banco.criar_lote(cli["id"], pedido, fotos, origem=origem, autorizacao=autorizacao)
+        lid = c.banco.criar_lote(
+            cli["id"], pedido, fotos, origem=origem, autorizacao=autorizacao, preco_video=preco_video
+        )
         envios = []
         for f in c.banco.fotos(lid):
             original = next(x["original"] for x in fotos if x["nome"] == f["nome"])
@@ -687,7 +729,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "tipo": f["tipo"],
                 }
             )
-        return {"lote": lid, "envios": envios, "expira_s": URL_ENVIO_S}
+        return {"lote": lid, "envios": envios, "expira_s": URL_ENVIO_S, "custo": custo}
 
     @app.post("/api/lotes/{lote_id}/enviado")
     def enviado(lote_id: str, cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -708,6 +750,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             )
         try:
             problemas = c.banco.confirmar_envio(lote_id, tamanhos)
+        except SaldoInsuficiente as e:  # outro pedido gastou o saldo enquanto as fotos subiam
+            with contextlib.suppress(BancoError):
+                c.banco.recusar(lote_id, "saldo", "saldo insuficiente quando as fotos terminaram de chegar")
+            _se_fechou(c, lote_id)
+            raise HTTPException(402, sem_saldo(e.custo, e.saldo)) from e
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
         if problemas:
@@ -747,6 +794,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "total": len(videos),
             "videos": videos,
             "previsao": _previsao(c, lt, jobs),
+            # pré-pago: quanto o pedido custou e quanto já voltou para o saldo
+            "cobranca": c.banco.cobranca(lt["id"]) if lt["preco_video"] is not None else None,
         }
 
     def _previsao(c: Config, lt: dict, jobs: list[dict]) -> dict | None:
@@ -835,6 +884,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     def meus_lotes(cli: dict = Depends(cliente), c: Config = Depends(config)):
         return [_resumo(lt, c, cli["id"]) for lt in c.banco.lotes(cliente_id=cli["id"], limite=20)]
 
+    @app.get("/api/saldo")
+    def meu_saldo(cli: dict = Depends(cliente), c: Config = Depends(config)):
+        if cli["plano"] not in precos.PLANOS_COBRADOS:
+            return {"pre_pago": False}
+        return {
+            "pre_pago": True,
+            "saldo": c.banco.saldo(cli["id"]),
+            "precos": precos.PRECOS,
+            "extrato": c.banco.extrato(cli["id"], 20),
+        }
+
     @app.get("/api/lotes/{lote_id}")
     def ver_lote(lote_id: str, cli: dict = Depends(cliente), c: Config = Depends(config)):
         lt = c.banco.lote(lote_id, cli["id"])
@@ -902,6 +962,37 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
         return {"lote": lote_id, "status": "aprovado", "videos": len(tarefas)}
+
+    @app.get("/api/admin/clientes")
+    def lista_clientes(_: str = Depends(admin), c: Config = Depends(config)):
+        return {"clientes": c.banco.clientes(), "precos": precos.PRECOS, "planos_cobrados": precos.PLANOS_COBRADOS}
+
+    @app.post("/api/admin/clientes/{cliente_id}/saldo")
+    def adicionar_saldo(cliente_id: str, body: SaldoIn, quem: str = Depends(admin), c: Config = Depends(config)):
+        try:
+            valor = precos.centavos(body.valor)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        if not 0 < abs(valor) <= precos.MAX_MOVIMENTO:
+            raise HTTPException(422, f"valor de R$ 0,01 a {precos.reais(precos.MAX_MOVIMENTO)} (negativo desconta)")
+        cli = c.banco.cliente(cliente_id)
+        if cli is None:
+            raise HTTPException(404, "cliente não encontrado")
+        if cli["plano"] not in precos.PLANOS_COBRADOS:
+            raise HTTPException(422, f"o plano {cli['plano']} não usa saldo")
+        try:
+            ref = f"pagamento:{body.referencia.strip()}" if (body.referencia or "").strip() else None
+            saldo = c.banco.movimentar(cliente_id, valor, body.descricao.strip(), quem, ref)
+        except BancoError as e:
+            raise HTTPException(422, str(e)) from e
+        return {"cliente": cliente_id, "saldo": saldo}
+
+    @app.get("/api/admin/clientes/{cliente_id}/extrato")
+    def extrato_cliente(cliente_id: str, _: str = Depends(admin), c: Config = Depends(config)):
+        cli = c.banco.cliente(cliente_id)
+        if cli is None:
+            raise HTTPException(404, "cliente não encontrado")
+        return {**cli, "saldo": c.banco.saldo(cliente_id), "movimentos": c.banco.extrato(cliente_id, 1000)}
 
     @app.post("/api/admin/clientes")
     def novo_cliente(body: ClienteIn, quem: str = Depends(admin), c: Config = Depends(config)):

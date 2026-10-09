@@ -131,11 +131,13 @@ def _lote_aprovado(amb, fotos: dict[str, bytes]):
     import requests
 
     h = {"Authorization": f"Bearer {ADMIN}"}
-    tok = requests.post(f"{amb.url}/api/admin/clientes", json={"nome": "Padaria"}, headers=h).json()["token"]
-    hc = {"Authorization": f"Bearer {tok}"}
+    cli = requests.post(f"{amb.url}/api/admin/clientes", json={"nome": "Padaria"}, headers=h).json()
+    saldo = {"valor": "100", "descricao": "recarga do teste"}  # plano pago: pré-pago
+    assert requests.post(f"{amb.url}/api/admin/clientes/{cli['cliente']}/saldo", json=saldo, headers=h).ok
+    hc = {"Authorization": f"Bearer {cli['token']}"}
     corpo = {
         "prompt": "a câmera se aproxima devagar do produto",
-        "duracao": 3,
+        "duracao": 4,
         "fotos": [{"nome": n, "tipo": "image/png", "bytes": len(b)} for n, b in fotos.items()],
     }
     r = requests.post(f"{amb.url}/api/lotes", json=corpo, headers=hc).json()

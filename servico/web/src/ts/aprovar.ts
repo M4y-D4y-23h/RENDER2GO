@@ -17,6 +17,7 @@ import {
   ocupado,
   plural,
   quando,
+  reais,
   reconciliar,
   repetir,
   sessao,
@@ -94,6 +95,9 @@ type MensagemSuporte = {
   enviado: number;
   erro: string | null;
 };
+
+type Cliente = { id: string; nome: string; plano: string; ativo: number | boolean; criado: number; saldo: number };
+type Clientes = { clientes: Cliente[]; precos: Record<string, number>; planos_cobrados: string[] };
 
 const QUALIDADES: Record<string, string> = { rapida: "rápida (480p)", alta: "alta (720p)" };
 
@@ -340,6 +344,34 @@ function listaSuporte(msgs: MensagemSuporte[]): ItemLista[] {
   }));
 }
 
+function tabelaClientes(r: Clientes, token: string, msg: HTMLElement): HTMLElement {
+  if (!r.clientes.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhum cliente cadastrado ainda." });
+  return tabela(
+    [["Cliente", false], ["Plano", false], ["Saldo", true], ["Situação", false], ["Cadastrado", false], ["Extrato", false]],
+    r.clientes.map((k) => {
+      const cobrado = r.planos_cobrados.includes(k.plano);
+      let extrato: Node | string = "—";
+      if (cobrado) {
+        const botao = criar("button", { type: "button", className: "botao pequeno" }, [icone("baixar"), "Baixar"]);
+        botao.setAttribute("aria-label", `Baixar o extrato de ${k.nome}`);
+        botao.addEventListener("click", async () => {
+          ocupado(botao, true);
+          try {
+            baixarJson(await api<unknown>(`/api/admin/clientes/${k.id}/extrato`, token), `extrato-${k.id}.json`);
+          } catch (e) {
+            aviso(msg, textoErro(e), "erro");
+          } finally {
+            ocupado(botao, false);
+          }
+        });
+        extrato = botao;
+      }
+      return { celulas: [k.nome, k.plano, cobrado ? reais(k.saldo) : "—", k.ativo ? "ativo" : "desativado", tempo(k.criado), extrato] };
+    }),
+    "Clientes e saldo",
+  );
+}
+
 function iniciarAprovador(): void {
   const msg = el("msg");
   const atualizar = el<HTMLButtonElement>("atualizar");
@@ -361,6 +393,29 @@ function iniciarAprovador(): void {
       ? "As mensagens também chegam no seu e-mail."
       : "E-mail não configurado: as mensagens ficam só aqui (veja docs/09, seção de suporte).";
     reconciliar(el("suporte"), listaSuporte(sup.mensagens), () => vazio("Nenhuma mensagem ainda.", "As mensagens enviadas pelo /suporte aparecem aqui.", "mensagem"));
+    await listarClientes();
+  };
+
+  // -- clientes e saldo (pré-pago) ---------------------------------------------------------------
+  const selCliente = el<HTMLSelectElement>("saldo-cliente");
+  let assinaturaClientes = "";
+  const listarClientes = async () => {
+    const r = await api<Clientes>("/api/admin/clientes", token);
+    const assinatura = JSON.stringify(r);
+    if (assinatura === assinaturaClientes) return; // nada mudou: a tabela e a escolha ficam como estão
+    assinaturaClientes = assinatura;
+    el("clientes").replaceChildren(tabelaClientes(r, token, el("saldo-msg")));
+    const escolhido = selCliente.value;
+    const pagantes = r.clientes.filter((k) => k.ativo && r.planos_cobrados.includes(k.plano));
+    selCliente.replaceChildren(
+      criar("option", { value: "", textContent: pagantes.length ? "Escolha o cliente" : "Nenhum cliente do plano pago" }),
+      ...pagantes.map((k) => criar("option", { value: k.id, textContent: `${k.nome} · saldo ${reais(k.saldo)}` })),
+    );
+    if (pagantes.some((k) => k.id === escolhido)) selCliente.value = escolhido;
+    const p = r.precos;
+    el("precos-info").textContent =
+      `Pré-pago: 480p a ${reais(p.rapida ?? 0)} e 720p a ${reais(p.alta ?? 0)} por segundo de vídeo. ` +
+      "O pedido é cobrado quando as fotos chegam; pedido recusado e vídeo que não sai voltam sozinhos para o saldo.";
   };
 
   const listar = async (): Promise<boolean> => {
@@ -455,6 +510,51 @@ function iniciarAprovador(): void {
       anunciar("Cliente cadastrado. O código aparece só agora.");
       formCliente.reset();
       copiar.focus();
+      void listarClientes().catch(() => undefined);
+    } catch (e) {
+      aviso(saida, textoErro(e), "erro");
+    } finally {
+      ocupado(botao, false);
+    }
+  });
+
+  const formSaldo = el<HTMLFormElement>("form-saldo");
+  const valor = el<HTMLInputElement>("saldo-valor");
+  const descricao = el<HTMLInputElement>("saldo-descricao");
+  for (const campo of [selCliente, valor, descricao]) campo.addEventListener("input", () => marcarErro(campo, false));
+  formSaldo.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const saida = el("saldo-msg");
+    const faltando: [HTMLElement, string][] = [
+      [selCliente, selCliente.value ? "" : "Escolha o cliente."],
+      [valor, /^-?\d{1,7}([.,]\d{1,2})?$/.test(valor.value.trim()) ? "" : "Escreva o valor em reais, ex.: 50 ou 19,90."],
+      [descricao, descricao.value.trim().length >= 3 ? "" : "Escreva uma descrição (o cliente vê no extrato)."],
+    ];
+    const erro = faltando.find(([, m]) => m);
+    if (erro) {
+      marcarErro(erro[0], true);
+      aviso(saida, erro[1], "erro");
+      erro[0].focus();
+      return;
+    }
+    const nome = selCliente.selectedOptions[0]?.textContent?.split(" · ")[0] ?? "o cliente";
+    const ok = await confirmar({
+      titulo: "Lançar no saldo?",
+      texto: `${valor.value.trim().startsWith("-") ? "Descontar" : "Adicionar"} R$ ${valor.value.trim().replace(/^-/, "")} ${valor.value.trim().startsWith("-") ? "do" : "ao"} saldo de ${nome}.`,
+      confirmar: "Lançar",
+    });
+    if (!ok) return;
+    const botao = el<HTMLButtonElement>("saldo-enviar");
+    ocupado(botao, true);
+    try {
+      const r = await api<{ saldo: number }>(`/api/admin/clientes/${selCliente.value}/saldo`, token, {
+        method: "POST",
+        body: JSON.stringify({ valor: valor.value.trim(), descricao: descricao.value.trim(), referencia: el<HTMLInputElement>("saldo-referencia").value.trim() || null }),
+      });
+      aviso(saida, `Lançado. Saldo de ${nome} agora: ${reais(r.saldo)}.`, "ok");
+      anunciar(`Lançado. Saldo agora ${reais(r.saldo)}.`);
+      formSaldo.reset();
+      await listarClientes();
     } catch (e) {
       aviso(saida, textoErro(e), "erro");
     } finally {

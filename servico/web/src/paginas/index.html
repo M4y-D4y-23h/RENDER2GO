@@ -70,6 +70,16 @@
       <section class="cartao novo-pedido" aria-labelledby="titulo-novo">
         <h2 id="titulo-novo">Novo pedido</h2>
         <div id="plano-aviso" class="aviso info" hidden></div>
+        <!-- pré-pago: saldo, preço por segundo e extrato (só no plano pago) -->
+        <div id="saldo" class="saldo" hidden>
+          <p class="saldo-linha"><span>Seu saldo</span> <strong id="saldo-valor">R$ 0,00</strong></p>
+          <p class="dica" id="saldo-precos"></p>
+          <details class="extrato" id="extrato">
+            <summary>Ver extrato</summary>
+            <ul class="extrato-lista" id="extrato-lista" aria-label="Últimos movimentos do saldo"></ul>
+          </details>
+          <p class="dica">Para recarregar, <a href="/suporte">fale com a gente pelo suporte</a>. Vídeo que não sai volta para o saldo.</p>
+        </div>
         <form id="form-lote" novalidate>
           <fieldset class="campos-lote passos" id="campos-lote" disabled>
             <fieldset class="passo">
@@ -151,7 +161,8 @@
             </fieldset>
 
             <div class="enviar">
-              <button type="submit" class="botao primario largo" id="enviar"><!--@icone enviar-->Enviar pedido</button>
+              <p class="custo" id="custo" hidden></p>
+              <button type="submit" class="botao primario largo" id="enviar" aria-describedby="custo"><!--@icone enviar-->Enviar pedido</button>
               <div class="progresso" id="area-progresso" hidden>
                 <div class="progresso-texto"><span id="progresso-texto">Enviando as fotos…</span><span id="progresso-pct"></span></div>
                 <progress id="progresso" aria-labelledby="progresso-texto"></progress>

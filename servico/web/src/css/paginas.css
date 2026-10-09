@@ -182,6 +182,71 @@
   margin-top: var(--esp-6);
 }
 
+/* pré-pago: saldo, preços e extrato no cartão do pedido; custo do pedido junto do botão */
+.saldo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--esp-2);
+  margin-bottom: var(--esp-5);
+  padding: var(--esp-4);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+}
+
+.saldo p {
+  margin: 0;
+}
+
+.saldo-linha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--esp-2);
+}
+
+.saldo-linha strong {
+  font-size: var(--texto-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.extrato summary {
+  min-height: var(--alvo);
+  padding-block: var(--esp-3);
+  cursor: pointer;
+}
+
+.extrato-lista {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--esp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--texto-sm);
+}
+
+.extrato-lista li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--esp-3);
+}
+
+.extrato-lista .valor {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.custo {
+  margin: 0;
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+}
+
+.custo.falta {
+  color: var(--cor-erro);
+}
+
 .lotes {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

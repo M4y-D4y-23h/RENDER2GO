@@ -14,7 +14,7 @@
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0e17" media="(prefers-color-scheme: dark)">
 <meta name="format-detection" content="telephone=no">
-<link rel="stylesheet" href="/estatico/estilo.css?v=b012ce745ed0" integrity="sha384-CWEeI1OikL0CE9eSNCdbLJ6+Eq19viDq3nnEIYVkgGkXDPR/B2QEgPRBtNlafcdM">
+<link rel="stylesheet" href="/estatico/estilo.css?v=6234c297ad0e" integrity="sha384-NK3PGNR5kWSmZBKYAxbriIoPHrJME+FZRqTbbgs5JV4Fpr6pm0Ux8esl/3+E5aKZ">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -28,7 +28,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/cliente.js?v=acb829dcbc20" integrity="sha384-mGcfFimBrhZa4YZngpFnZxd9TEMcNDAVQ1nwmx6UM3z/Qlz+aG7xpzoRshG7RnSx" defer></script>
+<script src="/estatico/cliente.js?v=79828b53310b" integrity="sha384-JxmMprUgpBxY7S3w3Zlt3V9tR/GqTjBfogIXyKRUUKCGVHWqN0CxOzCjL+Fwe+7h" defer></script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
 {"@type":"Organization","@id":"https://app.render2go.com/#organizacao","name":"Render2Go","url":"https://app.render2go.com/","logo":"https://app.render2go.com/estatico/icone-512.png?v=d75fd84aa2d1"},
@@ -97,6 +97,15 @@
 <section class="cartao novo-pedido" aria-labelledby="titulo-novo">
 <h2 id="titulo-novo">Novo pedido</h2>
 <div id="plano-aviso" class="aviso info" hidden></div>
+<div id="saldo" class="saldo" hidden>
+<p class="saldo-linha"><span>Seu saldo</span> <strong id="saldo-valor">R$ 0,00</strong></p>
+<p class="dica" id="saldo-precos"></p>
+<details class="extrato" id="extrato">
+<summary>Ver extrato</summary>
+<ul class="extrato-lista" id="extrato-lista" aria-label="Últimos movimentos do saldo"></ul>
+</details>
+<p class="dica">Para recarregar, <a href="/suporte">fale com a gente pelo suporte</a>. Vídeo que não sai volta para o saldo.</p>
+</div>
 <form id="form-lote" novalidate>
 <fieldset class="campos-lote passos" id="campos-lote" disabled>
 <fieldset class="passo">
@@ -174,7 +183,8 @@
 <p class="dica" id="consentimento-dica">Obrigatória quando aparecem pessoas nas fotos. Ao marcar, a declaração fica registrada com a sua conta, a data, o endereço de internet e este dispositivo.</p>
 </fieldset>
 <div class="enviar">
-<button type="submit" class="botao primario largo" id="enviar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>Enviar pedido</button>
+<p class="custo" id="custo" hidden></p>
+<button type="submit" class="botao primario largo" id="enviar" aria-describedby="custo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>Enviar pedido</button>
 <div class="progresso" id="area-progresso" hidden>
 <div class="progresso-texto"><span id="progresso-texto">Enviando as fotos…</span><span id="progresso-pct"></span></div>
 <progress id="progresso" aria-labelledby="progresso-texto"></progress>

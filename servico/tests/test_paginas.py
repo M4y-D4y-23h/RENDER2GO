@@ -79,7 +79,8 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     assert cli.locator("#duracao option").all_inner_texts() == ["3 s"]
     assert "envie todas juntas, em um único pedido" in cli.locator("#plano-aviso").inner_text()
     cli.set_input_files("#fotos", [str(tmp_path / "bolo.png"), str(tmp_path / "loja.png")])
-    assert "2 de 10 fotos escolhidas · ainda cabem 8" in cli.locator("#contagem").inner_text()
+    assert "2 de 5 fotos escolhidas · ainda cabem 3" in cli.locator("#contagem").inner_text()
+    assert cli.locator("#saldo").is_hidden() and cli.locator("#custo").is_hidden()  # o teste não paga
     assert cli.locator("#enviar").inner_text() == "Enviar pedido com 2 fotos"
     # prévia das fotos escolhidas, desenhada no próprio navegador
     pw.expect(cli.locator("#previa .miniatura :is(canvas, img)")).to_have_count(2)
@@ -200,16 +201,18 @@ def _api(amb, metodo, caminho, token=ADMIN, **kw):
     return r.json()
 
 
-def _cliente(amb, plano="pago"):
-    return _api(amb, "POST", "/api/admin/clientes", json={"nome": "Café da Esquina", "plano": plano})["token"]
+def _cliente(amb, plano="pago", saldo="100"):
+    r = _api(amb, "POST", "/api/admin/clientes", json={"nome": "Café da Esquina", "plano": plano})
+    if plano == "pago" and saldo:  # pré-pago: recarga antes de pedir
+        _api(amb, "POST", f"/api/admin/clientes/{r['cliente']}/saldo", json={"valor": saldo, "descricao": "Pix"})
+    return r["token"]
 
 
 def _lote(amb, token, fotos: dict[str, bytes], aprovar=False, pronto=False):
     import requests
 
-    corpo = {
+    corpo = {  # sem duração: 3 s no teste gratuito; a do estilo (5 s) no pré-pago
         "prompt": "vapor sobe da xícara e a câmera se aproxima devagar",
-        "duracao": 3,
         "fotos": [{"nome": n, "tipo": "image/png", "bytes": len(b)} for n, b in fotos.items()],
     }
     r = _api(amb, "POST", "/api/lotes", token, json=corpo)
@@ -468,3 +471,84 @@ def test_saved_code_fetches_the_panel_data_early_and_only_once(ambiente, navegad
     assert sorted(pedidos) == [("lotes", disp), ("receitas", disp)]
     ctx.close()
     assert erros == []
+
+
+def _texto(pg, seletor):
+    """Texto visível sem os espaços não separáveis que o navegador põe nos valores em reais."""
+    return pg.locator(seletor).inner_text().replace("\u00a0", " ")
+
+
+def test_prepaid_balance_price_and_top_up_by_the_reviewer(ambiente, navegador, tmp_path):  # noqa: F811 (fixture)
+    erros: list[str] = []
+    tok = _cliente(ambiente, saldo="3,00")
+    ctx = navegador.new_context()
+    _com_codigo(ctx, "render2go-token-cliente", tok)
+    pg = _pagina(ctx, erros)
+    pg.goto(ambiente.url)
+    pg.wait_for_selector("#saldo:not([hidden])")
+    assert _texto(pg, "#saldo-valor") == "R$ 3,00"
+    precos = _texto(pg, "#saldo-precos")
+    assert precos == "480p: R$ 0,25 por segundo de vídeo · 720p: R$ 0,50 por segundo de vídeo"
+    # 3 s é só do teste gratuito; o padrão do estilo mostra a duração
+    assert pg.locator("#duracao option").all_inner_texts() == ["Padrão do estilo (5 s)", "4 s", "5 s", "6 s", "7 s"]
+    assert _texto(pg, "#custo") == "Cada vídeo de 5 s em 480p custa R$ 1,25."
+    fotos = [_salvar(tmp_path, f"f{i}.png", _png((40 * i, 90, 160), "circulo")) for i in range(1, 3)]
+    pg.set_input_files("#fotos", [str(f) for f in fotos])
+    custo = pw.expect(pg.locator("#custo"))
+    custo.to_have_text("Este pedido: 2 vídeos de 5 s em 480p = R$ 2,50 · saldo depois: R$ 0,50")
+    pg.select_option("#qualidade", "alta")
+    custo.to_have_text("Este pedido: 2 vídeos de 5 s em 720p = R$ 5,00 · faltam R$ 2,00 de saldo")
+    assert "falta" in pg.get_attribute("#custo", "class")
+    pg.fill("#prompt", "a câmera se aproxima devagar do produto")
+    pg.click("#enviar")
+    assert "Saldo insuficiente" in _texto(pg, "#msg")
+    assert ambiente.banco.lotes() == []  # nada foi criado
+    # 4 s em 480p: R$ 2,00, cobrados quando as fotos chegam
+    pg.select_option("#qualidade", "rapida")
+    pg.select_option("#duracao", "4")
+    custo.to_have_text("Este pedido: 2 vídeos de 4 s em 480p = R$ 2,00 · saldo depois: R$ 1,00")
+    pg.click("#enviar")
+    pg.wait_for_selector("#msg.ok", timeout=15000)
+    pw.expect(pg.locator("#saldo-valor")).to_have_text("R$ 1,00")
+    pg.wait_for_selector("#lotes .lote:has-text('Custo do pedido: R$ 2,00')")
+    pg.click("#extrato summary")
+    pw.expect(pg.locator("#extrato-lista li").first).to_contain_text("Pedido: 2 vídeo(s) de 4 s em 480p")
+    pw.expect(pg.locator("#extrato-lista li").first).to_contain_text("-R$ 2,00")
+
+    # o dono lança uma recarga pelo /aprovar e baixa o extrato
+    adm_ctx = navegador.new_context()
+    _com_codigo(adm_ctx, "render2go-token-admin", ADMIN)
+    adm = _pagina(adm_ctx, erros)
+    adm.goto(f"{ambiente.url}/aprovar")
+    adm.wait_for_selector("#clientes table")
+    assert "R$ 1,00" in _texto(adm, "#clientes table")
+    assert "720p a R$ 0,50" in _texto(adm, "#precos-info")
+    adm.click("#form-saldo button[type=submit]")
+    assert "Escolha o cliente" in adm.locator("#saldo-msg").inner_text()
+    adm.select_option("#saldo-cliente", index=1)
+    adm.fill("#saldo-valor", "20")
+    adm.fill("#saldo-descricao", "Pix de 09/10")
+    adm.fill("#saldo-referencia", "E2026100912345")
+    adm.click("#form-saldo button[type=submit]")
+    adm.click("dialog[open] button:has-text('Lançar')")
+    adm.wait_for_selector("#saldo-msg.ok")
+    assert "R$ 21,00" in _texto(adm, "#saldo-msg")
+    pw.expect(adm.locator("#clientes table")).to_contain_text("R$ 21,00")
+    with adm.expect_download() as baixado:
+        adm.click("#clientes button:has-text('Baixar')")
+    extrato = json.loads(Path(baixado.value.path()).read_text())
+    assert extrato["saldo"] == 2100 and extrato["movimentos"][0]["descricao"] == "Pix de 09/10"
+    # o mesmo Pix de novo: recusado
+    adm.select_option("#saldo-cliente", index=1)
+    adm.fill("#saldo-valor", "20")
+    adm.fill("#saldo-descricao", "Pix de 09/10")
+    adm.fill("#saldo-referencia", "E2026100912345")
+    adm.click("#form-saldo button[type=submit]")
+    adm.click("dialog[open] button:has-text('Lançar')")
+    adm.wait_for_selector("#saldo-msg.erro")
+    assert "já registrado" in adm.locator("#saldo-msg").inner_text()
+    _capturar(pg, "pre-pago-cliente")
+    _capturar(adm, "pre-pago-aprovar")
+    ctx.close()
+    adm_ctx.close()
+    assert [e for e in erros if "status of 422" not in e] == []  # só a recusa do Pix repetido

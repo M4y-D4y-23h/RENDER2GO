@@ -81,3 +81,20 @@ def test_schema_creation_runs_twice_at_the_same_time(banco):
     for t in ts:
         t.join()
     assert erros == []
+
+
+def test_balance_top_up_and_client_list_from_the_command_line(banco, capsys, monkeypatch):
+    cid, _ = banco.criar_cliente("Loja")
+    teste, _ = banco.criar_cliente("Visitante", plano="teste")
+    assert cli.saldo(banco, cid, "19,90", "Pix de 09/10", referencia="E1") == 0
+    assert "saldo agora R$ 19,90" in capsys.readouterr().out
+    assert cli.saldo(banco, cid, "19,90", "Pix de 09/10", referencia="E1") == 1  # o mesmo Pix, duas vezes
+    assert cli.saldo(banco, cid, "-25", "ajuste") == 1  # ficaria negativo
+    assert cli.saldo(banco, cid, "dez", "Pix") == 2 and cli.saldo(banco, teste, "10", "Pix") == 2
+    assert cli.saldo(banco, cid, "-4,90", "ajuste") == 0
+    assert banco.saldo(cid) == 1500
+    capsys.readouterr()
+    monkeypatch.setenv("RENDER2GO_DB_URL", banco.url)
+    assert cli.main(["clientes"]) == 0
+    linhas = {linha.split()[0]: linha for linha in capsys.readouterr().out.splitlines()}
+    assert "R$ 15,00" in linhas[cid] and "Loja" in linhas[cid] and "R$ 0,00" in linhas[teste]
