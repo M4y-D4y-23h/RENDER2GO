@@ -12,6 +12,7 @@ import {
   contador,
   criar,
   dialogo,
+  ehIcone,
   el,
   hora,
   icone,
@@ -46,12 +47,30 @@ type Plano = {
 };
 type Movimento = { quando: number; tipo: string; valor: number; lote_id: string | null; descricao: string | null };
 type Saldo = { pre_pago: boolean; saldo?: number; precos?: Record<string, number>; extrato?: Movimento[] };
-type Modelo = { id: string; nome: string; descricao: string; disponivel: boolean };
+type Modelo = { id: string; nome: string; descricao: string; disponivel: boolean; finalidade?: string; melhor_para?: string; licenca?: string };
+// tela antes do pedido: o que o cliente quer criar (render2go_servico/modelos.py)
+type Previsto = { nome: string; melhor_para?: string; licenca?: string };
+type Finalidade = {
+  id: string;
+  titulo: string;
+  tipo: string;
+  descricao: string;
+  entrada: string;
+  icone: string;
+  destaque: boolean;
+  disponivel: boolean;
+  modelos: Modelo[];
+  previstos: Previsto[];
+};
 type Receitas = {
   plano?: Plano;
   autorizacao?: { versao: string; texto: string };
   modelos?: Modelo[];
   modelo_padrao?: string;
+  finalidades?: Finalidade[];
+  entradas?: Record<string, string>;
+  finalidade_padrao?: string;
+  interesses?: string[];
   receitas: Receita[];
   formatos: string[];
   // tamanho do vídeo (largura, altura) por formato e qualidade, a regra do formato automático
@@ -658,6 +677,154 @@ function iniciarCliente(): void {
   window.addEventListener("dragover", (ev) => arquivoArrastado(ev) && ev.preventDefault());
   window.addEventListener("drop", (ev) => arquivoArrastado(ev) && ev.preventDefault());
 
+  // -- finalidades: o que o cliente quer criar, antes do pedido -----------------------------------
+  const blocos = el<HTMLUListElement>("blocos");
+  const selModelo = el<HTMLSelectElement>("modelo");
+  const interessadas = new Set<string>(); // finalidades em breve em que o cliente marcou "Tenho interesse"
+  let escolhida: Finalidade | null = null;
+  let todas: { d: HTMLDialogElement; corpo: HTMLElement } | null = null;
+  let origemTodas: HTMLElement | null = null;
+
+  const iconeDe = (f: Finalidade) => icone(ehIcone(f.icone) ? f.icone : "brilho");
+  const lista = () => receitas?.finalidades ?? [];
+
+  /** Botão "Tenho interesse" (ou a confirmação, se já marcou). */
+  const interesse = (f: Finalidade): HTMLElement => {
+    if (interessadas.has(f.id)) return criar("span", { className: "interesse-ok" }, [icone("ok"), "Interesse registrado"]);
+    const b = criar("button", { type: "button", className: "botao pequeno", dados: { foco: `interesse:${f.id}` } }, ["Tenho interesse"]);
+    b.setAttribute("aria-label", `Tenho interesse em ${f.titulo}`);
+    b.addEventListener("click", async () => {
+      ocupado(b, true);
+      try {
+        await api("/api/interesses", token, { method: "POST", body: JSON.stringify({ finalidade: f.id }) });
+        interessadas.add(f.id);
+        anunciar(`Interesse em “${f.titulo}” registrado. Obrigado!`);
+        const voltar = b.closest("dialog") ? "dialogo" : "blocos";
+        desenharBlocos();
+        if (todas?.d.open) desenharTodas();
+        // o foco vai para a confirmação que ficou no lugar do botão
+        const alvo = voltar === "dialogo" ? todas?.corpo : blocos;
+        alvo?.querySelector<HTMLElement>(`[data-finalidade="${f.id}"] .interesse-ok`)?.setAttribute("tabindex", "-1");
+        alvo?.querySelector<HTMLElement>(`[data-finalidade="${f.id}"] .interesse-ok`)?.focus();
+      } catch (e) {
+        ocupado(b, false);
+        aviso(el("msg-painel"), textoErro(e), "erro");
+      }
+    });
+    return b;
+  };
+
+  const blocoFinalidade = (f: Finalidade): HTMLElement => {
+    const textos = [
+      iconeDe(f),
+      criar("span", { className: "bloco-titulo", textContent: f.titulo }),
+      criar("span", { className: "bloco-tipo", textContent: f.tipo }),
+      criar("span", { className: "bloco-desc", textContent: f.descricao }),
+    ];
+    if (f.disponivel) {
+      const b = criar("button", { type: "button", className: "bloco", dados: { foco: `finalidade:${f.id}` } }, [
+        ...textos,
+        criar("span", { className: "selo ok", textContent: f.modelos.length ? `Disponível · ${f.modelos.map((m) => m.nome).join(", ")}` : "Disponível" }),
+      ]);
+      b.addEventListener("click", () => escolherFinalidade(f.id));
+      return criar("li", { dados: { finalidade: f.id } }, [b]);
+    }
+    return criar("li", { dados: { finalidade: f.id } }, [
+      criar("div", { className: "bloco em-breve" }, [...textos, criar("span", { className: "selo", textContent: "Em breve" }), interesse(f)]),
+    ]);
+  };
+
+  const desenharBlocos = () => {
+    const destaques = lista().filter((f) => f.destaque);
+    const verTodas = criar("button", { type: "button", className: "bloco ver-todas", dados: { foco: "finalidade:todas" } }, [
+      icone("grade"),
+      criar("span", { className: "bloco-titulo", textContent: "Ver todas as opções" }),
+      criar("span", { className: "bloco-tipo", textContent: plural(lista().length, "tipo de geração", "tipos de geração") }),
+      criar("span", { className: "bloco-desc", textContent: "Voz, música, 3D, ampliação de resolução e mais." }),
+    ]);
+    verTodas.addEventListener("click", () => abrirTodas(verTodas));
+    blocos.replaceChildren(...destaques.map(blocoFinalidade), criar("li", {}, [verTodas]));
+    blocos.setAttribute("aria-busy", "false");
+  };
+
+  /** Janela "Ver todas": todas as finalidades, agrupadas pelo que o cliente envia. */
+  const desenharTodas = () => {
+    if (!todas) return;
+    const grupos = receitas?.entradas ?? {};
+    const secoes = Object.entries(grupos).map(([entrada, rotulo]) => {
+      const itens = lista()
+        .filter((f) => f.entrada === entrada)
+        .map((f) => {
+          const detalhe: HTMLElement[] = [criar("p", { className: "fraco", textContent: f.descricao })];
+          for (const m of f.modelos) detalhe.push(criar("p", { className: "modelo-uso", textContent: `${m.nome}: melhor para ${m.melhor_para ?? m.descricao}.` }));
+          if (!f.disponivel && f.previstos.length)
+            detalhe.push(criar("p", { className: "fraco", textContent: `Modelos previstos: ${f.previstos.map((m) => m.nome).join(", ")}.` }));
+          let acao: HTMLElement;
+          if (f.disponivel) {
+            acao = criar("button", { type: "button", className: "botao primario pequeno" }, ["Usar"]);
+            acao.setAttribute("aria-label", `Usar ${f.titulo}`);
+            acao.addEventListener("click", () => {
+              todas?.d.close();
+              escolherFinalidade(f.id);
+            });
+          } else acao = interesse(f);
+          return criar("li", { className: "opcao", dados: { finalidade: f.id } }, [
+            iconeDe(f),
+            criar("div", { className: "opcao-texto" }, [
+              criar("p", { className: "opcao-titulo" }, [criar("strong", { textContent: f.titulo }), " ", criar("span", { className: f.disponivel ? "selo ok" : "selo", textContent: f.disponivel ? "Disponível" : "Em breve" })]),
+              criar("p", { className: "bloco-tipo", textContent: f.tipo }),
+              ...detalhe,
+            ]),
+            acao,
+          ]);
+        });
+      return criar("section", { className: "grupo-opcoes" }, [criar("h3", { textContent: rotulo }), criar("ul", { className: "opcoes" }, itens)]);
+    });
+    todas.corpo.replaceChildren(...secoes);
+  };
+
+  const abrirTodas = (origem: HTMLElement) => {
+    origemTodas = origem;
+    if (!todas) {
+      const { d, corpo } = dialogo("Todas as opções de geração", "todas-finalidades");
+      d.addEventListener("close", () => origemTodas?.isConnected && !escolhida && origemTodas.focus());
+      todas = { d, corpo };
+    }
+    desenharTodas();
+    todas.d.showModal();
+  };
+
+  const escolherFinalidade = (id: string) => {
+    const f = lista().find((x) => x.id === id && x.disponivel);
+    if (!f) return;
+    escolhida = f;
+    const modelo = f.modelos[0];
+    el("escolhida-icone").replaceChildren(iconeDe(f));
+    el("escolhida-titulo").textContent = f.titulo;
+    el("escolhida-tipo").textContent = modelo ? `${f.tipo} · modelo ${modelo.nome}` : f.tipo;
+    el("modelo-uso").textContent = modelo ? `${modelo.nome} é melhor para: ${modelo.melhor_para ?? modelo.descricao}.` : "";
+    selModelo.replaceChildren(...f.modelos.map((m) => criar("option", { value: m.id, textContent: `${m.nome} · ${m.descricao}` })));
+    el("modelo-info").textContent = f.modelos.length > 1 ? "" : "Por enquanto, este é o único modelo desta opção.";
+    el("finalidades").hidden = true;
+    el("escolhida").hidden = false;
+    form.hidden = false;
+    el("escolhida-titulo").focus();
+    anunciar(`${f.titulo}, com o modelo ${modelo?.nome ?? ""}. Agora escolha as fotos.`);
+  };
+
+  el("trocar-finalidade").addEventListener("click", () => {
+    const antes = escolhida?.id;
+    escolhida = null;
+    form.hidden = true;
+    el("escolhida").hidden = true;
+    el("finalidades").hidden = false;
+    (blocos.querySelector<HTMLElement>(`[data-finalidade="${antes}"] button`) ?? el("titulo-finalidades")).focus();
+  });
+  selModelo.addEventListener("change", () => {
+    const m = escolhida?.modelos.find((x) => x.id === selModelo.value);
+    if (m) el("modelo-uso").textContent = `${m.nome} é melhor para: ${m.melhor_para ?? m.descricao}.`;
+  });
+
   // -- estilo, sugestão e autorização ------------------------------------------------------------
   const aplicarReceita = () => {
     const r = receitas?.receitas.find((x) => x.id === selReceita.value);
@@ -740,11 +907,8 @@ function iniciarCliente(): void {
     }
     selReceita.replaceChildren(...opcoes);
     if (receitas.autorizacao) el("texto-autorizacao").textContent = receitas.autorizacao.texto;
-    const modelos = receitas.modelos ?? [];
-    const selModelo = el<HTMLSelectElement>("modelo");
-    selModelo.replaceChildren(...modelos.map((m) => criar("option", { value: m.id, textContent: `${m.nome} · ${m.descricao}` })));
-    if (receitas.modelo_padrao) selModelo.value = receitas.modelo_padrao;
-    el("modelo-info").textContent = modelos.length > 1 ? "" : "Novos modelos de geração vão aparecer aqui.";
+    for (const f of receitas.interesses ?? []) interessadas.add(f);
+    desenharBlocos(); // o pedido começa pela escolha do que criar (o modelo vem da finalidade)
     campos.disabled = false;
     aplicarPlano(receitas.plano);
     if (receitas.plano?.precos) {
@@ -803,7 +967,7 @@ function iniciarCliente(): void {
       qualidade: selQualidade.value,
       duracao: Number(selDuracao.value) || null,
       consentimento: consentimento.checked,
-      modelo: el<HTMLSelectElement>("modelo").value,
+      modelo: selModelo.value,
       navegador: sinaisNavegador(consentimento.checked ? marcadoEm : null),
       fotos: nomes.map((n) => ({ nome: n, tipo: arquivos.get(n)!.type, bytes: arquivos.get(n)!.size })),
     };

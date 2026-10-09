@@ -2,7 +2,18 @@
 
 Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as fotos pela página, o aprovador libera, os pods renderizam e o cliente baixa os vídeos.
 
-## 0. Atualização de 09/10/2026 (2): qualidade dos vídeos, pedidos leigos e relatório de GPUs
+## 0. Atualizações do servidor (a mais recente primeiro)
+
+Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há.
+
+### 09/10/2026 (3): tela de finalidades e licenças dos modelos
+
+Sem passo extra: a tabela `interesses` é criada sozinha na partida da API.
+
+- **O que muda:** antes do pedido, o cliente escolhe o que quer criar, em blocos (seção 5.1.10). Só "Foto vira vídeo" funciona; as outras opções aparecem como "Em breve", com "Tenho interesse", e a contagem aparece no `/aprovar`, seção "Interesse".
+- **Licenças:** o registro dos modelos que podem ser usados comercialmente, e com que condições, está no `docs/12`. Ele recomenda trocar o Wan em produção (ajuste da comunidade "Uncensored") pelos arquivos oficiais, com ADR e teste em GPU.
+
+### 09/10/2026 (2): qualidade dos vídeos, pedidos leigos e relatório de GPUs
 
 No servidor, **sem pedido gerando** (reiniciar o orquestrador desliga os pods ligados):
 
@@ -20,7 +31,7 @@ docker compose ps --format "table {{.Service}}\t{{.Status}}"
   - **`/aprovar`, seção "GPUs":** cada pod que subiu, com tempo ligado, vídeos e custo estimado (seção 5.1.8).
 - **Recomendado, se ainda não fez:** `RENDER2GO_AGRUPAR_TESTE_MIN=0` no `.env` (teste gratuito sem os 10 min de espera para juntar testes; seção 5.1) e saldo no RunPod (abaixo de ~US$ 1,60 o orquestrador não liga pods).
 
-## 0.0 Atualização de 09/10/2026 (1): pré-pago, preços por segundo e teste com 5 fotos
+### 09/10/2026 (1): pré-pago, preços por segundo e teste com 5 fotos
 
 No servidor:
 
@@ -43,7 +54,7 @@ docker compose exec api render2go-servico saldo cli_xxxxxxxxxxxxxxxx 50 --descri
   - **Recarga:** o cliente paga por fora (Pix) e você lança em `/aprovar`, seção "Clientes e saldo", ou pelo terminal (seção 5.1.7). Ainda não há pagamento automático.
 - **Atenção:** um cliente do plano pago com saldo zero não consegue mais pedir. Lance o saldo dos clientes atuais logo depois de atualizar.
 
-## 0.0.1 Atualização de 08/10/2026 (noite): fila, previsão, subida, GPU e limpeza do histórico (já feita)
+### 08/10/2026 (noite): fila, previsão, subida, GPU e limpeza do histórico (já feita)
 
 No servidor:
 
@@ -364,6 +375,15 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
   docker compose exec postgres psql -U gpu2go gpu2go -c "SELECT arquivo, status, tentativas, round(deriva_cor::numeric, 1) AS deriva, round(salto_cor::numeric, 1) AS salto, erro FROM jobs WHERE tipo = 'render' ORDER BY atualizado DESC LIMIT 20"
   ```
 - **A folha de conferência** (foto, início, meio e fim de cada vídeo) continua no armazenamento, para revisar um lote em minutos.
+
+## 5.1.10 Tela de finalidades ("O que você quer criar?")
+
+- **Onde:** no cartão "Novo pedido", logo depois de entrar, antes do formulário. O saldo (pré-pago) e o aviso do teste gratuito ficam acima.
+- **Blocos:** as 6 finalidades mais usadas e "Ver todas as opções", que abre a lista completa (12), agrupada pelo que o cliente envia. Cada uma tem título pelo resultado ("Foto vira vídeo"), o tipo técnico embaixo ("Imagem para vídeo") e uma frase.
+- **Disponível:** hoje só "Foto vira vídeo", com o Wan 2.2. Ao escolher, aparecem o modelo e para que ele é melhor, e o formulário; "Trocar" volta aos blocos.
+- **Em breve:** não deixa escolher. "Tenho interesse" registra o pedido do cliente (uma vez por opção; não promete aviso, porque o serviço não tem o e-mail dos clientes). Na janela, cada opção mostra os modelos previstos, todos com licença comercial conferida (`docs/12`, seção 4).
+- **`/aprovar`, seção "Interesse":** quantos clientes marcaram cada opção, quantos deles estão no teste grátis e o pedido mais recente. A limpeza do histórico não apaga esses registros (ficam com os clientes).
+- **Para ativar uma opção:** o modelo entra em `servico/src/render2go_servico/modelos.py` com `disponivel: True` depois do ADR, do perfil do tradutor e dos testes (`docs/12`, seção 5). A tela muda sozinha.
 
 ## 5.2 O que fica guardado
 

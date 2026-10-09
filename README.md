@@ -8,7 +8,7 @@ Serviço de vídeos curtos com IA para pequenos negócios: o cliente envia as fo
 
 ## Como funciona
 
-1. **Pedido:** o cliente entra com um código de acesso, escolhe as fotos, o estilo e a duração, e envia. As fotos vão direto para o armazenamento (Cloudflare R2), por links assinados.
+1. **Pedido:** o cliente entra com um código de acesso, escolhe o que quer criar (hoje, "Foto vira vídeo"; as outras opções aparecem como "Em breve"), as fotos, o estilo e a duração, e envia. As fotos vão direto para o armazenamento (Cloudflare R2), por links assinados.
 2. **Revisão:** o pedido passa pelo filtro de texto e pela revisão humana no `/aprovar`, que mostra um aviso quando há pessoas nas fotos (ADR 0004).
 3. **Geração:** o orquestrador sobe pods de GPU conforme a fila. O pod traduz o pedido, gera os vídeos, confere se cada vídeo começa na foto certa e continua nela até o fim (o vídeo que troca de produto é refeito) e envia ao R2. Depois que a fila esvazia, o pod se desliga sozinho.
 4. **Entrega:** o cliente acompanha a previsão de tempo e baixa os vídeos. As fotos são apagadas quando o pedido fecha.
@@ -39,6 +39,7 @@ Serviço de vídeos curtos com IA para pequenos negócios: o cliente envia as fo
 | [`docs/09-implantacao.md`](docs/09-implantacao.md) | Implantação e operação do serviço (servidor, R2, e-mail, migração, 24 h) |
 | [`docs/10-identidade-visual-e-front-end.md`](docs/10-identidade-visual-e-front-end.md) | Identidade visual, regras de layout, componentes, desempenho, acessibilidade e segurança das páginas |
 | [`docs/11-custos-e-planos.md`](docs/11-custos-e-planos.md) | Custos mensais (parado, escala pequena e demanda alta) e preços do pré-pago em vigor (por segundo de vídeo, com custo e margem) |
+| [`docs/12-modelos-e-licencas.md`](docs/12-modelos-e-licencas.md) | Modelos de IA por finalidade: quais podem ser usados comercialmente, com que condições e fontes; riscos dos modelos em uso |
 | [`docs/adr/`](docs/adr) | Decisões de arquitetura (0001 a 0006) |
 
 ## Desenvolvimento

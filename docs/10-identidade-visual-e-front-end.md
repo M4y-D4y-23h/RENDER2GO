@@ -67,7 +67,7 @@ Os tokens ficam em `servico/web/src/css/tokens.css`. O modo escuro segue o apare
 
 ### 1.5 Ícones
 
-25 ícones de linha (24 × 24, traço 2, pontas arredondadas), desenhados para o projeto em `servico/web/src/icones.json`. O HTML usa `<!--@icone nome-->` (expandido no build) e o TypeScript, `icone(nome)`. São sempre decorativos (`aria-hidden`): o nome vem do texto ao lado ou do `aria-label` do botão.
+33 ícones de linha (24 × 24, traço 2, pontas arredondadas), desenhados para o projeto em `servico/web/src/icones.json`. O HTML usa `<!--@icone nome-->` (expandido no build) e o TypeScript, `icone(nome)`. São sempre decorativos (`aria-hidden`): o nome vem do texto ao lado ou do `aria-label` do botão.
 
 ### 1.6 Forma, profundidade e movimento
 
@@ -116,6 +116,8 @@ Todos em `servico/web/src/css/componentes.css`, usados pelas três páginas:
 | Fotos | `.soltar`, `.previa`, `.miniatura` (+ `.pequena`, `.baixa`) | Remover por foto; ✓ quando a foto termina de subir; selo "baixa resolução" e aviso `#aviso-fotos` quando a foto vai ser ampliada 1,5× ou mais |
 | Sugestão e exemplos | `.sugestao`, `.exemplos-pedido` | Exemplo do estilo escolhido; exemplos simples e detalhados num `<details>` |
 | Totais do relatório | `.resumo-gpus` (`<dl>`) | Números do período na seção "GPUs" do `/aprovar` |
+| Finalidades | `.finalidades`, `.blocos`, `.bloco` (+ `.em-breve`, `.ver-todas`), `.escolhida`, `.modelo-uso`, `.interesse-ok` | Bloco disponível é um `<button>`; o "Em breve" não é clicável e tem o botão "Tenho interesse" (com `aria-label` citando a opção), que vira a confirmação e recebe o foco |
+| Lista completa | `dialog.todas-finalidades`, `.grupo-opcoes`, `.opcao` | Agrupada pelo que o cliente envia; "Usar" fecha a janela e escolhe; o foco volta a quem abriu |
 | Vídeos e player | `.videos`, `.video`, `<dialog>` | Assistir na página, abrir em outra aba, baixar |
 | Confirmação | `dialog.confirmacao` | No lugar do `confirm()` do navegador |
 | Tabela | `.tabela` | Rola dentro da caixa; `caption` e `scope` |

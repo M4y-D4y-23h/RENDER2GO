@@ -42,6 +42,11 @@ export function criar<K extends keyof HTMLElementTagNameMap>(
 const SVG = "http://www.w3.org/2000/svg";
 
 /** Ícone de linha (src/icones.json); decorativo: o texto ao lado ou o aria-label dá o nome. */
+/** O nome vem da API (catálogo de finalidades): só ícones que existem. */
+export function ehIcone(nome: string): nome is NomeIcone {
+  return nome !== "_comentario" && Object.prototype.hasOwnProperty.call(ICONES, nome);
+}
+
 export function icone(nome: NomeIcone, classes = ""): SVGSVGElement {
   const svg = document.createElementNS(SVG, "svg");
   svg.setAttribute("class", `icone ${classes}`.trim());

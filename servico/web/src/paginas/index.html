@@ -80,7 +80,24 @@
           </details>
           <p class="dica">Para recarregar, <a href="/suporte">fale com a gente pelo suporte</a>. Vídeo que não sai volta para o saldo.</p>
         </div>
-        <form id="form-lote" novalidate>
+        <!-- antes do pedido: o que o cliente quer criar (finalidades de render2go_servico/modelos.py) -->
+        <div class="finalidades" id="finalidades">
+          <h3 id="titulo-finalidades" tabindex="-1">O que você quer criar?</h3>
+          <p class="dica" id="finalidades-dica">Escolha uma opção para começar. As marcadas com “Em breve” ainda não estão disponíveis: clique em “Tenho interesse” para nos dizer o que você quer usar.</p>
+          <ul class="blocos" id="blocos" aria-labelledby="titulo-finalidades" aria-describedby="finalidades-dica" aria-busy="true"></ul>
+        </div>
+        <div class="escolhida" id="escolhida" hidden>
+          <div class="escolhida-cab">
+            <span class="escolhida-icone" id="escolhida-icone"></span>
+            <div class="escolhida-texto">
+              <h3 id="escolhida-titulo" tabindex="-1"></h3>
+              <p class="fraco" id="escolhida-tipo"></p>
+            </div>
+            <button type="button" class="botao pequeno" id="trocar-finalidade"><!--@icone voltar-->Trocar</button>
+          </div>
+          <p class="modelo-uso" id="modelo-uso"></p>
+        </div>
+        <form id="form-lote" novalidate hidden>
           <fieldset class="campos-lote passos" id="campos-lote" disabled>
             <fieldset class="passo">
               <legend>Fotos</legend>

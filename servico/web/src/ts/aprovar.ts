@@ -132,6 +132,8 @@ type RelatorioGpus = {
   };
 };
 
+type Interesse = { finalidade: string; titulo: string; tipo: string; clientes: number; clientes_teste: number; ultimo: number };
+
 type Cliente = { id: string; nome: string; plano: string; ativo: number | boolean; criado: number; saldo: number };
 type Clientes = { clientes: Cliente[]; precos: Record<string, number>; planos_cobrados: string[] };
 
@@ -453,6 +455,15 @@ function tabelaGpus(r: RelatorioGpus): HTMLElement {
   );
 }
 
+function tabelaInteresses(xs: Interesse[]): HTMLElement {
+  if (!xs.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhum interesse registrado ainda." });
+  return tabela(
+    [["Opção", false], ["Tipo", false], ["Clientes", true], ["Destes, no teste grátis", true], ["Último", false]],
+    xs.map((x) => ({ celulas: [x.titulo, x.tipo, x.clientes, x.clientes_teste, tempo(x.ultimo)] })),
+    "Interesse nas opções em breve",
+  );
+}
+
 function tabelaClientes(r: Clientes, token: string, msg: HTMLElement): HTMLElement {
   if (!r.clientes.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhum cliente cadastrado ainda." });
   return tabela(
@@ -504,6 +515,7 @@ function iniciarAprovador(): void {
     reconciliar(el("suporte"), listaSuporte(sup.mensagens), () => vazio("Nenhuma mensagem ainda.", "As mensagens enviadas pelo /suporte aparecem aqui.", "mensagem"));
     await listarClientes();
     await listarGpus();
+    el("interesses").replaceChildren(tabelaInteresses(await api<Interesse[]>("/api/admin/interesses", token)));
   };
 
   // -- GPUs (pods do orquestrador) ---------------------------------------------------------------

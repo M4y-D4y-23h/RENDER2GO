@@ -677,3 +677,40 @@ def test_prepaid_balance_prices_charges_refunds_and_minimum_duration(api):
     extrato = api.get(f"/api/admin/clientes/{cid}/extrato", headers=h(ADMIN)).json()
     assert extrato["saldo"] == 100 and [m["tipo"] for m in extrato["movimentos"]][-1] == "recarga"
     assert api.get("/api/admin/clientes", headers=h(tok)).status_code == 401
+
+
+def test_purpose_catalog_and_interest_in_coming_soon_options(api):
+    tok = _cliente(api, "Loja Interesse")
+    tok_teste = _cliente(api, "Teste Interesse", plano="teste")
+    r = api.get("/api/receitas", headers=h(tok)).json()
+    fins = {f["id"]: f for f in r["finalidades"]}
+    assert len(fins) == 12 and sum(f["destaque"] for f in fins.values()) == 6
+    assert [i for i, f in fins.items() if f["disponivel"]] == ["imagem-video"] and r[
+        "finalidade_padrao"
+    ] == "imagem-video"
+    (wan,) = fins["imagem-video"]["modelos"]
+    assert wan["id"] == "wan2.2-i2v" and wan["melhor_para"] and "Apache 2.0" in wan["licenca"]
+    assert all(f["modelos"] == [] for i, f in fins.items() if i != "imagem-video")
+    # previstos só com licença comercial conferida (docs/12): nenhum no áudio para imagem
+    assert fins["texto-video"]["previstos"][0]["nome"] == "Wan 2.2 (texto para vídeo)"
+    assert fins["audio-imagem"]["previstos"] == [] and fins["video-audio"]["previstos"] == []
+    assert set(r["entradas"]) == {f["entrada"] for f in fins.values()} and r["interesses"] == []
+
+    def marcar(token, fin):
+        return api.post("/api/interesses", json={"finalidade": fin}, headers=h(token))
+
+    assert api.post("/api/interesses", json={"finalidade": "texto-video"}).status_code == 401
+    assert marcar(tok, "nao-existe").status_code == 422
+    assert marcar(tok, "imagem-video").json()["detail"] == "esta finalidade já está disponível"
+    assert marcar(tok, "texto-video").json() == {"ok": True, "novo": True}
+    assert marcar(tok, "texto-video").json() == {"ok": True, "novo": False}  # o mesmo cliente conta uma vez
+    assert marcar(tok_teste, "texto-video").json()["novo"] is True
+    assert marcar(tok, "audio-video").json()["novo"] is True
+    assert api.get("/api/receitas", headers=h(tok)).json()["interesses"] == ["texto-video", "audio-video"]
+    assert api.get("/api/admin/interesses", headers=h(tok)).status_code == 401
+    lista = api.get("/api/admin/interesses", headers=h(ADMIN)).json()
+    assert [(x["finalidade"], x["clientes"], x["clientes_teste"]) for x in lista] == [
+        ("texto-video", 2, 1),
+        ("audio-video", 1, 0),
+    ]
+    assert lista[0]["titulo"] == "Vídeo a partir de um texto" and lista[0]["tipo"] == "Texto para vídeo"

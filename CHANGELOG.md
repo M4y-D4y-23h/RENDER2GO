@@ -2,6 +2,19 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 09/10/2026 (3): tela de finalidades e licenças dos modelos
+
+### "O que você quer criar?" antes do pedido
+- **Blocos com as 6 finalidades mais usadas** no mercado: foto vira vídeo, vídeo a partir de um texto, editar ou melhorar uma foto, imagem a partir de um texto, pessoa falando o seu áudio e mudar o estilo de um vídeo. "Ver todas as opções" abre uma janela com as 12, agrupadas pelo que o cliente envia (foto, texto, vídeo, áudio): também ampliação de resolução, 3D, locução, trilha sonora, som para vídeo e imagem a partir de um áudio.
+- **Só "Foto vira vídeo" (Wan 2.2) está disponível.** As outras aparecem como "Em breve", sem deixar escolher, com o botão **"Tenho interesse"**: cada cliente conta uma vez por opção (tabela `interesses`), e o `/aprovar` mostra a contagem, seção "Interesse", para decidir o próximo modelo pela demanda.
+- **Depois de escolher:** o cliente vê o modelo e para que ele é melhor ("Wan 2.2 é melhor para: produto parado com câmera suave…") e então o formulário de sempre; "Trocar" volta aos blocos. Na janela, cada opção em breve mostra os modelos previstos.
+- **Catálogo único** em `servico/src/render2go_servico/modelos.py` (finalidades, modelos, para que cada um serve, licença). A API manda o catálogo em `/api/receitas`; `POST /api/interesses` e `GET /api/admin/interesses` são novos. Ícones novos de linha: texto, editar, camadas, ampliar, cubo, áudio, música e grade.
+
+### Modelos e licenças comerciais ([`docs/12`](docs/12-modelos-e-licencas.md))
+- **Conferidos nos cartões e nos textos das licenças**, por finalidade: quais são liberados (Apache 2.0, MIT, BSD-3), quais têm condições (LTX: abaixo de US$ 10 mi de faturamento; Tencent Hunyuan: fora da UE, Reino Unido e Coreia do Sul; CogVideoX: registro e até 1 mi de visitas/mês; Stability: abaixo de US$ 1 mi; SDXL: restrições de uso nos termos) e quais não são comerciais (FLUX dev, XTTS-v2, F5-TTS, MusicGen, MMAudio, OmniGen2).
+- **OmniGen2 caiu na conferência:** o cartão diz Apache 2.0, mas ele embute o Qwen2.5-VL-3B, de licença só para fins não comerciais.
+- **Risco nos modelos em uso:** tudo o que roda hoje permite uso comercial, mas o Wan em produção é um ajuste da comunidade marcado "Uncensored" e o codificador de texto tem vocabulário sexual explícito (herança do projeto original). Recomendado trocar pelos arquivos oficiais Apache 2.0, com ADR e teste em GPU, e o tradutor por um Qwen 2.5 comum.
+
 ## 09/10/2026 (2): qualidade dos vídeos, pedidos leigos e relatório de GPUs
 
 Motivo: no teste gratuito de 08/10 (5 fotos de carros, 480p, 3 s), 2 dos 5 vídeos começaram na foto e depois trocaram de carro: um cortou para um Kwid branco aos 2 s, o outro se fundiu num carro de outra marca. A conferência só olhava o 1º quadro, e o pedido ("crie um vídeo de apresentação desses carros pra cada uma dessas fotos") foi traduzido ao pé da letra, no plural.

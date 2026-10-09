@@ -103,6 +103,10 @@ ESQUEMA = [
         tipo TEXT NOT NULL, valor BIGINT NOT NULL, referencia TEXT NOT NULL UNIQUE, lote_id TEXT, job_id TEXT,
         descricao TEXT, por TEXT)""",
     "CREATE INDEX IF NOT EXISTS movimentos_cliente ON movimentos (cliente_id, quando)",
+    # "Tenho interesse" numa finalidade ainda em breve (render2go_servico.modelos): um por cliente e finalidade
+    """CREATE TABLE IF NOT EXISTS interesses (
+        cliente_id TEXT NOT NULL REFERENCES clientes(id), finalidade TEXT NOT NULL,
+        quando DOUBLE PRECISION NOT NULL, PRIMARY KEY (cliente_id, finalidade))""",
     "CREATE INDEX IF NOT EXISTS movimentos_lote ON movimentos (lote_id)",
 ]
 # vídeos já iniciados (ou prontos) do cliente nos pedidos em andamento: a vez na fila é por cliente
@@ -790,6 +794,38 @@ class Banco:
             c.run(
                 "UPDATE geradores SET desligado_em = ? WHERE id = ? AND desligado_em IS NULL",
                 (time.time(), gid),
+            )
+
+    # -- interesse nas finalidades em breve ---------------------------------------------------
+
+    def registrar_interesse(self, cliente_id: str, finalidade: str) -> bool:
+        """True se é novo (o mesmo cliente clicando de novo não conta duas vezes)."""
+        with self.tx() as c:
+            return bool(
+                c.run(
+                    "INSERT INTO interesses (cliente_id, finalidade, quando) VALUES (?, ?, ?)"
+                    " ON CONFLICT (cliente_id, finalidade) DO NOTHING",
+                    (cliente_id, finalidade, time.time()),
+                )
+            )
+
+    def interesses_do_cliente(self, cliente_id: str) -> list[str]:
+        with self.tx() as c:
+            return [
+                r["finalidade"]
+                for r in c.all(
+                    "SELECT finalidade FROM interesses WHERE cliente_id = ? ORDER BY quando, finalidade", (cliente_id,)
+                )
+            ]
+
+    def interesses(self) -> list[dict]:
+        """Por finalidade: quantos clientes pediram (e de que planos) e o pedido mais recente."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT i.finalidade, COUNT(*) AS clientes,"
+                " SUM(CASE WHEN k.plano = 'teste' THEN 1 ELSE 0 END) AS clientes_teste, MAX(i.quando) AS ultimo"
+                " FROM interesses i JOIN clientes k ON k.id = i.cliente_id"
+                " GROUP BY i.finalidade ORDER BY clientes DESC, ultimo DESC"
             )
 
     def relatorio_geradores(self, desde: float, limite: int = 200) -> dict[str, Any]:

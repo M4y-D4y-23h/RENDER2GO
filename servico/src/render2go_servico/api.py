@@ -1,7 +1,8 @@
 """API do serviço (ADR 0003, fase 3). Os bytes nunca passam por aqui: só URLs assinadas.
 
 Cliente (Authorization: Bearer <token do cliente>):
-    GET  /api/receitas                 receitas, formatos e limites
+    GET  /api/receitas                 receitas, formatos, limites e as finalidades (tela antes do pedido)
+    POST /api/interesses               "Tenho interesse" numa finalidade em breve
     POST /api/lotes                    cria o lote; devolve uma URL de envio por foto (pré-pago: confere o saldo)
     POST /api/lotes/{id}/enviado       confere no armazenamento, cobra (pré-pago) e manda para aprovação
     GET  /api/lotes  /api/lotes/{id}   andamento, previsão, cobrança e links dos vídeos (abrir e baixar)
@@ -17,6 +18,7 @@ Aprovação (Bearer <token de administração>), ADR 0004:
     GET  /api/admin/lotes/{id}/auditoria  registro completo de um lote (origem, autorização, fotos, eventos)
     GET  /api/admin/suporte            últimas mensagens de suporte
     GET  /api/admin/geradores?dias=30  relatório das GPUs (pods): id, GPU, horários, vídeos e custo estimado
+    GET  /api/admin/interesses         "Tenho interesse" por finalidade em breve (tela de finalidades)
     GET  /api/admin/clientes           clientes com plano e saldo
     POST /api/admin/clientes           cadastra um cliente (plano pago ou teste); o token aparece uma vez
     POST /api/admin/clientes/{id}/saldo     recarga (valor positivo) ou ajuste (negativo) do saldo
@@ -482,6 +484,10 @@ class ConcluirIn(BaseModel):
     salto_cor: float | None = None
 
 
+class InteresseIn(BaseModel):
+    finalidade: str = Field(min_length=2, max_length=40)
+
+
 class RecusaIn(BaseModel):
     motivo: str = Field(min_length=3, max_length=500)
 
@@ -620,6 +626,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "autorizacao": AUTORIZACAO,
             "modelos": modelos.disponiveis(),
             "modelo_padrao": modelos.PADRAO,
+            # tela de finalidades antes do pedido: o catálogo, os grupos da janela "Ver todas" e as
+            # finalidades em breve em que este cliente já marcou "Tenho interesse"
+            "finalidades": modelos.finalidades(),
+            "entradas": modelos.ENTRADAS,
+            "finalidade_padrao": modelos.FINALIDADE_PADRAO,
+            "interesses": c.banco.interesses_do_cliente(cli["id"]),
             "receitas": [
                 {
                     "id": k,
@@ -646,6 +658,16 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 "tipos": list(TIPOS),
             },
         }
+
+    @app.post("/api/interesses")
+    def registrar_interesse(body: InteresseIn, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """ "Tenho interesse" numa finalidade em breve: conta no /aprovar para decidir o próximo modelo."""
+        if body.finalidade not in modelos.IDS_FINALIDADES:
+            raise HTTPException(422, "finalidade desconhecida")
+        if modelos.disponivel(body.finalidade):
+            raise HTTPException(422, "esta finalidade já está disponível")
+        novo = c.banco.registrar_interesse(cli["id"], body.finalidade)
+        return {"ok": True, "novo": novo}
 
     @app.post("/api/lotes")
     def criar_lote(body: LoteIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -1067,6 +1089,19 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if not 1 <= dias <= 366:
             raise HTTPException(422, "dias: de 1 a 366")
         return c.banco.relatorio_geradores(time.time() - dias * 86400)
+
+    @app.get("/api/admin/interesses")
+    def interesses(_: str = Depends(admin), c: Config = Depends(config)):
+        """Quantos clientes marcaram "Tenho interesse" em cada finalidade em breve."""
+        titulos = {f["id"]: f for f in modelos.FINALIDADES}
+        return [
+            {
+                **i,
+                "titulo": titulos.get(i["finalidade"], {}).get("titulo", i["finalidade"]),
+                "tipo": titulos.get(i["finalidade"], {}).get("tipo", ""),
+            }
+            for i in c.banco.interesses()
+        ]
 
     @app.get("/api/admin/suporte")
     def ver_suporte(_: str = Depends(admin), c: Config = Depends(config)):

@@ -74,6 +74,8 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     cli.fill("#token", token)
     cli.click("#form-token button[type=submit]")
     cli.wait_for_selector("#receita option", state="attached")
+    assert cli.locator("#form-lote").is_hidden()  # antes do pedido, a escolha do que criar
+    _escolher_finalidade(cli)
     # teste gratuito: só 480p e 3 s, e o aviso das regras
     assert cli.locator("#qualidade option").all_inner_texts() == ["Rápida (prévia, 480p)"]
     assert cli.locator("#duracao option").all_inner_texts() == ["3 s"]
@@ -232,6 +234,12 @@ def _lote(amb, token, fotos: dict[str, bytes], aprovar=False, pronto=False):
     return r["lote"]
 
 
+def _escolher_finalidade(pg):
+    """Tela "O que você quer criar?": o pedido começa pela finalidade (hoje só "Foto vira vídeo")."""
+    pg.click("#blocos [data-foco='finalidade:imagem-video']")
+    pg.wait_for_selector("#form-lote:not([hidden])")
+
+
 def _com_codigo(contexto, chave, token):
     """Navegador que já tem o código guardado (e a escolha de cookies feita)."""
     escolha = json.dumps({"versao": "1", "estatisticas": False, "marketing": False, "quando": "2026-10-08T00:00:00Z"})
@@ -290,6 +298,13 @@ def test_pages_have_no_accessibility_violations(ambiente, navegador, tmp_path, t
     pg = cli.new_page()
     pg.goto(ambiente.url)
     pg.wait_for_selector(".videos button.assistir")
+    pg.wait_for_selector("#blocos [data-foco='finalidade:imagem-video']")
+    conferir(pg, "finalidades")
+    pg.click("#blocos [data-foco='finalidade:todas']")
+    pg.wait_for_selector("dialog.todas-finalidades[open] .opcao")
+    conferir(pg, "ver-todas")
+    pg.keyboard.press("Escape")
+    _escolher_finalidade(pg)
     pg.set_input_files(
         "#fotos",
         [str(_salvar(tmp_path, "a.png", fotos["bolo.png"])), str(_salvar(tmp_path, "p.png", _png_de(300, 200)))],
@@ -343,6 +358,9 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
         pg.goto(f"{ambiente.url}{caminho}")
         pg.wait_for_load_state("networkidle")
         if estado == "painel":
+            pg.wait_for_selector("#blocos [data-foco='finalidade:imagem-video']")
+            assert pg.evaluate("document.documentElement.scrollWidth") <= largura, "finalidades"
+            _escolher_finalidade(pg)
             pg.set_input_files("#fotos", [str(_salvar(tmp_path, "c.png", _png((90, 160, 40), "circulo")))])
             pw.expect(pg.locator("#previa .miniatura :is(canvas, img)")).to_have_count(1)
         largura_pagina = pg.evaluate("document.documentElement.scrollWidth")
@@ -426,6 +444,7 @@ def test_photo_preview_removal_suggestion_counter_and_required_authorization(amb
     pg = _pagina(ctx, erros)
     pg.goto(ambiente.url)
     pg.wait_for_selector("#receita option", state="attached")
+    _escolher_finalidade(pg)
     arquivos = [_salvar(tmp_path, f"foto-{i}.png", _png((40 * i, 90, 160), "circulo")) for i in range(1, 4)]
     pg.set_input_files("#fotos", [str(a) for a in arquivos])
     pw.expect(pg.locator("#previa .miniatura :is(canvas, img)")).to_have_count(3)
@@ -494,6 +513,7 @@ def test_prepaid_balance_price_and_top_up_by_the_reviewer(ambiente, navegador, t
     pg = _pagina(ctx, erros)
     pg.goto(ambiente.url)
     pg.wait_for_selector("#saldo:not([hidden])")
+    _escolher_finalidade(pg)
     assert _texto(pg, "#saldo-valor") == "R$ 3,00"
     precos = _texto(pg, "#saldo-precos")
     assert precos == "480p: R$ 0,25 por segundo de vídeo · 720p: R$ 0,50 por segundo de vídeo"
@@ -579,6 +599,7 @@ def test_small_photo_warning_order_help_and_gpu_report(ambiente, navegador, tmp_
     _com_codigo(ctx, "render2go-token-cliente", tok)
     pg = _pagina(ctx, erros)
     pg.goto(ambiente.url)
+    _escolher_finalidade(pg)
     pg.wait_for_selector("#campos-lote:not([disabled])")
     # ajuda do texto: pedidos simples e detalhados, e o texto vale para cada foto
     assert "uma de cada vez" in pg.locator("#prompt-dica").inner_text()
@@ -631,5 +652,74 @@ def test_small_photo_warning_order_help_and_gpu_report(ambiente, navegador, tmp_
     rel = json.loads(Path(baixado.value.path()).read_text())
     assert {x["pod"] for x in rel["geradores"]} == {"pod-abc123", "pod-xyz789"}
     _capturar(adm, "aprovar-gpus")
+    adm_ctx.close()
+    assert erros == []
+
+
+def test_purpose_screen_blocks_full_list_interest_and_choice(ambiente, navegador):  # noqa: F811 (fixture)
+    erros: list[str] = []
+    tok = _cliente(ambiente)
+    ctx = navegador.new_context()
+    _com_codigo(ctx, "render2go-token-cliente", tok)
+    pg = _pagina(ctx, erros)
+    pg.goto(ambiente.url)
+    # antes do pedido: 6 opções em destaque e "Ver todas"; só "Foto vira vídeo" disponível
+    blocos = pg.locator("#blocos > li")
+    pw.expect(blocos).to_have_count(7)
+    assert pg.locator("#form-lote").is_hidden()
+    disponivel = pg.locator("#blocos [data-foco='finalidade:imagem-video']")
+    pw.expect(disponivel).to_contain_text("Foto vira vídeo")
+    pw.expect(disponivel).to_contain_text("Disponível · Wan 2.2")
+    pw.expect(pg.locator("#blocos .bloco.em-breve")).to_have_count(5)
+    texto_video = pg.locator("#blocos [data-finalidade='texto-video']")
+    pw.expect(texto_video).to_contain_text("Em breve")
+    # "Tenho interesse": fica registrado e no lugar do botão aparece a confirmação, que recebe o foco
+    texto_video.get_by_role("button", name="Tenho interesse em Vídeo a partir de um texto").click()
+    pw.expect(texto_video.locator(".interesse-ok")).to_have_text("Interesse registrado")
+    pw.expect(texto_video.locator(".interesse-ok")).to_be_focused()
+    # "Ver todas": todas as opções, agrupadas pelo que o cliente envia
+    pg.click("#blocos [data-foco='finalidade:todas']")
+    dialogo = pg.locator("dialog.todas-finalidades[open]")
+    pw.expect(dialogo.locator(".opcao")).to_have_count(12)
+    pw.expect(dialogo.locator(".grupo-opcoes h3")).to_have_text(
+        ["A partir de uma foto", "A partir de um texto", "A partir de um vídeo", "A partir de um áudio"]
+    )
+    pw.expect(dialogo.locator("[data-finalidade='texto-video'] .interesse-ok")).to_be_visible()
+    pw.expect(dialogo.locator("[data-finalidade='imagem-video']")).to_contain_text("Wan 2.2: melhor para")
+    pw.expect(dialogo.locator("[data-finalidade='texto-video']")).to_contain_text(
+        "Modelos previstos: Wan 2.2 (texto para vídeo)."
+    )
+    dialogo.get_by_role("button", name="Tenho interesse em Trilha sonora a partir de um texto").click()
+    pw.expect(dialogo.locator("[data-finalidade='texto-musica'] .interesse-ok")).to_be_visible()
+    dialogo.get_by_role("button", name="Usar Foto vira vídeo").click()
+    # escolhida: o modelo e para que ele é melhor, e o formulário do pedido
+    pw.expect(pg.locator("#form-lote")).to_be_visible()
+    pw.expect(pg.locator("#escolhida-titulo")).to_have_text("Foto vira vídeo")
+    pw.expect(pg.locator("#escolhida-titulo")).to_be_focused()
+    pw.expect(pg.locator("#escolhida-tipo")).to_have_text("Imagem para vídeo · modelo Wan 2.2")
+    pw.expect(pg.locator("#modelo-uso")).to_contain_text("Wan 2.2 é melhor para: produto parado")
+    assert pg.locator("#modelo option").all_inner_texts() == ["Wan 2.2 · imagem para vídeo · 14B"]
+    pg.click("#trocar-finalidade")
+    pw.expect(pg.locator("#blocos")).to_be_visible()
+    assert pg.locator("#form-lote").is_hidden()
+    pw.expect(disponivel).to_be_focused()
+    # outro dia: o interesse continua marcado
+    pg.reload()
+    pw.expect(pg.locator("#blocos [data-finalidade='texto-video'] .interesse-ok")).to_be_visible()
+    with ambiente.banco.tx() as c:
+        assert sorted(r["finalidade"] for r in c.all("SELECT finalidade FROM interesses")) == [
+            "texto-musica",
+            "texto-video",
+        ]
+    _capturar(pg, "finalidades")
+    ctx.close()
+    # o dono vê a contagem no /aprovar
+    adm_ctx = navegador.new_context()
+    _com_codigo(adm_ctx, "render2go-token-admin", ADMIN)
+    adm = _pagina(adm_ctx, erros)
+    adm.goto(f"{ambiente.url}/aprovar")
+    adm.wait_for_selector("#interesses table")
+    tabela = _texto(adm, "#interesses table")
+    assert "Vídeo a partir de um texto" in tabela and "Trilha sonora a partir de um texto" in tabela
     adm_ctx.close()
     assert erros == []
