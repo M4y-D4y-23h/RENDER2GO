@@ -4,6 +4,8 @@ Análise de 07/10/2026 para a fase 3 (ADR 0003): como atender muitos pedidos sim
 
 ## 1. O cenário de referência: 10 clientes × 10 fotos (teste gratuito)
 
+Desde 09/10/2026 o teste gratuito vale até 5 fotos (`docs/09`, seção 5.1); o cenário de 10 fotos continua servindo de referência para a fila e o custo.
+
 - **Teste:** qualidade rápida, vídeos de **3 s**, ~12 s de GPU por vídeo na RTX PRO 6000 (28 s × (3/5)^1,6).
 - **Trabalho total:** 100 vídeos ≈ 21 min de GPU ≈ **US$ 0,72**.
 - **Subida de cada pod:** ~3 min, ~US$ 0,10 (medido em 07/10, com download em partes).
@@ -65,8 +67,8 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
    - Dockerfile, CI e `docs/09-implantacao.md`.
 
 5. **Teste gratuito barato e sem abuso** (08/10/2026):
-   - um pedido só, com até 10 fotos, 480p e 3 s;
-   - até 10 fotos de teste por IP;
+   - um pedido só, 480p e 3 s, com até 5 fotos (eram 10 até 09/10/2026);
+   - até 5 fotos de teste por dispositivo e 50 por IP;
    - testes esperam juntar 20 vídeos ou 10 min antes de subir um pod (`docs/09`, seção 5.1).
 6. **Fotos de entrada apagadas quando o lote fecha** (`docs/09`, seção 5.2).
 

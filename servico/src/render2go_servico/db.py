@@ -44,8 +44,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from render2go_servico.precos import RESOLUCAO
-
 MAX_TENTATIVAS = 3
 FINAIS = ("ok", "erro", "cancelado")
 # plano do cliente → prioridade dos lotes (menor sai antes). "interno": acesso do dono do serviço,
@@ -130,6 +128,7 @@ COLUNAS_NOVAS = [
     ("lotes", "preco_video", "BIGINT"),  # centavos por vídeo do pré-pago (NULL: teste ou interno)
 ]
 TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno")
+RESOLUCAO = {"rapida": "480p", "alta": "720p"}  # qualidade do pedido → resolução (descrição no extrato)
 # lote que já passou do envio e não foi recusado: conta nos limites do teste gratuito
 ATIVO = "status NOT IN ('aguardando_envio', 'recusado')"
 ATIVO_L = "l." + ATIVO  # o mesmo, com a tabela lotes como "l"

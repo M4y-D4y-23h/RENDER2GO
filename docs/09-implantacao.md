@@ -2,7 +2,30 @@
 
 Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as fotos pela página, o aprovador libera, os pods renderizam e o cliente baixa os vídeos.
 
-## 0. Atualização de 08/10/2026 (noite): fila, previsão, subida, GPU e limpeza do histórico
+## 0. Atualização de 09/10/2026: pré-pago, preços por segundo e teste com 5 fotos
+
+No servidor:
+
+```bash
+cd ~/GPU2GO && git pull
+cd servico/implantacao
+docker compose up -d --build
+docker compose ps --format "table {{.Service}}\t{{.Status}}"
+# clientes do plano pago passam a precisar de saldo: veja quem são e lance o saldo de cada um
+docker compose exec api render2go-servico clientes
+docker compose exec api render2go-servico saldo cli_xxxxxxxxxxxxxxxx 50 --descricao "Pix de 09/10"
+```
+
+- **O que muda:**
+  - **Plano pago = pré-pago.** O cliente tem saldo em reais e paga por segundo de vídeo: **480p a R$ 0,25/s e 720p a R$ 0,50/s** (US$ 0,05 e US$ 0,10 no câmbio de R$ 5,00). Os preços mudam no `.env` (`RENDER2GO_PRECO_480P_S`, `RENDER2GO_PRECO_720P_S`; seção 4).
+  - **Cobrança:** o pedido é cobrado inteiro quando as fotos terminam de chegar. Sem saldo, a página avisa antes do envio, com o preço.
+  - **Devolução automática:** pedido recusado na revisão volta inteiro; cada vídeo que não sai (erro ou cancelado) volta sozinho para o saldo.
+  - **Duração:** 3 s só no teste gratuito. Pago e interno, de 4 a 7 s.
+  - **Teste gratuito:** um pedido, vídeos de 3 s em 480p, **até 5 fotos** (eram 10); 5 por dispositivo e 50 por IP.
+  - **Recarga:** o cliente paga por fora (Pix) e você lança em `/aprovar`, seção "Clientes e saldo", ou pelo terminal (seção 5.1.7). Ainda não há pagamento automático.
+- **Atenção:** um cliente do plano pago com saldo zero não consegue mais pedir. Lance o saldo dos clientes atuais logo depois de atualizar.
+
+## 0.0 Atualização de 08/10/2026 (noite): fila, previsão, subida, GPU e limpeza do histórico (já feita)
 
 No servidor:
 
@@ -151,6 +174,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 | `RENDER2GO_AGRUPAR_TESTE_MIN`, `RENDER2GO_AGRUPAR_TESTE_VIDEOS` | Opcional: testes gratuitos esperam juntar 20 vídeos ou 10 min antes de subir um pod (padrões) |
 | `RENDER2GO_GPUS` | Opcional: GPUs em ordem de preferência, separadas por vírgula, com o nome exato do RunPod. Padrão: `NVIDIA L40S,NVIDIA RTX 6000 Ada Generation,NVIDIA RTX PRO 6000 Blackwell Server Edition,NVIDIA GeForce RTX 4090`. Para trocar: edite e rode `docker compose up -d orquestrador` |
 | `RENDER2GO_CICLO_S` | Opcional: de quantos em quantos segundos o orquestrador olha a fila (padrão 10, mínimo 5) |
+| `RENDER2GO_PRECO_480P_S`, `RENDER2GO_PRECO_720P_S` | Opcional: preço do pré-pago em reais por segundo de vídeo (padrões 0,25 e 0,50). Vale para os pedidos novos; o pedido já cobrado devolve pelo preço que pagou. Depois de mudar: `docker compose up -d api` |
 | `RENDER2GO_POD_OCIOSO_MIN` | Opcional: minutos que o pod fica ligado esperando o próximo pedido depois que a fila esvazia (padrão 3). Mais tempo = menos subidas, mais custo parado |
 
 **Banco gerenciado (opcional):** troque o Postgres local por um serviço como Neon ou Supabase. Basta pôr `RENDER2GO_DB_URL` no `.env` e apagar as linhas `RENDER2GO_DB_URL` do `compose.yaml`. O esquema é criado sozinho na primeira subida.
@@ -161,6 +185,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
   ```bash
   docker compose exec api render2go-servico cliente "Padaria do Bairro" --plano teste
   ```
+- **Recarregar o saldo de um cliente pago:** em `/aprovar`, seção "Clientes e saldo" (seção 5.1.7).
 - **Histórico:** em `/aprovar`, abaixo dos pendentes. Mostra todos os pedidos (filtros: em revisão, aprovados, recusados), com cliente, IP, fotos, quem aprovou, motivo da recusa e andamento. A tabela "Uso por IP" soma as fotos por IP.
 - **Código de cliente vazou:** no histórico, "Desativar o código deste cliente". O código deixa de valer na hora.
 - **Aprovar pedidos:** em `/aprovar`. Nada vai para a GPU sem aprovação (ADR 0004). O cliente acompanha em `/`.
@@ -190,9 +215,9 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 ## 5.1 Teste gratuito e custo
 
 - **Regras** (a API impõe; a página só mostra):
-  - um pedido só, com até 10 fotos;
-  - vídeos de 3 s em 480p;
-  - no máximo 10 fotos de teste **por dispositivo** (navegador);
+  - um pedido só, com até 5 fotos (eram 10 até 09/10/2026);
+  - vídeos de 3 s em 480p (3 s existe só no teste; nos outros planos, de 4 a 7 s);
+  - no máximo 5 fotos de teste **por dispositivo** (navegador);
   - no máximo 50 fotos de teste **por IP** (`RENDER2GO_TESTE_FOTOS_IP`). Assim cinco pessoas da mesma empresa, na mesma rede, conseguem fazer o teste cada uma, e quem troca de navegador para juntar testes esbarra no teto da rede.
 - **Dispositivo:** a página cria um identificador aleatório e guarda no próprio navegador. Janela anônima ou dados apagados geram outro; por isso existe o teto por IP.
 - **Sinais no `/aprovar`, tabela "Dispositivos":** um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes; fusos horários diferentes também são sinal de VPN.
@@ -289,11 +314,26 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
   docker compose exec postgres psql -U gpu2go gpu2go -c "SELECT gpu, round(primeiro_video_em - criado) AS subida_s, to_timestamp(criado) AS quando FROM geradores ORDER BY criado DESC LIMIT 10"
   ```
 
+## 5.1.7 Saldo pré-pago (plano pago)
+
+- **Preço:** por segundo de vídeo, 480p a R$ 0,25 e 720p a R$ 0,50 (padrões; seção 4). Um vídeo de 5 s em 480p custa R$ 1,25; de 7 s em 720p, R$ 3,50. Custos e margens: `docs/11`, seção 4.
+- **O que o cliente vê** no cartão "Novo pedido": o saldo, os preços, o extrato (ao abrir "Ver extrato") e, junto do botão de envio, o custo do pedido e o saldo depois dele. Cada pedido mostra quanto custou e quanto voltou para o saldo.
+- **Cobrança:** quando as fotos terminam de chegar, o pedido inteiro (fotos × preço do vídeo). Se outro pedido gastou o saldo enquanto as fotos subiam, o pedido é recusado sem cobrança e as fotos são apagadas.
+- **Devolução automática:** pedido recusado na revisão volta inteiro; cada vídeo que termina em erro ou cancelado volta sozinho. Nada é cobrado ou devolvido duas vezes.
+- **Recarga:** o cliente paga por fora (ex.: Pix). Você lança em `/aprovar`, seção "Clientes e saldo": cliente, valor em reais, descrição (o cliente vê no extrato) e, de preferência, o código do Pix, para o mesmo pagamento nunca entrar duas vezes. Valor negativo desconta (ajuste); o saldo nunca fica negativo. Pelo terminal:
+  ```bash
+  docker compose exec api render2go-servico clientes                                   # id, plano e saldo
+  docker compose exec api render2go-servico saldo cli_xxxxxxxxxxxxxxxx 19,90 --descricao "Pix de 09/10" --referencia E2026100912345
+  ```
+- **Extrato:** botão "Baixar" na tabela "Clientes e saldo" (JSON com todos os movimentos). O extrato é registro financeiro: o `apagar-historico` não o apaga.
+- **Teste gratuito e plano interno** não usam saldo.
+
 ## 5.2 O que fica guardado
 
 - **Fotos de entrada:** apagadas pela API assim que o lote fecha (pronto, com falhas ou recusado). A regra `fotos-7-dias` do bucket fica como rede de segurança, para lotes que nunca fecham ou que esperam revisão por dias. Não use menos de 7 dias: um lote parado na revisão perderia as fotos antes de chegar à GPU.
 - **Vídeos e folhas de conferência:** pela regra `videos-30-dias` do bucket. Pode ser reduzida (ex.: 7 dias) se os termos de uso disserem que o cliente deve baixar os vídeos nesse prazo.
 - **No banco:** pedido, IP, quantidade de fotos, eventos e o resultado da análise de pessoas. Nenhuma imagem.
+- **Extrato do saldo** (tabela `movimentos`): recargas, cobranças e devoluções, com data e descrição. Fica mesmo depois do `apagar-historico`.
 
 ## 6. Primeiro teste depois de subir
 
@@ -320,7 +360,7 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 
 ## 8. O que ainda não existe
 
-- **Pagamento:** você cobra por fora (ex.: Pix) e cadastra o cliente como `pago` em `/aprovar`.
+- **Pagamento automático:** o cliente paga por fora (ex.: Pix) e você lança o saldo em `/aprovar`. O próximo passo é um intermediador brasileiro (Pix e cartão) com um aviso (webhook) que lança a recarga sozinho; o identificador do pagamento já impede que o mesmo pagamento entre duas vezes.
 - **Recuperação do código de acesso pelo cliente:** é preciso cadastrar de novo.
 - **Download do lote inteiro em um .zip:** hoje são links por vídeo.
 - **Medição da fila com vários clientes em pods reais:** depende desta implantação.

@@ -38,7 +38,7 @@ Serviço de vídeos curtos com IA para pequenos negócios: o cliente envia as fo
 | [`docs/08-varios-clientes-e-demanda-alta.md`](docs/08-varios-clientes-e-demanda-alta.md) | Vários clientes ao mesmo tempo, escala e isolamento |
 | [`docs/09-implantacao.md`](docs/09-implantacao.md) | Implantação e operação do serviço (servidor, R2, e-mail, migração, 24 h) |
 | [`docs/10-identidade-visual-e-front-end.md`](docs/10-identidade-visual-e-front-end.md) | Identidade visual, regras de layout, componentes, desempenho, acessibilidade e segurança das páginas |
-| [`docs/11-custos-e-planos.md`](docs/11-custos-e-planos.md) | Custos mensais (parado, escala pequena e demanda alta) e proposta de planos por créditos |
+| [`docs/11-custos-e-planos.md`](docs/11-custos-e-planos.md) | Custos mensais (parado, escala pequena e demanda alta) e preços do pré-pago em vigor (por segundo de vídeo, com custo e margem) |
 | [`docs/adr/`](docs/adr) | Decisões de arquitetura (0001 a 0006) |
 
 ## Desenvolvimento

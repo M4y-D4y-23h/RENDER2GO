@@ -2,6 +2,30 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 09/10/2026: pré-pago, preços por segundo e teste com 5 fotos
+
+### Pré-pago no plano pago ([`docs/11`](docs/11-custos-e-planos.md), seção 4)
+- **Sem planos nem assinaturas:** o cliente tem saldo em reais, recarrega quando quiser e paga por segundo de vídeo.
+  - **480p: R$ 0,25/s; 720p: R$ 0,50/s** (US$ 0,05 e US$ 0,10 no câmbio de R$ 5,00). Um vídeo de 5 s em 480p custa R$ 1,25.
+  - Os preços mudam no `.env`: `RENDER2GO_PRECO_480P_S` e `RENDER2GO_PRECO_720P_S`.
+- **Cobrança:** o pedido inteiro, quando as fotos terminam de chegar. Sem saldo, a página avisa antes do envio, com o preço.
+- **Devolução automática:** pedido recusado volta inteiro; cada vídeo que não sai volta sozinho para o saldo. Nada é cobrado ou devolvido duas vezes, e o mesmo Pix não entra duas vezes.
+- **Página do cliente:** saldo, preços, extrato e o custo do pedido antes de enviar; cada pedido mostra quanto custou e quanto voltou.
+- **`/aprovar`, seção "Clientes e saldo":** saldo de cada cliente, recarga (ou ajuste) com o código do Pix e extrato para baixar. Pelo terminal: `render2go-servico clientes` e `render2go-servico saldo`.
+- **O extrato é registro financeiro:** a limpeza do histórico não o apaga.
+- **Ainda manual:** o cliente paga por fora (Pix) e o dono lança a recarga. Pagamento automático é o próximo passo.
+- **Margem:** a GPU fica entre 9% e 16% do preço; custos e receita nos cenários estão no `docs/11`, seções 4.2 e 4.3.
+
+### Duração e teste gratuito
+- **Vídeos de 4 a 7 s** nos planos pago e interno. Vídeos de 3 s ficam só no teste gratuito.
+- **Teste gratuito:** um pedido, vídeos de 3 s em 480p, **até 5 fotos** (eram 10) e 5 por dispositivo; 50 por IP, como antes.
+
+### Servidor
+- **Depois de atualizar, lance o saldo dos clientes do plano pago:** sem saldo, eles não conseguem pedir. Os passos estão no [`docs/09`](docs/09-implantacao.md), seção 0.
+
+### Correções
+- **Formulários lado a lado:** o campo sem dica não estica mais o próprio controle.
+
 ## 08/10/2026 (noite): fila, previsão, subida mais rápida, GPU, custos e limpeza
 
 ### Fila e previsão
@@ -44,7 +68,7 @@ Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técni
   - parado: ~R$ 43;
   - escala pequena (300 vídeos/mês): ~R$ 136;
   - demanda alta (30 mil vídeos/mês): ~R$ 7.400, ~96% de GPU.
-- **Proposta de planos por créditos (não aplicada):** Avulso R$ 19,90, Essencial R$ 49,90, Profissional R$ 129,90 e Agência R$ 349,90. O custo de referência é o medido pelo dono, ~US$ 0,03 por vídeo.
+- **Proposta de planos por créditos (não aplicada; trocada pelo pré-pago em 09/10):** Avulso R$ 19,90, Essencial R$ 49,90, Profissional R$ 129,90 e Agência R$ 349,90. O custo de referência é o medido pelo dono, ~US$ 0,03 por vídeo.
 
 ### Limpeza do histórico
 - **`render2go-servico apagar-historico`:**

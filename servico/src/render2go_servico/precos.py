@@ -50,7 +50,6 @@ PRECOS = {
     "rapida": _preco("RENDER2GO_PRECO_480P_S", "0,25"),
     "alta": _preco("RENDER2GO_PRECO_720P_S", "0,50"),
 }
-RESOLUCAO = {"rapida": "480p", "alta": "720p"}
 
 
 def preco_video(qualidade: str, duracao: int) -> int:

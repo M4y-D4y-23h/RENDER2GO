@@ -1,6 +1,6 @@
-# 11 — Custos mensais e proposta de planos
+# 11 — Custos mensais e preços
 
-Levantamento de 08/10/2026. Os custos vêm das medições do projeto (`docs/07`), dos preços do RunPod consultados pela API nesse dia e de preços públicos. A seção 4 é uma **proposta para aprovar**: nada dela está no código. Os planos que existem hoje continuam os mesmos: `teste`, `pago` e `interno`.
+Levantamento de 08/10/2026. Os custos vêm das medições do projeto (`docs/07`), dos preços do RunPod consultados pela API nesse dia e de preços públicos. A seção 4 traz os **preços em vigor desde 09/10/2026** (pré-pago, aprovados pelo dono do serviço), que substituíram a proposta de planos por créditos.
 
 Não é parecer contábil nem fiscal: impostos e taxas de pagamento devem ser confirmados com um contador.
 
@@ -77,56 +77,60 @@ Uma L40S ligada das 9h às 21h, nos dias úteis (~264 h/mês), custa **~US$ 288 
 
 Uma alternativa mais barata é deixar o pod quente esperar mais entre pedidos: `RENDER2GO_POD_OCIOSO_MIN` (padrão 3). Cada minuto a mais custa ~US$ 0,018 na L40S, toda vez que a fila esvazia.
 
-## 4. Proposta de planos (para aprovar; não aplicada)
+## 4. Preços em vigor (desde 09/10/2026): pré-pago, por segundo
 
-### 4.1 Base de custo
+### 4.1 Como funciona
 
-- **1 crédito = 1 vídeo de 5 s em 480p.** O custo de referência é o que o dono mediu, **US$ 0,03 ≈ R$ 0,17 por crédito**, com folga sobre os ~US$ 0,02 esperados na L40S.
-- **720p custa 3 créditos.** O tempo de GPU é ~3×.
-- **7 s custa o dobro de créditos.** O tempo cresce ~1,7×.
-- **Do preço de venda saem também:**
-  - a taxa do meio de pagamento: ~1% no Pix, ~4–5% no cartão;
-  - o imposto: Simples Nacional, de ~6% a 15,5% conforme o enquadramento;
-  - os custos fixos (~R$ 43/mês);
-  - o seu tempo de revisão.
+- **Sem planos nem assinaturas.** O cliente do plano `pago` tem um saldo em reais, recarrega quando quiser e paga por segundo de vídeo:
 
-### 4.2 Planos
+  | Qualidade | Preço por segundo | 4 s | 5 s | 7 s |
+  |---|---|---|---|---|
+  | 480p (rápida) | **R$ 0,25** (US$ 0,05) | R$ 1,00 | R$ 1,25 | R$ 1,75 |
+  | 720p (alta) | **R$ 0,50** (US$ 0,10) | R$ 2,00 | R$ 2,50 | R$ 3,50 |
 
-| Plano | Preço | Créditos | Equivale a (5 s) | Preço por crédito | GPU (pior caso) | Sobra depois de GPU, taxa de 5% e imposto de 6–15,5% |
-|---|---|---|---|---|---|---|
-| **Teste grátis** | R$ 0 | — | 10 vídeos de 3 s em 480p, 1 pedido (como hoje) | — | ~R$ 0,77 por pessoa | — |
-| **Avulso** (validade de 60 dias) | R$ 19,90 | 12 | 12 em 480p ou 4 em 720p | R$ 1,66 | R$ 2,05 | R$ 13,77–15,66 (69–79%) |
-| **Essencial** (mensal) | R$ 49,90 | 40 | 40 em 480p ou 13 em 720p | R$ 1,25 | R$ 6,84 | R$ 32,83–37,57 (66–75%) |
-| **Profissional** (mensal) | R$ 129,90 | 120 | 120 em 480p ou 40 em 720p | R$ 1,08 | R$ 20,52 | R$ 82,75–95,09 (64–73%) |
-| **Agência** (mensal) | R$ 349,90 | 400 | 400 em 480p ou 133 em 720p | R$ 0,87 | R$ 68,40 | R$ 209,77–243,01 (60–69%) |
-| **Crédito extra** | R$ 0,99 | 1 | 1 em 480p | R$ 0,99 | R$ 0,17 | ~70% |
+  - Os valores em dólar usam o câmbio de R$ 5,00 que o dono escolheu. Com o câmbio real do cartão (~R$ 5,70, seção 1), R$ 0,25 equivale a ~US$ 0,044.
+  - Mudam no `.env`, sem mexer no código: `RENDER2GO_PRECO_480P_S` e `RENDER2GO_PRECO_720P_S` (`docs/09`, seção 4).
+- **Duração:** de 4 a 7 s. Vídeos de 3 s existem só no teste gratuito.
+- **Cobrança:** o pedido inteiro, quando as fotos terminam de chegar. Sem saldo, a página avisa antes do envio, com o preço.
+- **Devolução automática:** pedido recusado na revisão volta inteiro; cada vídeo que não sai volta sozinho para o saldo.
+- **Recarga:** por fora (ex.: Pix), lançada pelo dono em `/aprovar` ou pelo terminal (`docs/09`, seção 5.1.7). O extrato fica guardado e o cliente vê os últimos movimentos na página.
+- **Teste gratuito:** um pedido, vídeos de 3 s em 480p, até 5 fotos (eram 10). Custa ~US$ 0,055 de GPU por pessoa (~R$ 0,31), mais a parte da subida do pod, que é dividida entre os testes agrupados.
+- **Plano interno** (o dono): não paga.
 
-- **Pior caso:** o cliente usa todos os créditos. Crédito que sobra no mês e não acumula aumenta a margem.
-- **Ponto de equilíbrio da infraestrutura:** dois clientes do Essencial pagam os custos fixos (~R$ 43/mês).
-- **Plano anual:** 2 meses grátis (pague 10, leve 12), para segurar o cliente.
+### 4.2 Custo e margem por vídeo (L40S)
 
-### 4.3 O que muda entre os planos
+GPU em reais a ~R$ 5,70 por dólar. "Sobra" é o preço menos imposto e taxa de pagamento (de 10% a 20%: Simples de 6% a 15,5%, mais Pix ou cartão) e menos a GPU.
 
-| | Avulso | Essencial | Profissional | Agência |
-|---|---|---|---|---|
-| Fotos por pedido | até 20 | até 50 | até 100 | até 500 |
-| Qualidade | 480p e 720p | 480p e 720p | 480p e 720p | 480p e 720p |
-| Prioridade na fila | normal | normal | à frente | à frente |
-| Revisão | em até 1 h útil | em até 1 h útil | em até 30 min úteis | em até 30 min úteis |
-| Suporte | e-mail | e-mail | e-mail | e-mail e WhatsApp |
+| Vídeo | Preço | GPU | Sobra |
+|---|---|---|---|
+| 4 s, 480p | R$ 1,00 | ~R$ 0,09 | R$ 0,71–0,81 (71–81%) |
+| 5 s, 480p | R$ 1,25 | ~R$ 0,12 | R$ 0,88–1,01 (70–81%) |
+| 7 s, 480p | R$ 1,75 | ~R$ 0,17 | R$ 1,23–1,41 (70–80%) |
+| 4 s, 720p | R$ 2,00 | ~R$ 0,23 | R$ 1,37–1,57 (69–79%) |
+| 5 s, 720p | R$ 2,50 | ~R$ 0,34 | R$ 1,66–1,91 (66–76%) |
+| 7 s, 720p | R$ 3,50 | ~R$ 0,56 | R$ 2,24–2,59 (64–74%) |
+
+- **Medidos:** 5 s em 480p, 5 s e 7 s em 720p (seção 2). Os de 4 s e 7 s em 480p e 4 s em 720p são proporcionais ao tempo medido.
+- **Subida do pod:** ~R$ 0,63 por vez na L40S (seção 2). Num pedido de um vídeo só de 4 s, ela come quase toda a sobra; a partir de 3 ou 4 vídeos por subida, pesa pouco. Pedidos seguidos aproveitam o pod quente.
+- **Ainda não descontados:** o seu tempo de revisão, os custos fixos (~R$ 43/mês) e os vídeos refeitos por qualidade (no teste das receitas, 2 de 8 não ficaram bons).
+- **O custo medido pelo dono** (~US$ 0,03 por vídeo de 3 s, já com as subidas, na RTX PRO 6000) dá ~R$ 0,17: ainda bem abaixo do menor preço (R$ 1,00).
+
+### 4.3 Receita nos cenários da seção 3
+
+| Cenário | Receita | Custos (seção 3) | Sobra depois de imposto e taxa (10–20%) |
+|---|---|---|---|
+| Escala pequena: 300 vídeos de 5 s em 480p | R$ 375 | ~R$ 136 | ~R$ 160–200 |
+| Demanda alta: 18 mil de 5 s em 480p e 12 mil de 5 s em 720p | R$ 52.500 | ~R$ 7.400 | ~R$ 34.600–39.850 |
 
 ### 4.4 Por que esses valores
 
-- **Em reais por vídeo**, os planos (R$ 0,87 a R$ 1,99) ficam abaixo dos créditos das ferramentas de vídeo com IA mais conhecidas, que cobram em dólar. Também ficam muito abaixo de um vídeo feito por freelancer (R$ 25 a 50, `docs/05`).
-- **A vantagem do Render2Go** é o lote: 40 fotos, um pedido, 40 vídeos. O preço por crédito cai nos planos maiores para premiar quem manda volume, que é o público da seção 5.1 do `docs/05`.
-- **A GPU fica entre 10% e 20% do preço** mesmo no pior caso. Sobra espaço para uma alta de preço do RunPod como a da RTX PRO 6000 (+19%) sem mexer nos planos.
+- **No nível do atacado, entregando o serviço completo:** quem vende só o modelo pronto, para programadores e em dólar, cobra de US$ 0,015 a 0,05 por segundo em 480p (Wan 2.2 e 3.0) e ~US$ 0,10/s em 720p (pesquisa de 09/10/2026; os preços mudam com frequência). O Render2Go cobra o mesmo e entrega mais: português, estilos prontos, revisão, lote e suporte.
+- **Para o cliente, continua barato:** 50 fotos viram 50 vídeos de 5 s por R$ 62,50 em 480p ou R$ 125 em 720p, contra R$ 25 a 50 por vídeo com freelancer (`docs/05`).
+- **A GPU fica entre 9% e 16% do preço.** Sobra espaço para uma alta do RunPod como a da RTX PRO 6000 (+19%) sem mudar os preços.
+- **Burlar o teste não compensa:** o teste vale R$ 3,75 (5 vídeos de 3 s em 480p) e tem limites por dispositivo, por IP e um pedido só.
 
-### 4.5 O que fazer para aplicar (depois da aprovação)
+### 4.5 O que ainda falta
 
-1. Créditos por cliente no banco: saldo, validade e extrato.
-2. Cobrança:
-   - Pix e cartão por um intermediador brasileiro (ex.: Mercado Pago, Asaas ou Pagar.me);
-   - webhook que credita o saldo;
-   - página de planos.
-3. Limites por plano na API: fotos por pedido, qualidade e prioridade na fila. A fila já separa pagos de testes.
-4. Termos de uso e política de privacidade (LGPD), que já faltam hoje.
+1. **Pagamento automático:** Pix e cartão por um intermediador brasileiro (ex.: Mercado Pago, Asaas ou Pagar.me), com um aviso (webhook) que lança a recarga. O identificador do pagamento já impede que o mesmo pagamento entre duas vezes.
+2. **Termos de uso e política de privacidade (LGPD):** incluir as regras do saldo (validade, devolução de saldo não usado) e confirmar com um advogado e com o contador.
+3. **Marca d'água nos vídeos do teste gratuito** (logo e nome no fim): sugerida em 09/10/2026, ainda não feita.
