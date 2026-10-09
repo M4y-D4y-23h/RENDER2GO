@@ -298,11 +298,11 @@ def _cliente(amb, plano="pago", saldo="100"):
     return token
 
 
-def _lote(amb, token, fotos: dict[str, bytes], aprovar=False, pronto=False):
+def _lote(amb, token, fotos: dict[str, bytes], aprovar=False, pronto=False, prompt=None):
     import requests
 
     corpo = {  # sem duração: 3 s no teste gratuito; a do estilo (5 s) no pré-pago
-        "prompt": "vapor sobe da xícara e a câmera se aproxima devagar",
+        "prompt": prompt or "vapor sobe da xícara e a câmera se aproxima devagar",
         "fotos": [{"nome": n, "tipo": "image/png", "bytes": len(b)} for n, b in fotos.items()],
     }
     r = _api(amb, "POST", "/api/lotes", token, json=corpo)
@@ -988,3 +988,27 @@ def test_purpose_screen_blocks_full_list_interest_and_choice(ambiente, navegador
     pw.expect(adm.locator("#cliques tbody tr")).to_have_count(2)
     adm_ctx.close()
     assert erros == [], erros
+
+
+def test_stored_xss_payloads_show_as_text_in_the_owner_panel(ambiente, navegador):  # noqa: F811 (fixture)
+    """Teste de invasão (docs/13): HTML e JavaScript no nome da conta, no texto do pedido e numa mensagem de
+    suporte aparecem como texto no painel do dono; nada executa e a CSP não precisa nem bloquear."""
+    erros: list[str] = []
+    carga = '<img src=x onerror="window.__xss=1"><script>window.__xss=2</script><svg onload="window.__xss=3">'
+    _, tok = ambiente.banco.criar_cliente(carga, 500, "teste")
+    _lote(ambiente, tok, {"vitrine.png": _png((40, 90, 160), "circulo")}, prompt="a câmera se aproxima " + carga)
+    _api(ambiente, "POST", "/api/suporte", tok, json={"mensagem": "preciso de ajuda " + carga, "email": "x@gmail.com"})
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, admin=True)
+    adm = _pagina(ctx, erros)
+    dialogos: list[str] = []
+    adm.on("dialog", lambda d: (dialogos.append(d.message), d.dismiss()))
+    adm.goto(f"{ambiente.url}{PAINEL}/")
+    pw.expect(adm.locator("#n-pendentes")).to_have_text("1")
+    pw.expect(adm.locator("#pendentes")).to_contain_text(carga)
+    adm.wait_for_selector("#suporte .msg-suporte")
+    pw.expect(adm.locator("#suporte")).to_contain_text(carga)
+    assert adm.locator("#pendentes img[src='x'], #suporte img[src='x'], svg[onload]").count() == 0
+    assert adm.evaluate("window.__xss === undefined") and dialogos == []
+    ctx.close()
+    assert erros == [], erros  # nem um aviso da CSP: o texto nunca virou HTML

@@ -256,14 +256,38 @@ def test_company_email_only_when_the_panel_creates_the_account(conta_api):
     api = conta_api
     corpo = {"email": "dono@padariadobairro.com.br", "aceite": True}
     assert anonimo(api).post("/api/conta/codigo", json=corpo, headers=PAGINA).status_code == 422
+    # sem código válido, a rota de entrada responde igual com ou sem conta (não serve para descobrir contas)
+    tentativa = {"email": "dono@padariadobairro.com.br", "codigo": "12345678", "aceite": True}
+    antes = anonimo(api).post("/api/conta/entrar", json=tentativa, headers=PAGINA)
     r = api.post(f"{PAINEL}/api/clientes", json={"email": "Dono@PadariaDoBairro.com.br", "plano": "pago"}, headers=ADM)
     assert r.status_code == 200 and r.json()["email"] == "dono@padariadobairro.com.br"
     assert (
         api.post(f"{PAINEL}/api/clientes", json={"email": "dono@padariadobairro.com.br"}, headers=ADM).status_code
         == 422
     )
+    depois = anonimo(api).post("/api/conta/entrar", json=tentativa, headers=PAGINA)
+    assert antes.status_code == depois.status_code == 401 and antes.json() == depois.json()
     nav = entrar(api, "dono@padariadobairro.com.br")
     assert nav.conta["nova"] is False and nav.conta["conta"]["plano"] == "pago"
+
+
+def test_the_robot_check_comes_before_any_answer_that_depends_on_an_account(banco):
+    """Com o Turnstile ligado, e-mail de empresa sem a verificação recebe 403, com ou sem conta."""
+    api = cliente_teste(
+        config_teste(
+            banco,
+            email=suporte.ConfigEmail(host="smtp.teste", para="", de="x@render2go.com"),
+            turnstile=contas.ConfigTurnstile("site", "segredo", None),
+            turnstile_desligado=False,
+        )
+    )
+    corpo = {"email": "dono@lojadaesquina.com.br", "aceite": True, "turnstile": None}
+    sem_conta = anonimo(api).post("/api/conta/codigo", json=corpo, headers=PAGINA)
+    api.post(f"{PAINEL}/api/clientes", json={"email": "dono@lojadaesquina.com.br", "plano": "pago"}, headers=ADM)
+    com_conta = anonimo(api).post("/api/conta/codigo", json=corpo, headers=PAGINA)
+    assert sem_conta.status_code == com_conta.status_code == 403 and sem_conta.json() == com_conta.json()
+    malformado = anonimo(api).post("/api/conta/codigo", json={**corpo, "email": "sem-arroba"}, headers=PAGINA)
+    assert malformado.status_code == 422  # o formato é conferido antes (não depende de conta)
 
 
 def test_legacy_bearer_code_still_works_for_integrations(conta_api):

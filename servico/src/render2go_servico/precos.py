@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 
 PLANOS_COBRADOS = ("pago",)
 DURACAO_MIN = 4  # pago e interno: de 4 a 7 s; 3 s só no teste gratuito
-VALOR = re.compile(r"^-?\d{1,7}([.,]\d{1,2})?$")
+VALOR = re.compile(r"^-?[0-9]{1,7}([.,][0-9]{1,2})?$")
 MAX_MOVIMENTO = 100_000_00  # R$ 100 mil por recarga ou ajuste (contra erro de digitação)
 
 

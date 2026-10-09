@@ -48,7 +48,7 @@ SITUACOES = {
     "refunded": "devolvido",
     "charged_back": "contestado",
 }
-DIGITOS = re.compile(r"\D")
+DIGITOS = re.compile(r"[^0-9]")  # só 0-9 (\D deixaria passar dígitos de outros alfabetos)
 
 
 class PagamentoError(Exception):
@@ -123,7 +123,7 @@ def assinatura_confere(segredo: str, x_signature: str, x_request_id: str | None,
     partes.append(f"ts:{ts}")
     manifesto = ";".join(partes) + ";"
     esperado = hmac.new(segredo.encode(), manifesto.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(esperado, v1)
+    return hmac.compare_digest(esperado.encode(), v1.encode())  # em bytes: v1 pode vir com qualquer caractere
 
 
 class MercadoPago:

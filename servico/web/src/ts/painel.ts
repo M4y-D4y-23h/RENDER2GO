@@ -163,6 +163,7 @@ type Seguranca = {
   analise: string;
   segredo_contas: boolean;
   orquestrador_visto_s: number | null;
+  analisador_visto_s?: number | null;
   contas: Record<string, number>;
   auditoria: Acao[];
 };
@@ -673,9 +674,20 @@ function listaChecagem(r: Seguranca): HTMLElement[] {
     item(r.pagamento, "Recarga por Pix (Mercado Pago) ligada.", "Recarga por Pix desligada: os clientes recarregam pelo suporte."),
     item(r.cookie_seguro, "Cookies só por HTTPS.", "Cookies sem HTTPS (só para desenvolvimento local)."),
     item(r.segredo_contas, "Segredo próprio das contas configurado.", "Sem RENDER2GO_SEGREDO_CONTAS (os códigos usam uma chave derivada do segredo de aprovação)."),
-    item(r.analise !== "desligada", `Aviso de pessoas nas fotos: ${r.analise === "separada" ? "serviço próprio" : "na API"}.`, "Aviso de pessoas desligado."),
+    analiseItem(r, item),
     item(visto !== null && visto < 120, `Orquestrador ativo (visto há ${Math.round(visto ?? 0)} s).`, visto === null ? "O orquestrador ainda não deu sinal." : `Orquestrador sem sinal há ${Math.round(visto)} s: confira o contêiner.`),
   ];
+}
+
+function analiseItem(r: Seguranca, item: (ok: boolean, texto: string, falta: string) => HTMLElement): HTMLElement {
+  if (r.analise === "desligada") return item(false, "", "Aviso de pessoas desligado.");
+  if (r.analise !== "separada") return item(true, "Aviso de pessoas nas fotos: na API.", "");
+  const visto = r.analisador_visto_s ?? null;
+  return item(
+    visto !== null && visto < 180,
+    `Aviso de pessoas nas fotos: serviço próprio, visto há ${Math.round(visto ?? 0)} s.`,
+    visto === null ? "Serviço de análise das fotos ainda sem sinal (contêiner analisador)." : `Análise das fotos sem sinal há ${Math.round(visto)} s: confira o contêiner analisador.`,
+  );
 }
 
 function tabelaAuditoria(xs: Acao[]): HTMLElement {

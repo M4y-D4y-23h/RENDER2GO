@@ -324,11 +324,19 @@ def analisar_lote(banco: Banco, armazenamento: Any, analisar: Callable[[bytes], 
 
 
 def analisar_continuamente(banco: Banco, armazenamento: Any, analisar: Callable[[bytes], dict], parar: threading.Event,
-                           intervalo_s: float = 5) -> None:  # fmt: skip
+                           intervalo_s: float = 5, vivo: Path | None = None) -> None:  # fmt: skip
     """Serviço próprio da análise de pessoas (`render2go-servico analisar`, RENDER2GO_ANALISE=separada na
-    API): com muitos envios, a análise (CPU) não disputa a máquina com as requisições da API."""
+    API): com muitos envios, a análise (CPU) não disputa a máquina com as requisições da API.
+    Sinal de vida: o arquivo `vivo` a cada volta (healthcheck do contêiner) e o banco a cada minuto
+    (o painel mostra, em Segurança, há quanto tempo a análise não dá sinal)."""
+    sinal = 0.0
     while not parar.is_set():
         try:
+            if vivo is not None:
+                vivo.touch()
+            if time.time() - sinal >= 60:
+                banco.definir_estado("analisador_vivo", None)
+                sinal = time.time()
             lotes = banco.lotes_para_analisar()
             for lid in lotes:
                 n = analisar_lote(banco, armazenamento, analisar, lid)
@@ -385,6 +393,13 @@ class Config:
             executor = self._correio if correio else self._fundo
             self._pendentes_fundo = [f for f in self._pendentes_fundo if not f.done()]
             self._pendentes_fundo.append(executor.submit(fn, *args))
+
+    def encerrar(self) -> None:
+        """Fim do processo: os e-mails em andamento terminam (cada um tem tempo limite); o banco fecha."""
+        for executor in (self._correio, self._fundo):
+            if executor is not None:
+                executor.shutdown(wait=True, cancel_futures=True)
+        self.banco.fechar()
 
     def esperar_fundo(self) -> None:  # testes
         with self._lock:
@@ -489,7 +504,7 @@ def _token(authorization: str | None) -> str:
 
 
 def _um_de(token: str, validos: list[str]) -> bool:
-    return any(hmac.compare_digest(token, v) for v in validos)
+    return any(contas.iguais(token, v) for v in validos)
 
 
 def ip_de(request: Request) -> str:
@@ -807,9 +822,47 @@ def _resumo_pagamento(p: dict) -> dict:
     }
 
 
+def avisos_de_configuracao(c: Config) -> list[str]:
+    """O que falta configurar: sai no log da API ao subir (e o painel mostra em Segurança)."""
+    avisos = []
+    if c.admin_caminho is None:
+        avisos.append("painel desligado: falta RENDER2GO_ADMIN_CAMINHO (ninguém revisa os pedidos)")
+    elif not c.admin_tokens:
+        avisos.append("painel sem RENDER2GO_ADMIN_TOKENS: ninguém consegue entrar")
+    elif c.admin_totp is None:
+        avisos.append("painel SEM o código do autenticador: configure RENDER2GO_ADMIN_TOTP (totp-novo)")
+    if c.email is None:
+        avisos.append("SMTP não configurado: os códigos de entrada não saem e ninguém entra pelo e-mail")
+    if c.turnstile is None:
+        avisos.append(
+            "Turnstile DESLIGADO de propósito (RENDER2GO_TURNSTILE=desligado): só para desenvolvimento"
+            if c.turnstile_desligado
+            else "Turnstile não configurado: a entrada por e-mail e o suporte sem conta recusam os pedidos"
+        )
+    if c.mp is None:
+        avisos.append("recarga por Pix desligada (RENDER2GO_MP_*): o saldo só entra pelo painel")
+    if not c.cookie_seguro:
+        avisos.append("cookies sem Secure (RENDER2GO_COOKIE_INSEGURO=1): só para desenvolvimento local")
+    if vazios := [v for v in EMPRESA.values() if not os.environ.get(v, "").strip()]:
+        avisos.append(f"identificação da empresa incompleta (páginas legais e rodapé): {', '.join(vazios)}")
+    return avisos
+
+
 def criar_app(cfg: Config | None = None) -> FastAPI:
+    @contextlib.asynccontextmanager
+    async def ciclo(app_: FastAPI):
+        criada_aqui = app_.state.cfg is None
+        if criada_aqui:
+            # na subida, não no 1º pedido: variável faltando derruba a API com a mensagem no log
+            app_.state.cfg = Config.do_ambiente()
+            for aviso in avisos_de_configuracao(app_.state.cfg):
+                print(f"[api] AVISO: {aviso}", flush=True)
+        yield
+        if criada_aqui:
+            app_.state.cfg.encerrar()
+
     # sem /docs, /redoc e /openapi.json: o mapa da API não fica público
-    app = FastAPI(title="Render2Go", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="Render2Go", docs_url=None, redoc_url=None, openapi_url=None, lifespan=ciclo)
     app.state.cfg = cfg
     painel = cfg.admin_caminho if cfg is not None else caminho_admin_do_ambiente()
 
@@ -877,7 +930,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         return nome
 
     def _mesmo_worker(dono: str, worker: str) -> None:
-        if dono != "*" and not hmac.compare_digest(dono, worker):
+        if dono != "*" and not contas.iguais(dono, worker):
             raise HTTPException(403, "este token é de outro worker")
 
     # -- páginas (servico/web/publico; docs/10) ---------------------------------------------
@@ -954,7 +1007,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         origem = origem_de(request)
         if not body.aceite:
             raise HTTPException(422, "para continuar, aceite os Termos de Uso e a Política de Privacidade")
-        email, norm = _email_da_entrada(c, body.email)
+        email, norm = _email_valido(body.email)
         if c.email is None:
             raise HTTPException(503, "a entrada por e-mail está indisponível agora; tente de novo mais tarde")
         _anti_robo(c, body.turnstile, origem, "codigo")
@@ -970,6 +1023,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             if c.banco.contar(chave, janela) > maximo:
                 espera = "uma hora" if janela <= 3600 else "amanhã"
                 raise HTTPException(429, f"muitos códigos pedidos; tente de novo em {espera}")
+        # só depois do anti-robô e dos limites: a resposta para um e-mail de empresa diz se há conta
+        _dominio_aceito(c, body.email, norm)
         conta = c.banco.conta_por_email(norm)
         if conta is None or conta["ativo"]:  # conta desativada: responde igual, mas não manda
             codigo = contas.novo_codigo()
@@ -978,18 +1033,20 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             c.em_segundo_plano(_enviar_codigo, c, email, codigo, correio=True)
         return {"ok": True, "email": email, "validade_s": contas.CODIGO_VALIDADE_S}
 
-    def _email_da_entrada(c: Config, texto: str) -> tuple[str, str]:
-        """E-mail de um provedor da lista; fora dela, só o de uma conta que o painel criou."""
+    def _email_valido(texto: str) -> tuple[str, str]:
+        """Só o formato: a lista de provedores é conferida depois (`_dominio_aceito`)."""
         try:
-            return contas.normalizar(texto)
-        except contas.DominioRecusado as e:
-            with contextlib.suppress(contas.EmailRecusado):
-                email, norm = contas.normalizar(texto, exigir_dominio=False)
-                if c.banco.conta_por_email(norm):
-                    return email, norm
-            raise HTTPException(422, str(e)) from e
+            return contas.normalizar(texto, exigir_dominio=False)
         except contas.EmailRecusado as e:
             raise HTTPException(422, str(e)) from e
+
+    def _dominio_aceito(c: Config, texto: str, norm: str) -> None:
+        """E-mail de um provedor da lista; fora dela, só o de uma conta que o painel criou."""
+        try:
+            contas.normalizar(texto)
+        except contas.DominioRecusado as e:
+            if not c.banco.conta_por_email(norm):
+                raise HTTPException(422, str(e)) from e
 
     def _abrir_sessao(c: Config, conta: dict, origem: dict, evento: str, detalhe: dict) -> JSONResponse:
         c.banco.registrar_aceite(conta["id"], contas.DOCUMENTOS, origem)
@@ -1004,7 +1061,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         origem = origem_de(request)
         if not body.aceite:
             raise HTTPException(422, "para continuar, aceite os Termos de Uso e a Política de Privacidade")
-        email, norm = _email_da_entrada(c, body.email)
+        # sem conferir a lista de provedores aqui: só existe código para e-mail aceito no envio (e sem
+        # essa conferência, esta rota não serve para descobrir se um e-mail de empresa tem conta)
+        email, norm = _email_valido(body.email)
         tentativas = [
             (f"entrar:rede:{origem['rede']}", 3600, 30),
             (f"entrar:email:{norm}", 3600, 10),
@@ -1961,6 +2020,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     def seguranca(_: str = Depends(admin), c: Config = Depends(config)):
         """O que está ligado (e o que falta) e as últimas ações do painel."""
         vivo = c.banco.ler_estado("orquestrador_vivo")
+        analisador = c.banco.ler_estado("analisador_vivo") if c.analise == "separada" else None
         return {
             "turnstile": c.turnstile is not None,
             "turnstile_desligado": c.turnstile_desligado,
@@ -1973,6 +2033,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "analise": c.analise,
             "segredo_contas": c.segredo_contas is not None,
             "orquestrador_visto_s": round(time.time() - float(vivo["atualizado"]), 1) if vivo else None,
+            "analisador_visto_s": round(time.time() - float(analisador["atualizado"]), 1) if analisador else None,
             "contas": c.banco.contar_clientes(),
             "auditoria": c.banco.auditoria_admin(50),
         }
@@ -2130,4 +2191,24 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             h["X-Robots-Tag"] = "noindex, nofollow"
         return resp
 
+    app.add_middleware(HeadComoGet)
     return app
+
+
+class HeadComoGet:
+    """HEAD nas páginas responde como o GET, sem o corpo: monitores de disponibilidade usam HEAD.
+    A API (/api/...) fica de fora: lá só os métodos declarados valem."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] != "HEAD" or "/api/" in scope["path"]:
+            return await self.app(scope, receive, send)
+
+        async def sem_corpo(mensagem):
+            if mensagem["type"] == "http.response.body":
+                mensagem = {**mensagem, "body": b""}
+            await send(mensagem)
+
+        return await self.app(dict(scope, method="GET"), receive, sem_corpo)

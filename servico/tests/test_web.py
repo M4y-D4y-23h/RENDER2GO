@@ -277,3 +277,30 @@ def test_identity_colors_meet_wcag_aa_contrast(tema):
         if _contraste(cores[t], cores[f]) < minimo
     ]
     assert not falhas, falhas
+
+
+def test_head_answers_like_get_without_body_except_on_the_api(web):
+    """Monitores de disponibilidade usam HEAD: as páginas respondem; a API só aceita os métodos dela."""
+    for caminho in ("/", "/termos", "/suporte", "/saude", f"{PAINEL}/"):
+        get, head = web.get(caminho), web.head(caminho)
+        assert head.status_code == 200 and head.content == b"", caminho
+        assert head.headers["content-length"] == get.headers["content-length"], caminho
+        assert head.headers["content-security-policy"] == get.headers["content-security-policy"], caminho
+    assert web.head("/nao-existe").status_code == 404
+    assert web.head("/api/publico").status_code == 405
+
+
+def test_startup_warnings_name_what_is_missing(banco, monkeypatch):
+    from render2go_servico.api import EMPRESA, avisos_de_configuracao
+
+    for v in EMPRESA.values():
+        monkeypatch.setenv(v, "preenchido")
+    assert avisos_de_configuracao(config_teste(banco)) == [
+        "SMTP não configurado: os códigos de entrada não saem e ninguém entra pelo e-mail",
+        "Turnstile DESLIGADO de propósito (RENDER2GO_TURNSTILE=desligado): só para desenvolvimento",
+        "recarga por Pix desligada (RENDER2GO_MP_*): o saldo só entra pelo painel",
+    ]
+    monkeypatch.delenv("RENDER2GO_EMPRESA_NOME")
+    avisos = avisos_de_configuracao(config_teste(banco, admin_caminho=None, turnstile_desligado=False))
+    assert avisos[0].startswith("painel desligado") and "Turnstile não configurado" in avisos[2]
+    assert avisos[-1].endswith(": RENDER2GO_EMPRESA_NOME")

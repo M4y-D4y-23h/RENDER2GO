@@ -1,34 +1,80 @@
 # Serviço Render2Go num servidor só (docs/09-implantacao.md):
-#   API + páginas, orquestrador de pods, Postgres e Caddy (HTTPS automático).
+#   API + páginas, análise das fotos, orquestrador de pods, Postgres e Caddy (HTTPS automático).
 # Uso: cp exemplo.env .env; edite; docker compose up -d --build
+# Endurecimento (docs/13): cada contêiner só com os segredos que usa, sem privilégios extras,
+# sistema de arquivos só de leitura (escrita só em /tmp e nos volumes) e logs com tamanho limitado.
 name: render2go
+
+x-logs: &logs # sem limite, o log do Docker cresce até encher o disco
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
+
+x-banco: &banco
+  # banco e usuário "gpu2go": nomes da primeira implantação (renomear exigiria migrar os dados)
+  RENDER2GO_DB_URL: postgresql://gpu2go:${POSTGRES_PASSWORD}@postgres:5432/gpu2go
+
+# segredos que só a API usa: os outros processos recebem estas variáveis vazias
+x-sem-segredos-da-api: &sem-segredos-da-api
+  RENDER2GO_ADMIN_TOKENS: ""
+  RENDER2GO_ADMIN_TOTP: ""
+  RENDER2GO_ADMIN_CAMINHO: ""
+  RENDER2GO_SEGREDO_CONTAS: ""
+  RENDER2GO_WORKER_TOKENS: ""
+  RENDER2GO_MP_ACCESS_TOKEN: ""
+  RENDER2GO_MP_WEBHOOK_SEGREDO: ""
+  RENDER2GO_SMTP_SENHA: ""
+  RENDER2GO_TURNSTILE_SEGREDO: ""
+
+x-processo: &processo
+  image: render2go-servico
+  env_file: .env
+  logging: *logs
+  read_only: true
+  tmpfs: ["/tmp:size=256m,mode=1777"]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  restart: unless-stopped
+  depends_on:
+    postgres: { condition: service_healthy }
 
 services:
   api:
+    <<: *processo
     build: { context: ../.., dockerfile: servico/Dockerfile }
-    image: render2go-servico
-    command: ["render2go-servico", "api"]
-    env_file: .env
+    command: ["render2go-servico", "api"] # processos: RENDER2GO_API_WORKERS no .env
     environment:
-      # banco e usuário "gpu2go": nomes da primeira implantação (renomear exigiria migrar os dados)
-      RENDER2GO_DB_URL: postgresql://gpu2go:${POSTGRES_PASSWORD}@postgres:5432/gpu2go
-    depends_on:
-      postgres: { condition: service_healthy }
-    restart: unless-stopped
+      <<: *banco
+      RENDER2GO_ANALISE: separada # o aviso de pessoas roda no "analisador", fora da API
+      RUNPOD_API_KEY: "" # a API não fala com o RunPod (o painel manda comandos ao orquestrador)
+
+  analisador:
+    <<: *processo
+    command: ["render2go-servico", "analisar"]
+    environment:
+      <<: [*banco, *sem-segredos-da-api]
+      RUNPOD_API_KEY: ""
+      RENDER2GO_SEGREDO_APROVACAO: ""
+    healthcheck: # sem porta HTTP: saudável = o laço deu uma volta nos últimos 10 min (lote grande demora)
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,sys,time; sys.exit(time.time() - os.path.getmtime('/tmp/render2go-analisador-vivo') > 600)"
+      interval: 60s
+      timeout: 5s
+      start_period: 60s
 
   orquestrador:
-    image: render2go-servico
+    <<: *processo
     command: ["render2go-servico", "orquestrar"]
-    env_file: .env
     environment:
-      RENDER2GO_DB_URL: postgresql://gpu2go:${POSTGRES_PASSWORD}@postgres:5432/gpu2go
-    volumes: ["orquestrador:/home/render2go/.cache/render2go"]  # estado para 'limpar' e memória de datacenters
+      <<: [*banco, *sem-segredos-da-api]
+    volumes: ["orquestrador:/home/render2go/.cache/render2go"] # estado para 'limpar' e memória de datacenters
     depends_on:
       postgres: { condition: service_healthy }
       api: { condition: service_started }
-    restart: unless-stopped
-    stop_grace_period: 2m  # ao parar, encerra os pods que estão rodando
-    healthcheck:  # sem porta HTTP: saudável = o laço completou um ciclo nos últimos 3 min
+    stop_grace_period: 2m # ao parar, encerra os pods que estão rodando
+    healthcheck: # sem porta HTTP: saudável = o laço completou um ciclo nos últimos 3 min
       test:
         - CMD
         - python
@@ -45,6 +91,9 @@ services:
       POSTGRES_DB: gpu2go
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes: ["postgres:/var/lib/postgresql/data"]
+    logging: *logs
+    security_opt: ["no-new-privileges:true"]
+    shm_size: 256mb # consultas grandes (relatórios do painel) usam memória compartilhada
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gpu2go"]
       interval: 5s
@@ -53,12 +102,17 @@ services:
 
   caddy:
     image: caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
-    ports: ["80:80", "443:443"]
+    ports: ["80:80", "443:443", "443:443/udp"] # 443/udp: HTTP/3
     environment:
       DOMINIO: ${DOMINIO}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy:/data
+      - caddy:/data # certificados e o log de acesso (/data/logs)
+      - caddy_config:/config
+    logging: *logs
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     depends_on: [api]
     restart: unless-stopped
 
@@ -68,3 +122,4 @@ volumes:
   postgres: { name: gpu2go_postgres }
   orquestrador: { name: gpu2go_orquestrador }
   caddy: { name: gpu2go_caddy }
+  caddy_config: { name: render2go_caddy_config }

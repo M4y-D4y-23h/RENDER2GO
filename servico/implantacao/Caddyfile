@@ -1,9 +1,48 @@
-# HTTPS automático (Let's Encrypt) para o domínio do serviço
-{$DOMINIO} {
-	encode zstd gzip  # zstd para navegadores novos; gzip para os outros
-	request_body {
-		max_size 1MB  # as fotos vão direto ao R2; a API só recebe JSON
+# HTTPS automático (Let's Encrypt) para o domínio do serviço (docs/09).
+# Endurecido em 09/10/2026 (docs/13): tempos limite contra conexões lentas, sem os cabeçalhos que
+# revelam o servidor, IP e porta reais do visitante para a API (limites por rede e registros do
+# Marco Civil) e log de acesso com rotação.
+{
+	servers {
+		timeouts {
+			read_header 10s # cabeçalho enviado devagar (slowloris): a conexão cai
+			read_body 30s # a API só recebe JSON pequeno; as fotos vão direto ao R2
+			write 60s
+			idle 2m
+		}
+		# Com o proxy da Cloudflare (nuvem laranja) na frente, descomente as duas linhas abaixo (o IP
+		# real chega no CF-Connecting-IP; sem isso, todo visitante teria o IP da Cloudflare) e libere
+		# as portas 80/443 só para as faixas da Cloudflare no firewall da Hetzner (docs/13).
+		# trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		# client_ip_headers CF-Connecting-IP
 	}
-	header Strict-Transport-Security "max-age=31536000"
-	reverse_proxy api:8000
+}
+
+{$DOMINIO} {
+	encode zstd gzip # zstd para navegadores novos; gzip para os outros
+	request_body {
+		max_size 1MB # as fotos vão direto ao R2; a API só recebe JSON
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# nada de "Server: Caddy" nem "Via: 1.1 Caddy": quem ataca não ganha a versão de graça
+		-Server
+		-Via
+		defer # aplicado na hora da resposta, depois do reverse_proxy (que acrescenta o Via)
+	}
+	log {
+		# JSON, um pedido por linha; Cookie e Authorization saem como REDACTED (padrão do Caddy).
+		# O registro do Marco Civil é a tabela acessos do banco (6 meses); este é o técnico, de segurança.
+		output file /data/logs/acesso.log {
+			roll_size 50MiB
+			roll_keep 400
+			roll_keep_for 4416h # 184 dias
+		}
+		format json
+	}
+	reverse_proxy api:8000 {
+		# a API confia só nestes dois cabeçalhos (o Caddy sempre reescreve: o de fora não passa)
+		header_up X-Render2Go-IP {client_ip}
+		header_up X-Render2Go-Porta {remote_port}
+	}
 }

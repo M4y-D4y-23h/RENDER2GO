@@ -181,7 +181,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if a.cmd == "analisar":
+        import tempfile
         import threading
+        from pathlib import Path
 
         from render2go_servico import pessoas
         from render2go_servico.api import analisar_continuamente
@@ -194,7 +196,8 @@ def main(argv: list[str] | None = None) -> int:
         signal.signal(signal.SIGTERM, lambda *_: parar.set())
         signal.signal(signal.SIGINT, lambda *_: parar.set())
         print("[analise] rodando (aviso de pessoas nas fotos)", flush=True)
-        analisar_continuamente(_banco(), arm, pessoas.analisador(), parar)
+        vivo = Path(tempfile.gettempdir()) / "render2go-analisador-vivo"  # healthcheck do contêiner (compose)
+        analisar_continuamente(_banco(), arm, pessoas.analisador(), parar, vivo=vivo)
         return 0
     if a.cmd == "email":
         from render2go_servico.contas import EmailRecusado, normalizar

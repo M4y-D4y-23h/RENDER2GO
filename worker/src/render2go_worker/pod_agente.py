@@ -45,7 +45,7 @@ def handler(token: str):
             pass
 
         def _autorizado(self) -> bool:
-            if hmac.compare_digest(self.headers.get("X-Token", ""), token):
+            if hmac.compare_digest(self.headers.get("X-Token", "").encode(), token.encode()):
                 return True
             self._send(403, {"erro": "token inválido"})
             return False

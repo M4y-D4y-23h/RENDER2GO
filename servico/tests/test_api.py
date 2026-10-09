@@ -1,8 +1,10 @@
 """API de ponta a ponta com armazenamento falso (sem rede) e o banco dos testes."""
 
+import asyncio
 import hashlib
 import json
 import math
+import threading
 import time
 
 import pytest
@@ -597,7 +599,7 @@ def test_people_warning_is_computed_after_upload_and_shown_to_the_reviewer(banco
     assert all(f["analise"] is not None for f in fotos)
 
 
-def test_app_configured_from_environment(monkeypatch, tmp_path):
+def test_app_configured_from_environment(monkeypatch, tmp_path, capsys):
     for k, v in {
         "RENDER2GO_DB_URL": f"sqlite:///{tmp_path / 'env.db'}",
         "RENDER2GO_R2_ENDPOINT": "https://conta.r2.cloudflarestorage.com",
@@ -614,6 +616,47 @@ def test_app_configured_from_environment(monkeypatch, tmp_path):
     csp = r.headers["Content-Security-Policy"]
     assert "connect-src 'self' https://conta.r2.cloudflarestorage.com" in csp
     assert api.get("/estilo.css").status_code == 200 and api.get("/app.js").status_code == 200
+    # no servidor (uvicorn), a configuração é lida na subida, e o log diz o que falta configurar
+    with TestClient(criar_app()) as api:
+        assert api.get("/saude").json() == {"ok": True}
+    saida = capsys.readouterr().out
+    assert "[api] AVISO: SMTP não configurado" in saida and "[api] AVISO: painel desligado" in saida
+    monkeypatch.setenv("RENDER2GO_SEGREDO_APROVACAO", "curto")
+    app = criar_app()
+    with pytest.raises(SystemExit, match="RENDER2GO_SEGREDO_APROVACAO"):  # variável faltando: a API nem sobe
+        asyncio.run(app.router.lifespan_context(app).__aenter__())
+
+
+def test_separate_analyzer_service_analyzes_the_photos_and_signals_it_is_alive(banco, tmp_path):
+    from render2go_servico.api import analisar_continuamente
+
+    armazem = Armazem()
+    cfg = config_teste(banco, armazem, analise="separada")
+    api = cliente_teste(cfg)
+    tok = _cliente(api)
+    r = _lote(api, tok, n=2)
+    lid = r.json()["lote"]
+    assert _enviar_tudo(api, tok, lid, r.json()["envios"]).status_code == 200
+    assert cfg.analises is None and cfg.analise_ligada  # a API não analisa: o serviço separado analisa
+    parar, vivo = threading.Event(), tmp_path / "vivo"
+    t = threading.Thread(
+        target=analisar_continuamente,
+        args=(banco, armazem, lambda dados: {"versao": "pessoas-v1", "pessoas": 0, "rostos": 0, "maior": 0.0}, parar),
+        kwargs={"intervalo_s": 0.01, "vivo": vivo},
+    )
+    t.start()
+    try:
+        for _ in range(500):
+            if all(f["analise"] for f in banco.fotos(lid)):
+                break
+            time.sleep(0.01)
+    finally:
+        parar.set()
+        t.join(10)
+    assert all(json.loads(f["analise"])["pessoas"] == 0 for f in banco.fotos(lid))
+    assert vivo.exists()  # healthcheck do contêiner
+    seg = api.get(f"{PAINEL}/api/seguranca").json()
+    assert seg["analise"] == "separada" and 0 <= seg["analisador_visto_s"] < 60
 
 
 def _concluir(api, job, **corpo):

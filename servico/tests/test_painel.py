@@ -132,3 +132,21 @@ def test_security_overview_accounts_and_audit(banco):
     acoes = [a["acao"] for a in api.get(f"{PAINEL}/api/seguranca").json()["auditoria"]]
     assert {"entrada", "email", "plano", "desativar", "reativar"} <= set(acoes)
     entrar_admin(anonimo(api))  # outra sessão do painel ao mesmo tempo
+
+
+def test_hostile_text_never_breaks_the_api(banco):
+    """Achados do teste de invasão (docs/13): NUL na busca ou numa mensagem e credenciais com caracteres
+    fora do ASCII davam erro 500 (no Postgres e no compare_digest); agora são recusados ou limpos."""
+    api = cliente_teste(config_teste(banco))
+    r = api.get(f"{PAINEL}/api/clientes", params={"busca": "a\x00' OR 1=1 --"})
+    assert r.status_code == 200 and r.json()["clientes"] == []
+    tok = _cliente(api, "Loja Nula", plano="teste")
+    corpo = {"mensagem": "preciso de ajuda\x00 com o pedido", "email": "x@gmail.com"}
+    assert api.post("/api/suporte", json=corpo, headers={**h(tok), **ADM}).status_code == 200
+    (m,) = api.get(f"{PAINEL}/api/suporte").json()["mensagens"]
+    assert "\x00" not in m["mensagem"]
+    anon = anonimo(api)
+    assert anon.post(f"{PAINEL}/api/entrar", json={"token": "é" * 40, "totp": "١٢٣٤٥٦"}, headers=ADM).status_code == 401
+    assert anon.get("/api/lotes", headers={"Authorization": ("Bearer " + "é" * 40).encode()}).status_code == 401
+    w = banco.criar_token_worker("pod-u", None, 3600)
+    assert anon.post("/api/worker/reivindicar", json={"worker": "pod-é"}, headers=h(w)).status_code == 403

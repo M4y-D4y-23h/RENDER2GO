@@ -56,7 +56,7 @@ DOMINIOS_PADRAO = frozenset(
 GOOGLE = {"gmail.com", "googlemail.com"}
 YAHOO = {"yahoo.com", "yahoo.com.br", "ymail.com", "rocketmail.com"}
 LOCAL = re.compile(r"^[a-z0-9][a-z0-9._+-]{0,63}$")
-CODIGO = re.compile(r"^\d{8}$")
+CODIGO = re.compile(r"^[0-9]{8}$")  # [0-9]: \d aceitaria dígitos de outros alfabetos
 CODIGO_VALIDADE_S = 10 * 60
 CODIGO_TENTATIVAS = 5
 SESSAO_CLIENTE_S = 30 * 86400
@@ -125,7 +125,7 @@ def novo_codigo() -> str:
 
 def limpar_codigo(texto: str) -> str:
     """O código como a pessoa digitou ("1234 5678", "1234-5678") → só os dígitos."""
-    return re.sub(r"\D", "", texto or "")
+    return re.sub(r"[^0-9]", "", texto or "")
 
 
 def chave_contas(segredo_contas: str | None, segredo_aprovacao: str) -> bytes:
@@ -168,13 +168,19 @@ def totp(segredo: str, contador: int, digitos: int = 6) -> str:
 def totp_confere(segredo: str, codigo: str, agora: float | None = None, janela: int = 1, passo: int = 30) -> int | None:
     """Contador (passo de 30 s) do código aceito, ou None. Aceita o passo anterior e o seguinte
     (relógio do celular um pouco fora). Quem chama recusa contador já usado (reuso do código)."""
-    if not re.fullmatch(r"\d{6}", codigo or ""):
+    if not re.fullmatch(r"[0-9]{6}", codigo or ""):  # [0-9]: \d aceitaria dígitos de outros alfabetos
         return None
     atual = int((agora if agora is not None else time.time()) // passo)
     for c in range(atual - janela, atual + janela + 1):
-        if hmac.compare_digest(totp(segredo, c), codigo):
+        if iguais(totp(segredo, c), codigo):
             return c
     return None
+
+
+def iguais(a: str, b: str) -> bool:
+    """Comparação em tempo constante de textos vindos de fora: em bytes, porque o compare_digest de
+    str recusa (TypeError, erro 500) qualquer caractere fora do ASCII."""
+    return hmac.compare_digest(a.encode(), b.encode())
 
 
 def uri_totp(segredo: str, conta: str = "painel", emissor: str = "Render2Go") -> str:

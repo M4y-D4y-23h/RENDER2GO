@@ -2063,15 +2063,21 @@ class _Cur:
     def _sql(self, sql: str) -> str:
         return sql.replace("?", "%s") if self.pg else sql
 
+    @staticmethod
+    def _args(args) -> tuple:
+        """O caractere NUL (\\x00) sai de todo texto: o Postgres recusa (a API responderia 500 a uma busca
+        ou mensagem com ele), e nenhum dado legítimo tem esse caractere."""
+        return tuple(a.replace("\x00", "") if isinstance(a, str) else a for a in args)
+
     def run(self, sql: str, args: tuple = ()) -> int:
-        self.cur.execute(self._sql(sql), args)
+        self.cur.execute(self._sql(sql), self._args(args))
         return self.cur.rowcount
 
     def one(self, sql: str, args: tuple = ()) -> dict | None:
-        self.cur.execute(self._sql(sql), args)
+        self.cur.execute(self._sql(sql), self._args(args))
         r = self.cur.fetchone()
         return dict(r) if r is not None else None
 
     def all(self, sql: str, args: tuple = ()) -> list[dict]:
-        self.cur.execute(self._sql(sql), args)
+        self.cur.execute(self._sql(sql), self._args(args))
         return [dict(r) for r in self.cur.fetchall()]
