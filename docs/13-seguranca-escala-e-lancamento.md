@@ -140,8 +140,9 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
 
 ### 6.1 Antes de atualizar o servidor
 
-1. **E-mail transacional** (obrigatório: sem ele, ninguém entra). **Escolhido: Amazon SES**, na região de Frankfurt (`eu-central-1`), com o preço à la carte (seção 6.1.1).
-   - **Por que Frankfurt:** é a região da AWS mais perto do servidor (Hetzner, Nuremberg). Cada e-mail é uma conversa SMTP de ~10 idas e voltas: com Frankfurt (poucos ms cada), o envio leva uma fração de segundo; com São Paulo (~200 ms cada), ~2 s, e os 8 envios simultâneos por processo da API dariam só ~4 e-mails por segundo por processo num pico de cadastros. O preço é o mesmo, e os dados ficam na União Europeia, como o servidor.
+1. **E-mail transacional** (obrigatório: sem ele, ninguém entra). **Escolhido: Amazon SES**, na região de Ohio (`us-east-2`), com o preço à la carte (seção 6.1.1).
+   - **Por que Ohio:** a conta da AWS foi criada na "nova experiência" (projetos), que prende o projeto à região do país do endereço: Brasil → Ohio. Outra região só com "Ativar recursos avançados", que não tem volta e tira o limite de gasto (seção 6.1.1, passo 4).
+   - **Distância:** o servidor fica em Nuremberg. Cada e-mail é uma conversa SMTP de ~10 idas e voltas: até Ohio (~100 ms cada), cerca de 1 s por e-mail; com 8 envios simultâneos por processo da API, ~7 e-mails por segundo por processo, perto do limite por segundo que o SES dá no começo. Frankfurt seria uma fração de segundo, mas não compensa a ativação. Para mais vazão, aumente o limite do SES e `RENDER2GO_EMAIL_PARALELO` juntos.
    - **Por quê:** é o mais barato em volume e o que mais aguenta pico. Preços conferidos nas páginas oficiais em 09/10/2026, por mês:
 
      | E-mails por mês | Amazon SES (à la carte) | Resend | Postmark (Platform) |
@@ -181,8 +182,8 @@ Conferido nas páginas da AWS em 09/10/2026. Os nomes dos menus estão em inglê
 2. **Verificação em duas etapas no usuário raiz:** menu da conta (canto superior direito) → **Security credentials** → **Assign MFA device**.
 3. **Alerta de gasto:** **Billing and Cost Management** → **Budgets** → **Create budget** → modelo "Monthly cost budget" → US$ 10 e o seu e-mail. Se a senha do SMTP vazar, você fica sabendo antes da fatura.
 
-**B. Domínio no SES** (região Frankfurt)
-4. Abra o SES já na região certa por este endereço: https://eu-central-1.console.aws.amazon.com/ses/home?region=eu-central-1 (região **Europe (Frankfurt)**, `eu-central-1`; o seletor de região fica no canto superior direito, mas some em janelas estreitas). Identidades, sandbox, plano e credenciais valem só na região em que foram criados, e o `.env` do passo 14 usa Frankfurt. **Confira antes de publicar o DNS:** o MX do passo 7 tem que terminar em `eu-central-1.amazonses.com`. Se aparecer outra região, a configuração foi feita no lugar errado: apague as identidades de lá (**Identities** → selecione → **Delete**) e refaça aqui; nada se move entre regiões.
+**B. Domínio no SES** (região Ohio)
+4. Abra o **Amazon SES** na região do projeto: **US East (Ohio)**, `us-east-2`. Na "nova experiência" da AWS (conta organizada em projetos, sem seletor de região no alto da página), o projeto fica preso à região do país do endereço, e Ohio é a do Brasil; outra região mostra "Região indisponível" e um erro de "service control policy". O botão **Ativar recursos avançados** libera as regiões, mas **não tem volta**: você passa a administrar a organização da AWS, e o limite de gasto deixa de existir. Para o e-mail, Ohio basta (seção 6.1, item 1). Identidades, sandbox, plano e credenciais valem só na região em que foram criados. **Confira antes de publicar o DNS:** o MX do passo 7 tem que terminar em `us-east-2.amazonses.com`.
 5. **Conta nova abre o assistente "Get started"** (no console em português, "Configurar", com 7 etapas), que cria de uma vez o domínio, o MAIL FROM (passo 7) e o e-mail do teste (passo 9):
    - **e-mail:** o seu Gmail (recebe o link de confirmação e o teste do passo 9);
    - **domínio de envio:** `render2go.com`; **MAIL FROM domain** (em português, "Domínio MAIL FROM"): `envio`; "Behavior on MX failure": **Use default MAIL FROM domain** ("Usar o domínio MAIL FROM padrão"). Com "Reject message", um erro no registro MX pararia os códigos de entrada;
@@ -193,7 +194,7 @@ Conferido nas páginas da AWS em 09/10/2026. Os nomes dos menus estão em inglê
    Sem o assistente (conta que já tem identidades): **Identities** → **Create identity** → **Domain** → `render2go.com` → em "Advanced DKIM settings", **Easy DKIM** com **RSA_2048_BIT** → **Create identity**; o MAIL FROM fica no passo 7.
 6. **DKIM na Cloudflare** (DNS do `render2go.com`): cadastre os 3 registros **CNAME** que o SES mostrar (nome `xxxx._domainkey`, destino `xxxx.dkim.amazonses.com`), com o **Proxy status em "DNS only"** (nuvem cinza). Com a nuvem laranja o DKIM não confere. No campo **Name** da Cloudflare, tanto faz colar o nome inteiro (`xxxx._domainkey.render2go.com`) ou só o começo; ela não duplica o domínio. Em minutos a identidade fica **Verified**.
 7. **MAIL FROM próprio** (alinha o SPF ao domínio, o que o DMARC confere). Se não foi feito no assistente: na identidade → **Custom MAIL FROM domain** → **Edit** → marque **Use a custom MAIL FROM domain** → `envio` → "Behavior on MX failure": **Use default MAIL FROM domain** → **Save changes**. Na Cloudflare:
-   - **MX** `envio` → `feedback-smtp.eu-central-1.amazonses.com`, prioridade 10 (o SES mostra os dois juntos, `10 feedback-smtp...`; na Cloudflare a prioridade tem campo próprio);
+   - **MX** `envio` → `feedback-smtp.us-east-2.amazonses.com`, prioridade 10 (o SES mostra os dois juntos, `10 feedback-smtp...`; na Cloudflare a prioridade tem campo próprio);
    - **TXT** `envio` → `v=spf1 include:amazonses.com ~all`.
 8. **DMARC** na Cloudflare:
    - **TXT** `_dmarc` → `v=DMARC1; p=none`. Se já existir um `_dmarc`, edite esse: com dois, os provedores ignoram os dois;
@@ -216,11 +217,11 @@ Conferido nas páginas da AWS em 09/10/2026. Os nomes dos menus estão em inglê
     A AWS responde em até 24 h. Se pedir mais detalhes (em inglês), responda pelo caso de suporte que ela abrir, com este texto (ajuste o volume):
 
     > Render2Go (https://app.render2go.com) is a Brazilian service that turns product photos into short videos for small businesses. We use SES only for transactional email: one-time sign-in codes (8 digits, valid for 10 minutes), sent only to a person who requested one on our website, and replies to support requests. No marketing or bulk email. Abuse controls: Cloudflare Turnstile bot check, rate limits per email address, network and device, and only well-known mailbox providers are accepted. Bounces and complaints go to the SES account-level suppression list, and we watch the reputation dashboard. Expected volume at launch: up to 5,000 emails per day.
-12. **Limites:** depois da aprovação, o **Account dashboard** mostra quantos e-mails por dia e por segundo a conta pode mandar. Para aumentar, antes de uma campanha grande: console **Service Quotas** → região Frankfurt → **AWS services** → **Amazon Simple Email Service (SES)** → **Sending quota** (por dia) ou **Sending rate** (por segundo) → pedir o aumento (resposta em até 24 h).
+12. **Limites:** depois da aprovação, o **Account dashboard** mostra quantos e-mails por dia e por segundo a conta pode mandar. Para aumentar, antes de uma campanha grande: console **Service Quotas** → região Ohio → **AWS services** → **Amazon Simple Email Service (SES)** → **Sending quota** (por dia) ou **Sending rate** (por segundo) → pedir o aumento (resposta em até 24 h).
 
 **D. Credenciais e servidor**
 13. **SMTP settings** → **Create SMTP credentials** → aceite o nome de usuário sugerido → **Create user** → **Show** → **Download .csv file**. O usuário e a senha aparecem uma vez só: guarde no gerenciador de senhas. Não são as chaves de acesso da AWS. Se perder a senha, apague esse usuário no IAM e crie outro.
-14. **`.env` pelo terminal** (PowerShell → `ssh` no servidor): cole o bloco inteiro de uma vez e, quando ele pedir, cole o usuário e a senha do SMTP (a senha não aparece na tela nem fica no histórico; se a colagem vier vazia, ele pergunta de novo). Ele grava o servidor de Frankfurt na porta 587 (a Hetzner bloqueia a saída nas portas 25 e 465) e os remetentes `nao-responda@` e `suporte@render2go.com`; o `.env` anterior fica em `.env.antes-ses`, e o `RENDER2GO_SUPORTE_PARA` (onde você recebe o suporte) não muda.
+14. **`.env` pelo terminal** (PowerShell → `ssh` no servidor): cole o bloco inteiro de uma vez e, quando ele pedir, cole o usuário e a senha do SMTP (a senha não aparece na tela nem fica no histórico; se a colagem vier vazia, ele pergunta de novo). Ele grava o servidor de Ohio na porta 587 (a Hetzner bloqueia a saída nas portas 25 e 465) e os remetentes `nao-responda@` e `suporte@render2go.com`; o `.env` anterior fica em `.env.antes-ses`, e o `RENDER2GO_SUPORTE_PARA` (onde você recebe o suporte) não muda.
     ```bash
     {
       cd ~/GPU2GO/servico/implantacao && cp -p .env .env.antes-ses
@@ -229,7 +230,7 @@ Conferido nas páginas da AWS em 09/10/2026. Os nomes dos menus estão em inglê
       sed -i -E '/^RENDER2GO_(SMTP_HOST|SMTP_PORTA|SMTP_TLS|SMTP_USUARIO|SMTP_SENHA|EMAIL_DE|SUPORTE_DE)=/d' .env
       [ -n "$(tail -c1 .env)" ] && echo >> .env
       printf '%s\n' \
-        'RENDER2GO_SMTP_HOST=email-smtp.eu-central-1.amazonaws.com' \
+        'RENDER2GO_SMTP_HOST=email-smtp.us-east-2.amazonaws.com' \
         'RENDER2GO_SMTP_PORTA=587' \
         'RENDER2GO_SMTP_TLS=starttls' \
         "RENDER2GO_SMTP_USUARIO=$USUARIO" \

@@ -334,7 +334,7 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **Para receber no seu e-mail**, configure no `.env` (o mesmo SMTP manda os códigos de entrada, com o remetente `RENDER2GO_EMAIL_DE`):
 
   ```
-  RENDER2GO_SMTP_HOST=email-smtp.eu-central-1.amazonaws.com   # Amazon SES, o escolhido (docs/13, seção 6.1.1)
+  RENDER2GO_SMTP_HOST=email-smtp.us-east-2.amazonaws.com   # Amazon SES, o escolhido (docs/13, seção 6.1.1)
   RENDER2GO_SMTP_PORTA=587
   RENDER2GO_SMTP_TLS=starttls
   RENDER2GO_SMTP_USUARIO=seu-usuario
