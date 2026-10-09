@@ -13,6 +13,8 @@ Motivo: antes do lançamento oficial e da divulgação em massa, o dono pediu o 
 - **"Não sou um robô"** (Cloudflare Turnstile) numa página isolada, `/verificacao`, conferido no servidor e fechado na dúvida; vale também no suporte sem conta.
 - **Limites no banco**, válidos entre processos: códigos por rede (IPv6 por /64), e-mail e aparelho; credenciais erradas bloqueiam a rede por um tempo.
 - **Sessão em cookie** `__Host-` HttpOnly (30 dias); "Sua conta": baixar os dados, sair de todos os aparelhos e excluir a conta (LGPD). Os clientes antigos entram com o código de acesso de sempre.
+- **Provedor de e-mail escolhido: Amazon SES** (São Paulo, preço à la carte), o mais barato em volume e o que mais aguenta pico (comparação com Resend, Postmark e Brevo e passo a passo em [`docs/13`](docs/13-seguranca-escala-e-lancamento.md), seção 6.1.1). Num pico, o provedor recusa o que passa do limite por segundo (no SES, "454 Throttling"): o envio do código e do suporte tenta de novo em 1 s e em 4 s; erro definitivo (endereço recusado, senha errada) não é repetido.
+- **Passo a passo do Turnstile** na Cloudflare: `docs/13`, seção 6.1.2.
 
 ### Painel do dono
 - **Sai do `/aprovar`** (agora 404) para um endereço secreto (`RENDER2GO_ADMIN_CAMINHO`), com token e código do aplicativo autenticador (TOTP), bloqueio de 15 min depois de 5 erros, lista opcional de IPs e auditoria de cada ação.

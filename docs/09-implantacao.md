@@ -334,11 +334,11 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **Para receber no seu e-mail**, configure no `.env` (o mesmo SMTP manda os códigos de entrada, com o remetente `RENDER2GO_EMAIL_DE`):
 
   ```
-  RENDER2GO_SMTP_HOST=smtp.gmail.com        # ou o SMTP de um serviço de envio (Brevo, Resend, Mailgun...)
+  RENDER2GO_SMTP_HOST=email-smtp.sa-east-1.amazonaws.com   # Amazon SES, o escolhido (docs/13, seção 6.1.1)
   RENDER2GO_SMTP_PORTA=587
   RENDER2GO_SMTP_TLS=starttls
   RENDER2GO_SMTP_USUARIO=seu-usuario
-  RENDER2GO_SMTP_SENHA=senha-de-app        # no Gmail: "senha de app" (exige verificação em duas etapas)
+  RENDER2GO_SMTP_SENHA=senha-smtp          # "SMTP credentials" do console do SES
   RENDER2GO_SUPORTE_DE=seu-remetente@...
   RENDER2GO_SUPORTE_PARA=seu-email@...
   ```

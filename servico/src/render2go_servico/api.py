@@ -84,6 +84,7 @@ import math
 import os
 import queue
 import re
+import smtplib
 import threading
 import time
 from collections.abc import Callable
@@ -608,9 +609,38 @@ def _apagar_fotos(c: Config, lote_id: str) -> None:
         c.banco.marcar_fotos_apagadas(lote_id)
 
 
+# num pico de cadastros, o provedor recusa por alguns segundos o que passa do limite por segundo (no SES,
+# "454 Throttling failure: Maximum sending rate exceeded"): o envio, já em segundo plano, tenta de novo
+ESPERA_REENVIO_S = (1.0, 4.0)
+
+
+def _falha_temporaria(e: Exception) -> bool:
+    """Vale tentar de novo: recusa temporária do servidor (código 4xx), conexão que caiu, rede ou tempo
+    esgotado. Destinatário recusado, senha errada e outros erros definitivos não (o SMTPException do
+    Python é um OSError: por isso ele é conferido antes)."""
+    if isinstance(e, smtplib.SMTPResponseException):
+        return 400 <= e.smtp_code < 500
+    if isinstance(e, smtplib.SMTPServerDisconnected):
+        return True
+    if isinstance(e, smtplib.SMTPException):
+        return False
+    return isinstance(e, OSError)
+
+
+def _enviar_com_reenvio(c: Config, mensagem: Any) -> None:
+    for espera in (*ESPERA_REENVIO_S, None):
+        try:
+            c.enviar_email(c.email, mensagem)
+            return
+        except Exception as e:
+            if espera is None or not _falha_temporaria(e):
+                raise
+            time.sleep(espera)
+
+
 def _enviar_suporte(c: Config, sid: str, dados: dict) -> None:
     try:
-        c.enviar_email(c.email, suporte.montar(c.email, dados))
+        _enviar_com_reenvio(c, suporte.montar(c.email, dados))
         c.banco.marcar_suporte(sid, True)
     except Exception as e:  # noqa: BLE001 (a mensagem fica no banco; o painel mostra o erro)
         c.banco.marcar_suporte(sid, False, str(e)[:300])
@@ -619,7 +649,7 @@ def _enviar_suporte(c: Config, sid: str, dados: dict) -> None:
 
 def _enviar_codigo(c: Config, para: str, codigo: str) -> None:
     try:
-        c.enviar_email(c.email, suporte.montar_codigo(c.email, para, codigo, contas.CODIGO_VALIDADE_S // 60))
+        _enviar_com_reenvio(c, suporte.montar_codigo(c.email, para, codigo, contas.CODIGO_VALIDADE_S // 60))
     except Exception as e:  # noqa: BLE001 (a pessoa pede outro código; o erro fica no registro)
         print(f"[conta] AVISO: código para {para.split('@')[-1]} não saiu: {type(e).__name__}: {e}", flush=True)
 

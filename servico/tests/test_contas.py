@@ -294,3 +294,43 @@ def test_legacy_bearer_code_still_works_for_integrations(conta_api):
     tok = _cliente(conta_api, "Integração")
     assert conta_api.get("/api/lotes", headers=h(tok)).status_code == 200
     assert conta_api.get("/api/lotes", headers=h("z" * 43)).json()["detail"] == "token inválido"
+
+
+def test_a_busy_email_provider_gets_the_code_on_a_retry_but_a_refused_address_is_not_retried(banco, monkeypatch):
+    """Num pico de cadastros, o SES recusa o que passa do limite por segundo com "454 Throttling": o
+    código sai na nova tentativa. Erro definitivo (destinatário recusado) não é repetido."""
+    import smtplib
+
+    from render2go_servico import api as api_mod
+
+    monkeypatch.setattr(api_mod, "ESPERA_REENVIO_S", (0.0, 0.0))
+    tentativas, enviados = [], []
+
+    def provedor(cfg_, msg):
+        tentativas.append(msg["To"])
+        if msg["To"].startswith("recusado"):
+            raise smtplib.SMTPRecipientsRefused({msg["To"]: (550, b"no such user")})
+        if len(tentativas) <= 2:
+            raise smtplib.SMTPResponseException(454, b"Throttling failure: Maximum sending rate exceeded")
+        enviados.append(msg)
+
+    cfg = config_teste(
+        banco,
+        Armazem(),
+        email=suporte.ConfigEmail(host="smtp.teste", para="", de="x@render2go.com"),
+        enviar_email=provedor,
+    )
+    api = cliente_teste(cfg)
+    corpo = {"email": "pico.de.cadastro@gmail.com", "aceite": True}
+    assert anonimo(api).post("/api/conta/codigo", json=corpo, headers=PAGINA).status_code == 200
+    cfg.esperar_fundo()
+    assert len(tentativas) == 3 and [m["To"] for m in enviados] == ["pico.de.cadastro@gmail.com"]
+    tentativas.clear()
+    corpo = {"email": "recusado@gmail.com", "aceite": True}
+    assert anonimo(api).post("/api/conta/codigo", json=corpo, headers=PAGINA).status_code == 200  # igual para quem pede
+    cfg.esperar_fundo()
+    assert tentativas == ["recusado@gmail.com"]  # uma tentativa só
+    assert api_mod._falha_temporaria(smtplib.SMTPServerDisconnected("caiu"))
+    assert api_mod._falha_temporaria(TimeoutError()) and api_mod._falha_temporaria(ConnectionRefusedError())
+    assert not api_mod._falha_temporaria(smtplib.SMTPAuthenticationError(535, b"bad credentials"))
+    assert not api_mod._falha_temporaria(smtplib.SMTPResponseException(554, b"rejected"))

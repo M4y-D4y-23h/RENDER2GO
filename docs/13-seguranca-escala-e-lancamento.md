@@ -140,12 +140,23 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
 
 ### 6.1 Antes de atualizar o servidor
 
-1. **E-mail transacional** (obrigatório: sem ele, ninguém entra).
-   - Escolha um provedor: Amazon SES (o mais barato em volume; é preciso pedir a saída do "sandbox"), Resend, Brevo ou Postmark. Confira preços e cotas no site de cada um.
-   - Remetente: `nao-responda@render2go.com`, por SMTP na porta 587 com STARTTLS (`RENDER2GO_SMTP_*` e `RENDER2GO_EMAIL_DE`).
-   - DNS do domínio, na Cloudflare: **SPF** (o `include:` que o provedor indicar), **DKIM** (os registros que o provedor gerar) e **DMARC** (`_dmarc`, TXT `v=DMARC1; p=none; rua=mailto:<seu e-mail>`; depois de 2 semanas sem problema, `p=quarantine`).
-   - Mande um código de teste para um Gmail e confira se não cai no spam.
-2. **Cloudflare Turnstile:** painel da Cloudflare → Turnstile → Add widget → hostname `app.render2go.com` → modo "Managed". Copie a Site Key e a Secret Key para `RENDER2GO_TURNSTILE_SITE` e `RENDER2GO_TURNSTILE_SEGREDO`.
+1. **E-mail transacional** (obrigatório: sem ele, ninguém entra). **Escolhido: Amazon SES**, na região de São Paulo (`sa-east-1`), com o preço à la carte (seção 6.1.1).
+   - **Por quê:** é o mais barato em volume e o que mais aguenta pico. Preços conferidos nas páginas oficiais em 09/10/2026, por mês:
+
+     | E-mails por mês | Amazon SES (à la carte) | Resend | Postmark (Platform) |
+     |---|---|---|---|
+     | 10 mil | US$ 1 | US$ 20 | US$ 18 |
+     | 100 mil | US$ 10 | US$ 35 | US$ 126 |
+     | 1 milhão | US$ 100 | US$ 650 | ~US$ 1.200 (ou preço negociado) |
+
+   - **As outras opções:**
+     - **Postmark** tem a melhor fama de entrega para e-mail transacional, mas custa ~12× o SES em volume;
+     - **Resend** é o mais simples de configurar, mas custa ~6,5× o SES em 1 milhão por mês, e a API aceita 10 pedidos por segundo por conta (sobe a pedido);
+     - **Brevo** mistura transacional com marketing na mesma estrutura, o que deixa a entrega dos códigos menos previsível (a página de preços oficial não abriu na conferência).
+   - **O preço do SES mudou em 21/07/2026:** conta nova começa no plano Essentials (US$ 0,16 por mil). A AWS deixa voltar ao à la carte (US$ 0,10 por mil) a qualquer momento: console do SES → **Pricing plan** → **Cancel plan**.
+   - **Picos:** o SES começa no "sandbox" (200 e-mails por dia, 1 por segundo); na saída do sandbox você pede os limites (ex.: 50 mil por dia e 20 por segundo) e pede mais antes de cada campanha grande. Acima do limite por segundo, o SES responde "454 Throttling" e o serviço tenta de novo em 1 s e em 4 s.
+   - **Plano B:** se a AWS demorar a liberar a produção, use o Resend no começo. Trocar depois é só mudar o SMTP no `.env` e os registros de DNS.
+2. **Cloudflare Turnstile** ("não sou um robô", gratuito): seção 6.1.2.
 3. **Segredos novos** (`docs/09`, seção 0, "09/10/2026 (4)"):
    - `RENDER2GO_SEGREDO_CONTAS`;
    - `RENDER2GO_ADMIN_CAMINHO`, o endereço do painel. Guarde num gerenciador de senhas, não nos favoritos sincronizados;
@@ -159,6 +170,58 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
    - Webhooks → URL `https://app.render2go.com/api/pagamentos/mercadopago`, evento "Pagamentos" → copie a assinatura secreta para `RENDER2GO_MP_WEBHOOK_SEGREDO`;
    - confira a taxa do Pix em "Seu negócio → Custos" e teste com uma recarga de R$ 10 paga de outra conta.
 6. **Backup do banco** antes de atualizar (comando no `docs/09`).
+
+#### 6.1.1 Passo a passo: e-mail pelo Amazon SES
+
+1. **Conta da AWS** (aws.amazon.com), com verificação em duas etapas no usuário raiz. No console, escolha a região **América do Sul (São Paulo)**, `sa-east-1`, no canto superior direito.
+2. **Domínio:** Amazon SES → **Identities** → **Create identity** → **Domain** → `render2go.com` → em "Advanced DKIM settings", **Easy DKIM** (RSA 2048) → **Create identity**.
+3. **DNS na Cloudflare:** cadastre os 3 registros **CNAME** de DKIM que o SES mostrar, com a nuvem **cinza (DNS only)**; com a nuvem laranja o DKIM não confere. Em alguns minutos a identidade fica "Verified".
+4. **MAIL FROM próprio** (alinha o SPF ao seu domínio, o que o DMARC confere): na identidade → **Custom MAIL FROM domain** → `envio.render2go.com` → cadastre na Cloudflare o **MX** e o **TXT** (SPF) que o SES mostrar.
+5. **DMARC:** TXT em `_dmarc.render2go.com` com `v=DMARC1; p=none; rua=mailto:<seu e-mail>`. Depois de 2 semanas sem falhas nos relatórios, troque para `p=quarantine`.
+6. **Sair do sandbox:** SES → **Account dashboard** → **Request production access**:
+   - tipo **Transactional** e site `https://app.render2go.com`;
+   - na descrição: "códigos de acesso de uso único, enviados só a quem pede na página, com verificação anti-robô e limites por e-mail e por rede; sem marketing; acompanhamos bounces e reclamações";
+   - peça os limites do pico (ex.: 50 mil por dia, 20 por segundo).
+   A AWS costuma responder em até 1 dia útil.
+7. **Preço:** SES → **Pricing plan** → **Cancel plan** (volta ao à la carte, US$ 0,10 por mil).
+8. **Senha do SMTP:** SES → **SMTP settings** → **Create SMTP credentials**. O usuário e a senha aparecem uma vez só: guarde no gerenciador de senhas. Não são as chaves de acesso da AWS.
+9. **`.env` do servidor:**
+   ```
+   RENDER2GO_SMTP_HOST=email-smtp.sa-east-1.amazonaws.com
+   RENDER2GO_SMTP_PORTA=587
+   RENDER2GO_SMTP_TLS=starttls
+   RENDER2GO_SMTP_USUARIO=<usuário SMTP do passo 8>
+   RENDER2GO_SMTP_SENHA=<senha SMTP do passo 8>
+   RENDER2GO_EMAIL_DE=Render2Go <nao-responda@render2go.com>
+   ```
+10. **Conferir:** peça um código para um Gmail seu. Ele precisa chegar na caixa de entrada; no Gmail, "Mostrar original" deve dizer **PASS** em SPF, DKIM e DMARC.
+11. **Acompanhar:** SES → **Reputation metrics**. Mantenha os e-mails devolvidos (bounces) abaixo de 5% e as reclamações abaixo de 0,1%; acima disso, a AWS revisa a conta e pode pausar o envio. A lista de provedores aceitos já evita a maior parte dos e-mails inválidos.
+
+#### 6.1.2 Passo a passo: "não sou um robô" (Cloudflare Turnstile)
+
+1. Entre no painel da Cloudflare (dash.cloudflare.com) com a conta que tem o domínio e abra a página **Turnstile**, no menu da conta (atalho: `https://dash.cloudflare.com/?to=/:account/turnstile`).
+2. **Add widget** e preencha:
+   - **Widget name:** `Render2Go - entrada`;
+   - **Hostname management:** acrescente `app.render2go.com`, exatamente o `DOMINIO` do `.env`. O servidor recusa a verificação feita em outro endereço;
+   - **Widget mode:** **Managed**. A Cloudflare decide se mostra a caixinha; a maioria das pessoas passa sem clicar;
+   - **Pre-clearance:** **No**. Serve para o proxy da Cloudflare, que não está ligado.
+3. **Create**. Aparecem a **Site Key** (pública, vai para a página) e a **Secret Key** (secreta, só no servidor). Guarde a secreta no gerenciador de senhas.
+4. No `.env` do servidor:
+   ```
+   RENDER2GO_TURNSTILE_SITE=<Site Key>
+   RENDER2GO_TURNSTILE_SEGREDO=<Secret Key>
+   ```
+   Confira também se `DOMINIO=app.render2go.com`.
+5. Aplique com `docker compose up -d api`; na atualização desta versão, isso já entra no `docker compose up -d` do `docs/09`.
+6. **Conferir:**
+   - `docker compose logs api | grep AVISO` não fala mais do Turnstile;
+   - no painel, seção "Segurança": "Verificação 'não sou um robô' (Turnstile) ligada";
+   - numa janela anônima, em https://app.render2go.com, a caixa da verificação aparece no cartão de entrada, e o código chega.
+7. **Se der erro:**
+   - a caixa mostra erro de domínio: o hostname do widget não é exatamente `app.render2go.com`;
+   - a página diz "não foi possível confirmar que você não é um robô (... invalid-input-secret)": a Secret Key do `.env` está errada;
+   - "... de outro site": o `DOMINIO` do `.env` é diferente do hostname do widget.
+8. **Depois:** na página do widget ficam os gráficos (quantos passaram e quantos foram barrados). Em **Settings** dá para mudar o widget. Se um dia a Secret Key vazar, gere outra ali e troque no `.env`.
 
 ### 6.2 Atualizar
 
