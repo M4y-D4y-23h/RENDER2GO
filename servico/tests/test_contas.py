@@ -334,3 +334,28 @@ def test_a_busy_email_provider_gets_the_code_on_a_retry_but_a_refused_address_is
     assert api_mod._falha_temporaria(TimeoutError()) and api_mod._falha_temporaria(ConnectionRefusedError())
     assert not api_mod._falha_temporaria(smtplib.SMTPAuthenticationError(535, b"bad credentials"))
     assert not api_mod._falha_temporaria(smtplib.SMTPResponseException(554, b"rejected"))
+
+
+def test_robot_check_accepts_the_service_address_or_its_parent_domain(monkeypatch):
+    """O widget do Turnstile cadastrado com render2go.com vale para app.render2go.com. O servidor aceita a
+    verificação servida no próprio endereço do serviço ou num domínio acima dele; outro endereço, não."""
+    import io
+    import json as json_
+
+    respostas = []
+
+    def urlopen(req, timeout):
+        return io.BytesIO(json_.dumps(respostas.pop()).encode())
+
+    monkeypatch.setattr(contas.urllib.request, "urlopen", urlopen)
+    cfg = contas.ConfigTurnstile("site", "segredo", "app.render2go.com")
+
+    def conferir(hostname, acao="codigo"):
+        respostas.append({"success": True, "hostname": hostname, "action": acao})
+        return contas.turnstile_confere(cfg, "resposta", "203.0.113.9", "codigo")
+
+    for ok in ("app.render2go.com", "render2go.com", "APP.Render2Go.com.", None):
+        assert conferir(ok) is None, ok
+    for ruim in ("outro.render2go.com", "render2go.com.br", "evil-render2go.com", "com", "", 42):
+        assert conferir(ruim) == "verificação anti-robô de outro site", ruim
+    assert conferir("app.render2go.com", acao="suporte") == "verificação anti-robô de outra ação"

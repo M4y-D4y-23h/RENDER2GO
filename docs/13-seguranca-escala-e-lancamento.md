@@ -202,7 +202,7 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
 1. Entre no painel da Cloudflare (dash.cloudflare.com) com a conta que tem o domínio e abra a página **Turnstile**, no menu da conta (atalho: `https://dash.cloudflare.com/?to=/:account/turnstile`).
 2. **Add widget** e preencha:
    - **Widget name:** `Render2Go - entrada`;
-   - **Hostname management:** acrescente `app.render2go.com`, exatamente o `DOMINIO` do `.env`. O servidor recusa a verificação feita em outro endereço;
+   - **Hostname management:** `render2go.com`. O domínio cobre também todos os subdomínios, inclusive `app.render2go.com` (a Cloudflare não aceita `*`). O servidor só aceita a verificação servida em `app.render2go.com`, o `DOMINIO` do `.env`, ou no domínio acima dele;
    - **Widget mode:** **Managed**. A Cloudflare decide se mostra a caixinha; a maioria das pessoas passa sem clicar;
    - **Pre-clearance:** **No**. Serve para o proxy da Cloudflare, que não está ligado.
 3. **Create**. Aparecem a **Site Key** (pública, vai para a página) e a **Secret Key** (secreta, só no servidor). Guarde a secreta no gerenciador de senhas.
@@ -211,16 +211,16 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
    RENDER2GO_TURNSTILE_SITE=<Site Key>
    RENDER2GO_TURNSTILE_SEGREDO=<Secret Key>
    ```
-   Confira também se `DOMINIO=app.render2go.com`.
+   O `DOMINIO` continua `app.render2go.com`: não troque para `render2go.com`, porque o Caddy usa o `DOMINIO` para o certificado e o endereço do site.
 5. Aplique com `docker compose up -d api`; na atualização desta versão, isso já entra no `docker compose up -d` do `docs/09`.
 6. **Conferir:**
    - `docker compose logs api | grep AVISO` não fala mais do Turnstile;
    - no painel, seção "Segurança": "Verificação 'não sou um robô' (Turnstile) ligada";
    - numa janela anônima, em https://app.render2go.com, a caixa da verificação aparece no cartão de entrada, e o código chega.
 7. **Se der erro:**
-   - a caixa mostra erro de domínio: o hostname do widget não é exatamente `app.render2go.com`;
+   - a caixa mostra erro de domínio: o widget não cobre `app.render2go.com` (cadastre `render2go.com`);
    - a página diz "não foi possível confirmar que você não é um robô (... invalid-input-secret)": a Secret Key do `.env` está errada;
-   - "... de outro site": o `DOMINIO` do `.env` é diferente do hostname do widget.
+   - "... de outro site": o `DOMINIO` do `.env` não é `app.render2go.com`.
 8. **Depois:** na página do widget ficam os gráficos (quantos passaram e quantos foram barrados). Em **Settings** dá para mudar o widget. Se um dia a Secret Key vazar, gere outra ali e troque no `.env`.
 
 ### 6.2 Atualizar

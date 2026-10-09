@@ -29,6 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from typing import Any
 
 # provedores que pedem verificação (telefone, desafio) para abrir uma caixa; todos com donos conhecidos
 DOMINIOS_PADRAO = frozenset(
@@ -206,6 +207,19 @@ class ConfigTurnstile:
         return cls(site, segredo, os.environ.get("DOMINIO", "").strip() or None)
 
 
+def mesmo_site(servido: Any, esperado: str) -> bool:
+    """O desafio foi resolvido no endereço do serviço (`DOMINIO`). A Cloudflare informa onde ele foi servido;
+    vale o próprio endereço ou um domínio acima dele: o widget cadastrado com `render2go.com` cobre
+    `app.render2go.com`, e todos esses subdomínios são do dono. Sem a informação, as outras conferências
+    (chave secreta, uso único, ação) seguem valendo."""
+    if servido is None:
+        return True
+    if not isinstance(servido, str):
+        return False
+    s, e = servido.strip().lower().rstrip("."), esperado.strip().lower().rstrip(".")
+    return s == e or ("." in s and e.endswith("." + s))
+
+
 def turnstile_confere(cfg: ConfigTurnstile, resposta: str, ip: str | None, acao: str | None = None) -> str | None:
     """None se a pessoa passou no desafio; senão, o motivo. Falha de rede = recusa (fail-closed)."""
     if not resposta or len(resposta) > 2048:
@@ -223,7 +237,7 @@ def turnstile_confere(cfg: ConfigTurnstile, resposta: str, ip: str | None, acao:
         return f"verificação anti-robô indisponível ({type(e).__name__})"
     if not res.get("success"):
         return "verificação anti-robô recusada: " + ",".join(res.get("error-codes") or ["desconhecido"])
-    if cfg.hostname and res.get("hostname") not in (cfg.hostname, None):
+    if cfg.hostname and not mesmo_site(res.get("hostname"), cfg.hostname):
         return "verificação anti-robô de outro site"
     if acao and res.get("action") not in (acao, None, ""):
         return "verificação anti-robô de outra ação"
