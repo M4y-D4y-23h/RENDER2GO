@@ -448,6 +448,18 @@ wheels = [
 ]
 
 [[package]]
+name = "psycopg-pool"
+version = "3.2.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b7/20/10064379ed363b7a2a6da3aca986a668c792a8145d7344854ab14c7d7292/psycopg_pool-3.2.8.tar.gz", hash = "sha256:854e17c2a637c3b9f8d8b24faad57d4cf850baf3fc03ca56ef7e5b4998e391b9", size = 29956, upload-time = "2025-11-21T22:34:35.453Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e3/5f/947b4b4e51d67c4c9e97626c815caa9b241a62fd66ddd0d00a4a572013f5/psycopg_pool-3.2.8-py3-none-any.whl", hash = "sha256:5474137f3a58e697e0141d0311e70ec067fc4466031496d7f9ef3e2c28a1dc09", size = 38507, upload-time = "2025-11-21T22:34:31Z" },
+]
+
+[[package]]
 name = "pydantic"
 version = "2.13.5"
 source = { registry = "https://pypi.org/simple" }
@@ -570,6 +582,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "opencv-python-headless" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "psycopg-pool" },
     { name = "render2go-worker" },
     { name = "uvicorn" },
 ]
@@ -586,6 +599,7 @@ requires-dist = [
     { name = "fastapi", specifier = "==0.118.0" },
     { name = "opencv-python-headless", specifier = "==4.12.0.88" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.2.10" },
+    { name = "psycopg-pool", specifier = "==3.2.8" },
     { name = "render2go-worker", editable = "../worker" },
     { name = "uvicorn", specifier = "==0.37.0" },
 ]

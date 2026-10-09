@@ -16,6 +16,7 @@ import {
   el,
   hora,
   icone,
+  marcarConectado,
   marcarErro,
   minutos,
   ocupado,
@@ -24,13 +25,15 @@ import {
   reconciliar,
   repetir,
   rotular,
-  sessao,
   tempo,
   textoErro,
   urlSegura,
   vazio,
 } from "./comum";
+import { type Conta, abrirConta, resumoConta } from "./conta";
 import { iniciarCookies } from "./cookies";
+import { CHAVE_CONECTADO, iniciarEntrada } from "./entrada";
+import { abrirPix } from "./pix";
 
 type Receita = { id: string; label: string; nicho: string; acao: string; duracao?: number; exige_consentimento: boolean };
 // plano do cliente: durações aceitas; no teste gratuito, os limites que a API impõe (a página só os mostra);
@@ -64,6 +67,8 @@ type Finalidade = {
 };
 type Receitas = {
   plano?: Plano;
+  pagamento?: boolean;
+  conta?: { email: string | null; plano: string };
   autorizacao?: { versao: string; texto: string };
   modelos?: Modelo[];
   modelo_padrao?: string;
@@ -352,7 +357,6 @@ function iniciarCliente(): void {
   const consentimento = el<HTMLInputElement>("consentimento");
   const previa = el<HTMLUListElement>("previa");
   const abrirVideo = criarPlayer();
-  let token = "";
   let receitas: Receitas | null = null;
   let enviando = false;
   const arquivos = new Map<string, File>(); // caminho → arquivo (o caminho vai como nome da foto)
@@ -425,7 +429,7 @@ function iniciarCliente(): void {
 
   const carregarSaldo = async () => {
     try {
-      saldo = await api<Saldo>("/api/saldo", token);
+      saldo = await api<Saldo>("/api/saldo");
       mostrarSaldo();
     } catch {
       /* fica o saldo anterior; a próxima atualização tenta de novo */
@@ -441,9 +445,12 @@ function iniciarCliente(): void {
   const listar = async (): Promise<boolean> => {
     let lotes: Lote[];
     try {
-      lotes = await api<Lote[]>("/api/lotes", token);
+      lotes = await api<Lote[]>("/api/lotes");
     } catch (e) {
-      if (e instanceof ErroApi && e.status === 401) location.reload(); // código desativado: volta à entrada
+      if (e instanceof ErroApi && e.status === 401) {
+        marcarConectado(CHAVE_CONECTADO, false); // sessão vencida ou conta desativada: volta à entrada
+        location.reload();
+      }
       aviso(el("msg-painel"), `Não foi possível atualizar os pedidos: ${textoErro(e)}`, "erro");
       return true;
     }
@@ -696,7 +703,7 @@ function iniciarCliente(): void {
     b.addEventListener("click", async () => {
       ocupado(b, true);
       try {
-        await api("/api/interesses", token, { method: "POST", body: JSON.stringify({ finalidade: f.id }) });
+        await api("/api/interesses", { method: "POST", body: JSON.stringify({ finalidade: f.id }) });
         interessadas.add(f.id);
         anunciar(`Interesse em “${f.titulo}” registrado. Obrigado!`);
         const voltar = b.closest("dialog") ? "dialogo" : "blocos";
@@ -882,15 +889,47 @@ function iniciarCliente(): void {
       );
       atualizarContagem();
     } else {
-      aviso(avisoPlano, `Teste gratuito já usado: ${plano.motivo ?? ""}`.trim(), "erro");
+      const textos: (Node | string)[] = [criar("p", { textContent: `Teste gratuito já usado: ${plano.motivo ?? ""}`.trim() })];
+      if (receitas?.pagamento) {
+        const precos = plano.precos ?? {};
+        const linha = Object.entries(RESOLUCAO)
+          .filter(([q]) => precos[q])
+          .map(([q, r]) => `${r} a ${reais(precos[q])} por segundo`)
+          .join(" e ");
+        const recarregar = criar("button", { type: "button", className: "botao primario pequeno" }, [icone("brilho"), "Adicionar saldo por Pix"]);
+        recarregar.addEventListener("click", pix);
+        textos.push(criar("p", { textContent: `Para continuar, adicione saldo: você paga só os vídeos que pedir (${linha}).` }), recarregar);
+      }
+      aviso(avisoPlano, textos, "alerta");
       campos.disabled = true;
     }
   };
 
+  // -- conta, saldo e recarga por Pix --------------------------------------------------------------
+  let conta: Conta | null = null;
+  const pix = () => {
+    if (!conta?.pagamento) return;
+    const eraTeste = conta.plano === "teste";
+    abrirPix(conta.pagamento.minimo, conta.pagamento.maximo, () => {
+      if (eraTeste) window.setTimeout(() => location.reload(), 2500); // a 1ª recarga passa a conta para o plano pago
+      else void carregarSaldo().then(carregarConta);
+    });
+  };
+  const carregarConta = async () => {
+    conta = await api<Conta>("/api/conta");
+    el("conta-resumo").textContent = resumoConta(conta);
+    const botao = el<HTMLButtonElement>("adicionar-saldo");
+    botao.hidden = !conta.pagamento?.ativo || conta.plano === "interno";
+    el("saldo-recarga").textContent = conta.pagamento?.ativo
+      ? "O saldo entra assim que o Pix é confirmado. Vídeo que não sai volta para o saldo."
+      : "Para recarregar, fale com a gente pelo suporte. Vídeo que não sai volta para o saldo.";
+  };
+  el("abrir-conta").addEventListener("click", () => conta && abrirConta(conta, pix));
+  el("adicionar-saldo").addEventListener("click", pix);
+
   // -- entrada -----------------------------------------------------------------------------------
-  sessao("render2go-token-cliente", async (t) => {
-    token = t;
-    receitas = await api<Receitas>("/api/receitas", token);
+  iniciarEntrada(async () => {
+    receitas = await api<Receitas>("/api/receitas");
     // estilos agrupados por nicho; o "Livre" (geral) vem primeiro, como a API manda
     const grupos = new Map<string, HTMLOptGroupElement>();
     const opcoes: HTMLElement[] = [];
@@ -911,13 +950,14 @@ function iniciarCliente(): void {
     desenharBlocos(); // o pedido começa pela escolha do que criar (o modelo vem da finalidade)
     campos.disabled = false;
     aplicarPlano(receitas.plano);
-    if (receitas.plano?.precos) {
+    if (receitas.plano?.nome === "pago" && receitas.plano.precos) {
       saldo = { pre_pago: true, saldo: receitas.plano.saldo ?? 0, precos: receitas.plano.precos };
       mostrarSaldo();
     }
     aplicarReceita();
     atualizarContagem();
     atualizacao.agora();
+    await carregarConta();
   });
   el("link-suporte").textContent = `${location.host}/suporte`;
 
@@ -940,7 +980,7 @@ function iniciarCliente(): void {
     }
     const c = custoAtual();
     if (c && c.custo > (saldo.saldo ?? 0)) {
-      aviso(msg, `Saldo insuficiente: este pedido custa ${reais(c.custo)} e o seu saldo é ${reais(saldo.saldo ?? 0)}. Tire algumas fotos, escolha vídeos mais curtos ou recarregue pelo suporte.`, "erro");
+      aviso(msg, `Saldo insuficiente: este pedido custa ${reais(c.custo)} e o seu saldo é ${reais(saldo.saldo ?? 0)}. Tire algumas fotos, escolha vídeos mais curtos ou adicione saldo por Pix.`, "erro");
       return el("fotos");
     }
     if (consentimento.required && !consentimento.checked) {
@@ -979,7 +1019,7 @@ function iniciarCliente(): void {
     const barra = el<HTMLProgressElement>("progresso");
     try {
       aviso(msg, "Criando o pedido…");
-      const r = await api<{ lote: string; envios: Envio[] }>("/api/lotes", token, { method: "POST", body: JSON.stringify(corpo) });
+      const r = await api<{ lote: string; envios: Envio[] }>("/api/lotes", { method: "POST", body: JSON.stringify(corpo) });
       aviso(msg, "");
       area.hidden = false;
       barra.max = 1;
@@ -1009,7 +1049,7 @@ function iniciarCliente(): void {
         },
       );
       el("progresso-texto").textContent = "Conferindo o envio…";
-      await api(`/api/lotes/${r.lote}/enviado`, token, { method: "POST" });
+      await api(`/api/lotes/${r.lote}/enviado`, { method: "POST" });
       window.removeEventListener("beforeunload", avisarSaida);
       aviso(msg, "Pedido enviado. Ele passa por uma revisão rápida e entra na fila; acompanhe em “Seus pedidos”.", "ok");
       anunciar("Pedido enviado. Acompanhe em Seus pedidos.");
@@ -1021,7 +1061,7 @@ function iniciarCliente(): void {
       void desenharPrevia();
       campos.disabled = false;
       if (receitas?.plano?.nome === "teste") {
-        receitas = await api<Receitas>("/api/receitas", token);
+        receitas = await api<Receitas>("/api/receitas");
         aplicarPlano(receitas.plano);
       }
       aplicarReceita();

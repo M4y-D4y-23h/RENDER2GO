@@ -1,6 +1,8 @@
-// Aviso de cookies (LGPD), na página do cliente e no /suporte.
-// Necessários: código de acesso, identificador do dispositivo (segurança e limite do teste) e esta
-// escolha. Estatísticas e marketing: nada carrega hoje; quando houver, só com a permissão guardada aqui.
+// Aviso de cookies (LGPD), na página do cliente, no /suporte e nas páginas legais (política em /cookies).
+// Necessários: a sessão de quem entrou (cookie HttpOnly), a verificação "não sou um robô" (Cloudflare
+// Turnstile, só na entrada e no suporte sem conta), o identificador do dispositivo (segurança e limite do
+// teste) e esta escolha. Estatísticas e marketing: nada carrega hoje; quando houver, só com a permissão
+// guardada aqui.
 //
 // Acessibilidade: o aviso é uma região nomeada no começo do <body> (é o primeiro lugar que o teclado e
 // o leitor de tela encontram), embora apareça fixo no rodapé da tela. Aberto pelo link "Preferências de
@@ -27,7 +29,7 @@ function salvarCookies(estatisticas: boolean, marketing: boolean): void {
     /* sem armazenamento: o aviso volta na próxima visita */
   }
   // registro no servidor (prova do consentimento); falha não atrapalha a página
-  api("/api/cookies", "", { method: "POST", body: JSON.stringify({ versao: COOKIES_VERSAO, estatisticas, marketing }) }).catch(() => undefined);
+  api("/api/cookies", { method: "POST", body: JSON.stringify({ versao: COOKIES_VERSAO, estatisticas, marketing }) }).catch(() => undefined);
 }
 
 function avisoCookies(forcar = false, origem: HTMLElement | null = null): void {
@@ -40,7 +42,7 @@ function avisoCookies(forcar = false, origem: HTMLElement | null = null): void {
   const opcao = (entrada: HTMLInputElement, titulo: string, texto: string) =>
     criar("label", {}, [entrada, criar("span", {}, [criar("strong", { textContent: titulo }), ` ${texto}`])]);
   const opcoes = criar("div", { className: "opcoes", hidden: !forcar }, [
-    opcao(caixa("ck-necessarios", true, true), "Necessários (sempre ativos):", "manter você conectado com o seu código, segurança e prevenção de abuso, e lembrar esta escolha."),
+    opcao(caixa("ck-necessarios", true, true), "Necessários (sempre ativos):", "manter você conectado à sua conta, segurança (inclusive a verificação “não sou um robô”) e prevenção de abuso, e lembrar esta escolha."),
     opcao(est, "Estatísticas:", "medir visitas para melhorar o site. Não usamos hoje."),
     opcao(mkt, "Marketing:", "anúncios e campanhas. Não usamos hoje."),
   ]);
@@ -54,10 +56,11 @@ function avisoCookies(forcar = false, origem: HTMLElement | null = null): void {
     { id: "aviso-cookies", className: "cookies", attrs: { "aria-labelledby": "titulo-cookies" } },
     [
       titulo,
-      criar("p", {
-        textContent:
-          "Usamos cookies e o armazenamento do navegador para o site funcionar. Os opcionais só com a sua permissão, e você pode mudar a escolha a qualquer momento em “Preferências de cookies”, no fim da página.",
-      }),
+      criar("p", {}, [
+        "Usamos cookies e o armazenamento do navegador para o site funcionar. Os opcionais só com a sua permissão, e você pode mudar a escolha a qualquer momento em “Preferências de cookies”, no fim da página. Detalhes na ",
+        criar("a", { href: "/cookies", textContent: "Política de Cookies" }),
+        ".",
+      ]),
       opcoes,
       criar("div", { className: "acoes" }, [aceitar, necessarios, gerenciar]),
     ],

@@ -2,15 +2,14 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Revisão · Render2Go</title>
+<title>Painel · Render2Go</title>
 <meta name="robots" content="noindex, nofollow">
-<script src="/estatico/inicio.js?v=f0f2df15beb8" integrity="sha384-+TWRsxk/xzw/lCcR/G5w72nItMDmkxnwiy5YcWN5HKYp6IfgxOr9czSNDktqRoh4" data-chave="render2go-token-admin" data-antecipar="/api/admin/suporte /api/admin/lotes /api/admin/historico?grupo=todos"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0e17" media="(prefers-color-scheme: dark)">
 <meta name="format-detection" content="telephone=no">
-<link rel="stylesheet" href="/estatico/estilo.css?v=bd337da4f4e7" integrity="sha384-unbAX3AJuZnPVKjcAdZscCpYxa//aZhWzvD0ydSNBeKeyEBqIL+rbcUrqmlKND/B">
+<link rel="stylesheet" href="/estatico/estilo.css?v=a32022f842ee" integrity="sha384-V29S9xo2qnlRzddWxG1q8ClQEtCcKDUJi9La44Mc52RKD37ZMb39ODCoBAh/IMx0">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -24,21 +23,21 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/aprovar.js?v=1b2e119a1b5e" integrity="sha384-2gQwk7jko/1DGOhWft8n0PNTxMmCu7kqtS5C3PptLNoFjvyPw8waUcyF+uq05WtL" defer></script>
+<script src="painel.js?v=da0e1c8cd3fd" integrity="sha384-0Aap359LcwWE6lTJwPxtcGE1C4xVEdXFkClGDnG0t5uL/5euBgwmVlef+EhjE//8" defer></script>
 </head>
-<body data-pagina="aprovar">
+<body data-pagina="painel">
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
 <header class="topo">
 <div class="recipiente topo-interno">
-<a class="marca" href="/aprovar">
+<span class="marca">
 <picture>
 <source media="(max-width: 22.5em)" srcset="/estatico/icone.svg?v=5320513ad899" width="32" height="32">
 <source media="(prefers-color-scheme: dark)" srcset="/estatico/logo-escuro.svg?v=135b3af3bee0" width="211" height="32">
 <img src="/estatico/logo.svg?v=5f8eec44f1fd" alt="Render2Go" width="211" height="32">
 </picture>
-<span class="marca-area">Revisão</span>
-</a>
-<nav class="navegacao" aria-label="Ações da revisão">
+<span class="marca-area">Painel</span>
+</span>
+<nav class="navegacao" aria-label="Ações do painel">
 <button type="button" id="atualizar" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.4 5.7M20 5v6h-6"/></svg><span class="rotulo-nav">Atualizar</span></button>
 <button type="button" id="sair" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16.5 14.5 12 10 7.5M14.5 12H4"/></svg><span class="rotulo-nav">Sair</span></button>
 </nav>
@@ -47,34 +46,42 @@
 <main id="conteudo" class="conteudo" tabindex="-1">
 <div class="recipiente">
 <noscript><p class="aviso erro">Esta página precisa de JavaScript.</p></noscript>
-<form id="form-token" class="cartao elevado entrar-admin so-sem-sessao" aria-labelledby="titulo-entrar">
-<h1 id="titulo-entrar">Revisão dos pedidos</h1>
+<form id="form-admin" class="cartao elevado entrar-admin so-sem-sessao" aria-labelledby="titulo-entrar" novalidate>
+<h1 id="titulo-entrar">Painel do Render2Go</h1>
 <div class="campo">
-<label for="token">Token de administração</label>
+<label for="admin-token">Token de administração</label>
 <div class="senha">
-<input id="token" type="password" autocomplete="current-password" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go">
-<button type="button" class="botao fantasma pequeno" id="mostrar-token" aria-controls="token" aria-pressed="false">Mostrar</button>
+<input id="admin-token" type="password" autocomplete="current-password" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="next">
+<button type="button" class="botao fantasma pequeno" id="mostrar-token" aria-controls="admin-token" aria-pressed="false">Mostrar</button>
 </div>
+</div>
+<div class="campo">
+<label for="admin-totp">Código do aplicativo autenticador</label>
+<input id="admin-totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" enterkeyhint="go" aria-describedby="admin-totp-dica">
+<p class="dica" id="admin-totp-dica">6 dígitos do Google Authenticator, Authy ou 1Password (render2go-servico totp-novo).</p>
 </div>
 <p id="msg-entrada" class="aviso erro" hidden></p>
-<button type="submit" class="botao primario largo">Entrar</button>
+<button type="submit" class="botao primario largo" id="admin-entrar">Entrar</button>
 </form>
 <div class="painel so-com-sessao" id="painel">
 <div class="cab-pagina">
-<h1 id="titulo-painel" tabindex="-1">Revisão dos pedidos</h1>
+<h1 id="titulo-painel" tabindex="-1">Painel</h1>
 <p class="fraco">Nada vai para a GPU sem aprovação (ADR 0004). Confira se as fotos e o pedido são apropriados e se as pessoas nas fotos têm autorização.</p>
 </div>
 <div class="admin-grade">
-<nav class="secoes" aria-label="Seções da revisão">
+<nav class="secoes" aria-label="Seções do painel">
 <a href="#sec-pendentes">Aguardando <span class="contagem" id="n-pendentes"></span></a>
+<a href="#sec-pods">Pods <span class="contagem" id="n-pods"></span></a>
 <a href="#sec-historico">Histórico</a>
+<a href="#sec-gpus">GPUs</a>
+<a href="#sec-interesse">Interesse</a>
+<a href="#sec-pagamentos">Pagamentos</a>
+<a href="#sec-suporte">Suporte <span class="contagem" id="n-suporte"></span></a>
+<a href="#sec-clientes">Contas e saldo</a>
+<a href="#sec-cliente">Nova conta</a>
+<a href="#sec-seguranca">Segurança</a>
 <a href="#sec-ips">Uso por IP</a>
 <a href="#sec-dispositivos">Dispositivos</a>
-<a href="#sec-gpus">GPUs <span class="contagem" id="n-gpus"></span></a>
-<a href="#sec-interesse">Interesse</a>
-<a href="#sec-suporte">Suporte <span class="contagem" id="n-suporte"></span></a>
-<a href="#sec-clientes">Clientes e saldo</a>
-<a href="#sec-cliente">Novo cliente</a>
 </nav>
 <div class="admin-conteudo">
 <p id="msg" class="aviso" hidden></p>
@@ -87,6 +94,20 @@
 <div class="cartao esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
 </div>
 </section>
+<section id="sec-pods" aria-labelledby="t-pods">
+<h2 id="t-pods">Pods ligados agora</h2>
+<p class="fraco">Cada pod é uma GPU alugada no RunPod. "Desligar" encerra um pod; a parada de emergência encerra todos e impede que o orquestrador ligue outros até você retomar. O orquestrador executa em até ~10 s; o pod também perde na hora a permissão de pegar trabalho.</p>
+<p id="estado-orquestrador" class="fraco"></p>
+<div class="acoes">
+<button type="button" class="botao perigo" id="emergencia"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.6 5.6l12.8 12.8"/></svg>Parada de emergência: desligar todos</button>
+<button type="button" class="botao sucesso" id="retomar" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Retomar (liberar pods de novo)</button>
+</div>
+<div id="pods" class="tabela" role="region" aria-label="Tabela de pods ligados (role para o lado)" tabindex="0"></div>
+<details class="extrato">
+<summary>Últimos comandos</summary>
+<ul class="extrato-lista" id="comandos" aria-label="Últimos comandos enviados ao orquestrador"></ul>
+</details>
+</section>
 <section id="sec-historico" aria-labelledby="t-historico">
 <h2 id="t-historico">Histórico</h2>
 <div class="filtros" id="filtros-historico" role="group" aria-label="Filtrar o histórico">
@@ -96,16 +117,6 @@
 <button type="button" data-grupo="recusados" aria-pressed="false">Recusados</button>
 </div>
 <div id="historico" class="lista"></div>
-</section>
-<section id="sec-ips" aria-labelledby="t-ips">
-<h2 id="t-ips">Uso por IP</h2>
-<p class="fraco">Fotos de pedidos que passaram do envio e não foram recusados. O teste gratuito vale até 50 fotos por IP, somando todos os clientes de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
-<div id="ips" class="tabela" role="region" aria-label="Tabela de uso por IP (role para o lado)" tabindex="0"></div>
-</section>
-<section id="sec-dispositivos" aria-labelledby="t-dispositivos">
-<h2 id="t-dispositivos">Dispositivos</h2>
-<p class="fraco">Cada navegador recebe um identificador guardado nele mesmo. Um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes. Uma janela anônima ou limpar os dados do navegador gera um identificador novo, mas o teto por IP continua valendo.</p>
-<div id="dispositivos" class="tabela" role="region" aria-label="Tabela de dispositivos (role para o lado)" tabindex="0"></div>
 </section>
 <section id="sec-gpus" aria-labelledby="t-gpus">
 <h2 id="t-gpus">GPUs</h2>
@@ -124,8 +135,15 @@
 </section>
 <section id="sec-interesse" aria-labelledby="t-interesse">
 <h2 id="t-interesse">Interesse nas opções em breve</h2>
-<p class="fraco">Na tela "O que você quer criar?", o cliente marca "Tenho interesse" nas opções que ainda não existem. Cada cliente conta uma vez por opção. Use para decidir o próximo modelo (licenças em docs/12).</p>
+<p class="fraco">Na tela "O que você quer criar?", o cliente marca "Tenho interesse" nas opções que ainda não existem. Cada conta conta uma vez por opção. Abaixo do total, cada clique, com o e-mail da conta, para avisar quando a opção sair (licenças em docs/12).</p>
 <div id="interesses" class="tabela" role="region" aria-label="Tabela de interesse por opção (role para o lado)" tabindex="0"></div>
+<h3>Cada clique</h3>
+<div id="cliques" class="tabela" role="region" aria-label="Tabela de cliques em Tenho interesse (role para o lado)" tabindex="0"></div>
+</section>
+<section id="sec-pagamentos" aria-labelledby="t-pagamentos">
+<h2 id="t-pagamentos">Recargas por Pix</h2>
+<p id="pagamentos-config" class="fraco"></p>
+<div id="pagamentos" class="tabela" role="region" aria-label="Tabela de recargas por Pix (role para o lado)" tabindex="0"></div>
 </section>
 <section id="sec-suporte" aria-labelledby="t-suporte">
 <h2 id="t-suporte">Mensagens de suporte</h2>
@@ -133,18 +151,24 @@
 <div id="suporte" class="lista"></div>
 </section>
 <section id="sec-clientes" aria-labelledby="t-clientes">
-<h2 id="t-clientes">Clientes e saldo</h2>
-<p class="fraco" id="precos-info">Pré-pago: o cliente do plano pago recarrega o saldo e paga por segundo de vídeo. O pedido é cobrado quando as fotos chegam; pedido recusado e vídeo que não sai voltam sozinhos para o saldo.</p>
+<h2 id="t-clientes">Contas e saldo</h2>
+<p class="fraco" id="precos-info">Pré-pago: a conta do plano pago recarrega o saldo e paga por segundo de vídeo. O pedido é cobrado quando as fotos chegam; pedido recusado e vídeo que não sai voltam sozinhos para o saldo.</p>
+<p class="fraco" id="resumo-contas"></p>
+<form id="form-busca" class="busca" role="search" novalidate>
+<label for="busca-cliente" class="visualmente-oculto">Buscar conta por e-mail, nome ou id</label>
+<input id="busca-cliente" type="search" maxlength="100" placeholder="Buscar por e-mail, nome ou id" autocomplete="off" spellcheck="false">
+<button type="submit" class="botao pequeno">Buscar</button>
+</form>
 <form id="form-saldo" class="cartao form-cliente" novalidate>
 <div class="duas">
 <div class="campo">
-<label for="saldo-cliente">Cliente (plano pago)</label>
+<label for="saldo-cliente">Conta (plano pago)</label>
 <select id="saldo-cliente"></select>
 </div>
 <div class="campo">
 <label for="saldo-valor">Valor em reais</label>
 <input id="saldo-valor" inputmode="decimal" maxlength="12" placeholder="50,00" autocomplete="off" aria-describedby="saldo-valor-dica">
-<p class="dica" id="saldo-valor-dica">Recarga. Valor negativo desconta (ajuste).</p>
+<p class="dica" id="saldo-valor-dica">Lançamento manual (recarga). Valor negativo desconta (ajuste). As recargas por Pix entram sozinhas.</p>
 </div>
 </div>
 <div class="duas">
@@ -163,21 +187,22 @@
 </div>
 <div id="saldo-msg" class="aviso" hidden></div>
 </form>
-<div id="clientes" class="tabela" role="region" aria-label="Tabela de clientes e saldo (role para o lado)" tabindex="0"></div>
+<div id="clientes" class="tabela" role="region" aria-label="Tabela de contas e saldo (role para o lado)" tabindex="0"></div>
 </section>
 <section id="sec-cliente" aria-labelledby="t-cliente">
-<h2 id="t-cliente">Novo cliente</h2>
+<h2 id="t-cliente">Nova conta</h2>
+<p class="fraco">As pessoas criam a conta sozinhas no primeiro acesso (teste gratuito). Use aqui para abrir uma conta já no plano pago ou interno, ou com e-mail de empresa (fora da lista de provedores aceitos): a pessoa entra com o código que chega no e-mail.</p>
 <form id="form-cliente" class="cartao form-cliente" novalidate>
 <div class="duas">
 <div class="campo">
-<label for="cliente-nome">Nome</label>
-<input id="cliente-nome" required minlength="2" maxlength="120" autocomplete="off">
+<label for="cliente-email">E-mail</label>
+<input id="cliente-email" type="email" required maxlength="254" autocomplete="off" spellcheck="false">
 </div>
 <div class="campo">
 <label for="cliente-plano">Plano</label>
 <select id="cliente-plano">
-<option value="teste">Teste gratuito (um pedido, até 5 fotos, 3 s, 480p)</option>
 <option value="pago">Pago (pré-pago: saldo e preço por segundo, vídeos de 4 a 7 s)</option>
+<option value="teste">Teste gratuito (um pedido, até 5 fotos, 3 s, 480p)</option>
 <option value="interno">Interno (só você: sem limites e sem revisão)</option>
 </select>
 </div>
@@ -187,10 +212,27 @@
 <input id="cliente-cota" type="number" inputmode="numeric" min="1" max="100000" value="500">
 </div>
 <div class="acoes">
-<button type="submit" class="botao primario" id="cliente-enviar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3a6 6 0 0 1-2.2 11.6L11 16.5H9v2H7v2H3v-3.6l6.2-6.2A6 6 0 0 1 15 3zM16.5 7.5h.01"/></svg>Cadastrar e gerar o código</button>
+<button type="submit" class="botao primario" id="cliente-enviar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0"/></svg>Criar a conta</button>
 </div>
-<div id="token-novo" class="aviso ok" hidden></div>
+<div id="cliente-msg" class="aviso" hidden></div>
 </form>
+</section>
+<section id="sec-seguranca" aria-labelledby="t-seguranca">
+<h2 id="t-seguranca">Segurança e configuração</h2>
+<p class="fraco">O que está ligado no servidor (o .env) e as últimas ações feitas pelo painel, com o IP de quem fez.</p>
+<ul class="lista-checagem" id="checagem"></ul>
+<h3>Ações do painel</h3>
+<div id="auditoria" class="tabela" role="region" aria-label="Tabela das ações do painel (role para o lado)" tabindex="0"></div>
+</section>
+<section id="sec-ips" aria-labelledby="t-ips">
+<h2 id="t-ips">Uso por IP</h2>
+<p class="fraco">Fotos de pedidos dos últimos 90 dias que passaram do envio e não foram recusados. O teste gratuito vale até 50 fotos por rede (IP; IPv6 pelo /64), somando todas as contas de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
+<div id="ips" class="tabela" role="region" aria-label="Tabela de uso por IP (role para o lado)" tabindex="0"></div>
+</section>
+<section id="sec-dispositivos" aria-labelledby="t-dispositivos">
+<h2 id="t-dispositivos">Dispositivos</h2>
+<p class="fraco">Cada navegador recebe um identificador guardado nele mesmo. Um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com várias contas, alguém pode estar juntando testes. Uma janela anônima ou limpar os dados do navegador gera um identificador novo, mas o teto por rede continua valendo.</p>
+<div id="dispositivos" class="tabela" role="region" aria-label="Tabela de dispositivos (role para o lado)" tabindex="0"></div>
 </section>
 </div>
 </div>

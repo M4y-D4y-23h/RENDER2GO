@@ -1,50 +1,76 @@
 """API do serviço (ADR 0003, fase 3). Os bytes nunca passam por aqui: só URLs assinadas.
 
-Cliente (Authorization: Bearer <token do cliente>):
+Conta (ADR 0007): entrada sem senha, pelo código que chega no e-mail; a sessão fica num cookie
+HttpOnly (`__Host-render2go`). No 1º acesso a conta nasce no teste gratuito. Pedidos que mudam algo
+precisam do cabeçalho X-Render2Go (a página manda; outro site não consegue).
+    GET  /api/publico                  o que a página de entrada precisa (chave do Turnstile, domínios)
+    POST /api/conta/codigo             manda o código para o e-mail (Turnstile e limites por rede e e-mail)
+    POST /api/conta/entrar             confere o código; cria a conta no 1º acesso; abre a sessão
+    POST /api/conta/entrar-codigo      clientes antigos: entra com o código de acesso (abre a mesma sessão)
+    POST /api/conta/sair | /sair-de-todos
+    GET  /api/conta                    e-mail, plano, saldo e o teste gratuito
+    GET  /api/conta/dados              tudo o que guardamos sobre a conta (LGPD, art. 18)
+    POST /api/conta/excluir            exclui a conta (LGPD); com saldo, o reembolso vem antes
+
+Cliente (sessão; ou Authorization: Bearer <código de acesso antigo>):
     GET  /api/receitas                 receitas, formatos, limites e as finalidades (tela antes do pedido)
     POST /api/interesses               "Tenho interesse" numa finalidade em breve
     POST /api/lotes                    cria o lote; devolve uma URL de envio por foto (pré-pago: confere o saldo)
     POST /api/lotes/{id}/enviado       confere no armazenamento, cobra (pré-pago) e manda para aprovação
     GET  /api/lotes  /api/lotes/{id}   andamento, previsão, cobrança e links dos vídeos (abrir e baixar)
     GET  /api/saldo                    pré-pago: saldo, preços por segundo e extrato
-    POST /api/suporte                  mensagem para o suporte (e-mail), com limite contra spam; sem código
-                                       de acesso, exige e-mail e tem limites menores (página /suporte)
+    POST /api/pagamentos/pix           recarga por Pix (ADR 0008): QR Code e copia e cola
+    GET  /api/pagamentos  /api/pagamentos/{id}   recargas e a situação (confere no Mercado Pago)
+    POST /api/suporte                  mensagem para o suporte (e-mail), com limite contra spam; sem conta,
+                                       exige e-mail, o "não sou um robô" e tem limites menores (/suporte)
     POST /api/cookies                  escolha do aviso de cookies (prova do consentimento)
 
-Aprovação (Bearer <token de administração>), ADR 0004:
-    GET  /api/admin/lotes              lotes aguardando aprovação, com miniaturas e aviso de pessoas
-    POST /api/admin/lotes/{id}/aprovar | /recusar
-    GET  /api/admin/historico          pedidos feitos, aprovados e recusados; uso por IP e por dispositivo
-    GET  /api/admin/lotes/{id}/auditoria  registro completo de um lote (origem, autorização, fotos, eventos)
-    GET  /api/admin/suporte            últimas mensagens de suporte
-    GET  /api/admin/geradores?dias=30  relatório das GPUs (pods): id, GPU, horários, vídeos e custo estimado
-    GET  /api/admin/interesses         "Tenho interesse" por finalidade em breve (tela de finalidades)
-    GET  /api/admin/clientes           clientes com plano e saldo
-    POST /api/admin/clientes           cadastra um cliente (plano pago ou teste); o token aparece uma vez
-    POST /api/admin/clientes/{id}/saldo     recarga (valor positivo) ou ajuste (negativo) do saldo
-    GET  /api/admin/clientes/{id}/extrato   extrato completo do saldo
-    POST /api/admin/clientes/{id}/desativar   o código de acesso do cliente deixa de valer
+Mercado Pago (sem sessão; assinatura x-signature e conferência na API dele):
+    POST /api/pagamentos/mercadopago   aviso de pagamento (webhook)
+
+Painel (RENDER2GO_ADMIN_CAMINHO, ex.: /painel-<aleatório>): página e API só nesse endereço. Entrada com
+o token de administração e o código do aplicativo autenticador (RENDER2GO_ADMIN_TOTP); sessão num cookie
+restrito ao caminho do painel (12 h); RENDER2GO_ADMIN_IPS limita de onde. Sem o caminho, não há painel.
+    POST <painel>/api/entrar | /sair   GET <painel>/api/sessao
+    GET  <painel>/api/lotes            lotes aguardando aprovação, com miniaturas e aviso de pessoas
+    POST <painel>/api/lotes/{id}/aprovar | /recusar
+    GET  <painel>/api/historico        pedidos feitos, aprovados e recusados; uso por IP e por dispositivo
+    GET  <painel>/api/lotes/{id}/auditoria  registro completo de um lote (origem, autorização, fotos, eventos)
+    GET  <painel>/api/suporte          últimas mensagens de suporte
+    GET  <painel>/api/geradores?dias=30  relatório das GPUs (pods): id, GPU, horários, vídeos e custo estimado
+    GET  <painel>/api/pods             pods ligados agora, pausa e sinal de vida do orquestrador
+    POST <painel>/api/pods/{gerador}/desligar | /api/pods/emergencia | /api/pods/retomar
+    GET  <painel>/api/interesses       "Tenho interesse": total por opção e cada clique (conta, e-mail, quando)
+    GET  <painel>/api/clientes?busca=  contas com plano e saldo; POST cria uma conta por e-mail
+    POST <painel>/api/clientes/{id}/saldo | /plano | /email | /desativar | /reativar
+    GET  <painel>/api/clientes/{id}/extrato
+    GET  <painel>/api/pagamentos       recargas; POST <painel>/api/pagamentos/{id}/conferir
+    GET  <painel>/api/seguranca        o que está configurado e o que o painel fez (auditoria)
 
 Teste gratuito (docs/08): um pedido só, até 5 fotos, vídeos de 3 s em 480p; no máximo 5 fotos de
-teste por dispositivo (navegador) e 50 por IP (uma empresa com várias pessoas na mesma rede).
+teste por dispositivo (navegador) e 50 por rede (IP; IPv6 pelo /64), somando as contas de teste.
 Plano pago (pré-pago, docs/11): saldo recarregado e preço por segundo de vídeo (`precos`); vídeos de
 4 a 7 s. O pedido é cobrado quando as fotos chegam; recusa e vídeo que não sai voltam para o saldo.
+A 1ª recarga por Pix passa a conta do teste para o plano pago.
 Plano interno (o dono do serviço): sem limites de teste e com aprovação automática; o C1 continua.
 As fotos de entrada são apagadas quando o lote fecha (pronto, com falhas ou recusado); os vídeos
 ficam até a regra de retenção do bucket. A caixa de autorização gera um registro de auditoria
 (quem declarou, texto e versão, IP, dispositivo, fotos e suas impressões SHA-256).
 
-Workers (Bearer <token de worker>), sem porta de entrada nos pods (eles puxam):
+Workers (Bearer <token do pod>, criado pelo orquestrador para cada pod e revogado quando ele é
+encerrado; o nome do worker vem do token), sem porta de entrada nos pods (eles puxam):
     POST /api/worker/reivindicar       próximo job, com URLs assinadas e carimbo de aprovação
     POST /api/worker/jobs/{id}/prompt  prompt compilado (passa pelo C1 aqui também)
     POST /api/worker/jobs/{id}/concluir  "ok" de render só com o vídeo no armazenamento, a
                                        conferência do 1º quadro acima do limiar e a da
                                        continuidade dentro dos limites (docs/08)
 
-Páginas: / (cliente), /suporte (suporte) e /aprovar (administração), compiladas em servico/web/publico
-(docs/10). Os arquivos de /estatico/ levam ?v=<hash> e ficam um ano em cache; as páginas são revalidadas
-a cada visita (ETag). Cabeçalhos de segurança em toda resposta (CSP com Trusted Types, COOP, CORP,
-Permissions-Policy) e proteção contra CSRF: pedido que muda algo na API só da própria página.
+Páginas: / (cliente), /suporte, /termos, /privacidade e /cookies, e o painel no caminho secreto,
+compiladas em servico/web/publico (docs/10). Os arquivos de /estatico/ levam ?v=<hash> e ficam um ano
+em cache; as páginas são revalidadas a cada visita (ETag). Sem robots.txt (nada de lista de caminhos):
+o que não é público responde com X-Robots-Tag: noindex. Sem /openapi.json nem /docs. Cabeçalhos de
+segurança em toda resposta (CSP com Trusted Types, COOP, CORP, Permissions-Policy) e proteção contra
+CSRF: pedido que muda algo na API só da própria página.
 """
 
 from __future__ import annotations
@@ -52,6 +78,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import hmac
+import html
 import json
 import math
 import os
@@ -66,14 +93,14 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 from render2go_worker import conferencia, filtros, lote, preparo, presets
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from render2go_servico import SERVICO_DIR, modelos, pessoas, precos, suporte
+from render2go_servico import SERVICO_DIR, contas, modelos, pagamentos, pessoas, precos, suporte
 from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_saida
 from render2go_servico.db import Banco, BancoError, SaldoInsuficiente
 
@@ -83,7 +110,7 @@ MAX_BYTES_FOTO = 50 * 1024**2
 URL_ENVIO_S = 3600
 URL_DOWNLOAD_S = 24 * 3600
 # teste gratuito (docs/08): um pedido só, qualidade rápida (480p), vídeos de 3 s, uma variação,
-# até 5 fotos (eram 10 até 09/10/2026); no máximo 5 fotos de teste por dispositivo e 50 por IP,
+# até 5 fotos (eram 10 até 09/10/2026); no máximo 5 fotos de teste por dispositivo e 50 por rede,
 # somando todos os clientes de teste
 TESTE = {
     "qualidade": "rapida",
@@ -113,11 +140,24 @@ CICLO_S = float(os.environ.get("RENDER2GO_CICLO_S", 10))  # o orquestrador olha 
 # os mesmos padrões do orquestrador (testes gratuitos esperam juntar vídeos antes de começar)
 AGRUPAR_TESTE_S = float(os.environ.get("RENDER2GO_AGRUPAR_TESTE_MIN", 10)) * 60
 AGRUPAR_TESTE_VIDEOS = int(os.environ.get("RENDER2GO_AGRUPAR_TESTE_VIDEOS", 20))
+RETRATO_S = 3.0  # a fila e os pods são lidos uma vez a cada RETRATO_S para todas as previsões
 DISPOSITIVO = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 FUSO = re.compile(r"^[A-Za-z0-9_+\-/]{1,64}$")
+CAMINHO_ADMIN = re.compile(r"^/[A-Za-z0-9_-]{12,64}$")
 LOTE_FECHADO = ("concluido", "concluido_com_falhas", "recusado")
 NOME = re.compile(r"[^A-Za-z0-9_-]+")
 PUBLICO = SERVICO_DIR / "web" / "publico"  # páginas compiladas (cd servico/web && npm run build)
+PAGINAS = {"/": "index.html", "/suporte": "suporte.html", "/termos": "termos.html", "/privacidade": "privacidade.html",
+           "/cookies": "cookies.html", "/verificacao": "verificacao.html"}  # fmt: skip
+# /verificacao: a página isolada do "não sou um robô" (Turnstile), aberta num quadro das páginas de entrada e
+# de suporte. Só ela carrega o script da Cloudflare, com uma política própria (sem Trusted Types, que o
+# script de terceiros não segue); as outras páginas continuam com trusted-types 'none'.
+CSP_VERIFICACAO = (
+    "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: https://challenges.cloudflare.com; "
+    "frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; "
+    "object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+)
 TIPOS_WEB = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
@@ -137,6 +177,24 @@ CACHE_REVALIDAR = "no-cache"  # guarda, mas confere (ETag) a cada uso: página n
 PERMISSOES = (
     "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
 )
+# cookies da sessão: com HTTPS, o prefixo __Host- prende o cookie a este domínio (sem subdomínios) e o
+# __Secure- garante o envio só por HTTPS. Sem HTTPS (só desenvolvimento local), nomes sem prefixo.
+COOKIES = {
+    ("cliente", True): "__Host-render2go",
+    ("cliente", False): "render2go-sessao",
+    ("admin", True): "__Secure-render2go-painel",
+    ("admin", False): "render2go-painel",
+}
+CABECALHO_PAGINA = "x-render2go"  # a página manda em todo pedido; outro site não consegue (CORS)
+# identificação do serviço nas páginas (Decreto 7.962/2013: nome, CNPJ, endereço e contato visíveis):
+# vem do .env, sem compilar as páginas de novo; o que faltar aparece como "[preencher]"
+EMPRESA = {
+    "EMPRESA_NOME": "RENDER2GO_EMPRESA_NOME",
+    "EMPRESA_DOCUMENTO": "RENDER2GO_EMPRESA_DOCUMENTO",
+    "EMPRESA_ENDERECO": "RENDER2GO_EMPRESA_ENDERECO",
+    "EMAIL_CONTATO": "RENDER2GO_EMAIL_CONTATO",
+    "EMAIL_PRIVACIDADE": "RENDER2GO_EMAIL_PRIVACIDADE",
+}
 # a página anterior ao front-end de 08/10/2026, se ficou no cache de algum navegador, pede /app.js:
 # este script recarrega uma vez, e a página nova (sempre revalidada) chega
 RECARREGAR_JS = (
@@ -153,12 +211,23 @@ class ArquivoWeb:
     etag: str
 
 
-def carregar_publico(raiz: Path = PUBLICO) -> dict[str, ArquivoWeb]:
-    """Arquivos de servico/web/publico na memória (poucas centenas de KB): resposta e ETag prontas."""
+def substituicoes_empresa() -> dict[str, str]:
+    return {k: os.environ.get(v, "").strip() or "[preencher]" for k, v in EMPRESA.items()}
+
+
+def carregar_publico(raiz: Path = PUBLICO, valores: dict[str, str] | None = None) -> dict[str, ArquivoWeb]:
+    """Arquivos de servico/web/publico na memória (poucas centenas de KB): resposta e ETag prontas.
+    Nas páginas, [[CHAVE]] vira o valor de `valores` (identificação da empresa), já escapado."""
+    valores = substituicoes_empresa() if valores is None else valores
     arquivos = {}
     for p in sorted(raiz.rglob("*")):
         if p.is_file() and p.suffix in TIPOS_WEB:
             dados = p.read_bytes()
+            if p.suffix == ".html":
+                texto = dados.decode()
+                for k, v in valores.items():
+                    texto = texto.replace(f"[[{k}]]", html.escape(v))
+                dados = texto.encode()
             h = hashlib.sha256(dados).hexdigest()
             arquivos[p.relative_to(raiz).as_posix()] = ArquivoWeb(dados, TIPOS_WEB[p.suffix], h[:12], f'"{h[:32]}"')
     if "index.html" not in arquivos:
@@ -184,11 +253,24 @@ def mesma_origem(request: Request) -> bool:
     return origem is None or urlsplit(origem).netloc == request.headers.get("host", "")
 
 
-class AnaliseFotos:
-    """Análise das fotos em segundo plano (aviso de pessoas no /aprovar): um thread, fila por lote.
+def caminho_admin_do_ambiente() -> str | None:
+    """RENDER2GO_ADMIN_CAMINHO: /<12 a 64 letras, números, _ ou ->. Ausente = painel desligado."""
+    caminho = os.environ.get("RENDER2GO_ADMIN_CAMINHO", "").strip().rstrip("/")
+    if not caminho:
+        return None
+    if not CAMINHO_ADMIN.match(caminho):
+        raise SystemExit(
+            "RENDER2GO_ADMIN_CAMINHO inválido: use /<de 12 a 64 letras, números, _ ou -> (ex.: /painel-<aleatório>)"
+        )
+    return caminho
 
-    Agendada no envio e de novo quando o /aprovar lista um lote com foto ainda sem análise
-    (assim uma reinicialização da API no meio não deixa foto para trás)."""
+
+class AnaliseFotos:
+    """Análise das fotos em segundo plano (aviso de pessoas no painel): um thread, fila por lote.
+
+    Agendada no envio e de novo quando o painel lista um lote com foto ainda sem análise
+    (assim uma reinicialização da API no meio não deixa foto para trás). Com muitos envios, a análise
+    sai da API e roda no serviço `render2go-servico analisar` (RENDER2GO_ANALISE=separada)."""
 
     def __init__(self, banco: Banco, armazenamento: Any, analisar: Callable[[bytes], dict]):
         self.banco, self.armazenamento, self.analisar = banco, armazenamento, analisar
@@ -214,7 +296,7 @@ class AnaliseFotos:
         while True:
             lote_id = self.fila.get()
             try:
-                self._lote(lote_id)
+                analisar_lote(self.banco, self.armazenamento, self.analisar, lote_id)
             except Exception as e:  # noqa: BLE001 (o thread não pode morrer; a próxima listagem reagenda)
                 print(f"[analise] AVISO: lote {lote_id}: {e}", flush=True)
             finally:
@@ -222,18 +304,40 @@ class AnaliseFotos:
                     self.agendados.discard(lote_id)
                 self.fila.task_done()
 
-    def _lote(self, lote_id: str) -> None:
-        for f in self.banco.fotos(lote_id):
-            if f["analise"] is not None or not f["enviada"]:
-                continue
-            impressao = None
-            try:
-                dados = self.armazenamento.ler(f["chave"], MAX_BYTES_FOTO)
-                impressao = hashlib.sha256(dados).hexdigest()  # fica no banco depois que a foto é apagada
-                a = self.analisar(dados)
-            except Exception as e:  # noqa: BLE001 (foto ilegível ou armazenamento fora: o revisor vê o erro)
-                a = {"versao": pessoas.VERSAO, "erro": str(e)[:200]}
-            self.banco.salvar_analise(f["id"], a, impressao)
+
+def analisar_lote(banco: Banco, armazenamento: Any, analisar: Callable[[bytes], dict], lote_id: str) -> int:
+    """Analisa as fotos enviadas do lote que ainda não têm análise; devolve quantas analisou."""
+    n = 0
+    for f in banco.fotos(lote_id):
+        if f["analise"] is not None or not f["enviada"]:
+            continue
+        impressao = None
+        try:
+            dados = armazenamento.ler(f["chave"], MAX_BYTES_FOTO)
+            impressao = hashlib.sha256(dados).hexdigest()  # fica no banco depois que a foto é apagada
+            a = analisar(dados)
+        except Exception as e:  # noqa: BLE001 (foto ilegível ou armazenamento fora: o revisor vê o erro)
+            a = {"versao": pessoas.VERSAO, "erro": str(e)[:200]}
+        banco.salvar_analise(f["id"], a, impressao)
+        n += 1
+    return n
+
+
+def analisar_continuamente(banco: Banco, armazenamento: Any, analisar: Callable[[bytes], dict], parar: threading.Event,
+                           intervalo_s: float = 5) -> None:  # fmt: skip
+    """Serviço próprio da análise de pessoas (`render2go-servico analisar`, RENDER2GO_ANALISE=separada na
+    API): com muitos envios, a análise (CPU) não disputa a máquina com as requisições da API."""
+    while not parar.is_set():
+        try:
+            lotes = banco.lotes_para_analisar()
+            for lid in lotes:
+                n = analisar_lote(banco, armazenamento, analisar, lid)
+                print(f"[analise] lote {lid}: {n} foto(s) analisada(s)", flush=True)
+        except Exception as e:  # noqa: BLE001 (o laço não pode morrer; tenta de novo no próximo intervalo)
+            print(f"[analise] AVISO: {e}", flush=True)
+            lotes = []
+        if not lotes:
+            parar.wait(intervalo_s)
 
 
 @dataclass
@@ -241,24 +345,46 @@ class Config:
     banco: Banco
     armazenamento: Any  # Armazenamento ou um equivalente nos testes
     admin_tokens: list[str]
-    worker_tokens: list[str]
+    worker_tokens: list[str]  # tokens fixos (só no servidor); os pods recebem um token próprio cada
     segredo_aprovacao: str
     limite_por_minuto: int = 120
-    analisar: Callable[[bytes], dict] | None = None  # None: sem aviso de pessoas
-    email: suporte.ConfigEmail | None = None  # None: mensagens de suporte só no banco
+    analisar: Callable[[bytes], dict] | None = None  # None: sem aviso de pessoas na API
+    email: suporte.ConfigEmail | None = None  # None: suporte só no banco e login por e-mail fora
     enviar_email: Callable = suporte.enviar
+    # contas (ADR 0007)
+    segredo_contas: str | None = None
+    turnstile: contas.ConfigTurnstile | None = None
+    turnstile_desligado: bool = False  # só desenvolvimento e testes (RENDER2GO_TURNSTILE=desligado)
+    cookie_seguro: bool = True  # False só em desenvolvimento local sem HTTPS (RENDER2GO_COOKIE_INSEGURO=1)
+    # painel
+    admin_caminho: str | None = None
+    admin_totp: str | None = None
+    admin_ips: list[str] = field(default_factory=list)
+    # pagamentos (ADR 0008)
+    mp: pagamentos.ConfigMP | None = None
+    provedor_pagamento: Callable[[pagamentos.ConfigMP], Any] = pagamentos.MercadoPago
+    analise: str = "api"  # "api" (thread na API), "separada" (serviço próprio) ou "desligada"
+    retrato_s: float = RETRATO_S  # validade do retrato da fila e dos pods (0: sempre lê do banco)
     _janelas: dict = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _analises: AnaliseFotos | None = None
     _fundo: ThreadPoolExecutor | None = None
+    _correio: ThreadPoolExecutor | None = None
     _pendentes_fundo: list = field(default_factory=list)
+    _retratos: dict = field(default_factory=dict)
 
-    def em_segundo_plano(self, fn: Callable, *args) -> None:
+    def em_segundo_plano(self, fn: Callable, *args, correio: bool = False) -> None:
+        """Trabalho fora da requisição. E-mails (códigos de entrada) num grupo próprio e maior: um
+        pico de cadastros não atrasa o resto, e o resto não atrasa os códigos."""
         with self._lock:
-            if self._fundo is None:
+            if correio and self._correio is None:
+                n = max(2, int(os.environ.get("RENDER2GO_EMAIL_PARALELO", 8)))
+                self._correio = ThreadPoolExecutor(max_workers=n, thread_name_prefix="correio")
+            if not correio and self._fundo is None:
                 self._fundo = ThreadPoolExecutor(max_workers=2, thread_name_prefix="fundo")
+            executor = self._correio if correio else self._fundo
             self._pendentes_fundo = [f for f in self._pendentes_fundo if not f.done()]
-            self._pendentes_fundo.append(self._fundo.submit(fn, *args))
+            self._pendentes_fundo.append(executor.submit(fn, *args))
 
     def esperar_fundo(self) -> None:  # testes
         with self._lock:
@@ -268,12 +394,33 @@ class Config:
 
     @property
     def analises(self) -> AnaliseFotos | None:
-        if self.analisar is None:
+        if self.analisar is None or self.analise != "api":
             return None
         with self._lock:
             if self._analises is None:
                 self._analises = AnaliseFotos(self.banco, self.armazenamento, self.analisar)
             return self._analises
+
+    @property
+    def analise_ligada(self) -> bool:
+        return self.analise == "separada" or (self.analise == "api" and self.analisar is not None)
+
+    @property
+    def chave_codigos(self) -> bytes:
+        return contas.chave_contas(self.segredo_contas, self.segredo_aprovacao)
+
+    def retrato(self, chave: str, fn: Callable[[], Any]) -> Any:
+        """O mesmo valor para todas as requisições de um intervalo curto (fila, pods, médias): com
+        milhares de páginas atualizando, o banco faz a consulta uma vez por intervalo, não por página."""
+        agora = time.monotonic()
+        with self._lock:
+            v = self._retratos.get(chave)
+            if v and agora - v[0] < self.retrato_s:
+                return v[1]
+        valor = fn()
+        with self._lock:
+            self._retratos[chave] = (agora, valor)
+        return valor
 
     @classmethod
     def do_ambiente(cls) -> Config:
@@ -283,9 +430,21 @@ class Config:
         segredo = os.environ.get("RENDER2GO_SEGREDO_APROVACAO", "")
         if len(segredo) < 32:
             raise SystemExit("RENDER2GO_SEGREDO_APROVACAO ausente ou curto (mínimo 32 caracteres)")
+        segredo_contas = os.environ.get("RENDER2GO_SEGREDO_CONTAS", "").strip() or None
+        if segredo_contas and len(segredo_contas) < 32:
+            raise SystemExit("RENDER2GO_SEGREDO_CONTAS curto (mínimo 32 caracteres)")
+        totp = os.environ.get("RENDER2GO_ADMIN_TOTP", "").strip().replace(" ", "") or None
+        if totp:
+            try:
+                contas.totp(totp, 0)
+            except (ValueError, TypeError) as e:
+                raise SystemExit("RENDER2GO_ADMIN_TOTP inválido (gere com: render2go-servico totp-novo)") from e
         armazenamento = Armazenamento.do_ambiente()  # RENDER2GO_R2_* (mesmas do lote_nuvem)
         if armazenamento is None:
             raise SystemExit("faltam RENDER2GO_R2_ENDPOINT, _BUCKET, _ACCESS_KEY_ID ou _SECRET_ACCESS_KEY")
+        analise = os.environ.get("RENDER2GO_ANALISE", "api").strip().lower()
+        if analise not in ("api", "separada", "desligada"):
+            raise SystemExit("RENDER2GO_ANALISE: api, separada ou desligada")
         banco = Banco(os.environ["RENDER2GO_DB_URL"])
         banco.criar_esquema()
         return cls(
@@ -294,12 +453,21 @@ class Config:
             admin_tokens=lista("RENDER2GO_ADMIN_TOKENS"),
             worker_tokens=lista("RENDER2GO_WORKER_TOKENS"),
             segredo_aprovacao=segredo,
-            analisar=pessoas.analisador(),
+            analisar=pessoas.analisador() if analise == "api" else None,
             email=suporte.ConfigEmail.do_ambiente(),
+            segredo_contas=segredo_contas,
+            turnstile=contas.ConfigTurnstile.do_ambiente(),
+            turnstile_desligado=os.environ.get("RENDER2GO_TURNSTILE", "").strip().lower() == "desligado",
+            cookie_seguro=os.environ.get("RENDER2GO_COOKIE_INSEGURO", "") != "1",
+            admin_caminho=caminho_admin_do_ambiente(),
+            admin_totp=totp,
+            admin_ips=[r for r in os.environ.get("RENDER2GO_ADMIN_IPS", "").split(",") if r.strip()],
+            mp=pagamentos.ConfigMP.do_ambiente(),
+            analise=analise,
         )
 
     def limitar(self, chave: str) -> None:
-        """Limite simples de requisições por minuto, por token (uma instância da API)."""
+        """Limite simples de requisições por minuto, por conta (em cada processo da API)."""
         agora = time.monotonic()
         with self._lock:
             janela = [t for t in self._janelas.get(chave, []) if agora - t < 60]
@@ -325,20 +493,36 @@ def _um_de(token: str, validos: list[str]) -> bool:
 
 
 def ip_de(request: Request) -> str:
-    """IP de quem fez a requisição. A API só é alcançável pelo Caddy, que troca o
-    X-Forwarded-For recebido de fora pelo IP real da conexão; vale o último da lista."""
+    """IP de quem fez a requisição. A API só é alcançável pelo Caddy, que sempre sobrescreve o
+    X-Render2Go-IP com o IP real do cliente ({client_ip}: com a Cloudflare na frente, o CF-Connecting-IP,
+    aceito só quando a conexão vem dela). Sem ele, o último do X-Forwarded-For (Caddy antigo)."""
+    ip = request.headers.get("x-render2go-ip", "").strip()
+    if ip:
+        return ip[:64]
     xff = request.headers.get("x-forwarded-for", "")
     ip = xff.split(",")[-1].strip() if xff else ""
-    return ip or (request.client.host if request.client else "desconhecido")
+    return (ip or (request.client.host if request.client else "desconhecido"))[:64]
+
+
+def porta_de(request: Request) -> int | None:
+    """Porta de origem da conexão (Marco Civil: com o IP e a hora, identifica quem usa IP compartilhado)."""
+    p = request.headers.get("x-render2go-porta", "").strip()
+    if p.isdigit() and 0 < int(p) < 65536:
+        return int(p)
+    return request.client.port if request.client and not request.headers.get("x-render2go-ip") else None
 
 
 def origem_de(request: Request) -> dict:
-    """De onde veio o pedido: IP (do Caddy), dispositivo (identificador que a página guarda no
-    navegador), User-Agent e fuso horário do navegador. Valores fora do formato viram None."""
+    """De onde veio o pedido: IP (do Caddy), rede (IPv6 pelo /64), porta, dispositivo (identificador
+    que a página guarda no navegador), User-Agent e fuso horário do navegador. Valores fora do formato
+    viram None."""
     disp = request.headers.get("x-dispositivo", "").strip().lower()
     fuso = request.headers.get("x-fuso", "").strip()
+    ip = ip_de(request)
     return {
-        "ip": ip_de(request),
+        "ip": ip,
+        "rede": contas.rede(ip),
+        "porta": porta_de(request),
         "dispositivo": disp if DISPOSITIVO.match(disp) else None,
         "agente": request.headers.get("user-agent", "")[:300] or None,
         "fuso": fuso if FUSO.match(fuso) else None,
@@ -364,6 +548,38 @@ def impressao_navegador(origem: dict, nav: NavegadorIn | None) -> str | None:
     return hashlib.sha256("|".join(partes).encode()).hexdigest()[:24]
 
 
+def nome_cookie(c: Config, tipo: str) -> str:
+    return COOKIES[(tipo, c.cookie_seguro)]
+
+
+def definir_cookie(resp: Response, c: Config, tipo: str, token: str, validade_s: float) -> None:
+    resp.set_cookie(
+        nome_cookie(c, tipo),
+        token,
+        max_age=int(validade_s),
+        path="/" if tipo == "cliente" else (c.admin_caminho or "/"),
+        secure=c.cookie_seguro,
+        httponly=True,  # o JavaScript da página não lê a sessão (um script injetado também não)
+        samesite="lax" if tipo == "cliente" else "strict",
+    )
+
+
+def apagar_cookie(resp: Response, c: Config, tipo: str) -> None:
+    resp.delete_cookie(
+        nome_cookie(c, tipo),
+        path="/" if tipo == "cliente" else (c.admin_caminho or "/"),
+        secure=c.cookie_seguro,
+        httponly=True,
+        samesite="lax" if tipo == "cliente" else "strict",
+    )
+
+
+def _contar_falha(c: Config, origem: dict, motivo: str, janela_s: int = 600, maximo: int = 60) -> None:
+    """Credencial errada (sessão, código, token): conta por rede; passou do limite, 429 por um tempo."""
+    if c.banco.contar(f"falha:{motivo}:{origem['rede']}", janela_s) > maximo:
+        raise HTTPException(429, "muitas tentativas recusadas desta rede; tente de novo mais tarde")
+
+
 def _apagar_fotos(c: Config, lote_id: str) -> None:
     """Fotos de entrada de um lote fechado: apagadas do armazenamento (minimiza o que guardamos)."""
     falhas = 0
@@ -381,9 +597,16 @@ def _enviar_suporte(c: Config, sid: str, dados: dict) -> None:
     try:
         c.enviar_email(c.email, suporte.montar(c.email, dados))
         c.banco.marcar_suporte(sid, True)
-    except Exception as e:  # noqa: BLE001 (a mensagem fica no banco; o /aprovar mostra o erro)
+    except Exception as e:  # noqa: BLE001 (a mensagem fica no banco; o painel mostra o erro)
         c.banco.marcar_suporte(sid, False, str(e)[:300])
         print(f"[suporte] AVISO: e-mail {sid} não saiu: {e}", flush=True)
+
+
+def _enviar_codigo(c: Config, para: str, codigo: str) -> None:
+    try:
+        c.enviar_email(c.email, suporte.montar_codigo(c.email, para, codigo, contas.CODIGO_VALIDADE_S // 60))
+    except Exception as e:  # noqa: BLE001 (a pessoa pede outro código; o erro fica no registro)
+        print(f"[conta] AVISO: código para {para.split('@')[-1]} não saiu: {type(e).__name__}: {e}", flush=True)
 
 
 def _se_fechou(c: Config, lote_id: str) -> None:
@@ -394,16 +617,30 @@ def _se_fechou(c: Config, lote_id: str) -> None:
 
 def _limites_teste(c: Config, cli: dict, origem: dict, n_fotos: int, exceto: str | None = None) -> None:
     """Teste gratuito: um pedido só (todas as fotos de uma vez), até 5 fotos por dispositivo e 50
-    por IP (várias pessoas de uma empresa dividem o IP; o teto por IP segura quem troca de navegador)."""
+    por rede (várias pessoas de uma empresa dividem o IP; o teto por rede segura quem troca de navegador)."""
     if c.banco.pedidos_ativos(cli["id"], exceto) > 0:
         raise HTTPException(
-            429, f"o teste gratuito é um pedido só, com até {TESTE['fotos']} fotos; para mais vídeos, fale com a gente"
+            429,
+            f"o teste gratuito é um pedido só, com até {TESTE['fotos']} fotos; para mais vídeos, adicione saldo",
         )
     disp = origem.get("dispositivo")
     if disp and c.banco.fotos_teste_dispositivo(disp, exceto) + n_fotos > TESTE["fotos_dispositivo"]:
         raise HTTPException(429, f"este dispositivo já usou o teste gratuito ({TESTE['fotos_dispositivo']} fotos)")
-    if c.banco.fotos_teste_ip(origem["ip"], exceto) + n_fotos > TESTE["fotos_ip"]:
+    if c.banco.fotos_teste_ip(origem["ip"], exceto, rede=origem.get("rede")) + n_fotos > TESTE["fotos_ip"]:
         raise HTTPException(429, "esta rede já usou todos os testes gratuitos disponíveis; fale com a gente")
+
+
+def _anti_robo(c: Config, resposta: str | None, origem: dict, acao: str) -> None:
+    """Confere o "não sou um robô" (Turnstile). Sem configuração, recusa (fail-closed), salvo quando
+    desligado de propósito (RENDER2GO_TURNSTILE=desligado, só desenvolvimento)."""
+    if c.turnstile_desligado:
+        return
+    if c.turnstile is None:
+        raise HTTPException(503, "verificação anti-robô não configurada; tente mais tarde")
+    motivo = contas.turnstile_confere(c.turnstile, resposta or "", origem.get("ip"), acao)
+    if motivo:
+        _contar_falha(c, origem, "robo", 3600, 30)
+        raise HTTPException(403, f"não foi possível confirmar que você não é um robô ({motivo}); tente de novo")
 
 
 def duracoes(plano: str) -> list[int]:
@@ -416,13 +653,13 @@ def duracoes(plano: str) -> list[int]:
 def sem_saldo(custo: int, saldo: int) -> str:
     return (
         f"saldo insuficiente: este pedido custa {precos.reais(custo)} e o seu saldo é {precos.reais(saldo)}. "
-        "Para recarregar, fale com a gente pelo suporte"
+        "Adicione saldo por Pix no seu painel"
     )
 
 
 class FotoIn(BaseModel):
     nome: str = Field(min_length=1, max_length=200)
-    tipo: str
+    tipo: str = Field(max_length=40)
     bytes: int = Field(gt=0)
 
 
@@ -438,6 +675,9 @@ class NavegadorIn(BaseModel):
     toque: int | None = Field(None, ge=0, le=64)
     marcado_em: str | None = Field(None, max_length=40)  # quando a caixa de autorização foi marcada
 
+    def model_post_init(self, _: Any) -> None:
+        self.idiomas = [i[:35] for i in self.idiomas]
+
 
 class CookiesIn(BaseModel):
     versao: str = Field(min_length=1, max_length=20)
@@ -449,37 +689,38 @@ class SuporteIn(BaseModel):
     assunto: str = Field("", max_length=120)
     mensagem: str = Field(min_length=10, max_length=2000)
     email: str | None = Field(None, max_length=200)
+    turnstile: str | None = Field(None, max_length=2048)
 
 
 class LoteIn(BaseModel):
     prompt: str = Field(min_length=3, max_length=600)
-    receita: str = "produto-close"
-    formato: str = "auto"
-    qualidade: str = "rapida"
+    receita: str = Field("produto-close", max_length=60)
+    formato: str = Field("auto", max_length=30)
+    qualidade: str = Field("rapida", max_length=30)
     duracao: int | None = None
     variacoes: int = Field(1, ge=1, le=lote.MAX_VARIACOES)
     consentimento: bool = False
     declarante: str | None = Field(None, max_length=120)  # opcional; a página não pede mais
-    modelo: str = modelos.PADRAO
+    modelo: str = Field(modelos.PADRAO, max_length=60)
     navegador: NavegadorIn | None = None
-    fotos: list[FotoIn]
+    fotos: list[FotoIn] = Field(max_length=MAX_FOTOS_LOTE)
 
 
 class PromptIn(BaseModel):
-    worker: str
+    worker: str = Field(max_length=100)
     prompt_en: str = Field(min_length=3, max_length=2000)
-    compilador: str
+    compilador: str = Field(max_length=200)
 
 
 class ConcluirIn(BaseModel):
-    worker: str
-    status: str
-    segundos: float | None = None
-    aviso: str | None = None
+    worker: str = Field(max_length=100)
+    status: str = Field(max_length=20)
+    segundos: float | None = Field(None, ge=0, le=86400)
+    aviso: str | None = Field(None, max_length=1000)
     erro: str | None = Field(None, max_length=1000)
     repetir: bool = False
     similaridade: float | None = None  # 1º quadro × foto (render2go_worker.conferencia)
-    bytes_video: int | None = None
+    bytes_video: int | None = Field(None, ge=0)
     deriva_cor: float | None = None  # continuidade até o fim do vídeo (render2go_worker.conferencia)
     salto_cor: float | None = None
 
@@ -496,11 +737,13 @@ class ReivindicarIn(BaseModel):
     worker: str = Field(min_length=3, max_length=100)
     # o pod que ainda baixa os modelos pede só "compilar" (traduz o pedido enquanto o download termina)
     tipos: list[Literal["compilar", "render"]] | None = Field(None, min_length=1, max_length=2)
+    # modelos de geração que este pod roda: só recebe pedidos deles
+    modelos: list[str] | None = Field(None, min_length=1, max_length=10)
 
 
 class ClienteIn(BaseModel):
-    nome: str = Field(min_length=2, max_length=120)
-    plano: str = "pago"
+    email: str = Field(min_length=3, max_length=254)
+    plano: str = Field("pago", max_length=20)
     cota_fotos_dia: int = Field(500, ge=1, le=100_000)
 
 
@@ -510,54 +753,146 @@ class SaldoIn(BaseModel):
     referencia: str | None = Field(None, max_length=120)  # id do pagamento: o mesmo nunca entra duas vezes
 
 
+class PlanoIn(BaseModel):
+    plano: str = Field(max_length=20)
+
+
+class EmailIn(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+
+class CodigoIn(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    aceite: bool = False  # termos de uso e política de privacidade
+    turnstile: str | None = Field(None, max_length=2048)
+
+
+class EntrarIn(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    codigo: str = Field(min_length=1, max_length=12)
+    aceite: bool = False
+
+
+class EntrarCodigoIn(BaseModel):
+    codigo: str = Field(min_length=20, max_length=200)
+    aceite: bool = False
+
+
+class ExcluirIn(BaseModel):
+    confirmacao: str = Field(max_length=20)
+
+
+class AdminEntrarIn(BaseModel):
+    token: str = Field(min_length=1, max_length=300)
+    totp: str | None = Field(None, max_length=12)
+
+
+class PixIn(BaseModel):
+    valor: str = Field(min_length=1, max_length=12)  # reais: "50" ou "19,90"
+    documento: str = Field(min_length=11, max_length=20)  # CPF ou CNPJ de quem paga (o Mercado Pago exige)
+
+
+def _resumo_pagamento(p: dict) -> dict:
+    pendente = p["status"] in ("criando", "pendente") and (p["expira"] or 0) > time.time()
+    return {
+        "id": p["id"],
+        "valor": p["valor"],
+        "status": p["status"] if pendente or p["status"] not in ("criando", "pendente") else "expirado",
+        "criado": p["criado"],
+        "expira": p["expira"],
+        "creditado_em": p["creditado_em"],
+        # o QR e o copia e cola só enquanto o Pix pode ser pago
+        "copia_cola": p.get("copia_cola") if pendente else None,
+        "qr_base64": p.get("qr_base64") if pendente else None,
+    }
+
+
 def criar_app(cfg: Config | None = None) -> FastAPI:
-    app = FastAPI(title="Render2Go", docs_url=None, redoc_url=None)
+    # sem /docs, /redoc e /openapi.json: o mapa da API não fica público
+    app = FastAPI(title="Render2Go", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.cfg = cfg
+    painel = cfg.admin_caminho if cfg is not None else caminho_admin_do_ambiente()
 
     def config() -> Config:
         if app.state.cfg is None:
             app.state.cfg = Config.do_ambiente()
         return app.state.cfg
 
-    def cliente(authorization: str | None = Header(None), c: Config = Depends(config)) -> dict:
-        tok = _token(authorization)
-        cli = c.banco.cliente_por_token(tok)
+    def _sessao_cliente(request: Request, c: Config) -> dict | None:
+        tok = request.cookies.get(nome_cookie(c, "cliente"))
+        if not tok or len(tok) > 200:
+            return None
+        s = c.banco.sessao(tok, "cliente")
+        if s is None:
+            _contar_falha(c, origem_de(request), "sessao")
+            return None
+        if request.method not in ("GET", "HEAD") and request.headers.get(CABECALHO_PAGINA) != "1":
+            raise HTTPException(403, "pedido sem o cabeçalho da página")
+        cli = s["cliente"]
+        cli["_sessao"] = tok
+        return cli
+
+    def cliente(request: Request, authorization: str | None = Header(None), c: Config = Depends(config)) -> dict:
+        cli = _sessao_cliente(request, c)
+        if cli is None and authorization:  # código de acesso antigo (integrações e clientes de antes)
+            tok = _token(authorization)
+            cli = c.banco.cliente_por_token(tok) if len(tok) <= 200 else None
+            if cli is None:
+                _contar_falha(c, origem_de(request), "token")
+                raise HTTPException(401, "token inválido")
         if cli is None:
-            raise HTTPException(401, "token inválido")
+            cab = None
+            if request.cookies.get(nome_cookie(c, "cliente")):  # sessão vencida ou revogada: o cookie sai
+                seguro = "; Secure" if c.cookie_seguro else ""
+                cab = {"Set-Cookie": f"{nome_cookie(c, 'cliente')}=; Max-Age=0; Path=/{seguro}; HttpOnly; SameSite=Lax"}
+            raise HTTPException(401, "entre na sua conta para continuar", headers=cab)
         c.limitar(cli["id"])
         return cli
 
-    def cliente_opcional(authorization: str | None = Header(None), c: Config = Depends(config)) -> dict | None:
-        """Cliente logado, ou None sem código de acesso (página /suporte)."""
-        if not authorization:
+    def cliente_opcional(
+        request: Request, authorization: str | None = Header(None), c: Config = Depends(config)
+    ) -> dict | None:
+        """Cliente conectado, ou None sem conta (página /suporte). Sessão vencida no cookie vira "sem
+        conta"; um código de acesso errado no cabeçalho continua sendo recusado (401)."""
+        if authorization:
+            return cliente(request, authorization, c)
+        if not request.cookies.get(nome_cookie(c, "cliente")):
             return None
-        return cliente(authorization, c)
+        try:
+            return cliente(request, None, c)
+        except HTTPException as e:
+            if e.status_code == 401:
+                return None
+            raise
 
-    def admin(authorization: str | None = Header(None), c: Config = Depends(config)) -> str:
+    def worker_auth(request: Request, authorization: str | None = Header(None), c: Config = Depends(config)) -> str:
+        """Token fixo (do servidor: "*") ou o token do pod (devolve o nome do worker dono dele)."""
         tok = _token(authorization)
-        if not _um_de(tok, c.admin_tokens):
+        if _um_de(tok, c.worker_tokens):
+            return "*"
+        nome = c.banco.worker_do_token(tok) if len(tok) <= 200 else None
+        if nome is None:
+            _contar_falha(c, origem_de(request), "worker")
             raise HTTPException(401, "token inválido")
-        return "admin-" + hashlib.sha256(tok.encode()).hexdigest()[:8]
+        return nome
 
-    def worker_auth(authorization: str | None = Header(None), c: Config = Depends(config)) -> None:
-        if not _um_de(_token(authorization), c.worker_tokens):
-            raise HTTPException(401, "token inválido")
+    def _mesmo_worker(dono: str, worker: str) -> None:
+        if dono != "*" and not hmac.compare_digest(dono, worker):
+            raise HTTPException(403, "este token é de outro worker")
 
     # -- páginas (servico/web/publico; docs/10) ---------------------------------------------
 
     web = carregar_publico()
 
-    @app.get("/", include_in_schema=False)
-    def pagina_cliente(request: Request):
-        return servir(request, web["index.html"], CACHE_REVALIDAR)
+    def rota_pagina(arquivo: str):
+        def rota(request: Request):
+            return servir(request, web[arquivo], CACHE_REVALIDAR)
 
-    @app.get("/suporte", include_in_schema=False)
-    def pagina_suporte(request: Request):
-        return servir(request, web["suporte.html"], CACHE_REVALIDAR)
+        return rota
 
-    @app.get("/aprovar", include_in_schema=False)
-    def pagina_aprovar(request: Request):
-        return servir(request, web["aprovar.html"], CACHE_REVALIDAR)
+    for caminho, arquivo in PAGINAS.items():
+        if arquivo in web:
+            app.add_api_route(caminho, rota_pagina(arquivo), methods=["GET"], include_in_schema=False)
 
     @app.get("/estatico/{nome}", include_in_schema=False)
     def estatico(nome: str, request: Request, v: str | None = None):
@@ -573,7 +908,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
         return rota
 
-    for nome in ("favicon.ico", "robots.txt", "sitemap.xml", "manifest.webmanifest"):
+    for nome in ("favicon.ico", "sitemap.xml", "manifest.webmanifest"):
         app.add_api_route(f"/{nome}", arquivo_raiz(nome), methods=["GET"], include_in_schema=False)
 
     @app.get("/app.js", include_in_schema=False)
@@ -590,7 +925,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if (
             exc.status_code == 404
             and request.method == "GET"
-            and not request.url.path.startswith("/api/")
+            and "/api/" not in request.url.path
             and "text/html" in request.headers.get("accept", "")
         ):
             return servir(request, web["404.html"], CACHE_REVALIDAR, status=404)
@@ -599,6 +934,176 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     @app.get("/saude")
     def saude():
         return {"ok": True}
+
+    # -- conta (ADR 0007) -------------------------------------------------------------------
+
+    @app.get("/api/publico")
+    def publico(c: Config = Depends(config)):
+        """O que a página de entrada precisa antes de alguém entrar."""
+        return {
+            "turnstile": c.turnstile.site if c.turnstile else None,
+            "entrada_email": c.email is not None,
+            "dominios": sorted(contas.dominios_aceitos()),
+            "documentos": contas.DOCUMENTOS,
+            "pagamento": c.mp is not None,
+        }
+
+    @app.post("/api/conta/codigo")
+    def pedir_codigo(body: CodigoIn, request: Request, c: Config = Depends(config)):
+        """Manda o código de entrada. A resposta é a mesma com ou sem conta (não revela quem é cliente)."""
+        origem = origem_de(request)
+        if not body.aceite:
+            raise HTTPException(422, "para continuar, aceite os Termos de Uso e a Política de Privacidade")
+        email, norm = _email_da_entrada(c, body.email)
+        if c.email is None:
+            raise HTTPException(503, "a entrada por e-mail está indisponível agora; tente de novo mais tarde")
+        _anti_robo(c, body.turnstile, origem, "codigo")
+        limites = [
+            (f"codigo:rede:{origem['rede']}", 3600, 10),
+            (f"codigo:rede:{origem['rede']}", 86400, 30),
+            (f"codigo:email:{norm}", 3600, 5),
+            (f"codigo:email:{norm}", 86400, 10),
+        ]
+        if origem["dispositivo"]:
+            limites.append((f"codigo:disp:{origem['dispositivo']}", 3600, 10))
+        for chave, janela, maximo in limites:
+            if c.banco.contar(chave, janela) > maximo:
+                espera = "uma hora" if janela <= 3600 else "amanhã"
+                raise HTTPException(429, f"muitos códigos pedidos; tente de novo em {espera}")
+        conta = c.banco.conta_por_email(norm)
+        if conta is None or conta["ativo"]:  # conta desativada: responde igual, mas não manda
+            codigo = contas.novo_codigo()
+            resumo = contas.resumo_codigo(c.chave_codigos, norm, codigo)
+            c.banco.criar_codigo(norm, email, resumo, contas.CODIGO_VALIDADE_S, origem)
+            c.em_segundo_plano(_enviar_codigo, c, email, codigo, correio=True)
+        return {"ok": True, "email": email, "validade_s": contas.CODIGO_VALIDADE_S}
+
+    def _email_da_entrada(c: Config, texto: str) -> tuple[str, str]:
+        """E-mail de um provedor da lista; fora dela, só o de uma conta que o painel criou."""
+        try:
+            return contas.normalizar(texto)
+        except contas.DominioRecusado as e:
+            with contextlib.suppress(contas.EmailRecusado):
+                email, norm = contas.normalizar(texto, exigir_dominio=False)
+                if c.banco.conta_por_email(norm):
+                    return email, norm
+            raise HTTPException(422, str(e)) from e
+        except contas.EmailRecusado as e:
+            raise HTTPException(422, str(e)) from e
+
+    def _abrir_sessao(c: Config, conta: dict, origem: dict, evento: str, detalhe: dict) -> JSONResponse:
+        c.banco.registrar_aceite(conta["id"], contas.DOCUMENTOS, origem)
+        token = c.banco.criar_sessao("cliente", contas.SESSAO_CLIENTE_S, origem, cliente_id=conta["id"])
+        c.banco.registrar_acesso(conta["id"], evento, origem, detalhe)
+        resp = JSONResponse({"ok": True, **detalhe, "conta": _resumo_conta(c, c.banco.cliente(conta["id"]))})
+        definir_cookie(resp, c, "cliente", token, contas.SESSAO_CLIENTE_S)
+        return resp
+
+    @app.post("/api/conta/entrar")
+    def entrar(body: EntrarIn, request: Request, c: Config = Depends(config)):
+        origem = origem_de(request)
+        if not body.aceite:
+            raise HTTPException(422, "para continuar, aceite os Termos de Uso e a Política de Privacidade")
+        email, norm = _email_da_entrada(c, body.email)
+        tentativas = [
+            (f"entrar:rede:{origem['rede']}", 3600, 30),
+            (f"entrar:email:{norm}", 3600, 10),
+            (f"entrar:email:{norm}", 86400, 20),
+        ]
+        if any(c.banco.contar(chave, janela) > maximo for chave, janela, maximo in tentativas):
+            raise HTTPException(429, "muitas tentativas; peça um código novo mais tarde")
+        codigo = contas.limpar_codigo(body.codigo)
+        if not contas.CODIGO.match(codigo) or not c.banco.conferir_codigo(
+            norm, contas.resumo_codigo(c.chave_codigos, norm, codigo), contas.CODIGO_TENTATIVAS
+        ):
+            raise HTTPException(401, "código inválido ou vencido; confira o código ou peça outro")
+        conta, nova = c.banco.conta_do_email(
+            email, norm, plano="teste", resumo=contas.resumo_email(c.chave_codigos, norm)
+        )
+        if not conta["ativo"]:
+            raise HTTPException(403, "esta conta está desativada; fale com o suporte")
+        return _abrir_sessao(c, conta, origem, "entrada", {"nova": nova})
+
+    @app.post("/api/conta/entrar-codigo")
+    def entrar_codigo(body: EntrarCodigoIn, request: Request, c: Config = Depends(config)):
+        """Quem já tinha um código de acesso entra com ele (a sessão é a mesma do e-mail)."""
+        origem = origem_de(request)
+        if not body.aceite:
+            raise HTTPException(422, "para continuar, aceite os Termos de Uso e a Política de Privacidade")
+        if c.banco.contar(f"falha:codigo-acesso:{origem['rede']}", 600, somar=False) > 20:
+            raise HTTPException(429, "muitas tentativas recusadas desta rede; tente de novo mais tarde")
+        conta = c.banco.cliente_por_token(body.codigo.strip())
+        if conta is None:
+            _contar_falha(c, origem, "codigo-acesso", 600, 20)
+            raise HTTPException(401, "código de acesso inválido ou desativado")
+        return _abrir_sessao(c, conta, origem, "entrada", {"nova": False, "codigo_acesso": True})
+
+    @app.post("/api/conta/sair")
+    def sair(request: Request, c: Config = Depends(config)):
+        tok = request.cookies.get(nome_cookie(c, "cliente"))
+        if tok:
+            s = c.banco.sessao(tok, "cliente")
+            c.banco.revogar_sessao(tok)
+            if s:
+                c.banco.registrar_acesso(s["cliente_id"], "saida", origem_de(request))
+        resp = JSONResponse({"ok": True})
+        apagar_cookie(resp, c, "cliente")
+        return resp
+
+    @app.post("/api/conta/sair-de-todos")
+    def sair_de_todos(request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        n = c.banco.revogar_sessoes(cli["id"])
+        c.banco.registrar_acesso(cli["id"], "saida_todos", origem_de(request), {"sessoes": n})
+        resp = JSONResponse({"ok": True, "sessoes": n})
+        apagar_cookie(resp, c, "cliente")
+        return resp
+
+    def _resumo_conta(c: Config, cli: dict) -> dict:
+        teste = None
+        if cli["plano"] == "teste":
+            teste = {"usado": c.banco.pedidos_ativos(cli["id"]) > 0, **{k: TESTE[k] for k in ("fotos", "duracao")}}
+        return {
+            "id": cli["id"],
+            "email": cli.get("email"),
+            "nome": cli.get("nome"),
+            "plano": cli["plano"],
+            "criado": cli.get("criado"),
+            "saldo": c.banco.saldo(cli["id"]),
+            "teste": teste,
+            "pagamento": {"ativo": c.mp is not None, "minimo": c.mp.minimo, "maximo": c.mp.maximo} if c.mp else None,
+        }
+
+    @app.get("/api/conta")
+    def minha_conta(cli: dict = Depends(cliente), c: Config = Depends(config)):
+        return _resumo_conta(c, cli)
+
+    @app.get("/api/conta/dados")
+    def meus_dados(request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """Cópia dos dados pessoais da conta, em JSON (LGPD, art. 18, II e V)."""
+        c.banco.registrar_acesso(cli["id"], "dados_exportados", origem_de(request))
+        dados = c.banco.dados_da_conta(cli["id"])
+        for p in dados["pedidos"]:
+            with contextlib.suppress(ValueError, TypeError):
+                p["pedido"] = json.loads(p["pedido"])
+        return JSONResponse(
+            dados, headers={"Content-Disposition": f'attachment; filename="render2go-dados-{cli["id"]}.json"'}
+        )
+
+    @app.post("/api/conta/excluir")
+    def excluir_conta(body: ExcluirIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        if body.confirmacao.strip().upper() != "EXCLUIR":
+            raise HTTPException(422, 'para excluir, escreva "EXCLUIR"')
+        resumo = None
+        if cli.get("email"):  # o mesmo e-mail não ganha outro teste grátis depois
+            resumo = contas.resumo_email(c.chave_codigos, contas.normalizar(cli["email"], exigir_dominio=False)[1])
+        try:
+            c.banco.excluir_conta(cli["id"], resumo)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        c.banco.registrar_acesso(cli["id"], "conta_excluida", origem_de(request))
+        resp = JSONResponse({"ok": True})
+        apagar_cookie(resp, c, "cliente")
+        return resp
 
     # -- cliente ------------------------------------------------------------------------
 
@@ -620,9 +1125,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 max_fotos=TESTE["fotos"],
                 disponivel=motivo is None,
                 motivo=motivo,
+                precos=precos.PRECOS,  # o que custa depois do teste (recarga por Pix)
             )
         return {
             "plano": plano,
+            "conta": {"email": cli.get("email"), "plano": cli["plano"]},
+            "pagamento": c.mp is not None,
             "autorizacao": AUTORIZACAO,
             "modelos": modelos.disponiveis(),
             "modelo_padrao": modelos.PADRAO,
@@ -661,7 +1169,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @app.post("/api/interesses")
     def registrar_interesse(body: InteresseIn, cli: dict = Depends(cliente), c: Config = Depends(config)):
-        """ "Tenho interesse" numa finalidade em breve: conta no /aprovar para decidir o próximo modelo."""
+        """ "Tenho interesse" numa finalidade em breve: aparece no painel (total e cada clique)."""
         if body.finalidade not in modelos.IDS_FINALIDADES:
             raise HTTPException(422, "finalidade desconhecida")
         if modelos.disponivel(body.finalidade):
@@ -752,13 +1260,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         lid = c.banco.criar_lote(
             cli["id"], pedido, fotos, origem=origem, autorizacao=autorizacao, preco_video=preco_video
         )
+        c.banco.registrar_acesso(cli["id"], "pedido", origem, {"lote": lid, "fotos": len(fotos)})
         envios = []
         for f in c.banco.fotos(lid):
             original = next(x["original"] for x in fotos if x["nome"] == f["nome"])
             envios.append(
                 {
                     "original": original,
-                    "url": c.armazenamento.url("PUT", f["chave"], URL_ENVIO_S, content_type=f["tipo"]),
+                    # a URL só aceita exatamente os bytes declarados (o R2 recusa arquivo maior ou menor)
+                    "url": c.armazenamento.url(
+                        "PUT", f["chave"], URL_ENVIO_S, content_type=f["tipo"], content_length=f["bytes"]
+                    ),
                     "tipo": f["tipo"],
                 }
             )
@@ -770,7 +1282,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if lt is None:
             raise HTTPException(404, "lote não encontrado")
         if cli["plano"] == "teste":  # de novo aqui: dois pedidos enviados ao mesmo tempo
-            origem = {"ip": lt["ip"] or "desconhecido", "dispositivo": lt["dispositivo"]}
+            origem = {"ip": lt["ip"] or "desconhecido", "dispositivo": lt["dispositivo"], "rede": lt.get("rede")}
             _limites_teste(c, cli, origem, lt["n_fotos"], exceto=lote_id)
         fotos = c.banco.fotos(lote_id)
         with ThreadPoolExecutor(max_workers=16) as ex:
@@ -799,8 +1311,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             return {"lote": lote_id, "status": "aprovado", "videos": r["videos"]}
         return {"lote": lote_id, "status": "aguardando_aprovacao"}
 
-    def _resumo(lt: dict, c: Config, cliente_id: str) -> dict:
-        jobs = [j for j in c.banco.jobs(lt["id"]) if j["tipo"] == "render"]
+    def _resumo(
+        lt: dict, c: Config, cliente_id: str, jobs: list[dict] | None = None, cobranca: dict | None = None
+    ) -> dict:
+        if jobs is None:
+            jobs = [j for j in c.banco.jobs(lt["id"]) if j["tipo"] == "render"]
         videos = []
         for j in jobs:
             item = {"arquivo": j["arquivo"], "status": j["status"], "aviso": j["aviso"]}
@@ -815,6 +1330,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 )
             videos.append(item)
         pedido = json.loads(lt["pedido"])
+        if lt["preco_video"] is not None and cobranca is None:
+            cobranca = c.banco.cobranca(lt["id"])
         return {
             "lote": lt["id"],
             "status": lt["status"],
@@ -828,7 +1345,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "videos": videos,
             "previsao": _previsao(c, lt, jobs),
             # pré-pago: quanto o pedido custou e quanto já voltou para o saldo
-            "cobranca": c.banco.cobranca(lt["id"]) if lt["preco_video"] is not None else None,
+            "cobranca": cobranca if lt["preco_video"] is not None else None,
         }
 
     def _previsao(c: Config, lt: dict, jobs: list[dict]) -> dict | None:
@@ -836,15 +1353,16 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
         Usa o estado real dos pods (o orquestrador registra cada um na tabela geradores) e a subida
         medida: pod desligado, a subida típica inteira; pod subindo, o que falta dela; pod pronto,
-        só a tradução do pedido, se ainda faltar. A fila segue a ordem de `Banco.reivindicar`."""
+        só a tradução do pedido, se ainda faltar. A fila segue a ordem de `Banco.reivindicar`. Fila,
+        pods e médias vêm de um retrato de poucos segundos, o mesmo para todas as páginas."""
         if lt["status"] == "aguardando_aprovacao":
             return {"fase": "analise", "inicio_max_s": PRAZO_ANALISE_S}
         if lt["status"] not in ("aprovado", "processando"):
             return None
-        por_video = c.banco.segundos_por_video() or VIDEO_PADRAO_S
-        g = c.banco.estado_geradores()
+        por_video = c.retrato("por_video", c.banco.segundos_por_video) or VIDEO_PADRAO_S
+        g = c.retrato("geradores", c.banco.estado_geradores)
         vazao = por_video / max(1, g["prontos"] + len(g["subindo"]))
-        fila = c.banco.videos_a_frente(lt)
+        fila = c.banco.videos_a_frente(lt, c.retrato("fila", c.banco.linhas_fila))
         if any(j["status"] in ("em_andamento", "ok") for j in jobs):
             return {"fase": "gerando", "fim_s": math.ceil(fila["ultimo"] * vazao)}
         subida = g["subida_s"] or PREPARO_S
@@ -855,7 +1373,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         else:
             espera = subida + CICLO_S / 2
             if lt["prioridade"] > 0:  # teste gratuito: espera juntar com outros testes
-                trabalho = c.banco.trabalho()
+                trabalho = c.retrato("trabalho", c.banco.trabalho)
                 if trabalho and not any(t["prioridade"] == 0 for t in trabalho):
                     videos = sum(int(t["pendentes"] or 0) + int(t["em_andamento"] or 0) for t in trabalho)
                     idade = time.time() - min(float(t["mais_antigo"]) for t in trabalho)
@@ -886,15 +1404,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             if c.banco.contar_suporte(campo, valores[campo], janela) >= maximo:
                 espera = "uma hora" if janela <= 3600 else "amanhã"
                 raise HTTPException(429, f"muitas mensagens seguidas; tente de novo em {espera}")
+        if cli is None:  # sem conta: o "não sou um robô" também aqui
+            _anti_robo(c, body.turnstile, origem, "suporte")
         mensagem = body.mensagem.strip()
         sid = c.banco.registrar_suporte(cliente_id, origem, email, body.assunto.strip(), mensagem)
-        if c.email is not None:
+        if c.email is not None and c.email.para:
             dados = {
                 "id": sid,
                 "cliente_id": cliente_id,
-                "cliente_nome": cli["nome"] if cli else None,
+                "cliente_nome": (cli.get("email") or cli["nome"]) if cli else None,
                 "plano": cli["plano"] if cli else None,
-                "email": email,
+                "email": email or (cli.get("email") if cli else None),
                 "assunto": body.assunto.strip(),
                 "mensagem": mensagem,
                 "ip": origem["ip"],
@@ -908,24 +1428,29 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     def escolha_cookies(body: CookiesIn, request: Request, c: Config = Depends(config)):
         """Guarda a escolha do aviso de cookies (sem login). Os necessários não têm escolha."""
         origem = origem_de(request)
-        if c.banco.contar_cookies(origem["ip"], 3600) >= 60:  # contra quem tenta encher o banco
+        if c.banco.contar(f"cookies:{origem['rede']}", 3600) > 60:  # contra quem tenta encher o banco
             raise HTTPException(429, "muitas escolhas seguidas")
         escolha = {"necessarios": True, "estatisticas": body.estatisticas, "marketing": body.marketing}
         return {"ok": True, "id": c.banco.registrar_cookies(origem, body.versao, escolha)}
 
     @app.get("/api/lotes")
     def meus_lotes(cli: dict = Depends(cliente), c: Config = Depends(config)):
-        return [_resumo(lt, c, cli["id"]) for lt in c.banco.lotes(cliente_id=cli["id"], limite=20)]
+        lotes = c.banco.lotes(cliente_id=cli["id"], limite=20)
+        ids = [lt["id"] for lt in lotes]
+        jobs = c.banco.jobs_de(ids)  # uma consulta para os jobs de todos os pedidos da página
+        cobr = c.banco.cobrancas([lt["id"] for lt in lotes if lt["preco_video"] is not None])
+        return [_resumo(lt, c, cli["id"], jobs[lt["id"]], cobr.get(lt["id"])) for lt in lotes]
 
     @app.get("/api/saldo")
     def meu_saldo(cli: dict = Depends(cliente), c: Config = Depends(config)):
         if cli["plano"] not in precos.PLANOS_COBRADOS:
-            return {"pre_pago": False}
+            return {"pre_pago": False, "pagamento": c.mp is not None}
         return {
             "pre_pago": True,
             "saldo": c.banco.saldo(cli["id"]),
             "precos": precos.PRECOS,
             "extrato": c.banco.extrato(cli["id"], 20),
+            "pagamento": c.mp is not None,
         }
 
     @app.get("/api/lotes/{lote_id}")
@@ -935,9 +1460,202 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(404, "lote não encontrado")
         return _resumo(lt, c, cli["id"])
 
-    # -- aprovação (ADR 0004) -------------------------------------------------------------
+    # -- pagamentos (ADR 0008) --------------------------------------------------------------
 
-    @app.get("/api/admin/lotes")
+    def _conferir_pagamento(c: Config, p: dict) -> dict:
+        """Pergunta ao Mercado Pago e aplica a resposta (crédito, recusa, devolução). Só o que a API
+        dele diz vale: o aviso (webhook) é só o gatilho."""
+        if c.mp is None or not p.get("provedor_id"):
+            return p
+        try:
+            info = c.provedor_pagamento(c.mp).consultar(p["provedor_id"])
+        except pagamentos.PagamentoError as e:
+            print(f"[pagamentos] AVISO: conferir {p['id']}: {e}", flush=True)
+            c.banco.marcar_conferido(p["id"])
+            return c.banco.pagamento(p["id"]) or p
+        _aplicar_pagamento(c, p, info)
+        return c.banco.pagamento(p["id"]) or p
+
+    def _aplicar_pagamento(c: Config, p: dict, info: dict) -> None:
+        if info["id"] != str(p["provedor_id"]) or (info.get("referencia") not in (None, p["id"])):
+            print(f"[pagamentos] AVISO: {p['id']}: resposta de outro pagamento ({info['id']})", flush=True)
+            return
+        if info["status"] == "aprovado":
+            if info.get("moeda") not in (None, "BRL") or info.get("valor") != p["valor"]:
+                c.banco.atualizar_pagamento(p["id"], "divergente", info)  # o painel mostra para conferir
+                print(f"[pagamentos] ALERTA: {p['id']}: valor ou moeda diferente do pedido: {info}", flush=True)
+                return
+            try:
+                if c.banco.creditar_pagamento(p["id"], info["valor"], info["id"], info):
+                    c.banco.registrar_acesso(
+                        p["cliente_id"], "recarga", {}, {"pagamento": p["id"], "valor": p["valor"]}
+                    )
+            except BancoError as e:
+                print(f"[pagamentos] ALERTA: {p['id']}: {e}", flush=True)
+        elif info["status"] in ("devolvido", "contestado"):
+            if p["creditado_em"]:
+                c.banco.estornar_pagamento(p["id"], info["status"], info)
+            else:
+                c.banco.atualizar_pagamento(p["id"], info["status"], info)
+        else:
+            c.banco.atualizar_pagamento(p["id"], info["status"], info)
+
+    @app.post("/api/pagamentos/pix")
+    def criar_pix(body: PixIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        if c.mp is None:
+            raise HTTPException(503, "a recarga por Pix ainda não está disponível; fale com o suporte")
+        if cli["plano"] == "interno":
+            raise HTTPException(422, "o plano interno não usa saldo")
+        if not cli.get("email"):
+            raise HTTPException(422, "a recarga precisa de um e-mail na conta; fale com o suporte")
+        try:
+            valor = precos.centavos(body.valor)
+            doc = pagamentos.documento(body.documento)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        if not c.mp.minimo <= valor <= c.mp.maximo:
+            raise HTTPException(422, f"a recarga vai de {precos.reais(c.mp.minimo)} a {precos.reais(c.mp.maximo)}")
+        if c.banco.pagamentos_pendentes(cli["id"]) >= 3:
+            raise HTTPException(429, "você já tem Pix aguardando pagamento; pague um deles ou espere vencer")
+        if c.banco.contar(f"pix:{cli['id']}", 3600) > 10:
+            raise HTTPException(429, "muitas recargas pedidas; tente de novo em uma hora")
+        pid = c.banco.criar_pagamento(cli["id"], valor, "mercadopago", pagamentos.mascarar(*doc))
+        try:
+            r = c.provedor_pagamento(c.mp).criar_pix(pid, valor, cli["email"], doc)
+        except pagamentos.PagamentoError as e:
+            c.banco.atualizar_pagamento(pid, "erro", {"erro": str(e)[:300]})
+            print(f"[pagamentos] AVISO: {pid}: {e}", flush=True)
+            raise HTTPException(502, "não foi possível gerar o Pix agora; tente de novo em instantes") from e
+        c.banco.pagamento_criado(pid, r["id"], r["status"], r["expira"], r["copia_cola"], r["qr_base64"])
+        c.banco.registrar_acesso(cli["id"], "pix", origem_de(request), {"pagamento": pid, "valor": valor})
+        return _resumo_pagamento(c.banco.pagamento(pid))
+
+    @app.get("/api/pagamentos")
+    def meus_pagamentos(cli: dict = Depends(cliente), c: Config = Depends(config)):
+        return [_resumo_pagamento(p) for p in c.banco.pagamentos(cli["id"], 20)]
+
+    @app.get("/api/pagamentos/{pid}")
+    def ver_pagamento(pid: str, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        p = c.banco.pagamento(pid, cli["id"])
+        if p is None:
+            raise HTTPException(404, "recarga não encontrada")
+        recente = time.time() - float(p["conferido_em"] or p["criado"]) < pagamentos.CONFERIR_A_CADA_S
+        if p["status"] in ("criando", "pendente") and not recente:  # sem o aviso, confere direto
+            p = _conferir_pagamento(c, p)
+        return _resumo_pagamento(p)
+
+    @app.post("/api/pagamentos/mercadopago")
+    def aviso_mercadopago(request: Request, c: Config = Depends(config)):
+        """Aviso de pagamento do Mercado Pago: confere a assinatura e consulta o pagamento na API dele."""
+        if c.mp is None:
+            raise HTTPException(404, "Not Found")
+        q = request.query_params
+        data_id = q.get("data.id") or q.get("id")
+        if not pagamentos.assinatura_confere(
+            c.mp.segredo_webhook, request.headers.get("x-signature", ""), request.headers.get("x-request-id"), data_id
+        ):
+            _contar_falha(c, origem_de(request), "webhook", 600, 30)
+            raise HTTPException(401, "assinatura inválida")
+        if (q.get("type") or q.get("topic")) != "payment" or not data_id:
+            return {"ok": True}
+        try:
+            info = c.provedor_pagamento(c.mp).consultar(data_id)
+        except pagamentos.PagamentoError as e:  # o Mercado Pago repete o aviso depois
+            raise HTTPException(502, "não foi possível consultar o pagamento agora") from e
+        p = c.banco.pagamento(info["referencia"]) if info.get("referencia") else None
+        if p is None or p["provedor"] != "mercadopago":
+            return {"ok": True, "ignorado": True}
+        if not p["provedor_id"]:  # o aviso chegou antes de a criação terminar de gravar
+            return JSONResponse({"detail": "tente de novo"}, status_code=409)
+        _aplicar_pagamento(c, p, info)
+        return {"ok": True}
+
+    # -- painel (ADR 0004 e 0007) ----------------------------------------------------------
+
+    rotas = APIRouter()
+
+    def _admin_rede(request: Request, c: Config) -> None:
+        if not contas.ip_permitido(ip_de(request), c.admin_ips):
+            raise HTTPException(404, "Not Found")
+
+    def admin(request: Request, c: Config = Depends(config)) -> str:
+        _admin_rede(request, c)
+        tok = request.cookies.get(nome_cookie(c, "admin"))
+        s = c.banco.sessao(tok, "admin") if tok and len(tok) <= 200 else None
+        if s is None:
+            if tok:
+                _contar_falha(c, origem_de(request), "painel-sessao", 600, 30)
+            raise HTTPException(401, "sessão do painel ausente ou vencida")
+        if request.method not in ("GET", "HEAD") and request.headers.get(CABECALHO_PAGINA) != "1":
+            raise HTTPException(403, "pedido sem o cabeçalho da página")
+        return s["admin"]
+
+    def _auditar(c: Config, request: Request, quem: str, acao: str, alvo: str | None = None, detalhe: Any = None):
+        c.banco.auditar(quem, acao, alvo, detalhe, ip_de(request))
+
+    @rotas.get("", include_in_schema=False)
+    def painel_sem_barra(request: Request, c: Config = Depends(config)):
+        _admin_rede(request, c)
+        return RedirectResponse(f"{c.admin_caminho}/", status_code=308)
+
+    @rotas.get("/", include_in_schema=False)
+    def pagina_painel(request: Request, c: Config = Depends(config)):
+        _admin_rede(request, c)
+        return servir(request, web["painel.html"], "no-store")
+
+    @rotas.get("/painel.js", include_in_schema=False)
+    def js_painel(request: Request, v: str | None = None, c: Config = Depends(config)):
+        _admin_rede(request, c)
+        arq = web["privado/painel.js"]
+        return servir(request, arq, "private, max-age=31536000, immutable" if v == arq.versao else "no-store")
+
+    @rotas.post("/api/entrar")
+    def admin_entrar(body: AdminEntrarIn, request: Request, c: Config = Depends(config)):
+        _admin_rede(request, c)
+        origem = origem_de(request)
+        recusadas = c.banco.contar(f"falha:painel:{origem['rede']}", 900, somar=False)
+        if recusadas >= 5 or c.banco.contar(f"painel:{origem['rede']}", 900) > 10:
+            raise HTTPException(429, "muitas tentativas; espere 15 minutos")
+        ok_token = _um_de(body.token.strip(), c.admin_tokens)
+        contador = None
+        if c.admin_totp:
+            contador = contas.totp_confere(c.admin_totp, (body.totp or "").strip())
+            ultimo = c.banco.ler_estado("totp_ultimo")
+            if contador is not None and ultimo and contador <= int(ultimo["valor"] or -1):
+                contador = None  # código já usado (alguém viu e repetiu)
+        if not ok_token or (c.admin_totp and contador is None):
+            c.banco.contar(f"falha:painel:{origem['rede']}", 900)
+            c.banco.auditar("?", "entrada_recusada", None, {"totp": bool(c.admin_totp)}, origem["ip"])
+            raise HTTPException(401, "token ou código do autenticador inválido")
+        if contador is not None:
+            c.banco.definir_estado("totp_ultimo", str(contador))
+        quem = "admin-" + hashlib.sha256(body.token.strip().encode()).hexdigest()[:8]
+        token = c.banco.criar_sessao("admin", contas.SESSAO_ADMIN_S, origem, admin=quem)
+        c.banco.auditar(quem, "entrada", None, {"totp": bool(c.admin_totp)}, origem["ip"])
+        resp = JSONResponse({"ok": True, "admin": quem})
+        definir_cookie(resp, c, "admin", token, contas.SESSAO_ADMIN_S)
+        return resp
+
+    @rotas.post("/api/sair")
+    def admin_sair(request: Request, c: Config = Depends(config)):
+        tok = request.cookies.get(nome_cookie(c, "admin"))
+        if tok:
+            c.banco.revogar_sessao(tok)
+        resp = JSONResponse({"ok": True})
+        apagar_cookie(resp, c, "admin")
+        return resp
+
+    @rotas.get("/api/sessao")
+    def admin_sessao(request: Request, c: Config = Depends(config)):
+        """A página consulta ao abrir; sem sessão a resposta é `admin: null` (não é erro)."""
+        _admin_rede(request, c)
+        tok = request.cookies.get(nome_cookie(c, "admin"))
+        s = c.banco.sessao(tok, "admin") if tok and len(tok) <= 200 else None
+        if s is None:
+            return {"admin": None}
+        return {"admin": s["admin"], "totp": c.admin_totp is not None}
+
+    @rotas.get("/api/lotes")
     def pendentes(status: str = "aguardando_aprovacao", _: str = Depends(admin), c: Config = Depends(config)):
         out = []
         for lt in c.banco.lotes(status=status, limite=50):
@@ -949,7 +1667,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 {
                     "lote": lt["id"],
                     "cliente": lt["cliente_id"],
-                    "cliente_nome": cli.get("nome"),
+                    "cliente_nome": cli.get("email") or cli.get("nome"),
                     "plano": cli.get("plano"),
                     "ip": lt["ip"],
                     "dispositivo": lt["dispositivo"],
@@ -958,7 +1676,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "criado": lt["criado"],
                     "pedido": json.loads(lt["pedido"]),
                     "filtro_c1": filtros.avaliar(json.loads(lt["pedido"])["prompt"]).reason,
-                    "analise_ligada": c.analises is not None,
+                    "analise_ligada": c.analise_ligada,
                     "fotos": [
                         {
                             "nome": f["nome"],
@@ -971,9 +1689,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             )
         return out
 
-    @app.post("/api/admin/lotes/{lote_id}/aprovar")
-    def aprovar(lote_id: str, quem: str = Depends(admin), c: Config = Depends(config)):
-        return _aprovar(c, lote_id, quem)
+    @rotas.post("/api/lotes/{lote_id}/aprovar")
+    def aprovar(lote_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        r = _aprovar(c, lote_id, quem)
+        _auditar(c, request, quem, "aprovar", lote_id)
+        return r
 
     def _aprovar(c: Config, lote_id: str, quem: str) -> dict:
         lt = c.banco.lote(lote_id)
@@ -996,12 +1716,46 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(409, str(e)) from e
         return {"lote": lote_id, "status": "aprovado", "videos": len(tarefas)}
 
-    @app.get("/api/admin/clientes")
-    def lista_clientes(_: str = Depends(admin), c: Config = Depends(config)):
-        return {"clientes": c.banco.clientes(), "precos": precos.PRECOS, "planos_cobrados": precos.PLANOS_COBRADOS}
+    @rotas.post("/api/lotes/{lote_id}/recusar")
+    def recusar(
+        lote_id: str, body: RecusaIn, request: Request, quem: str = Depends(admin), c: Config = Depends(config)
+    ):
+        try:
+            c.banco.recusar(lote_id, quem, body.motivo)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        _se_fechou(c, lote_id)
+        _auditar(c, request, quem, "recusar", lote_id, {"motivo": body.motivo})
+        return {"lote": lote_id, "status": "recusado"}
 
-    @app.post("/api/admin/clientes/{cliente_id}/saldo")
-    def adicionar_saldo(cliente_id: str, body: SaldoIn, quem: str = Depends(admin), c: Config = Depends(config)):
+    @rotas.get("/api/clientes")
+    def lista_clientes(busca: str | None = None, _: str = Depends(admin), c: Config = Depends(config)):
+        return {
+            "clientes": c.banco.clientes(busca=busca),
+            "resumo": c.banco.contar_clientes(),
+            "precos": precos.PRECOS,
+            "planos_cobrados": precos.PLANOS_COBRADOS,
+        }
+
+    @rotas.post("/api/clientes")
+    def nova_conta(body: ClienteIn, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        """Conta criada pelo painel, já com e-mail: a pessoa entra pelo código que chega no e-mail."""
+        try:
+            email, norm = contas.normalizar(body.email, exigir_dominio=False)  # o painel aceita e-mail de empresa
+        except contas.EmailRecusado as e:
+            raise HTTPException(422, str(e)) from e
+        try:
+            cota = 100_000 if body.plano == "interno" else body.cota_fotos_dia
+            cid, _ = c.banco.criar_cliente(email, cota, body.plano, email=email, email_norm=norm)
+        except BancoError as e:
+            raise HTTPException(422, str(e)) from e
+        _auditar(c, request, quem, "criar_conta", cid, {"email": email, "plano": body.plano})
+        return {"cliente": cid, "email": email, "plano": body.plano}
+
+    @rotas.post("/api/clientes/{cliente_id}/saldo")
+    def adicionar_saldo(
+        cliente_id: str, body: SaldoIn, request: Request, quem: str = Depends(admin), c: Config = Depends(config)
+    ):
         try:
             valor = precos.centavos(body.valor)
         except ValueError as e:
@@ -1018,34 +1772,56 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             saldo = c.banco.movimentar(cliente_id, valor, body.descricao.strip(), quem, ref)
         except BancoError as e:
             raise HTTPException(422, str(e)) from e
+        _auditar(c, request, quem, "saldo", cliente_id, {"valor": valor, "descricao": body.descricao, "ref": ref})
         return {"cliente": cliente_id, "saldo": saldo}
 
-    @app.get("/api/admin/clientes/{cliente_id}/extrato")
+    @rotas.get("/api/clientes/{cliente_id}/extrato")
     def extrato_cliente(cliente_id: str, _: str = Depends(admin), c: Config = Depends(config)):
         cli = c.banco.cliente(cliente_id)
         if cli is None:
             raise HTTPException(404, "cliente não encontrado")
         return {**cli, "saldo": c.banco.saldo(cliente_id), "movimentos": c.banco.extrato(cliente_id, 1000)}
 
-    @app.post("/api/admin/clientes")
-    def novo_cliente(body: ClienteIn, quem: str = Depends(admin), c: Config = Depends(config)):
+    @rotas.post("/api/clientes/{cliente_id}/plano")
+    def mudar_plano(
+        cliente_id: str, body: PlanoIn, request: Request, quem: str = Depends(admin), c: Config = Depends(config)
+    ):
         try:
-            cota = 100_000 if body.plano == "interno" else body.cota_fotos_dia
-            cid, token = c.banco.criar_cliente(body.nome, cota, body.plano)
+            c.banco.mudar_plano(cliente_id, body.plano)
         except BancoError as e:
             raise HTTPException(422, str(e)) from e
-        return {"cliente": cid, "token": token, "aviso": "guarde o token: ele não aparece de novo"}
+        _auditar(c, request, quem, "plano", cliente_id, {"plano": body.plano})
+        return {"cliente": cliente_id, "plano": body.plano}
 
-    @app.post("/api/admin/lotes/{lote_id}/recusar")
-    def recusar(lote_id: str, body: RecusaIn, quem: str = Depends(admin), c: Config = Depends(config)):
+    @rotas.post("/api/clientes/{cliente_id}/email")
+    def ligar_email(
+        cliente_id: str, body: EmailIn, request: Request, quem: str = Depends(admin), c: Config = Depends(config)
+    ):
+        """Cliente antigo (código de acesso): liga um e-mail para ele entrar pelo e-mail."""
         try:
-            c.banco.recusar(lote_id, quem, body.motivo)
-        except BancoError as e:
-            raise HTTPException(409, str(e)) from e
-        _se_fechou(c, lote_id)
-        return {"lote": lote_id, "status": "recusado"}
+            email, norm = contas.normalizar(body.email, exigir_dominio=False)
+            c.banco.definir_email(cliente_id, email, norm)
+        except (contas.EmailRecusado, BancoError) as e:
+            raise HTTPException(422, str(e)) from e
+        _auditar(c, request, quem, "email", cliente_id, {"email": email})
+        return {"cliente": cliente_id, "email": email}
 
-    @app.get("/api/admin/historico")
+    @rotas.post("/api/clientes/{cliente_id}/desativar")
+    def desativar(cliente_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        if not c.banco.desativar_cliente(cliente_id, quem):
+            raise HTTPException(404, "cliente não encontrado ou já desativado")
+        c.banco.revogar_sessoes(cliente_id)  # quem estava conectado cai na hora
+        _auditar(c, request, quem, "desativar", cliente_id)
+        return {"cliente": cliente_id, "ativo": False}
+
+    @rotas.post("/api/clientes/{cliente_id}/reativar")
+    def reativar(cliente_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        if not c.banco.reativar_cliente(cliente_id):
+            raise HTTPException(404, "cliente não encontrado, já ativo ou excluído")
+        _auditar(c, request, quem, "reativar", cliente_id)
+        return {"cliente": cliente_id, "ativo": True}
+
+    @rotas.get("/api/historico")
     def historico(grupo: str = "todos", _: str = Depends(admin), c: Config = Depends(config)):
         try:
             lotes = c.banco.historico(grupo, limite=100)
@@ -1083,31 +1859,73 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "dispositivos": c.banco.uso_por_dispositivo(),
         }
 
-    @app.get("/api/admin/geradores")
+    @rotas.get("/api/geradores")
     def relatorio_geradores(dias: int = 30, _: str = Depends(admin), c: Config = Depends(config)):
         """Relatório das GPUs (pods) que subiram: identificação, tempo ligado, vídeos e custo estimado."""
         if not 1 <= dias <= 366:
             raise HTTPException(422, "dias: de 1 a 366")
         return c.banco.relatorio_geradores(time.time() - dias * 86400)
 
-    @app.get("/api/admin/interesses")
+    @rotas.get("/api/pods")
+    def pods(_: str = Depends(admin), c: Config = Depends(config)):
+        """Pods ligados agora, a pausa e o sinal de vida do orquestrador (quem executa os comandos)."""
+        vivo = c.banco.ler_estado("orquestrador_vivo")
+        pausa = c.banco.ler_estado("pausado")
+        return {
+            "pods": c.banco.geradores_ativos(),
+            "pausado": bool(pausa and pausa["valor"] == "1"),
+            "pausado_em": pausa["atualizado"] if pausa and pausa["valor"] == "1" else None,
+            "orquestrador_visto_s": round(time.time() - float(vivo["atualizado"]), 1) if vivo else None,
+            "comandos": c.banco.comandos_recentes(10),
+        }
+
+    @rotas.post("/api/pods/{gerador}/desligar")
+    def desligar_pod(gerador: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        if not any(g["id"] == gerador for g in c.banco.geradores_ativos()):
+            raise HTTPException(404, "este pod não está ligado")
+        cid = c.banco.comando("desligar_pod", quem, gerador)
+        c.banco.revogar_tokens_worker(gerador=gerador)  # o pod deixa de pegar jobs na hora
+        _auditar(c, request, quem, "desligar_pod", gerador)
+        return {"ok": True, "comando": cid}
+
+    @rotas.post("/api/pods/emergencia")
+    def emergencia(request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        """Parada de emergência: nenhum pod novo sobe (pausa) e todos os ligados são encerrados."""
+        c.banco.definir_estado("pausado", "1")
+        c.banco.revogar_tokens_worker()  # nenhum pod pega job novo, mesmo antes do orquestrador agir
+        cid = c.banco.comando("emergencia", quem)
+        _auditar(c, request, quem, "emergencia")
+        return {"ok": True, "comando": cid, "pausado": True}
+
+    @rotas.post("/api/pods/retomar")
+    def retomar(request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        c.banco.definir_estado("pausado", "0")
+        cid = c.banco.comando("retomar", quem)
+        _auditar(c, request, quem, "retomar")
+        return {"ok": True, "comando": cid, "pausado": False}
+
+    @rotas.get("/api/interesses")
     def interesses(_: str = Depends(admin), c: Config = Depends(config)):
-        """Quantos clientes marcaram "Tenho interesse" em cada finalidade em breve."""
+        """ "Tenho interesse": quantos clientes em cada opção e cada clique (conta, e-mail e quando)."""
         titulos = {f["id"]: f for f in modelos.FINALIDADES}
-        return [
-            {
-                **i,
-                "titulo": titulos.get(i["finalidade"], {}).get("titulo", i["finalidade"]),
-                "tipo": titulos.get(i["finalidade"], {}).get("tipo", ""),
-            }
-            for i in c.banco.interesses()
-        ]
 
-    @app.get("/api/admin/suporte")
+        def titulo(i: dict) -> dict:
+            f = titulos.get(i["finalidade"], {})
+            return {**i, "titulo": f.get("titulo", i["finalidade"]), "tipo": f.get("tipo", "")}
+
+        return {
+            "resumo": [titulo(i) for i in c.banco.interesses()],
+            "cliques": [titulo(i) for i in c.banco.interesses_detalhados()],
+        }
+
+    @rotas.get("/api/suporte")
     def ver_suporte(_: str = Depends(admin), c: Config = Depends(config)):
-        return {"email_configurado": c.email is not None, "mensagens": c.banco.suporte_recente()}
+        return {
+            "email_configurado": c.email is not None and bool(c.email.para),
+            "mensagens": c.banco.suporte_recente(),
+        }
 
-    @app.get("/api/admin/lotes/{lote_id}/auditoria")
+    @rotas.get("/api/lotes/{lote_id}/auditoria")
     def auditoria(lote_id: str, _: str = Depends(admin), c: Config = Depends(config)):
         a = c.banco.auditoria(lote_id)
         if a is None:
@@ -1126,17 +1944,49 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             e["detalhe"] = js(e["detalhe"])
         return a
 
-    @app.post("/api/admin/clientes/{cliente_id}/desativar")
-    def desativar(cliente_id: str, quem: str = Depends(admin), c: Config = Depends(config)):
-        if not c.banco.desativar_cliente(cliente_id, quem):
-            raise HTTPException(404, "cliente não encontrado ou já desativado")
-        return {"cliente": cliente_id, "ativo": False}
+    @rotas.get("/api/pagamentos")
+    def pagamentos_painel(_: str = Depends(admin), c: Config = Depends(config)):
+        return {"configurado": c.mp is not None, "pagamentos": c.banco.pagamentos(limite=100)}
+
+    @rotas.post("/api/pagamentos/{pid}/conferir")
+    def conferir_pagamento(pid: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        p = c.banco.pagamento(pid)
+        if p is None:
+            raise HTTPException(404, "recarga não encontrada")
+        p = _conferir_pagamento(c, p)
+        _auditar(c, request, quem, "conferir_pagamento", pid, {"status": p["status"]})
+        return {"id": pid, "status": p["status"], "creditado_em": p["creditado_em"]}
+
+    @rotas.get("/api/seguranca")
+    def seguranca(_: str = Depends(admin), c: Config = Depends(config)):
+        """O que está ligado (e o que falta) e as últimas ações do painel."""
+        vivo = c.banco.ler_estado("orquestrador_vivo")
+        return {
+            "turnstile": c.turnstile is not None,
+            "turnstile_desligado": c.turnstile_desligado,
+            "email": c.email is not None,
+            "suporte_email": c.email is not None and bool(c.email.para),
+            "totp": c.admin_totp is not None,
+            "admin_ips": len(c.admin_ips),
+            "pagamento": c.mp is not None,
+            "cookie_seguro": c.cookie_seguro,
+            "analise": c.analise,
+            "segredo_contas": c.segredo_contas is not None,
+            "orquestrador_visto_s": round(time.time() - float(vivo["atualizado"]), 1) if vivo else None,
+            "contas": c.banco.contar_clientes(),
+            "auditoria": c.banco.auditoria_admin(50),
+        }
+
+    if painel:
+        app.include_router(rotas, prefix=painel)
 
     # -- workers --------------------------------------------------------------------------
 
-    @app.post("/api/worker/reivindicar", dependencies=[Depends(worker_auth)])
-    def reivindicar(body: ReivindicarIn, c: Config = Depends(config)):
-        job = c.banco.reivindicar(body.worker, tipos=body.tipos)
+    @app.post("/api/worker/reivindicar")
+    def reivindicar(body: ReivindicarIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
+        _mesmo_worker(dono, body.worker)
+        modelos_pod = [m[:40] for m in body.modelos] if body.modelos else None
+        job = c.banco.reivindicar(body.worker, tipos=body.tipos, modelos=modelos_pod)
         if job is None:
             return {"job": None, "fila": c.banco.fila()}
         lt = c.banco.lote(job["lote_id"])
@@ -1180,8 +2030,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(409, "job não está com este worker")
         return job
 
-    @app.post("/api/worker/jobs/{job_id}/prompt", dependencies=[Depends(worker_auth)])
-    def prompt(job_id: str, body: PromptIn, c: Config = Depends(config)):
+    @app.post("/api/worker/jobs/{job_id}/prompt")
+    def prompt(job_id: str, body: PromptIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
+        _mesmo_worker(dono, body.worker)
         job = _do_worker(job_id, body.worker, c)
         d = filtros.avaliar(body.prompt_en)
         if not d.allowed:  # C1 também no prompt compilado
@@ -1193,8 +2044,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         c.banco.definir_prompt(job["lote_id"], body.prompt_en, body.compilador)
         return {"ok": True}
 
-    @app.post("/api/worker/jobs/{job_id}/concluir", dependencies=[Depends(worker_auth)])
-    def concluir(job_id: str, body: ConcluirIn, c: Config = Depends(config)):
+    @app.post("/api/worker/jobs/{job_id}/concluir")
+    def concluir(job_id: str, body: ConcluirIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
+        _mesmo_worker(dono, body.worker)
         job = _do_worker(job_id, body.worker, c)
         status, erro, repetir = body.status, body.erro, body.repetir
         if job["tipo"] == "render" and status == "ok":
@@ -1247,7 +2099,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     @app.middleware("http")
     async def cabecalhos(request: Request, call_next):
         caminho = request.url.path
-        da_api = caminho.startswith("/api/") or caminho == "/saude"
+        do_painel = bool(painel) and (caminho == painel or caminho.startswith(painel + "/"))
+        da_api = caminho.startswith("/api/") or caminho == "/saude" or (do_painel and "/api/" in caminho)
         if da_api and request.method not in ("GET", "HEAD", "OPTIONS") and not mesma_origem(request):
             resp: Response = JSONResponse({"detail": "pedido de outro site recusado"}, status_code=403)
         else:
@@ -1264,13 +2117,16 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         h["Permissions-Policy"] = PERMISSOES
         h["Content-Security-Policy"] = (
             f"default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; manifest-src 'self'; "
-            f"img-src 'self' blob: {arm}; media-src {arm}; connect-src 'self' {arm}; object-src 'none'; "
-            "frame-ancestors 'none'; base-uri 'none'; form-action 'self'; "
+            f"img-src 'self' blob: {arm}; media-src {arm}; connect-src 'self' {arm}; frame-src 'self'; "
+            "object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; "
             "require-trusted-types-for 'script'; trusted-types 'none'"
         )
-        if da_api:
+        if caminho == "/verificacao":  # a página isolada do Turnstile, só dentro de um quadro do próprio site
+            h["Content-Security-Policy"] = CSP_VERIFICACAO
+            h["X-Frame-Options"] = "SAMEORIGIN"
+            h["X-Robots-Tag"] = "noindex, nofollow"
+        if da_api or do_painel:
             h.setdefault("Cache-Control", "no-store")  # respostas com dados da conta não ficam em cache
-        if da_api or caminho == "/aprovar":
             h["X-Robots-Tag"] = "noindex, nofollow"
         return resp
 

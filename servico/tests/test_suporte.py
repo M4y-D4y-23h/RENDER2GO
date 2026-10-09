@@ -5,11 +5,9 @@ import threading
 from email import message_from_bytes
 
 import pytest
-from fastapi.testclient import TestClient
-from test_api import ADMIN, WORKER, Armazem, _cliente, h
+from test_api import PAINEL, _cliente, cliente_teste, config_teste, h
 
-from render2go_servico import suporte
-from render2go_servico.api import Config, criar_app
+from render2go_servico import contas, suporte
 
 D1, D2 = "11111111-0000-4000-8000-000000000000", "22222222-0000-4000-8000-000000000000"
 
@@ -51,18 +49,11 @@ def smtp():
     srv.shutdown()
 
 
-def _api(banco, email=None, enviar=None):
-    cfg = Config(
-        banco=banco,
-        armazenamento=Armazem(),
-        admin_tokens=[ADMIN],
-        worker_tokens=[WORKER],
-        segredo_aprovacao="s" * 40,
-        email=email,
-    )
+def _api(banco, email=None, enviar=None, **kw):
+    cfg = config_teste(banco, email=email, **kw)
     if enviar:
         cfg.enviar_email = enviar
-    return TestClient(criar_app(cfg)), cfg
+    return cliente_teste(cfg), cfg
 
 
 def _mandar(api, tok, dispositivo=D1, **corpo):
@@ -85,7 +76,7 @@ def test_message_is_emailed_to_the_owner_with_reply_to_the_client(banco, smtp):
     assert m["Subject"] == "[Render2Go] Suporte: Download Bcc: alguem@x.com" and m["Bcc"] is None  # sem injeção
     texto = m.get_payload(decode=True).decode()
     assert "Padaria Pão Bom" in texto and "baixar o vídeo" in texto and D1 in texto
-    msgs = api.get("/api/admin/suporte", headers=h(ADMIN)).json()
+    msgs = api.get(f"{PAINEL}/api/suporte").json()
     assert msgs["email_configurado"] is True and msgs["mensagens"][0]["enviado"] == 1
 
 
@@ -99,7 +90,7 @@ def test_rate_limit_per_device_ip_and_client(banco):
     assert _mandar(api, tok, dispositivo=D2).status_code == 200  # outro dispositivo...
     assert _mandar(api, tok, dispositivo=D2).status_code == 200
     assert _mandar(api, tok, dispositivo=D2).status_code == 429  # ...mas o IP chegou a 5 por hora
-    msgs = api.get("/api/admin/suporte", headers=h(ADMIN)).json()
+    msgs = api.get(f"{PAINEL}/api/suporte").json()
     assert msgs["email_configurado"] is False and len(msgs["mensagens"]) == 5
 
 
@@ -115,8 +106,8 @@ def test_invalid_input_and_failed_email_are_handled(banco):
     assert api.post("/api/suporte", json={"mensagem": "x" * 20}).status_code == 422  # sem código: pede e-mail
     assert _mandar(api, tok).status_code == 200  # o cliente não vê a falha do e-mail
     cfg.esperar_fundo()
-    (m,) = api.get("/api/admin/suporte", headers=h(ADMIN)).json()["mensagens"]
-    assert m["enviado"] == 0 and "conexão recusada" in m["erro"]  # fica no banco e o /aprovar mostra
+    (m,) = api.get(f"{PAINEL}/api/suporte").json()["mensagens"]
+    assert m["enviado"] == 0 and "conexão recusada" in m["erro"]  # fica no banco e o painel mostra
 
 
 def test_support_page_works_without_an_access_code_with_stricter_limits(banco):
@@ -129,7 +120,32 @@ def test_support_page_works_without_an_access_code_with_stricter_limits(banco):
     for _ in range(2):
         assert api.post("/api/suporte", json={**corpo, "email": "dona@loja.com"}, headers=sem).status_code == 200
     assert api.post("/api/suporte", json={**corpo, "email": "dona@loja.com"}, headers=sem).status_code == 429
-    (m, _) = api.get("/api/admin/suporte", headers=h(ADMIN)).json()["mensagens"]
+    (m, _) = api.get(f"{PAINEL}/api/suporte").json()["mensagens"]
     assert m["cliente_id"] == "" and m["email"] == "dona@loja.com"
     # código inválido continua sendo recusado (não vira mensagem anônima)
     assert api.post("/api/suporte", json=corpo, headers={"Authorization": "Bearer " + "x" * 40}).status_code == 401
+
+
+def test_support_without_an_account_needs_the_robot_check(banco, monkeypatch):
+    """Sem conta, o "não sou um robô" é obrigatório; sem a chave configurada, recusa (fail-closed)."""
+    vistos = []
+
+    def conferir(cfg, resposta, ip, acao=None):
+        vistos.append((resposta, acao))
+        return None if resposta == "token-bom" else "verificação anti-robô recusada: invalid-input-response"
+
+    monkeypatch.setattr(contas, "turnstile_confere", conferir)
+    api, _ = _api(banco, turnstile_desligado=False)  # sem chave: o suporte sem conta fica fechado
+    corpo = {"mensagem": "Não consigo entrar na minha conta.", "email": "dona@gmail.com"}
+    r = api.post("/api/suporte", json=corpo, headers={"X-Dispositivo": D1})
+    assert r.status_code == 503 and "anti-robô" in r.json()["detail"]
+
+    api, _ = _api(banco, turnstile_desligado=False, turnstile=contas.ConfigTurnstile("1x" + "0" * 20, "segredo"))
+    assert api.post("/api/suporte", json=corpo, headers={"X-Dispositivo": D1}).status_code == 403
+    r = api.post("/api/suporte", json={**corpo, "turnstile": "token-ruim"}, headers={"X-Dispositivo": D1})
+    assert r.status_code == 403 and "robô" in r.json()["detail"]
+    r = api.post("/api/suporte", json={**corpo, "turnstile": "token-bom"}, headers={"X-Dispositivo": D1})
+    assert r.status_code == 200 and vistos[-1] == ("token-bom", "suporte")
+    # com conta (código de acesso), sem verificação
+    tok = _cliente(api)
+    assert _mandar(api, tok, dispositivo=D2).status_code == 200

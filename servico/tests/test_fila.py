@@ -15,7 +15,9 @@ import pytest
 import uvicorn
 from PIL import Image, ImageDraw
 from render2go_worker import cli_submit, fila, media
+from test_api import ADM, PAINEL, TOTP
 
+from render2go_servico import contas, suporte
 from render2go_servico.api import Config, criar_app
 from render2go_servico.db import Banco
 
@@ -95,8 +97,20 @@ def ambiente(tmp_path, monkeypatch):
     armazem = Armazem(f"http://127.0.0.1:{dep.server_address[1]}", Deposito.objetos)
     banco = Banco(f"sqlite:///{tmp_path / 'b.db'}")
     banco.criar_esquema()
+    enviados = []  # e-mails (códigos de entrada) que a API mandaria
     cfg = Config(
-        banco=banco, armazenamento=armazem, admin_tokens=[ADMIN], worker_tokens=[WORKER], segredo_aprovacao="s" * 40
+        banco=banco,
+        armazenamento=armazem,
+        admin_tokens=[ADMIN],
+        worker_tokens=[WORKER],
+        segredo_aprovacao="s" * 40,
+        admin_caminho=PAINEL,
+        admin_totp=TOTP,
+        turnstile_desligado=True,
+        cookie_seguro=False,  # http local (em produção, só HTTPS)
+        retrato_s=0,
+        email=suporte.ConfigEmail(host="smtp.teste", para="", de="Render2Go <nao-responda@render2go.com>"),
+        enviar_email=lambda cfg_, msg: enviados.append(msg),
     )
     porta = _porta()
     srv = uvicorn.Server(uvicorn.Config(criar_app(cfg), host="127.0.0.1", port=porta, log_level="error"))
@@ -108,7 +122,12 @@ def ambiente(tmp_path, monkeypatch):
     monkeypatch.setattr(media, "check_url", lambda url: None)  # local: http em 127.0.0.1
     monkeypatch.setenv("RENDER2GO_SAFETY", "c1-revisao-humana")
     yield SimpleNamespace(
-        url=f"http://127.0.0.1:{porta}", banco=banco, objetos=Deposito.objetos, armazem=armazem, cfg=cfg
+        url=f"http://127.0.0.1:{porta}",
+        banco=banco,
+        objetos=Deposito.objetos,
+        armazem=armazem,
+        cfg=cfg,
+        enviados=enviados,
     )
     srv.should_exit = True
     dep.shutdown()
@@ -127,14 +146,28 @@ def _png(cor, forma):
     return b.getvalue()
 
 
+def entrar_painel(url: str):
+    """Sessão do painel (token + código do autenticador), como o navegador do dono."""
+    import requests
+
+    s = requests.Session()
+    s.headers.update(ADM)
+    agora = int(time.time() // 30)
+    for contador in (agora - 1, agora, agora + 1):  # o mesmo código não vale duas vezes
+        r = s.post(f"{url}{PAINEL}/api/entrar", json={"token": ADMIN, "totp": contas.totp(TOTP, contador)})
+        if r.ok:
+            return s
+    raise AssertionError(r.text)
+
+
 def _lote_aprovado(amb, fotos: dict[str, bytes]):
     import requests
 
-    h = {"Authorization": f"Bearer {ADMIN}"}
-    cli = requests.post(f"{amb.url}/api/admin/clientes", json={"nome": "Padaria"}, headers=h).json()
+    adm = entrar_painel(amb.url)
+    cid, token = amb.banco.criar_cliente("Padaria", 500, "pago")
     saldo = {"valor": "100", "descricao": "recarga do teste"}  # plano pago: pré-pago
-    assert requests.post(f"{amb.url}/api/admin/clientes/{cli['cliente']}/saldo", json=saldo, headers=h).ok
-    hc = {"Authorization": f"Bearer {cli['token']}"}
+    assert adm.post(f"{amb.url}{PAINEL}/api/clientes/{cid}/saldo", json=saldo).ok
+    hc = {"Authorization": f"Bearer {token}"}
     corpo = {
         "prompt": "a câmera se aproxima devagar do produto",
         "duracao": 4,
@@ -144,7 +177,7 @@ def _lote_aprovado(amb, fotos: dict[str, bytes]):
     for e in r["envios"]:  # o "navegador" envia direto ao armazenamento
         requests.put(e["url"], data=fotos[e["original"]], timeout=10)
     assert requests.post(f"{amb.url}/api/lotes/{r['lote']}/enviado", headers=hc).status_code == 200
-    assert requests.post(f"{amb.url}/api/admin/lotes/{r['lote']}/aprovar", headers=h).status_code == 200
+    assert adm.post(f"{amb.url}{PAINEL}/api/lotes/{r['lote']}/aprovar").status_code == 200
     return r["lote"], hc
 
 

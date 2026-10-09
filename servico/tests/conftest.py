@@ -31,6 +31,16 @@ def banco(request, tmp_path):
 
         with psycopg.connect(PG_URL, autocommit=True) as con:
             for t in (
+                "auditoria_admin",
+                "pagamentos",
+                "tokens_worker",
+                "estado",
+                "comandos",
+                "acessos",
+                "aceites",
+                "limites",
+                "codigos",
+                "sessoes",
                 "interesses",
                 "movimentos",
                 "geradores",
@@ -44,9 +54,10 @@ def banco(request, tmp_path):
                 "clientes",
             ):
                 con.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
-        b = Banco(PG_URL)
+        b = Banco(PG_URL, pool=4)
     b.criar_esquema()
-    return b
+    yield b
+    b.fechar()
 
 
 @pytest.fixture(autouse=True)

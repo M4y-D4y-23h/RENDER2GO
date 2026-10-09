@@ -272,3 +272,58 @@ def test_mirror_writer_pod_is_closed_outside_the_cycle(orq, banco, monkeypatch):
     with banco.tx() as c:  # ainda enviando ao espelho, mas já fora da previsão (não gera mais vídeos)
         assert c.one("SELECT estado FROM geradores")["estado"] == "encerrado"
     assert _esperar(lambda: not o.encerrando) and o.provedor.encerrados == ["p1"]
+
+
+def test_each_pod_gets_its_own_worker_token_revoked_when_it_ends(orq, banco):
+    _lote(banco, 2, plano="pago")
+    o = orq()
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    pf = next(iter(o.ativos.values()))
+    _, env = pf.pod.agente.exec(f"cat {o.remoto.raiz}/fila.env", 10)
+    token = next(
+        linha.split("=", 1)[1].strip("'") for linha in env.splitlines() if linha.startswith("RENDER2GO_WORKER_TOKEN=")
+    )
+    assert token != o.cfg.worker_token and banco.worker_do_token(token) == pf.worker == f"pod-{pf.pod.info.id}"
+    o.encerrar_todos("fim do teste")
+    assert banco.worker_do_token(token) is None  # o pod saiu: o token não vale mais
+
+
+def test_panel_commands_shut_down_one_pod_or_all_and_pause(orq, banco):
+    _lote(banco, 50, plano="pago")  # pede 2 pods
+    o = orq()
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 2)
+    alvo = next(iter(o.ativos.values()))
+    banco.comando("desligar_pod", "admin-teste", alvo.gerador)
+    o.comandos()
+    assert alvo.pod.info.id in o.provedor.encerrados and alvo.pod.info.id not in o.ativos
+    (cmd,) = banco.comandos_recentes()
+    assert cmd["executado_em"] and "encerrado" in cmd["resultado"]
+    # parada de emergência (a API grava a pausa e o comando): encerra todos e não sobe outros
+    banco.definir_estado("pausado", "1")
+    banco.comando("emergencia", "admin-teste")
+    r = o.ciclo()
+    assert r["pausado"] is True and not o.ativos and sorted(o.provedor.encerrados) == ["p1", "p2"]
+    assert o.ciclo()["desejados"] == 0 and len(o.provedor.criados) == 2  # a fila ainda pede, mas nada sobe
+    vivo = banco.ler_estado("orquestrador_vivo")
+    assert vivo and float(vivo["valor"]) > 0  # o painel vê que o orquestrador está ativo
+    # retomar: volta a subir pods conforme a fila
+    banco.definir_estado("pausado", "0")
+    banco.comando("retomar", "admin-teste")
+    assert o.ciclo()["subindo"] >= 1
+    _esperar(lambda: o.subindo == 0)
+    o.encerrar_todos("fim do teste")
+
+
+def test_pods_left_by_a_crashed_process_are_shut_down_at_start(orq, banco):
+    o = orq(intervalo_s=0.05)
+    sobras = o.cfg.estado / ln.ESTADO / "pods.json"
+    sobras.parent.mkdir(parents=True, exist_ok=True)
+    sobras.write_text('[{"id": "velho1", "descricao": "x"}, {"id": "velho2", "descricao": "y"}]')
+    t = threading.Thread(target=o.rodar, daemon=True)
+    t.start()
+    assert _esperar(lambda: (o.cfg.estado / "vivo").exists())
+    o.parar.set()
+    t.join(5)
+    assert {"velho1", "velho2"} <= set(o.provedor.encerrados) and sobras.read_text() == "[]"

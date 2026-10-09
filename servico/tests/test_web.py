@@ -7,12 +7,18 @@ import json
 import re
 
 import pytest
-from fastapi.testclient import TestClient
-from test_api import ADMIN, Armazem, h
+from test_api import PAINEL, Armazem, cliente_teste, config_teste, h
 
-from render2go_servico.api import PUBLICO, Config, criar_app
+from render2go_servico.api import PUBLICO
 
-PAGINAS = {"/": "index.html", "/suporte": "suporte.html", "/aprovar": "aprovar.html"}
+PAGINAS = {
+    "/": "index.html",
+    "/suporte": "suporte.html",
+    "/termos": "termos.html",
+    "/privacidade": "privacidade.html",
+    "/cookies": "cookies.html",
+    f"{PAINEL}/": "painel.html",
+}
 TOKENS = PUBLICO.parent / "src" / "css" / "tokens.css"
 
 
@@ -30,10 +36,7 @@ class ArmazemR2(Armazem):
 
 @pytest.fixture
 def web(banco):
-    cfg = Config(
-        banco=banco, armazenamento=ArmazemR2(), admin_tokens=[ADMIN], worker_tokens=[], segredo_aprovacao="s" * 40
-    )
-    return TestClient(criar_app(cfg))
+    return cliente_teste(config_teste(banco, ArmazemR2(), worker_tokens=[]), admin=False)
 
 
 def test_pages_carry_security_headers_and_revalidate_with_etag(web):
@@ -61,12 +64,26 @@ def test_pages_carry_security_headers_and_revalidate_with_etag(web):
         assert r.headers["cross-origin-opener-policy"] == "same-origin"
         assert r.headers["cross-origin-resource-policy"] == "same-origin"
         assert "camera=()" in r.headers["permissions-policy"]
-        assert r.headers["cache-control"] == "no-cache"
+        assert r.headers["cache-control"] == ("no-store" if caminho == f"{PAINEL}/" else "no-cache")
         etag = r.headers["etag"]
         assert web.get(caminho, headers={"If-None-Match": etag}).status_code == 304
         assert web.get(caminho, headers={"If-None-Match": '"outro"'}).status_code == 200
-    assert web.get("/aprovar").headers["x-robots-tag"] == "noindex, nofollow"
+        assert "server" not in r.headers  # sem anunciar o servidor
+    assert web.get(f"{PAINEL}/").headers["x-robots-tag"] == "noindex, nofollow"
     assert "x-robots-tag" not in web.get("/").headers
+    # sem o mapa da API, sem o painel antigo e sem lista de caminhos
+    for caminho in ("/openapi.json", "/docs", "/redoc", "/aprovar", "/robots.txt", "/estatico/aprovar.js"):
+        assert web.get(caminho).status_code == 404, caminho
+    # o painel sem a barra final vai para o endereço com a barra (o script do painel é relativo a ela)
+    r = web.get(PAINEL, follow_redirects=False)
+    assert r.status_code == 308 and r.headers["location"] == f"{PAINEL}/"
+    # a página isolada do "não sou um robô": só ela carrega o script da Cloudflare, e só num quadro do site
+    v = web.get("/verificacao")
+    assert v.status_code == 200 and v.headers["x-frame-options"] == "SAMEORIGIN"
+    csp = v.headers["content-security-policy"]
+    assert "script-src 'self' https://challenges.cloudflare.com" in csp and "frame-ancestors 'self'" in csp
+    assert "trusted-types" not in csp and v.headers["x-robots-tag"] == "noindex, nofollow"
+    assert "challenges.cloudflare.com" not in web.get("/").headers["content-security-policy"]
     api = web.get("/api/receitas")  # sem token: 401, mas com os mesmos cuidados
     assert api.status_code == 401
     assert api.headers["cache-control"] == "no-store" and api.headers["x-robots-tag"] == "noindex, nofollow"
@@ -90,6 +107,13 @@ def test_static_files_are_versioned_cached_for_a_year_and_match_sri(web):
         ):
             corpo = web.get(url).content
             assert sri == "sha384-" + base64.b64encode(hashlib.sha384(corpo).digest()).decode(), (tag, url)
+    # o script do painel: só no endereço secreto, com versão e SRI, nunca em /estatico/
+    html = (PUBLICO / "painel.html").read_text()
+    url, sri = re.search(r'<script src="(painel\.js\?v=[0-9a-f]+)" integrity="(sha384-[^"]+)"', html).groups()
+    r = web.get(f"{PAINEL}/{url}")
+    assert r.status_code == 200 and sri == "sha384-" + base64.b64encode(hashlib.sha384(r.content).digest()).decode()
+    assert r.headers["cache-control"] == "private, max-age=31536000, immutable"
+    assert web.get("/estatico/painel.js").status_code == 404 and web.get("/privado/painel.js").status_code == 404
     css = web.get("/estatico/estilo.css").text  # a fonte dos títulos vem pelo CSS, também com versão
     for url in re.findall(r"url\((/estatico/[a-z0-9._-]+\?v=[0-9a-f]+)\)", css):
         r = web.get(url)
@@ -141,13 +165,13 @@ def test_cross_site_requests_that_change_data_are_refused(web, banco):
 
 
 def test_indexing_files_manifest_and_icons(web):
-    robots = web.get("/robots.txt")
-    assert robots.headers["content-type"] == "text/plain; charset=utf-8"
-    assert "Disallow: /api/" in robots.text and "Sitemap: https://app.render2go.com/sitemap.xml" in robots.text
-    assert "/aprovar" not in robots.text  # o endereço da revisão não é anunciado (noindex no cabeçalho basta)
+    # sem robots.txt (seria uma lista pública de caminhos); o que não é público responde com noindex
+    assert web.get("/robots.txt").status_code == 404
     mapa = web.get("/sitemap.xml")
     assert mapa.headers["content-type"].startswith("application/xml")
-    assert "<loc>https://app.render2go.com/suporte</loc>" in mapa.text and "aprovar" not in mapa.text
+    for pagina in ("suporte", "termos", "privacidade", "cookies"):
+        assert f"<loc>https://app.render2go.com/{pagina}</loc>" in mapa.text
+    assert "painel" not in mapa.text and "aprovar" not in mapa.text and "verificacao" not in mapa.text
     manifesto = web.get("/manifest.webmanifest")
     assert manifesto.headers["content-type"] == "application/manifest+json"
     dados = json.loads(manifesto.text)
@@ -170,7 +194,7 @@ def test_pages_have_semantic_structure_and_meta_tags():
         assert "style=" not in html  # a CSP não aceita estilo no meio do HTML
         assert not re.search(r"<script(?![^>]*\bsrc=)(?![^>]*application/ld\+json)[^>]*>", html)  # nem script embutido
         assert "  " not in html.split("<script type")[0]  # minificado (sem recuo)
-    for publica in ("index.html", "suporte.html"):
+    for publica in ("index.html", "suporte.html", "termos.html", "privacidade.html", "cookies.html"):
         html = (PUBLICO / publica).read_text()
         for marca in (
             '<meta name="description"',
@@ -179,7 +203,10 @@ def test_pages_have_semantic_structure_and_meta_tags():
             'name="twitter:card"',
         ):
             assert marca in html, (publica, marca)
-    for privada in ("aprovar.html", "404.html"):
+        # rodapé: termos, privacidade, cookies e a identificação de quem vende (Decreto 7.962/2013)
+        for link in ('href="/termos"', 'href="/privacidade"', 'href="/cookies"', "[[EMPRESA_DOCUMENTO]]"):
+            assert link in html, (publica, link)
+    for privada in ("painel.html", "404.html", "verificacao.html"):
         assert re.search(r'<meta name="robots" content="noindex', (PUBLICO / privada).read_text())
 
 

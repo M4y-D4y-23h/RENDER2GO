@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <title>Suporte · Render2Go</title>
-<meta name="description" content="Fale com o suporte do Render2Go: dúvidas, pedidos de vídeo e código de acesso. Respondemos pelo e-mail que você informar.">
+<meta name="description" content="Fale com o suporte do Render2Go: dúvidas, pedidos de vídeo, entrada e pagamentos. Respondemos pelo e-mail que você informar.">
 <link rel="canonical" href="https://app.render2go.com/suporte">
 <meta property="og:title" content="Suporte · Render2Go">
-<meta property="og:description" content="Dúvidas, pedidos de vídeo e código de acesso: fale com o suporte do Render2Go.">
+<meta property="og:description" content="Dúvidas, pedidos de vídeo, entrada e pagamentos: fale com o suporte do Render2Go.">
 <meta property="og:url" content="https://app.render2go.com/suporte">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0e17" media="(prefers-color-scheme: dark)">
 <meta name="format-detection" content="telephone=no">
-<link rel="stylesheet" href="/estatico/estilo.css?v=bd337da4f4e7" integrity="sha384-unbAX3AJuZnPVKjcAdZscCpYxa//aZhWzvD0ydSNBeKeyEBqIL+rbcUrqmlKND/B">
+<link rel="stylesheet" href="/estatico/estilo.css?v=a32022f842ee" integrity="sha384-V29S9xo2qnlRzddWxG1q8ClQEtCcKDUJi9La44Mc52RKD37ZMb39ODCoBAh/IMx0">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -27,7 +27,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/suporte.js?v=5426751ed343" integrity="sha384-vDV3VmbtVGOjwV272Mh1H+IU9H0rvYjh+E48uC1AltKUaVUV3XUzEIyQeT2EJQS4" defer></script>
+<script src="/estatico/suporte.js?v=c0d428b8e4b7" integrity="sha384-Lf+ffgWvykUST7WLGDMO+oeNWtJeoeoQaqRNWBRwApDHCihnjYIIj5gNgwk2xKYm" defer></script>
 </head>
 <body data-pagina="suporte">
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
@@ -52,7 +52,7 @@
 <noscript><p class="aviso erro">Esta página precisa de JavaScript para enviar a mensagem. Ative o JavaScript no navegador e recarregue a página.</p></noscript>
 <div class="cab-pagina">
 <h1>Fale com o suporte</h1>
-<p class="lead">Dúvida, problema com um pedido ou com o código de acesso? Escreva aqui. Respondemos pelo e-mail que você informar.</p>
+<p class="lead">Dúvida, problema com um pedido, com a entrada ou com um pagamento? Escreva aqui. Respondemos pelo e-mail que você informar. Para denunciar um uso indevido do serviço, comece o assunto com “Denúncia”.</p>
 </div>
 <form id="form-suporte" class="cartao elevado pilha" novalidate aria-label="Mensagem para o suporte">
 <p id="suporte-conta" class="aviso info" hidden></p>
@@ -72,6 +72,7 @@
 <label for="suporte-email">Seu e-mail para resposta <span class="opcional" id="email-opcional" hidden>(opcional)</span></label>
 <input id="suporte-email" type="email" maxlength="200" autocomplete="email" inputmode="email" spellcheck="false" autocapitalize="off" enterkeyhint="send">
 </div>
+<div id="verificacao-suporte" class="verificacao" hidden></div>
 <button type="submit" id="suporte-enviar" class="botao primario largo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM3.5 7l8.5 6 8.5-6"/></svg>Enviar mensagem</button>
 <p id="suporte-msg" class="aviso" hidden></p>
 </form>
@@ -82,9 +83,13 @@
 <div class="recipiente rodape-interno">
 <p>Render2Go · vídeos curtos com IA para pequenos negócios</p>
 <nav aria-label="Rodapé">
+<a href="/termos" data-nav="termos">Termos de Uso</a>
+<a href="/privacidade" data-nav="privacidade">Privacidade</a>
+<a href="/cookies" data-nav="cookies">Cookies</a>
 <a href="/suporte" data-nav="suporte" aria-current="page">Suporte</a>
 <button type="button" class="link" id="preferencias-cookies">Preferências de cookies</button>
 </nav>
+<p class="identificacao">[[EMPRESA_NOME]] · [[EMPRESA_DOCUMENTO]] · [[EMPRESA_ENDERECO]] · [[EMAIL_CONTATO]]</p>
 </div>
 </footer>
 <div id="anuncio" class="visualmente-oculto" aria-live="polite" aria-atomic="true"></div>

@@ -8,13 +8,13 @@
 <meta property="og:title" content="Render2Go · Vídeos curtos com IA a partir das suas fotos">
 <meta property="og:description" content="Envie as fotos do seu negócio, diga em português o que deve acontecer e receba um vídeo curto por foto.">
 <meta property="og:url" content="https://app.render2go.com/">
-<script src="/estatico/inicio.js?v=f0f2df15beb8" integrity="sha384-+TWRsxk/xzw/lCcR/G5w72nItMDmkxnwiy5YcWN5HKYp6IfgxOr9czSNDktqRoh4" data-chave="render2go-token-cliente" data-antecipar="/api/receitas /api/lotes"></script>
+<script src="/estatico/inicio.js?v=12c9aa774e80" integrity="sha384-59TmH8lB7iYlICVLL0oTKNwQS0+bjCqWme0lHvbE2LEmZMpucHegzIVlhb++SnZZ" data-chave="render2go-conectado" data-antecipar="/api/receitas /api/lotes"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0e17" media="(prefers-color-scheme: dark)">
 <meta name="format-detection" content="telephone=no">
-<link rel="stylesheet" href="/estatico/estilo.css?v=bd337da4f4e7" integrity="sha384-unbAX3AJuZnPVKjcAdZscCpYxa//aZhWzvD0ydSNBeKeyEBqIL+rbcUrqmlKND/B">
+<link rel="stylesheet" href="/estatico/estilo.css?v=a32022f842ee" integrity="sha384-V29S9xo2qnlRzddWxG1q8ClQEtCcKDUJi9La44Mc52RKD37ZMb39ODCoBAh/IMx0">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -28,7 +28,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/cliente.js?v=a200e348411a" integrity="sha384-gGazFFMp7jDJqeMOASkOWGO68bq4a3HRaPGxkVbINb6Tfrhby1NDGFKSkDp+LtyM" defer></script>
+<script src="/estatico/cliente.js?v=702224c11d52" integrity="sha384-P3EAjatiN5sViScihj+pjpj1Z3V+Yl4aOYutef1Apwul3bJpC1qeW54ABqXzfB5X" defer></script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
 {"@type":"Organization","@id":"https://app.render2go.com/#organizacao","name":"Render2Go","url":"https://app.render2go.com/","logo":"https://app.render2go.com/estatico/icone-512.png?v=d75fd84aa2d1"},
@@ -64,20 +64,53 @@
 <h1 id="titulo-hero">Suas fotos viram vídeos curtos, prontos para postar</h1>
 <p class="lead">Envie dezenas de fotos de uma vez, diga em português o que deve acontecer e receba um vídeo por foto.</p>
 </section>
-<form id="form-token" class="cartao elevado entrar" aria-labelledby="titulo-entrar">
-<h2 id="titulo-entrar">Entrar</h2>
+<section class="cartao elevado entrar" aria-labelledby="titulo-entrar">
+<h2 id="titulo-entrar">Entrar ou criar conta</h2>
+<form id="form-email" novalidate>
 <div class="campo">
-<label for="token">Seu código de acesso</label>
+<label for="email">Seu e-mail</label>
+<input id="email" type="email" autocomplete="email" inputmode="email" required maxlength="254" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="send" aria-describedby="email-dica">
+<p class="dica" id="email-dica">Gmail, Outlook/Hotmail, Yahoo, iCloud, UOL, BOL ou Terra. Não há senha: enviamos um código de acesso para o seu e-mail.</p>
+</div>
+<label class="marcacao" id="caixa-aceite">
+<input id="aceite" type="checkbox" required aria-describedby="aceite-dica">
+<span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Uso</a> e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</span>
+</label>
+<p class="dica" id="aceite-dica">O aceite fica registrado com a sua conta, a data e o endereço de internet.</p>
+<div id="verificacao-entrar" class="verificacao" hidden></div>
+<button type="submit" class="botao primario largo" id="enviar-email"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM3.5 7l8.5 6 8.5-6"/></svg>Receber o código</button>
+</form>
+<form id="form-codigo" novalidate hidden>
+<p id="codigo-enviado" class="aviso info" tabindex="-1"></p>
+<div class="campo">
+<label for="codigo">Código de acesso (8 dígitos)</label>
+<input id="codigo" inputmode="numeric" autocomplete="one-time-code" required maxlength="12" spellcheck="false" enterkeyhint="go" aria-describedby="codigo-dica">
+<p class="dica" id="codigo-dica">Confira também a caixa de spam. O código vale por 10 minutos e só uma vez.</p>
+</div>
+<button type="submit" class="botao primario largo" id="enviar-codigo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3a6 6 0 0 1-2.2 11.6L11 16.5H9v2H7v2H3v-3.6l6.2-6.2A6 6 0 0 1 15 3zM16.5 7.5h.01"/></svg>Entrar</button>
+<div class="acoes">
+<button type="button" class="botao fantasma pequeno" id="trocar-email"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Usar outro e-mail</button>
+<button type="button" class="botao fantasma pequeno" id="reenviar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.4 5.7M20 5v6h-6"/></svg>Mandar outro código</button>
+</div>
+</form>
+<p id="msg-entrada" class="aviso erro" hidden></p>
+<p class="fraco">Primeira vez aqui? A conta é criada no primeiro acesso, com um teste gratuito: até 5 fotos viram vídeos de 3 s em 480p. Depois, você paga só o que usar, com saldo por Pix.</p>
+<details class="codigo-antigo">
+<summary>Tenho um código de acesso antigo</summary>
+<form id="form-token" novalidate>
+<div class="campo">
+<label for="token">Código de acesso</label>
 <div class="senha">
-<input id="token" type="password" autocomplete="current-password" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go" aria-describedby="token-dica">
+<input id="token" type="password" autocomplete="off" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go">
 <button type="button" class="botao fantasma pequeno" id="mostrar-token" aria-controls="token" aria-pressed="false">Mostrar</button>
 </div>
-<p class="dica" id="token-dica">Você recebe o código quando contrata ou pede o teste gratuito. Ele fica guardado só neste navegador.</p>
+<p class="dica">Para quem recebeu um código antes das contas por e-mail. Vale o mesmo aceite dos termos acima.</p>
 </div>
-<p id="msg-entrada" class="aviso erro" hidden></p>
-<button type="submit" class="botao primario largo">Entrar</button>
-<p class="fraco">Não consegue entrar? <a href="/suporte">Fale com o suporte</a>.</p>
+<button type="submit" class="botao largo" id="enviar-token">Entrar com o código</button>
 </form>
+</details>
+<p class="fraco">Não consegue entrar? <a href="/suporte">Fale com o suporte</a>.</p>
+</section>
 <section class="como" aria-labelledby="titulo-como">
 <h2 id="titulo-como">Como funciona</h2>
 <ol>
@@ -91,6 +124,10 @@
 <div class="cab-pagina">
 <h1 id="titulo-painel" tabindex="-1">Seus vídeos</h1>
 <p class="fraco">Escolha as fotos, diga o que deve acontecer e acompanhe os pedidos aqui.</p>
+<div class="conta-linha">
+<p class="fraco" id="conta-resumo"></p>
+<button type="button" class="botao pequeno" id="abrir-conta"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0"/></svg>Sua conta</button>
+</div>
 </div>
 <p id="msg-painel" class="aviso erro" hidden></p>
 <div class="painel-grade">
@@ -104,7 +141,10 @@
 <summary>Ver extrato</summary>
 <ul class="extrato-lista" id="extrato-lista" aria-label="Últimos movimentos do saldo"></ul>
 </details>
-<p class="dica">Para recarregar, <a href="/suporte">fale com a gente pelo suporte</a>. Vídeo que não sai volta para o saldo.</p>
+<div class="acoes">
+<button type="button" class="botao primario pequeno" id="adicionar-saldo" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/></svg>Adicionar saldo por Pix</button>
+</div>
+<p class="dica" id="saldo-recarga">Vídeo que não sai volta para o saldo.</p>
 </div>
 <div class="finalidades" id="finalidades">
 <h3 id="titulo-finalidades" tabindex="-1">O que você quer criar?</h3>
@@ -238,9 +278,13 @@
 <div class="recipiente rodape-interno">
 <p>Render2Go · vídeos curtos com IA para pequenos negócios</p>
 <nav aria-label="Rodapé">
+<a href="/termos" data-nav="termos">Termos de Uso</a>
+<a href="/privacidade" data-nav="privacidade">Privacidade</a>
+<a href="/cookies" data-nav="cookies">Cookies</a>
 <a href="/suporte" data-nav="suporte">Suporte</a>
 <button type="button" class="link" id="preferencias-cookies">Preferências de cookies</button>
 </nav>
+<p class="identificacao">[[EMPRESA_NOME]] · [[EMPRESA_DOCUMENTO]] · [[EMPRESA_ENDERECO]] · [[EMAIL_CONTATO]]</p>
 </div>
 </footer>
 <div id="anuncio" class="visualmente-oculto" aria-live="polite" aria-atomic="true"></div>

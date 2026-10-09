@@ -8,7 +8,7 @@
 <meta property="og:title" content="Render2Go · Vídeos curtos com IA a partir das suas fotos">
 <meta property="og:description" content="Envie as fotos do seu negócio, diga em português o que deve acontecer e receba um vídeo curto por foto.">
 <meta property="og:url" content="{{ORIGEM}}/">
-<script src="/estatico/inicio.js" data-chave="render2go-token-cliente" data-antecipar="/api/receitas /api/lotes"></script>
+<script src="/estatico/inicio.js" data-chave="render2go-conectado" data-antecipar="/api/receitas /api/lotes"></script>
 <!--@cabeca-->
 <script src="/estatico/cliente.js" defer></script>
 <script type="application/ld+json">
@@ -33,20 +33,54 @@
       <p class="lead">Envie dezenas de fotos de uma vez, diga em português o que deve acontecer e receba um vídeo por foto.</p>
     </section>
 
-    <form id="form-token" class="cartao elevado entrar" aria-labelledby="titulo-entrar">
-      <h2 id="titulo-entrar">Entrar</h2>
-      <div class="campo">
-        <label for="token">Seu código de acesso</label>
-        <div class="senha">
-          <input id="token" type="password" autocomplete="current-password" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go" aria-describedby="token-dica">
-          <button type="button" class="botao fantasma pequeno" id="mostrar-token" aria-controls="token" aria-pressed="false">Mostrar</button>
+    <section class="cartao elevado entrar" aria-labelledby="titulo-entrar">
+      <h2 id="titulo-entrar">Entrar ou criar conta</h2>
+      <!-- passo 1: e-mail, aceite e "não sou um robô"; passo 2: o código que chega no e-mail -->
+      <form id="form-email" novalidate>
+        <div class="campo">
+          <label for="email">Seu e-mail</label>
+          <input id="email" type="email" autocomplete="email" inputmode="email" required maxlength="254" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="send" aria-describedby="email-dica">
+          <p class="dica" id="email-dica">Gmail, Outlook/Hotmail, Yahoo, iCloud, UOL, BOL ou Terra. Não há senha: enviamos um código de acesso para o seu e-mail.</p>
         </div>
-        <p class="dica" id="token-dica">Você recebe o código quando contrata ou pede o teste gratuito. Ele fica guardado só neste navegador.</p>
-      </div>
+        <label class="marcacao" id="caixa-aceite">
+          <input id="aceite" type="checkbox" required aria-describedby="aceite-dica">
+          <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Uso</a> e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</span>
+        </label>
+        <p class="dica" id="aceite-dica">O aceite fica registrado com a sua conta, a data e o endereço de internet.</p>
+        <div id="verificacao-entrar" class="verificacao" hidden></div>
+        <button type="submit" class="botao primario largo" id="enviar-email"><!--@icone mensagem-->Receber o código</button>
+      </form>
+      <form id="form-codigo" novalidate hidden>
+        <p id="codigo-enviado" class="aviso info" tabindex="-1"></p>
+        <div class="campo">
+          <label for="codigo">Código de acesso (8 dígitos)</label>
+          <input id="codigo" inputmode="numeric" autocomplete="one-time-code" required maxlength="12" spellcheck="false" enterkeyhint="go" aria-describedby="codigo-dica">
+          <p class="dica" id="codigo-dica">Confira também a caixa de spam. O código vale por 10 minutos e só uma vez.</p>
+        </div>
+        <button type="submit" class="botao primario largo" id="enviar-codigo"><!--@icone chave-->Entrar</button>
+        <div class="acoes">
+          <button type="button" class="botao fantasma pequeno" id="trocar-email"><!--@icone voltar-->Usar outro e-mail</button>
+          <button type="button" class="botao fantasma pequeno" id="reenviar"><!--@icone atualizar-->Mandar outro código</button>
+        </div>
+      </form>
       <p id="msg-entrada" class="aviso erro" hidden></p>
-      <button type="submit" class="botao primario largo">Entrar</button>
+      <p class="fraco">Primeira vez aqui? A conta é criada no primeiro acesso, com um teste gratuito: até 5 fotos viram vídeos de 3 s em 480p. Depois, você paga só o que usar, com saldo por Pix.</p>
+      <details class="codigo-antigo">
+        <summary>Tenho um código de acesso antigo</summary>
+        <form id="form-token" novalidate>
+          <div class="campo">
+            <label for="token">Código de acesso</label>
+            <div class="senha">
+              <input id="token" type="password" autocomplete="off" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go">
+              <button type="button" class="botao fantasma pequeno" id="mostrar-token" aria-controls="token" aria-pressed="false">Mostrar</button>
+            </div>
+            <p class="dica">Para quem recebeu um código antes das contas por e-mail. Vale o mesmo aceite dos termos acima.</p>
+          </div>
+          <button type="submit" class="botao largo" id="enviar-token">Entrar com o código</button>
+        </form>
+      </details>
       <p class="fraco">Não consegue entrar? <a href="/suporte">Fale com o suporte</a>.</p>
-    </form>
+    </section>
 
     <section class="como" aria-labelledby="titulo-como">
       <h2 id="titulo-como">Como funciona</h2>
@@ -63,6 +97,10 @@
     <div class="cab-pagina">
       <h1 id="titulo-painel" tabindex="-1">Seus vídeos</h1>
       <p class="fraco">Escolha as fotos, diga o que deve acontecer e acompanhe os pedidos aqui.</p>
+      <div class="conta-linha">
+        <p class="fraco" id="conta-resumo"></p>
+        <button type="button" class="botao pequeno" id="abrir-conta"><!--@icone pessoa-->Sua conta</button>
+      </div>
     </div>
     <p id="msg-painel" class="aviso erro" hidden></p>
 
@@ -78,7 +116,10 @@
             <summary>Ver extrato</summary>
             <ul class="extrato-lista" id="extrato-lista" aria-label="Últimos movimentos do saldo"></ul>
           </details>
-          <p class="dica">Para recarregar, <a href="/suporte">fale com a gente pelo suporte</a>. Vídeo que não sai volta para o saldo.</p>
+          <div class="acoes">
+            <button type="button" class="botao primario pequeno" id="adicionar-saldo" hidden><!--@icone brilho-->Adicionar saldo por Pix</button>
+          </div>
+          <p class="dica" id="saldo-recarga">Vídeo que não sai volta para o saldo.</p>
         </div>
         <!-- antes do pedido: o que o cliente quer criar (finalidades de render2go_servico/modelos.py) -->
         <div class="finalidades" id="finalidades">

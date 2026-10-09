@@ -1,4 +1,0 @@
-User-agent: *
-Disallow: /api/
-
-Sitemap: https://app.render2go.com/sitemap.xml

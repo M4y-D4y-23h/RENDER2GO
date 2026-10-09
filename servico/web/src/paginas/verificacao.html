@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Verificação de segurança · Render2Go</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/estatico/estilo.css">
+<!-- página isolada (dentro de um quadro nas páginas de entrada e de suporte): só aqui roda o script da
+     Cloudflare, e as outras páginas mantêm a política de segurança estrita (Trusted Types) -->
+<script src="/estatico/verificacao.js"></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=render2goVerificacao" async defer></script>
+</head>
+<body class="pagina-verificacao">
+<div id="widget"></div>
+<p id="msg-verificacao" class="dica" hidden></p>
+</body>
+</html>

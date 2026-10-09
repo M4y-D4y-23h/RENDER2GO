@@ -1,11 +1,16 @@
-"""Formulário de suporte da página do cliente: guarda no banco e manda por e-mail (SMTP).
+"""E-mail do serviço (SMTP): mensagens do suporte para o dono e códigos de entrada para os clientes.
 
-Limite contra spam (por dispositivo, IP e cliente, em janelas de 1 h e 24 h): `LIMITES`.
-A mensagem fica no banco mesmo sem e-mail configurado, e o /aprovar mostra as últimas.
+Suporte: guarda no banco e manda por e-mail. Limite contra spam (por dispositivo, IP e cliente, em
+janelas de 1 h e 24 h): `LIMITES`. A mensagem fica no banco mesmo sem e-mail configurado, e o painel
+mostra as últimas.
 
-E-mail (variáveis do .env; sem RENDER2GO_SMTP_HOST, só guarda):
+Códigos de entrada (ADR 0007): `montar_codigo`, do remetente RENDER2GO_EMAIL_DE (ex.: "Render2Go
+<nao-responda@render2go.com>"). Sem SMTP, ninguém consegue entrar pelo e-mail: a API recusa (503).
+
+E-mail (variáveis do .env; sem RENDER2GO_SMTP_HOST, o suporte só guarda e o login por e-mail fica fora):
     RENDER2GO_SMTP_HOST, RENDER2GO_SMTP_PORTA (587), RENDER2GO_SMTP_TLS (starttls | ssl | nenhum),
-    RENDER2GO_SMTP_USUARIO, RENDER2GO_SMTP_SENHA, RENDER2GO_SUPORTE_DE (remetente), RENDER2GO_SUPORTE_PARA (você)
+    RENDER2GO_SMTP_USUARIO, RENDER2GO_SMTP_SENHA, RENDER2GO_SUPORTE_DE (remetente), RENDER2GO_SUPORTE_PARA (você),
+    RENDER2GO_EMAIL_DE (remetente dos códigos; padrão: RENDER2GO_SUPORTE_DE)
 """
 
 from __future__ import annotations
@@ -40,28 +45,31 @@ EMAIL = re.compile(r"^[^@\s<>\"',;]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$"
 @dataclass(frozen=True)
 class ConfigEmail:
     host: str
-    para: str
+    para: str  # quem recebe as mensagens do suporte ("" = o suporte só guarda no banco)
     de: str
     porta: int = 587
     tls: str = "starttls"
     usuario: str | None = None
     senha: str | None = None
+    de_sistema: str | None = None  # remetente dos códigos de entrada (padrão: `de`)
 
     @classmethod
     def do_ambiente(cls) -> ConfigEmail | None:
         host = os.environ.get("RENDER2GO_SMTP_HOST", "").strip()
-        para = os.environ.get("RENDER2GO_SUPORTE_PARA", "").strip()
-        if not host or not para:
+        if not host:
             return None
+        para = os.environ.get("RENDER2GO_SUPORTE_PARA", "").strip()
         usuario = os.environ.get("RENDER2GO_SMTP_USUARIO", "").strip() or None
+        de = os.environ.get("RENDER2GO_SUPORTE_DE", "").strip() or usuario or para
         return cls(
             host=host,
             para=para,
-            de=os.environ.get("RENDER2GO_SUPORTE_DE", "").strip() or usuario or para,
+            de=de,
             porta=int(os.environ.get("RENDER2GO_SMTP_PORTA", 587)),
             tls=os.environ.get("RENDER2GO_SMTP_TLS", "starttls").strip().lower(),
             usuario=usuario,
             senha=os.environ.get("RENDER2GO_SMTP_SENHA") or None,
+            de_sistema=os.environ.get("RENDER2GO_EMAIL_DE", "").strip() or None,
         )
 
 
@@ -93,6 +101,26 @@ def montar(cfg: ConfigEmail, msg: dict) -> EmailMessage:
         f"Quando: {quando}\n"
         f"IP: {msg.get('ip') or '?'} · dispositivo: {msg.get('dispositivo') or '?'}\n"
         f"Mensagem {msg['id']}:\n\n{msg['mensagem']}\n"
+    )
+    return e
+
+
+def montar_codigo(cfg: ConfigEmail, para: str, codigo: str, minutos: int) -> EmailMessage:
+    """E-mail com o código de entrada: só texto, sem links (nada para clicar = nada para imitar)."""
+    e = EmailMessage()
+    remetente = cfg.de_sistema or cfg.de
+    e["Subject"] = f"{codigo} é o seu código de acesso ao Render2Go"
+    e["From"] = remetente
+    e["To"] = para
+    e["Date"] = formatdate(localtime=False)
+    e["Message-ID"] = make_msgid(domain=remetente.rsplit("@", 1)[-1].strip("> ") if "@" in remetente else None)
+    e["Auto-Submitted"] = "auto-generated"  # resposta automática de férias não volta para cá
+    e.set_content(
+        f"Seu código de acesso ao Render2Go é:\n\n    {codigo}\n\n"
+        f"Ele vale por {minutos} minutos e só uma vez. Digite o código na página em que você pediu.\n\n"
+        "Se não foi você que pediu, ignore este e-mail: ninguém entra na sua conta sem o código.\n"
+        "Nunca pedimos este código por telefone, WhatsApp ou outro e-mail.\n\n"
+        "Render2Go · vídeos curtos com IA para pequenos negócios\n"
     )
     return e
 

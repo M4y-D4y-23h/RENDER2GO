@@ -7,6 +7,7 @@ dependencies = [
     "fastapi==0.118.0",
     "uvicorn==0.37.0",
     "psycopg[binary]==3.2.10",
+    "psycopg-pool==3.2.8",  # conexões reaproveitadas (antes: uma conexão nova por transação)
     "opencv-python-headless==4.12.0.88",  # aviso de pessoas no /aprovar (pessoas.py)
     "render2go-worker",
 ]

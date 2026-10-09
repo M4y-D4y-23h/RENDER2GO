@@ -1,17 +1,28 @@
 """Páginas no navegador (Chromium headless): fluxo completo, sem erros no console nem bloqueios
 da política de segurança (CSP). Precisa do pacote playwright e de um Chromium; senão, pula."""
 
+import base64
+import hashlib
+import hmac
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import pytest
 
 pw = pytest.importorskip("playwright.sync_api")
-from test_fila import ADMIN, _png, ambiente  # noqa: E402,F401 (mesma API local e armazenamento)
+from test_api import PAINEL, TOTP  # noqa: E402
+from test_fila import ADMIN, _png, ambiente, entrar_painel  # noqa: E402,F401 (mesma API local e armazenamento)
+
+from render2go_servico import contas, pagamentos  # noqa: E402
 
 CHROMIUM = next(iter(sorted(Path("/opt/pw-browsers").glob("chromium-*/chrome-linux/chrome"))), None)
+ESCOLHA_COOKIES = json.dumps(
+    {"versao": "1", "estatisticas": False, "marketing": False, "quando": "2026-10-08T00:00:00Z"}
+)
+PAGINA = {"X-Render2Go": "1"}
 
 
 @pytest.fixture
@@ -39,30 +50,55 @@ def _analisar(dados: bytes) -> dict:
     return {"versao": "pessoas-v1", "pessoas": int(azul), "rostos": int(azul), "maior": 0.2}
 
 
+def _codigo_do_email(amb) -> str:
+    amb.cfg.esperar_fundo()
+    return re.match(r"(\d{8}) ", amb.enviados[-1]["Subject"]).group(1)
+
+
+def _totp_novo():
+    """Um código do autenticador ainda não usado nesta janela (o mesmo não vale duas vezes)."""
+    usados = _totp_novo.usados
+    agora = int(time.time() // 30)
+    for contador in (agora + 1, agora, agora - 1):
+        if contador not in usados:
+            usados.add(contador)
+            return contas.totp(TOTP, contador)
+    raise AssertionError("códigos do autenticador esgotados nesta janela")
+
+
+_totp_novo.usados = set()
+
+
+@pytest.fixture(autouse=True)
+def _totp_limpo():
+    _totp_novo.usados = set()
+
+
 def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  # noqa: F811 (fixture)
     erros: list[str] = []
     ambiente.cfg.analisar = _analisar
-    # aprovador cadastra um cliente de teste gratuito
+    # o dono entra no painel (endereço secreto, token + autenticador)
     adm = _pagina(navegador, erros)
-    adm.goto(f"{ambiente.url}/aprovar")
-    adm.fill("#token", ADMIN)
-    adm.click("#form-token button[type=submit]")
-    adm.fill("#cliente-nome", "Padaria do Bairro")
-    adm.select_option("#cliente-plano", "teste")
-    adm.click("#form-cliente button[type=submit]")
-    adm.wait_for_selector("#token-novo:not([hidden])")
-    assert "envie ao cliente por um canal seguro" in adm.locator("#token-novo").inner_text()
-    token = adm.locator("#token-valor").inner_text().strip()
-    assert re.fullmatch(r"[A-Za-z0-9_-]{20,}", token)
+    adm.goto(f"{ambiente.url}{PAINEL}")  # sem a barra final: vai para o endereço com a barra
+    adm.wait_for_url(f"**{PAINEL}/")
+    adm.fill("#admin-token", ADMIN)
+    adm.fill("#admin-totp", "000000")
+    adm.click("#admin-entrar")
+    adm.wait_for_selector("#msg-entrada:not([hidden])")
+    assert "inválido" in adm.locator("#msg-entrada").inner_text()
+    adm.fill("#admin-token", ADMIN)
+    adm.fill("#admin-totp", _totp_novo())
+    adm.click("#admin-entrar")
+    adm.wait_for_selector("#titulo-painel:visible")
+    assert adm.locator("#aviso-cookies").count() == 0  # o painel (só o dono) não mostra o aviso
 
-    # cliente envia 2 fotos
+    # cliente novo: cria a conta pelo e-mail, com o código que chega nele
     for n, (cor, forma) in {"bolo.png": ((40, 90, 160), "circulo"), "loja.png": ((200, 120, 60), "barras")}.items():
         (tmp_path / n).write_bytes(_png(cor, forma))
     cli = _pagina(navegador, erros)
     cli.goto(ambiente.url)
     # navegador novo: aviso de cookies; "Gerenciar" mostra as categorias, e salvar guarda só os necessários
     cli.wait_for_selector("#aviso-cookies")
-    assert adm.locator("#aviso-cookies").count() == 0  # o /aprovar (só o dono) não mostra o aviso
     cli.click("#aviso-cookies button:has-text('Gerenciar')")
     assert cli.locator("#ck-necessarios").is_checked() and cli.locator("#ck-necessarios").is_disabled()
     assert not cli.locator("#ck-estatisticas").is_checked()
@@ -71,9 +107,24 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     with ambiente.banco.tx() as c:
         (ck,) = c.all("SELECT escolha FROM cookies")
     assert json.loads(ck["escolha"]) == {"necessarios": True, "estatisticas": False, "marketing": False}
-    cli.fill("#token", token)
-    cli.click("#form-token button[type=submit]")
+    # e-mail fora da lista: recusado com a explicação; sem o aceite dos termos, também
+    cli.fill("#email", "padaria@minhaempresa.com.br")
+    cli.click("#enviar-email")
+    assert "Para continuar, aceite" in cli.locator("#msg-entrada").inner_text()
+    cli.check("#aceite")
+    cli.click("#enviar-email")
+    pw.expect(cli.locator("#msg-entrada")).to_contain_text("Gmail, Outlook/Hotmail")
+    cli.fill("#email", "padaria.bairro@gmail.com")
+    cli.click("#enviar-email")
+    cli.wait_for_selector("#form-codigo:not([hidden])")
+    assert "padaria.bairro@gmail.com" in cli.locator("#codigo-enviado").inner_text()
+    assert cli.evaluate("document.activeElement.id") == "codigo"
+    cli.fill("#codigo", _codigo_do_email(ambiente))
+    cli.click("#enviar-codigo")
     cli.wait_for_selector("#receita option", state="attached")
+    assert "padaria.bairro@gmail.com · plano teste gratuito" in cli.locator("#conta-resumo").inner_text()
+    assert cli.evaluate("document.cookie") == ""  # a sessão é HttpOnly: o JavaScript não a vê
+    assert cli.evaluate("localStorage.getItem('render2go-conectado')") == "1"
     assert cli.locator("#form-lote").is_hidden()  # antes do pedido, a escolha do que criar
     _escolher_finalidade(cli)
     # teste gratuito: só 480p e 3 s, e o aviso das regras
@@ -84,14 +135,11 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     assert "2 de 5 fotos escolhidas · ainda cabem 3" in cli.locator("#contagem").inner_text()
     assert cli.locator("#saldo").is_hidden() and cli.locator("#custo").is_hidden()  # o teste não paga
     assert cli.locator("#enviar").inner_text() == "Enviar pedido com 2 fotos"
-    # prévia das fotos escolhidas, desenhada no próprio navegador
     pw.expect(cli.locator("#previa .miniatura :is(canvas, img)")).to_have_count(2)
-    # modelo de geração visível; autorização sem pedir nome (o registro usa conta, origem e navegador)
     assert cli.locator("#modelo option").all_inner_texts() == ["Wan 2.2 · imagem para vídeo · 14B"]
     assert cli.locator("#declarante").count() == 0
     cli.check("#consentimento")
-    if os.environ.get("RENDER2GO_CAPTURAS"):
-        cli.screenshot(path=os.path.join(os.environ["RENDER2GO_CAPTURAS"], "cliente-teste.png"), full_page=True)
+    _capturar(cli, "cliente-teste")
     cli.fill("#prompt", "a câmera se aproxima devagar do produto")
     cli.select_option("#duracao", "3")
     cli.click("#enviar")
@@ -99,10 +147,10 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     cli.wait_for_selector("text=Em análise")
     assert "Ele começa em até" in cli.locator("#lotes .previsao").inner_text()
     assert sum(k.endswith(".png") for k in ambiente.objetos) == 2  # direto no armazenamento
-    cli.wait_for_selector("#plano-aviso.erro")  # teste usado: o formulário trava
+    cli.wait_for_selector("#plano-aviso.alerta")  # teste usado: o formulário trava
     assert cli.locator("#enviar").is_disabled()
 
-    # aprovador vê as miniaturas, o aviso de pessoas por foto e o resumo do lote, e aprova
+    # o dono vê as miniaturas, o aviso de pessoas por foto e o resumo do lote, e aprova
     ambiente.cfg.analises.esperar()
     adm.click("#atualizar")
     adm.wait_for_selector(".grade img")
@@ -111,13 +159,11 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     assert "sem pessoas detectadas" in adm.locator(".grade").inner_text()
     assert "Autorização marcada em" in adm.locator("#pendentes .autorizacao").inner_text()
     assert "marcou ter autorização" in adm.locator("#pendentes .aviso.alerta").inner_text()
-    if os.environ.get("RENDER2GO_CAPTURAS"):
-        adm.screenshot(path=os.path.join(os.environ["RENDER2GO_CAPTURAS"], "aprovar.png"), full_page=True)
+    _capturar(adm, "painel")
     adm.click("#pendentes [data-acao=aprovar]")
     adm.wait_for_selector("text=Nada aguardando revisão.")
-    # histórico: o pedido aprovado, com cliente e IP; e o uso por IP
     hist = adm.locator("#historico .hist").first
-    assert "Padaria do Bairro" in hist.inner_text() and "IP 127.0.0.1" in hist.inner_text()
+    assert "padaria.bairro@gmail.com" in hist.inner_text() and "IP 127.0.0.1" in hist.inner_text()
     assert "Na fila" in hist.inner_text()
     assert "127.0.0.1" in adm.locator("#ips table").inner_text()
     assert adm.locator("#dispositivos table tbody tr").count() == 1  # o navegador do cliente
@@ -155,29 +201,36 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     assert cli.locator("#link-suporte").inner_text().endswith("/suporte")
     cli.click("#link-suporte")
     cli.wait_for_url("**/suporte")
-    assert "conectado" in cli.locator("#suporte-conta").inner_text()
+    pw.expect(cli.locator("#suporte-conta")).to_contain_text("conectado como padaria.bairro@gmail.com")
     cli.fill("#suporte-mensagem", "Preciso de ajuda com o meu pedido de teste.")
     cli.click("#suporte-enviar")
     cli.wait_for_selector("#suporte-msg.ok")
     adm.click("#atualizar")
     adm.wait_for_selector("#suporte .msg-suporte")
     assert "Preciso de ajuda" in adm.locator("#suporte").inner_text()
-    if os.environ.get("RENDER2GO_CAPTURAS"):
-        cli.screenshot(path=os.path.join(os.environ["RENDER2GO_CAPTURAS"], "cliente.png"), full_page=True)
-    assert erros == []
+    _capturar(cli, "cliente")
+    # sair: a sessão termina no servidor e a página volta para a entrada
+    cli.goto(ambiente.url)
+    cli.wait_for_selector("#sair:visible")
+    cli.click("#sair")
+    cli.wait_for_selector("#form-email:visible")
+    assert cli.evaluate("localStorage.getItem('render2go-conectado')") is None
+    # só as recusas de propósito: o código errado do autenticador (401) e o e-mail fora da lista (422)
+    esperados = ["401 (Unauthorized)", "422 (Unprocessable Entity)"]
+    assert [e.rsplit("status of ", 1)[-1] for e in erros] == esperados, erros
 
 
-def test_support_page_without_access_code_and_cookie_banner(ambiente, navegador):  # noqa: F811 (fixture)
+def test_support_page_without_an_account_and_cookie_banner(ambiente, navegador):  # noqa: F811 (fixture)
     erros: list[str] = []
     pg = _pagina(navegador, erros)
     pg.goto(f"{ambiente.url}/suporte")
     pg.wait_for_selector("#aviso-cookies")
-    if os.environ.get("RENDER2GO_CAPTURAS"):
-        pg.screenshot(path=os.path.join(os.environ["RENDER2GO_CAPTURAS"], "suporte-cookies.png"), full_page=True)
+    _capturar(pg, "suporte-cookies")
     pg.click("#aviso-cookies button:has-text('Aceitar todos')")
     pg.wait_for_selector("#aviso-cookies", state="detached")
-    assert pg.locator("#suporte-email").get_attribute("required") is not None  # sem código: e-mail obrigatório
-    pg.fill("#suporte-mensagem", "Perdi o meu código de acesso, como faço?")
+    assert pg.locator("#suporte-email").get_attribute("required") is not None  # sem conta: e-mail obrigatório
+    assert pg.locator("#verificacao-suporte").is_hidden()  # verificação desligada nos testes: nada carrega
+    pg.fill("#suporte-mensagem", "Não consigo entrar na minha conta, como faço?")
     pg.fill("#suporte-email", "dona@loja.com.br")
     pg.click("#suporte-enviar")
     pg.wait_for_selector("#suporte-msg.ok")
@@ -186,28 +239,63 @@ def test_support_page_without_access_code_and_cookie_banner(ambiente, navegador)
     # "Preferências de cookies" reabre o aviso com a escolha atual
     pg.click("#preferencias-cookies")
     assert pg.locator("#ck-estatisticas").is_checked() and pg.locator("#ck-marketing").is_checked()
-    assert erros == []
+    assert erros == [], erros
+
+
+def test_legal_pages_are_linked_from_every_footer(ambiente, navegador):  # noqa: F811 (fixture)
+    erros: list[str] = []
+    pg = _pagina(navegador, erros)
+    for caminho, titulo in (
+        ("/termos", "Termos de Uso"),
+        ("/privacidade", "Política de Privacidade"),
+        ("/cookies", "Política de Cookies"),
+    ):
+        pg.goto(f"{ambiente.url}{caminho}")
+        pw.expect(pg.locator("h1")).to_have_text(titulo)
+        pw.expect(pg.locator(f".rodape a[href='{caminho}']")).to_have_attribute("aria-current", "page")
+        assert "[preencher]" in pg.locator(".identificacao").inner_text()  # nome, CNPJ e endereço vêm do .env
+    pw.expect(pg.locator(".texto-legal")).to_contain_text("__Host-render2go")
+    pg.goto(f"{ambiente.url}/termos")
+    pw.expect(pg.locator("#saldo")).to_contain_text("Direito de arrependimento")
+    pg.goto(ambiente.url)
+    pg.click(".rodape a[href='/privacidade']")
+    pg.wait_for_url("**/privacidade")
+    pw.expect(pg.locator(".texto-legal")).to_contain_text("art. 18")
+    assert erros == [], erros
 
 
 # -- acessibilidade, celular, teclado e sessão (docs/10) ------------------------------------------
 
 AXE = Path(__file__).resolve().parents[1] / "web" / "node_modules" / "axe-core" / "axe.min.js"
 REGRAS_AXE = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"]
+PAINEIS: dict[str, object] = {}  # sessão do painel (requests) de cada ambiente
 
 
-def _api(amb, metodo, caminho, token=ADMIN, **kw):
+def _painel(amb):
+    if amb.url not in PAINEIS:
+        PAINEIS[amb.url] = entrar_painel(amb.url)
+    return PAINEIS[amb.url]
+
+
+def _api(amb, metodo, caminho, token=None, **kw):
+    """Painel: pela sessão do painel. Cliente: com o código de acesso (Bearer), como uma integração."""
     import requests
 
-    r = requests.request(metodo, f"{amb.url}{caminho}", headers={"Authorization": f"Bearer {token}"}, timeout=10, **kw)
+    if caminho.startswith(PAINEL):
+        r = _painel(amb).request(metodo, f"{amb.url}{caminho}", timeout=10, **kw)
+    else:
+        r = requests.request(
+            metodo, f"{amb.url}{caminho}", headers={"Authorization": f"Bearer {token}"}, timeout=10, **kw
+        )
     assert r.status_code == 200, r.text
     return r.json()
 
 
 def _cliente(amb, plano="pago", saldo="100"):
-    r = _api(amb, "POST", "/api/admin/clientes", json={"nome": "Café da Esquina", "plano": plano})
+    cid, token = amb.banco.criar_cliente("Café da Esquina", 500, plano)
     if plano == "pago" and saldo:  # pré-pago: recarga antes de pedir
-        _api(amb, "POST", f"/api/admin/clientes/{r['cliente']}/saldo", json={"valor": saldo, "descricao": "Pix"})
-    return r["token"]
+        _api(amb, "POST", f"{PAINEL}/api/clientes/{cid}/saldo", json={"valor": saldo, "descricao": "Pix"})
+    return token
 
 
 def _lote(amb, token, fotos: dict[str, bytes], aprovar=False, pronto=False):
@@ -222,7 +310,7 @@ def _lote(amb, token, fotos: dict[str, bytes], aprovar=False, pronto=False):
         requests.put(e["url"], data=fotos[e["original"]], timeout=10)
     _api(amb, "POST", f"/api/lotes/{r['lote']}/enviado", token)
     if aprovar or pronto:
-        _api(amb, "POST", f"/api/admin/lotes/{r['lote']}/aprovar")
+        _api(amb, "POST", f"{PAINEL}/api/lotes/{r['lote']}/aprovar")
     if pronto:
         lote = amb.banco.lote(r["lote"])
         for j in amb.banco.jobs(r["lote"]):
@@ -240,12 +328,27 @@ def _escolher_finalidade(pg):
     pg.wait_for_selector("#form-lote:not([hidden])")
 
 
-def _com_codigo(contexto, chave, token):
-    """Navegador que já tem o código guardado (e a escolha de cookies feita)."""
-    escolha = json.dumps({"versao": "1", "estatisticas": False, "marketing": False, "quando": "2026-10-08T00:00:00Z"})
+def _com_sessao(contexto, amb, token=None, admin=False):
+    """Navegador que já entrou (cookie da sessão, a marca de conectado e a escolha de cookies feita)."""
+    import requests
+
+    host = amb.url.split("//")[1].split(":")[0]
+    if admin:
+        valor = entrar_painel(amb.url).cookies["render2go-painel"]
+        contexto.add_cookies([{"name": "render2go-painel", "value": valor, "domain": host, "path": PAINEL}])
+        marca = "render2go-painel-conectado"
+    else:
+        r = requests.post(
+            f"{amb.url}/api/conta/entrar-codigo", json={"codigo": token, "aceite": True}, headers=PAGINA, timeout=10
+        )
+        assert r.status_code == 200, r.text
+        contexto.add_cookies(
+            [{"name": "render2go-sessao", "value": r.cookies["render2go-sessao"], "domain": host, "path": "/"}]
+        )
+        marca = "render2go-conectado"
+    escolha = json.dumps(ESCOLHA_COOKIES)
     contexto.add_init_script(
-        f"localStorage.setItem({json.dumps(chave)}, {json.dumps(token)});"
-        f"localStorage.setItem('render2go-cookies', {json.dumps(escolha)});"
+        f"localStorage.setItem({json.dumps(marca)}, '1');localStorage.setItem('render2go-cookies', {escolha});"
     )
 
 
@@ -257,6 +360,20 @@ def _axe(pg) -> list[dict]:
             resultTypes: ['violations']})).violations.map((v) => ({id: v.id, impacto: v.impact,
             alvos: v.nodes.slice(0, 4).map((n) => n.target.join(' '))}))""",
         REGRAS_AXE,
+    )
+
+
+def _transbordando(pg, largura) -> list:
+    """Os elementos que passam da largura da tela (para a mensagem de erro dizer qual é)."""
+    return pg.evaluate(
+        """(largura) => {
+            const rola = (e) => { for (let p = e.parentElement; p; p = p.parentElement)
+                if (['auto', 'scroll', 'hidden'].includes(getComputedStyle(p).overflowX)) return true; return false; };
+            return [...document.querySelectorAll('body *')]
+                .filter((e) => e.offsetParent !== null && e.getBoundingClientRect().right > largura + 0.5 && !rola(e))
+                .slice(0, 6).map((e) => [e.tagName, e.id || e.className, Math.round(e.getBoundingClientRect().right)]);
+        }""",
+        largura,
     )
 
 
@@ -282,19 +399,33 @@ def test_pages_have_no_accessibility_violations(ambiente, navegador, tmp_path, t
         if v := _axe(pg):
             violacoes[estado] = v
 
-    # páginas abertas por quem ainda não tem código (com o aviso de cookies)
+    # páginas abertas por quem ainda não entrou (com o aviso de cookies)
     anonimo = navegador.new_context(color_scheme=tema, reduced_motion="reduce", bypass_csp=True)
     pg = anonimo.new_page()
-    paginas = [("/", "entrada"), ("/suporte", "suporte"), ("/aprovar", "aprovar-entrada"), ("/nada", "404")]
+    paginas = [
+        ("/", "entrada"),
+        ("/suporte", "suporte"),
+        ("/termos", "termos"),
+        ("/privacidade", "privacidade"),
+        ("/cookies", "cookies"),
+        (f"{PAINEL}/", "painel-entrada"),
+        ("/nada", "404"),
+    ]
     for caminho, estado in paginas:
         pg.goto(f"{ambiente.url}{caminho}")
         pg.wait_for_load_state("networkidle")
         conferir(pg, estado)
+    pg.goto(ambiente.url)
+    pg.fill("#email", "acessivel@gmail.com")
+    pg.check("#aceite")
+    pg.click("#enviar-email")
+    pg.wait_for_selector("#form-codigo:not([hidden])")
+    conferir(pg, "entrada-codigo")
     anonimo.close()
 
-    # cliente com vídeos prontos, com o player aberto, e o aprovador com um pedido pendente
+    # cliente com vídeos prontos, com o player aberto, e o dono com um pedido pendente
     cli = navegador.new_context(color_scheme=tema, reduced_motion="reduce", bypass_csp=True)
-    _com_codigo(cli, "render2go-token-cliente", tok_pronto)
+    _com_sessao(cli, ambiente, tok_pronto)
     pg = cli.new_page()
     pg.goto(ambiente.url)
     pg.wait_for_selector(".videos button.assistir")
@@ -304,6 +435,10 @@ def test_pages_have_no_accessibility_violations(ambiente, navegador, tmp_path, t
     pg.wait_for_selector("dialog.todas-finalidades[open] .opcao")
     conferir(pg, "ver-todas")
     pg.keyboard.press("Escape")
+    pg.click("#abrir-conta")
+    pg.wait_for_selector("dialog.conta[open]")
+    conferir(pg, "conta")
+    pg.keyboard.press("Escape")
     _escolher_finalidade(pg)
     pg.set_input_files(
         "#fotos",
@@ -312,21 +447,23 @@ def test_pages_have_no_accessibility_violations(ambiente, navegador, tmp_path, t
     pw.expect(pg.locator("#previa .miniatura :is(canvas, img)")).to_have_count(2)
     pg.wait_for_selector("#aviso-fotos:not([hidden])")  # foto pequena: aviso na lista e na miniatura
     pg.click(".exemplos-pedido summary")
-    conferir(pg, "painel")
+    conferir(pg, "painel-cliente")
     pg.locator(".videos button.assistir").first.click()
     pg.wait_for_selector("dialog[open]")
     conferir(pg, "player")
     cli.close()
-    g = ambiente.banco.gerador_subindo("NVIDIA L40S")  # relatório de GPUs com uma GPU ligada
+    g = ambiente.banco.gerador_subindo("NVIDIA L40S")  # relatório de GPUs e pods com uma GPU ligada
     ambiente.banco.gerador_criado(g, "pod-abc123", "NVIDIA L40S", 1.09, "EU-RO-1")
     adm = navegador.new_context(color_scheme=tema, reduced_motion="reduce", bypass_csp=True)
-    _com_codigo(adm, "render2go-token-admin", ADMIN)
+    _com_sessao(adm, ambiente, admin=True)
     pg = adm.new_page()
-    pg.goto(f"{ambiente.url}/aprovar")
+    pg.goto(f"{ambiente.url}{PAINEL}/")
     pg.wait_for_selector("#pendentes .selo.pessoas")
     pg.wait_for_selector("#ips table")
     pg.wait_for_selector("#gpus table")
-    conferir(pg, "aprovar-painel")
+    pg.wait_for_selector("#pods table")
+    pg.wait_for_selector("#checagem li")
+    conferir(pg, "painel-dono")
     adm.close()
     assert violacoes == {}
 
@@ -343,15 +480,16 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
     _lote(ambiente, tok, {"bolo.png": _png((40, 90, 160), "circulo")}, pronto=True)
     _lote(ambiente, tok, {"loja.png": _png((200, 120, 60), "barras")})
     celular = dict(viewport={"width": largura, "height": 740}, is_mobile=True, has_touch=True, device_scale_factor=2)
-    for chave, token, caminho, estado in [
-        (None, None, "/", "entrada"),
-        (None, None, "/suporte", "suporte"),
-        ("render2go-token-cliente", tok, "/", "painel"),
-        ("render2go-token-admin", ADMIN, "/aprovar", "aprovar"),
+    for sessao, caminho, estado in [
+        (None, "/", "entrada"),
+        (None, "/suporte", "suporte"),
+        (None, "/termos", "termos"),
+        ("cliente", "/", "painel"),
+        ("admin", f"{PAINEL}/", "painel-dono"),
     ]:
         ctx = navegador.new_context(**celular)
-        if chave:
-            _com_codigo(ctx, chave, token)
+        if sessao:
+            _com_sessao(ctx, ambiente, tok, admin=sessao == "admin")
         pg = ctx.new_page()
         pg.on("console", lambda m: m.type == "error" and erros.append(m.text))
         pg.on("pageerror", lambda e: erros.append(str(e)))
@@ -363,15 +501,17 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
             _escolher_finalidade(pg)
             pg.set_input_files("#fotos", [str(_salvar(tmp_path, "c.png", _png((90, 160, 40), "circulo")))])
             pw.expect(pg.locator("#previa .miniatura :is(canvas, img)")).to_have_count(1)
+        if estado == "painel-dono":
+            pg.wait_for_selector("#checagem li")
         largura_pagina = pg.evaluate("document.documentElement.scrollWidth")
-        assert largura_pagina <= largura, (estado, largura_pagina)
+        assert largura_pagina <= largura, (estado, largura_pagina, _transbordando(pg, largura))
         # com uma fonte larga (a padrão de muitos Linux e de alguns Android), também sem rolagem lateral
         pg.evaluate(
             "() => { const r = document.documentElement.style; for (const v of ['--fonte-texto', '--fonte-titulos'])"
             " r.setProperty(v, '\"DejaVu Sans\", Verdana, sans-serif'); }"
         )
         largura_pagina = pg.evaluate("document.documentElement.scrollWidth")
-        assert largura_pagina <= largura, (estado, "fonte larga", largura_pagina)
+        assert largura_pagina <= largura, (estado, "fonte larga", largura_pagina, _transbordando(pg, largura))
         # alvos de toque: botões, campos e a navegação com pelo menos 44 px de altura (WCAG 2.5.5)
         alvos = ".navegacao :is(a, button), .botao, .filtros button, .secoes a, select, textarea, input"
         pequenos = pg.evaluate(
@@ -384,7 +524,7 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
         assert pequenos == [], (estado, pequenos)
         _capturar(pg, f"celular-{largura}-{estado}")
         ctx.close()
-    assert erros == []
+    assert erros == [], erros
 
 
 def test_keyboard_skip_link_and_cookie_banner(ambiente, navegador):  # noqa: F811 (fixture)
@@ -408,31 +548,31 @@ def test_keyboard_skip_link_and_cookie_banner(ambiente, navegador):  # noqa: F81
     assert pg.evaluate("document.activeElement.id") == "preferencias-cookies"
 
 
-def test_saved_code_opens_the_panel_directly_and_a_revoked_code_returns_to_login(ambiente, navegador):  # noqa: F811
+def test_session_opens_the_panel_directly_and_a_disabled_account_returns_to_login(ambiente, navegador):  # noqa: F811
     tok = _cliente(ambiente)
     ctx = navegador.new_context()
-    _com_codigo(ctx, "render2go-token-cliente", tok)
+    _com_sessao(ctx, ambiente, tok)
     # o <script> do <head> marca a sessão antes do primeiro quadro: o formulário de entrada nunca aparece
     ctx.add_init_script(
         "document.addEventListener('DOMContentLoaded', () => { window.__entrada = "
-        "document.getElementById('form-token').checkVisibility(); window.__sessao = "
+        "document.getElementById('form-email').checkVisibility(); window.__sessao = "
         "document.documentElement.classList.contains('com-sessao'); });"
     )
     pg = ctx.new_page()
     pg.goto(ambiente.url)
     pg.wait_for_selector("#receita option", state="attached")
     assert pg.evaluate("[window.__entrada, window.__sessao]") == [False, True]
-    assert pg.locator("#painel").is_visible() and not pg.locator("#form-token").is_visible()
-    # código desativado: volta ao formulário com a explicação, e o código guardado é apagado
+    assert pg.locator("#painel").is_visible() and not pg.locator("#form-email").is_visible()
+    # conta desativada: as sessões caem; a página volta para a entrada com a explicação
     with ambiente.banco.tx() as c:
         (cliente,) = c.all("SELECT id FROM clientes")
-    _api(ambiente, "POST", f"/api/admin/clientes/{cliente['id']}/desativar")
+    _api(ambiente, "POST", f"{PAINEL}/api/clientes/{cliente['id']}/desativar")
     pg.reload()
     pg.wait_for_selector("#msg-entrada:not([hidden])")
-    assert "inválido ou desativado" in pg.locator("#msg-entrada").inner_text()
-    assert pg.locator("#form-token").is_visible()
-    assert pg.evaluate("localStorage.getItem('render2go-token-cliente')") is None
-    assert pg.evaluate("document.activeElement.id") == "token"
+    assert "Sua sessão terminou" in pg.locator("#msg-entrada").inner_text()
+    assert pg.locator("#form-email").is_visible()
+    assert pg.evaluate("localStorage.getItem('render2go-conectado')") is None
+    assert pg.evaluate("document.activeElement.id") == "email"
     ctx.close()
 
 
@@ -440,7 +580,7 @@ def test_photo_preview_removal_suggestion_counter_and_required_authorization(amb
     erros: list[str] = []
     tok = _cliente(ambiente)
     ctx = navegador.new_context()
-    _com_codigo(ctx, "render2go-token-cliente", tok)
+    _com_sessao(ctx, ambiente, tok)
     pg = _pagina(ctx, erros)
     pg.goto(ambiente.url)
     pg.wait_for_selector("#receita option", state="attached")
@@ -475,15 +615,15 @@ def test_photo_preview_removal_suggestion_counter_and_required_authorization(amb
     assert pg.get_attribute("#consentimento", "aria-invalid") == "true"
     assert ambiente.banco.lotes() == []  # nada foi criado
     ctx.close()
-    assert erros == []
+    assert erros == [], erros
 
 
-def test_saved_code_fetches_the_panel_data_early_and_only_once(ambiente, navegador):  # noqa: F811 (fixture)
+def test_session_fetches_the_panel_data_early_and_only_once(ambiente, navegador):  # noqa: F811 (fixture)
     erros: list[str] = []
     tok = _cliente(ambiente)
     disp = "6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7"
     ctx = navegador.new_context()
-    _com_codigo(ctx, "render2go-token-cliente", tok)
+    _com_sessao(ctx, ambiente, tok)
     ctx.add_init_script(f"localStorage.setItem('render2go-dispositivo', '{disp}')")
     pedidos: list[tuple[str, str | None]] = []
     pg = _pagina(ctx, erros)
@@ -494,22 +634,23 @@ def test_saved_code_fetches_the_panel_data_early_and_only_once(ambiente, navegad
     pg.goto(ambiente.url)
     pg.wait_for_selector("#receita option", state="attached")
     pg.wait_for_selector("#lotes .vazio")
+    pw.expect(pg.locator("#conta-resumo")).to_contain_text("Conectado")
     # o <script> do <head> já pediu receitas e lotes; a página usou essas respostas, sem pedir de novo
-    assert sorted(pedidos) == [("lotes", disp), ("receitas", disp)]
+    assert sorted(pedidos) == [("conta", disp), ("lotes", disp), ("receitas", disp)]
     ctx.close()
-    assert erros == []
+    assert erros == [], erros
 
 
 def _texto(pg, seletor):
     """Texto visível sem os espaços não separáveis que o navegador põe nos valores em reais."""
-    return pg.locator(seletor).inner_text().replace("\u00a0", " ")
+    return pg.locator(seletor).inner_text().replace(" ", " ")
 
 
-def test_prepaid_balance_price_and_top_up_by_the_reviewer(ambiente, navegador, tmp_path):  # noqa: F811 (fixture)
+def test_prepaid_balance_price_and_top_up_by_the_owner(ambiente, navegador, tmp_path):  # noqa: F811 (fixture)
     erros: list[str] = []
     tok = _cliente(ambiente, saldo="3,00")
     ctx = navegador.new_context()
-    _com_codigo(ctx, "render2go-token-cliente", tok)
+    _com_sessao(ctx, ambiente, tok)
     pg = _pagina(ctx, erros)
     pg.goto(ambiente.url)
     pg.wait_for_selector("#saldo:not([hidden])")
@@ -517,6 +658,8 @@ def test_prepaid_balance_price_and_top_up_by_the_reviewer(ambiente, navegador, t
     assert _texto(pg, "#saldo-valor") == "R$ 3,00"
     precos = _texto(pg, "#saldo-precos")
     assert precos == "480p: R$ 0,25 por segundo de vídeo · 720p: R$ 0,50 por segundo de vídeo"
+    assert pg.locator("#adicionar-saldo").is_hidden()  # recarga por Pix desligada neste servidor
+    assert "fale com a gente pelo suporte" in pg.locator("#saldo-recarga").inner_text()
     # 3 s é só do teste gratuito; o padrão do estilo mostra a duração
     assert pg.locator("#duracao option").all_inner_texts() == ["Padrão do estilo (5 s)", "4 s", "5 s", "6 s", "7 s"]
     assert _texto(pg, "#custo") == "Cada vídeo de 5 s em 480p custa R$ 1,25."
@@ -543,16 +686,16 @@ def test_prepaid_balance_price_and_top_up_by_the_reviewer(ambiente, navegador, t
     pw.expect(pg.locator("#extrato-lista li").first).to_contain_text("Pedido: 2 vídeo(s) de 4 s em 480p")
     pw.expect(pg.locator("#extrato-lista li").first).to_contain_text("-R$ 2,00")
 
-    # o dono lança uma recarga pelo /aprovar e baixa o extrato
+    # o dono lança uma recarga pelo painel e baixa o extrato
     adm_ctx = navegador.new_context()
-    _com_codigo(adm_ctx, "render2go-token-admin", ADMIN)
+    _com_sessao(adm_ctx, ambiente, admin=True)
     adm = _pagina(adm_ctx, erros)
-    adm.goto(f"{ambiente.url}/aprovar")
+    adm.goto(f"{ambiente.url}{PAINEL}/")
     adm.wait_for_selector("#clientes table")
     assert "R$ 1,00" in _texto(adm, "#clientes table")
     assert "720p a R$ 0,50" in _texto(adm, "#precos-info")
     adm.click("#form-saldo button[type=submit]")
-    assert "Escolha o cliente" in adm.locator("#saldo-msg").inner_text()
+    assert "Escolha a conta" in adm.locator("#saldo-msg").inner_text()
     adm.select_option("#saldo-cliente", index=1)
     adm.fill("#saldo-valor", "20")
     adm.fill("#saldo-descricao", "Pix de 09/10")
@@ -563,7 +706,7 @@ def test_prepaid_balance_price_and_top_up_by_the_reviewer(ambiente, navegador, t
     assert "R$ 21,00" in _texto(adm, "#saldo-msg")
     pw.expect(adm.locator("#clientes table")).to_contain_text("R$ 21,00")
     with adm.expect_download() as baixado:
-        adm.click("#clientes button:has-text('Baixar')")
+        adm.click("#clientes button:has-text('Extrato')")
     extrato = json.loads(Path(baixado.value.path()).read_text())
     assert extrato["saldo"] == 2100 and extrato["movimentos"][0]["descricao"] == "Pix de 09/10"
     # o mesmo Pix de novo: recusado
@@ -576,10 +719,131 @@ def test_prepaid_balance_price_and_top_up_by_the_reviewer(ambiente, navegador, t
     adm.wait_for_selector("#saldo-msg.erro")
     assert "já registrado" in adm.locator("#saldo-msg").inner_text()
     _capturar(pg, "pre-pago-cliente")
-    _capturar(adm, "pre-pago-aprovar")
+    _capturar(adm, "pre-pago-painel")
     ctx.close()
     adm_ctx.close()
     assert [e for e in erros if "status of 422" not in e] == []  # só a recusa do Pix repetido
+
+
+class _MercadoPago:
+    """Mercado Pago falso para a janela de Pix: QR de verdade (PNG) e a situação controlada pelo teste."""
+
+    def __init__(self):
+        from io import BytesIO
+
+        from PIL import Image
+
+        b = BytesIO()
+        Image.new("RGB", (64, 64), (0, 0, 0)).save(b, "PNG")
+        self.qr = base64.b64encode(b.getvalue()).decode()
+        self.situacao: dict[str, dict] = {}
+
+    def criar_pix(self, recarga_id, valor, email, doc):
+        pid = str(5000 + len(self.situacao))
+        self.situacao[pid] = {"status_mp": "pending", "valor": valor, "ref": recarga_id}
+        return {
+            "id": pid,
+            "status": "pendente",
+            "expira": time.time() + 3600,
+            "copia_cola": "00020126BR.GOV.BCB.PIX",
+            "qr_base64": self.qr,
+        }
+
+    def consultar(self, pid):
+        s = self.situacao[pid]
+        return {"id": pid, "status_mp": s["status_mp"], "status": pagamentos.SITUACOES[s["status_mp"]], "detalhe": None,
+                "valor": s["valor"], "moeda": "BRL", "referencia": s["ref"], "metodo": "pix"}  # fmt: skip
+
+
+def test_pix_top_up_dialog_shows_the_qr_and_the_trial_becomes_prepaid(ambiente, navegador):  # noqa: F811 (fixture)
+    import requests
+
+    erros: list[str] = []
+    mp = _MercadoPago()
+    ambiente.cfg.mp = pagamentos.ConfigMP("token-mp", "segredo", f"{ambiente.url}/api/pagamentos/mercadopago")
+    ambiente.cfg.provedor_pagamento = lambda cfg: mp
+    tok = _cliente(ambiente, plano="teste")
+    with ambiente.banco.tx() as c:  # a recarga precisa de um e-mail na conta
+        c.run("UPDATE clientes SET email = 'cafe.esquina@gmail.com', email_norm = 'cafeesquina@gmail.com'")
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, tok)
+    pg = _pagina(ctx, erros)
+    pg.goto(ambiente.url)
+    pg.wait_for_selector("#receita option", state="attached")
+    pg.click("#abrir-conta")
+    pg.click("dialog.conta[open] button:has-text('Adicionar saldo por Pix')")
+    dialogo = pg.locator("dialog.pix[open]")
+    pw.expect(dialogo.locator("button[aria-pressed=true]")).to_have_text("R$ 50,00")
+    dialogo.locator("#pix-documento").fill("111.111.111-11")
+    dialogo.locator("button[type=submit]").click()
+    pw.expect(dialogo.locator(".aviso.erro")).to_contain_text("CPF ou o CNPJ")
+    dialogo.locator("button:has-text('R$ 20,00')").click()
+    dialogo.locator("#pix-documento").fill("529.982.247-25")
+    dialogo.locator("button[type=submit]").click()
+    pw.expect(dialogo.locator("img.qr-pix")).to_be_visible()
+    assert dialogo.locator("img.qr-pix").evaluate("(i) => i.complete && i.naturalWidth") == 64  # o PNG abriu
+    assert dialogo.locator("#pix-copia").input_value() == "00020126BR.GOV.BCB.PIX"
+    pw.expect(dialogo.locator(".situacao-pix")).to_have_text("Aguardando o pagamento…")
+    _capturar(pg, "pix")
+    # o banco confirma: o Mercado Pago avisa (assinado) e a janela mostra o crédito na próxima consulta
+    (pid,) = mp.situacao
+    mp.situacao[pid]["status_mp"] = "approved"
+    manifesto = f"id:{pid};request-id:r1;ts:1;"
+    v1 = hmac.new(b"segredo", manifesto.encode(), hashlib.sha256).hexdigest()
+    r = requests.post(
+        f"{ambiente.url}/api/pagamentos/mercadopago?data.id={pid}&type=payment",
+        headers={"x-signature": f"ts=1,v1={v1}", "x-request-id": "r1"},
+        timeout=10,
+    )
+    assert r.status_code == 200
+    pw.expect(dialogo.locator(".aviso.ok")).to_contain_text("R$ 20,00 entraram no seu saldo", timeout=15000)
+    # a 1ª recarga tira a conta do teste: a página recarrega já no pré-pago, com o saldo
+    pg.wait_for_selector("#saldo:not([hidden])", timeout=15000)
+    assert _texto(pg, "#saldo-valor") == "R$ 20,00"
+    ctx.close()
+    assert erros == [], erros
+
+
+def test_owner_panel_pods_emergency_interest_clicks_and_security(ambiente, navegador):  # noqa: F811 (fixture)
+    erros: list[str] = []
+    b = ambiente.banco
+    g = b.gerador_subindo("NVIDIA L40S")
+    b.gerador_pronto(g, "pod-abc123", "NVIDIA L40S", 1.09)
+    cid, _ = b.criar_cliente(
+        "loja.interesse@gmail.com", 500, "teste", email="loja.interesse@gmail.com", email_norm="lojainteresse@gmail.com"
+    )
+    b.registrar_interesse(cid, "texto-video")
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, admin=True)
+    adm = _pagina(ctx, erros)
+    adm.goto(f"{ambiente.url}{PAINEL}/")
+    adm.wait_for_selector("#pods table")
+    assert "pod-abc123" in _texto(adm, "#pods table")
+    pw.expect(adm.locator("#n-pods")).to_have_text("1")
+    adm.click("#pods button:has-text('Desligar')")
+    adm.click("dialog[open] button:has-text('Desligar')")
+    pw.expect(adm.locator("#comandos")).to_contain_text("aguardando o orquestrador")
+    (cmd,) = b.comandos_pendentes()
+    assert (cmd["tipo"], cmd["alvo"]) == ("desligar_pod", g)
+    adm.click("#emergencia")
+    adm.click("dialog[open] button:has-text('Parar tudo')")
+    pw.expect(adm.locator("#estado-orquestrador")).to_contain_text("PAUSADO")
+    pw.expect(adm.locator("#retomar")).to_be_visible()
+    adm.click("#retomar")
+    pw.expect(adm.locator("#estado-orquestrador")).to_contain_text("Funcionando")
+    # cada clique em "Tenho interesse", com o e-mail da conta
+    pw.expect(adm.locator("#cliques table")).to_contain_text("loja.interesse@gmail.com")
+    pw.expect(adm.locator("#cliques table")).to_contain_text("Vídeo a partir de um texto")
+    # segurança: o que falta configurar aparece em destaque; as ações do painel ficam registradas
+    pw.expect(adm.locator("#checagem li.falta").first).to_be_visible()
+    pw.expect(adm.locator("#checagem")).to_contain_text("Painel com código do autenticador")
+    pw.expect(adm.locator("#auditoria table")).to_contain_text("emergencia")
+    _capturar(adm, "painel-pods")
+    # sair do painel
+    adm.click("#sair")
+    adm.wait_for_selector("#form-admin:visible")
+    ctx.close()
+    assert erros == [], erros
 
 
 def _png_de(largura, altura, cor=(40, 90, 160)):
@@ -596,7 +860,7 @@ def test_small_photo_warning_order_help_and_gpu_report(ambiente, navegador, tmp_
     erros: list[str] = []
     tok = _cliente(ambiente)
     ctx = navegador.new_context()
-    _com_codigo(ctx, "render2go-token-cliente", tok)
+    _com_sessao(ctx, ambiente, tok)
     pg = _pagina(ctx, erros)
     pg.goto(ambiente.url)
     _escolher_finalidade(pg)
@@ -622,7 +886,7 @@ def test_small_photo_warning_order_help_and_gpu_report(ambiente, navegador, tmp_
     pw.expect(pg.locator("#previa .miniatura")).to_have_count(1)
     ctx.close()
 
-    # relatório de GPUs no /aprovar: um pod que gerou e um que falhou na instalação
+    # relatório de GPUs no painel: um pod que gerou e um que falhou na instalação
     b = ambiente.banco
     g = b.gerador_subindo("NVIDIA L40S")
     b.gerador_criado(g, "pod-abc123", "NVIDIA L40S", 1.09, "EU-RO-1")
@@ -636,9 +900,9 @@ def test_small_photo_warning_order_help_and_gpu_report(ambiente, navegador, tmp_
     b.gerador_fim(f, "não subiu", falhou=True)
     b.gerador_desligado(f)
     adm_ctx = navegador.new_context()
-    _com_codigo(adm_ctx, "render2go-token-admin", ADMIN)
+    _com_sessao(adm_ctx, ambiente, admin=True)
     adm = _pagina(adm_ctx, erros)
-    adm.goto(f"{ambiente.url}/aprovar")
+    adm.goto(f"{ambiente.url}{PAINEL}/")
     adm.wait_for_selector("#gpus table")
     tabela = _texto(adm, "#gpus table")
     assert "pod-abc123" in tabela and "EU-RO-1" in tabela and "1,09" in tabela and "10 min" in tabela
@@ -651,16 +915,16 @@ def test_small_photo_warning_order_help_and_gpu_report(ambiente, navegador, tmp_
         adm.click("#baixar-gpus")
     rel = json.loads(Path(baixado.value.path()).read_text())
     assert {x["pod"] for x in rel["geradores"]} == {"pod-abc123", "pod-xyz789"}
-    _capturar(adm, "aprovar-gpus")
+    _capturar(adm, "painel-gpus")
     adm_ctx.close()
-    assert erros == []
+    assert erros == [], erros
 
 
 def test_purpose_screen_blocks_full_list_interest_and_choice(ambiente, navegador):  # noqa: F811 (fixture)
     erros: list[str] = []
     tok = _cliente(ambiente)
     ctx = navegador.new_context()
-    _com_codigo(ctx, "render2go-token-cliente", tok)
+    _com_sessao(ctx, ambiente, tok)
     pg = _pagina(ctx, erros)
     pg.goto(ambiente.url)
     # antes do pedido: 6 opções em destaque e "Ver todas"; só "Foto vira vídeo" disponível
@@ -713,13 +977,14 @@ def test_purpose_screen_blocks_full_list_interest_and_choice(ambiente, navegador
         ]
     _capturar(pg, "finalidades")
     ctx.close()
-    # o dono vê a contagem no /aprovar
+    # o dono vê o total por opção e cada clique no painel
     adm_ctx = navegador.new_context()
-    _com_codigo(adm_ctx, "render2go-token-admin", ADMIN)
+    _com_sessao(adm_ctx, ambiente, admin=True)
     adm = _pagina(adm_ctx, erros)
-    adm.goto(f"{ambiente.url}/aprovar")
+    adm.goto(f"{ambiente.url}{PAINEL}/")
     adm.wait_for_selector("#interesses table")
     tabela = _texto(adm, "#interesses table")
     assert "Vídeo a partir de um texto" in tabela and "Trilha sonora a partir de um texto" in tabela
+    pw.expect(adm.locator("#cliques tbody tr")).to_have_count(2)
     adm_ctx.close()
-    assert erros == []
+    assert erros == [], erros

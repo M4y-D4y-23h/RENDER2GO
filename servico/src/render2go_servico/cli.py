@@ -1,9 +1,12 @@
 """render2go-servico: API, orquestrador de pods e tarefas de administração.
 
-    render2go-servico api [--porta 8000]          API e páginas (uvicorn)
+    render2go-servico api [--porta 8000] [--workers N]   API e páginas (uvicorn; N processos)
     render2go-servico orquestrar                  sobe e encerra pods conforme a fila
+    render2go-servico analisar                    aviso de pessoas nas fotos, fora da API (RENDER2GO_ANALISE=separada)
     render2go-servico limpar                      encerra pods registrados pelo orquestrador
-    render2go-servico cliente NOME [--plano teste] [--cota 500]   cadastra e mostra o token
+    render2go-servico totp-novo                   segredo do autenticador do painel (RENDER2GO_ADMIN_TOTP)
+    render2go-servico cliente NOME [--plano teste] [--cota 500] [--email E]   cadastra (sem e-mail: mostra o código)
+    render2go-servico email CLIENTE EMAIL         liga um e-mail a um cliente antigo (entra pelo e-mail)
     render2go-servico clientes                    lista os clientes com plano e saldo
     render2go-servico saldo CLIENTE VALOR [--descricao "Pix 09/10"] [--referencia ID]
         recarga do pré-pago em reais (ex.: 50 ou 19,90); valor negativo desconta (ajuste)
@@ -11,6 +14,9 @@
         apaga pedidos, prompts, trabalhos, autorizações, eventos, suporte e registro de pods, e
         os arquivos dos clientes no R2 (entrada/ e saida/; nunca o espelho dos modelos). Os
         clientes e os códigos de acesso ficam. Sem --confirmar, só mostra o que seria apagado.
+        Ficam também, de propósito: aceites dos termos, registros de acesso (Marco Civil, 6 meses),
+        extrato, pagamentos e a auditoria do painel. Com clientes de verdade, pedidos e autorizações
+        são prova em caso de disputa: use só para limpar testes.
 
 Configuração por variáveis de ambiente (ver docs/09-implantacao.md):
     RENDER2GO_DB_URL, RENDER2GO_R2_*, RENDER2GO_SEGREDO_APROVACAO, RENDER2GO_ADMIN_TOKENS,
@@ -112,12 +118,24 @@ def main(argv: list[str] | None = None) -> int:
     s_api = sub.add_parser("api", help="API e páginas")
     s_api.add_argument("--host", default="0.0.0.0")
     s_api.add_argument("--porta", type=int, default=int(os.environ.get("PORT", 8000)))
+    s_api.add_argument(
+        "--workers",
+        type=int,
+        default=int(os.environ.get("RENDER2GO_API_WORKERS", 1)),
+        help="processos da API (cada um com o seu pool de conexões; padrão RENDER2GO_API_WORKERS ou 1)",
+    )
+    sub.add_parser("analisar", help="aviso de pessoas nas fotos, fora da API")
+    sub.add_parser("totp-novo", help="gera o segredo do aplicativo autenticador do painel")
+    s_email = sub.add_parser("email", help="liga um e-mail a um cliente antigo (código de acesso)")
+    s_email.add_argument("cliente", help="id do cliente (cli_...)")
+    s_email.add_argument("email")
     sub.add_parser("orquestrar", help="sobe e encerra pods conforme a fila")
     sub.add_parser("limpar", help="encerra os pods registrados pelo orquestrador")
     s_cli = sub.add_parser("cliente", help="cadastra um cliente e mostra o token (uma vez)")
     s_cli.add_argument("nome")
-    s_cli.add_argument("--plano", choices=["pago", "teste"], default="pago")
+    s_cli.add_argument("--plano", choices=["pago", "teste", "interno"], default="pago")
     s_cli.add_argument("--cota", type=int, default=500, help="fotos por dia")
+    s_cli.add_argument("--email", help="entra pelo código que chega neste e-mail (sem código de acesso)")
     sub.add_parser("clientes", help="lista os clientes com plano e saldo")
     s_saldo = sub.add_parser("saldo", help="recarga (ou ajuste, com valor negativo) do saldo de um cliente")
     s_saldo.add_argument("cliente", help="id do cliente (cli_...)")
@@ -136,11 +154,72 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "api":
         import uvicorn
 
-        from render2go_servico.api import criar_app
+        # vários processos (--workers): o uvicorn cria um app por processo pela fábrica. O Caddy é o único
+        # que fala com a API e sempre manda o IP real em X-Render2Go-IP (proxy_headers desligado: o
+        # X-Forwarded-For de fora não vale). Sem o cabeçalho "server: uvicorn" nas respostas.
+        uvicorn.run(
+            "render2go_servico.api:criar_app",
+            factory=True,
+            host=a.host,
+            port=a.porta,
+            workers=max(1, a.workers),
+            proxy_headers=False,
+            server_header=False,
+            timeout_keep_alive=30,
+        )
+        return 0
+    if a.cmd == "totp-novo":
+        from render2go_servico.contas import novo_segredo_totp, uri_totp
 
-        uvicorn.run(criar_app(), host=a.host, port=a.porta, proxy_headers=True)
+        segredo = novo_segredo_totp()
+        print(
+            "Segredo do autenticador do painel (coloque no .env como RENDER2GO_ADMIN_TOTP e no aplicativo):\n"
+            f"  RENDER2GO_ADMIN_TOTP={segredo}\n"
+            "No Google Authenticator, Authy ou 1Password: adicionar conta → digitar a chave, ou abrir este endereço:\n"
+            f"  {uri_totp(segredo)}\n"
+            "Guarde o segredo num lugar seguro (sem ele e sem o celular, só editando o .env de novo)."
+        )
+        return 0
+    if a.cmd == "analisar":
+        import threading
+
+        from render2go_servico import pessoas
+        from render2go_servico.api import analisar_continuamente
+        from render2go_servico.armazenamento import Armazenamento
+
+        arm = Armazenamento.do_ambiente()
+        if arm is None:
+            raise SystemExit("faltam RENDER2GO_R2_ENDPOINT, _BUCKET, _ACCESS_KEY_ID ou _SECRET_ACCESS_KEY")
+        parar = threading.Event()
+        signal.signal(signal.SIGTERM, lambda *_: parar.set())
+        signal.signal(signal.SIGINT, lambda *_: parar.set())
+        print("[analise] rodando (aviso de pessoas nas fotos)", flush=True)
+        analisar_continuamente(_banco(), arm, pessoas.analisador(), parar)
+        return 0
+    if a.cmd == "email":
+        from render2go_servico.contas import EmailRecusado, normalizar
+        from render2go_servico.db import BancoError
+
+        try:
+            email, norm = normalizar(a.email, exigir_dominio=False)
+            _banco().definir_email(a.cliente, email, norm)
+        except (EmailRecusado, BancoError) as e:
+            print(e)
+            return 2
+        print(f"{a.cliente}: entra agora pelo e-mail {email}")
         return 0
     if a.cmd == "cliente":
+        if a.email:
+            from render2go_servico.contas import EmailRecusado, normalizar
+
+            try:
+                email, norm = normalizar(a.email, exigir_dominio=False)
+            except EmailRecusado as e:
+                print(e)
+                return 2
+            cid, _ = _banco().criar_cliente(email, a.cota, a.plano, email=email, email_norm=norm)
+            print(f"cliente {cid} ({a.plano}); entra pela página com o código que chega em {email}")
+            return 0
         cid, token = _banco().criar_cliente(a.nome, a.cota, a.plano)
         print(f"cliente {cid} ({a.plano}); token (guarde, não aparece de novo):\n{token}")
         return 0

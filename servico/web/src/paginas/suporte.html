@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>Suporte · Render2Go</title>
-<meta name="description" content="Fale com o suporte do Render2Go: dúvidas, pedidos de vídeo e código de acesso. Respondemos pelo e-mail que você informar.">
+<meta name="description" content="Fale com o suporte do Render2Go: dúvidas, pedidos de vídeo, entrada e pagamentos. Respondemos pelo e-mail que você informar.">
 <link rel="canonical" href="{{ORIGEM}}/suporte">
 <meta property="og:title" content="Suporte · Render2Go">
-<meta property="og:description" content="Dúvidas, pedidos de vídeo e código de acesso: fale com o suporte do Render2Go.">
+<meta property="og:description" content="Dúvidas, pedidos de vídeo, entrada e pagamentos: fale com o suporte do Render2Go.">
 <meta property="og:url" content="{{ORIGEM}}/suporte">
 <!--@cabeca-->
 <script src="/estatico/suporte.js" defer></script>
@@ -18,7 +18,7 @@
     <noscript><p class="aviso erro">Esta página precisa de JavaScript para enviar a mensagem. Ative o JavaScript no navegador e recarregue a página.</p></noscript>
     <div class="cab-pagina">
       <h1>Fale com o suporte</h1>
-      <p class="lead">Dúvida, problema com um pedido ou com o código de acesso? Escreva aqui. Respondemos pelo e-mail que você informar.</p>
+      <p class="lead">Dúvida, problema com um pedido, com a entrada ou com um pagamento? Escreva aqui. Respondemos pelo e-mail que você informar. Para denunciar um uso indevido do serviço, comece o assunto com “Denúncia”.</p>
     </div>
 
     <form id="form-suporte" class="cartao elevado pilha" novalidate aria-label="Mensagem para o suporte">
@@ -39,6 +39,7 @@
         <label for="suporte-email">Seu e-mail para resposta <span class="opcional" id="email-opcional" hidden>(opcional)</span></label>
         <input id="suporte-email" type="email" maxlength="200" autocomplete="email" inputmode="email" spellcheck="false" autocapitalize="off" enterkeyhint="send">
       </div>
+      <div id="verificacao-suporte" class="verificacao" hidden></div>
       <button type="submit" id="suporte-enviar" class="botao primario largo"><!--@icone mensagem-->Enviar mensagem</button>
       <p id="suporte-msg" class="aviso" hidden></p>
     </form>

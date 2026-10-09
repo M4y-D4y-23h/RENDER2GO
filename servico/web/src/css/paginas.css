@@ -779,3 +779,159 @@ button.bloco:hover {
     align-self: center;
   }
 }
+
+/* -- conta por e-mail (ADR 0007) ------------------------------------------------------------------ */
+
+.entrar form {
+  display: grid;
+  gap: var(--esp-4);
+}
+
+.entrar .acoes {
+  justify-content: space-between;
+}
+
+.codigo-antigo summary {
+  cursor: pointer;
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+}
+
+.codigo-antigo form {
+  margin-top: var(--esp-3);
+}
+
+.conta-linha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2) var(--esp-4);
+  align-items: center;
+}
+
+/* "não sou um robô": quadro do próprio site com o desafio da Cloudflare (turnstile.ts) */
+.verificacao {
+  min-height: 4.25rem;
+}
+
+.quadro-verificacao {
+  display: block;
+  width: 100%;
+  height: 4.25rem;
+  border: 0;
+  overflow: hidden;
+}
+
+.pagina-verificacao {
+  margin: 0;
+  background: transparent;
+}
+
+/* -- recarga por Pix (ADR 0008) --------------------------------------------------------------------- */
+
+.pix-gerado {
+  display: grid;
+  gap: var(--esp-3);
+  justify-items: start;
+}
+
+.qr-pix {
+  width: 13.75rem;
+  height: 13.75rem;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-sm);
+  background: var(--cor-superficie);
+}
+
+.situacao-pix {
+  font-weight: 650;
+}
+
+/* -- painel ------------------------------------------------------------------------------------------- */
+
+.busca {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+  margin-block: var(--esp-3);
+}
+
+.busca input {
+  flex: 1 1 16rem;
+}
+
+.acoes-linha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+  align-items: center;
+}
+
+.lista-checagem {
+  display: grid;
+  gap: var(--esp-2);
+  padding: 0;
+  list-style: none;
+}
+
+.lista-checagem li {
+  display: flex;
+  gap: var(--esp-2);
+  align-items: flex-start;
+}
+
+.lista-checagem li > span {
+  min-width: 0;
+  overflow-wrap: anywhere; /* nomes de variáveis (RENDER2GO_...) quebram em tela estreita */
+}
+
+.lista-checagem li.ok .icone {
+  color: var(--cor-ok);
+}
+
+.lista-checagem li.falta {
+  color: var(--cor-alerta);
+  font-weight: 600;
+}
+
+/* -- páginas legais ---------------------------------------------------------------------------------- */
+
+.texto-legal section {
+  margin-top: var(--esp-6);
+}
+
+.texto-legal h2 {
+  margin-bottom: var(--esp-3);
+}
+
+.texto-legal p,
+.texto-legal li {
+  max-width: 70ch;
+}
+
+.texto-legal ul,
+.texto-legal ol {
+  display: grid;
+  gap: var(--esp-2);
+  padding-left: var(--esp-5);
+}
+
+.texto-legal .tabela {
+  margin-block: var(--esp-3);
+}
+
+.indice {
+  padding: var(--esp-4);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-sm);
+  background: var(--cor-superficie);
+}
+
+.indice h2 {
+  font-size: var(--titulo-3);
+}
+
+.identificacao {
+  flex-basis: 100%;
+  color: var(--cor-texto-3);
+  font-size: var(--texto-xs);
+}

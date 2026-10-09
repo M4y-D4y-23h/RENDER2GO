@@ -29,9 +29,20 @@ pagariam dez subidas; juntos, pagam uma. Pedidos pagos sobem na hora.
 Proteções:
 - cada pod nasce com desligamento automático (≤ 2 h e o que o saldo paga);
 - o worker para de pegar jobs 10 min antes;
-- o estado fica em disco para `render2go-servico limpar`.
+- o estado fica em disco para `render2go-servico limpar`; na partida, os pods que um processo anterior
+  deixou ligados (ele caiu sem encerrá-los) são encerrados;
+- só um orquestrador manda nos pods (trava no Postgres): um segundo processo espera a vez;
+- cada pod recebe um token de worker próprio (tabela `tokens_worker`), que vence com o pod e é revogado
+  quando ele é encerrado: um token que vaze de um pod não pega jobs de outro nem depois do fim.
 
-O pod recebe só a URL da API, o token de worker e os hosts permitidos (nunca as chaves do R2
+Painel → orquestrador (tabela `comandos`, executados no começo de cada ciclo):
+- `desligar_pod`: encerra aquele pod (e cancela a subida, se ele ainda estiver subindo);
+- `emergencia`: encerra todos os pods, inclusive os que o RunPod listar com o nome render2go-* (sobras de
+  processos anteriores), e pausa: nenhum pod novo sobe até o `retomar`;
+- `retomar`: tira a pausa. A pausa fica na tabela `estado` ("pausado"), e o sinal de vida do orquestrador
+  ("orquestrador_vivo") também, para o painel mostrar se os comandos vão ser executados.
+
+O pod recebe só a URL da API, o token de worker dele e os hosts permitidos (nunca as chaves do R2
 ou do RunPod).
 """
 
@@ -44,6 +55,7 @@ import shlex
 import threading
 import time
 from argparse import Namespace
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -51,7 +63,7 @@ from urllib.parse import urlsplit
 from render2go_worker import lote, runpod_pods
 from render2go_worker import lote_nuvem as ln
 
-from render2go_servico.db import Banco
+from render2go_servico.db import Banco, BancoError
 
 FILA_CMD = (
     "set -a; . {raiz}/fila.env; set +a; cd /opt/render2go/worker && "
@@ -60,6 +72,9 @@ FILA_CMD = (
     "--ocioso {ocioso} --modelos-prontos {raiz}/estado --modelos-ate {modelos_ate}"
 )
 VIVO = "vivo"  # tocado a cada ciclo bem-sucedido (healthcheck do contêiner)
+TRAVA_ORQUESTRADOR = 20261009  # trava do Postgres: um orquestrador por vez manda nos pods
+PREFIXO_PODS = "render2go-"  # nome dos pods que o orquestrador cria (a parada de emergência procura por ele)
+LIMPEZA_S = 3600  # a cada hora: registros de acesso vencidos, códigos e limites antigos (Banco.purgar)
 
 
 def _gpus_do_ambiente() -> list[str]:
@@ -76,7 +91,7 @@ def _log(msg: str) -> None:
 @dataclass
 class ConfigOrq:
     api_url: str  # URL pública da API (https), que os pods acessam
-    worker_token: str
+    worker_token: str  # não vai mais para os pods (cada pod recebe um token próprio); fica para compatibilidade
     hosts_permitidos: str  # RENDER2GO_ALLOWED_URL_HOSTS no pod (ex.: o host do R2)
     gpus: list[str] = field(default_factory=lambda: list(ln.GPUS_PADRAO))
     max_pods: int = ln.MAX_PODS_AUTO
@@ -94,8 +109,8 @@ class ConfigOrq:
     def do_ambiente(cls) -> ConfigOrq:
         api = os.environ.get("RENDER2GO_API_URL", "")
         token = next((t for t in os.environ.get("RENDER2GO_WORKER_TOKENS", "").split(",") if len(t) >= 32), "")
-        if not api.startswith("https://") or not token:
-            raise SystemExit("faltam RENDER2GO_API_URL (https) ou RENDER2GO_WORKER_TOKENS")
+        if not api.startswith("https://"):
+            raise SystemExit("falta RENDER2GO_API_URL (https)")
         r2 = urlsplit(os.environ.get("RENDER2GO_R2_ENDPOINT", "")).hostname
         if not r2:
             raise SystemExit("falta RENDER2GO_R2_ENDPOINT (o pod só baixa e envia para esse host)")
@@ -121,6 +136,7 @@ class PodFila:
     pod: ln.Pod
     ate: float  # epoch em que o worker para de pegar jobs
     gerador: str | None = None  # linha na tabela geradores (previsão para o cliente)
+    worker: str = ""  # nome do worker (pod-<id>): o token do pod é revogado por ele
 
 
 class Orquestrador:
@@ -156,6 +172,10 @@ class Orquestrador:
         self.parar = threading.Event()
         self.n = 0
         self._segurando: int | None = None
+        self.cancelados: set[str] = set()  # geradores desligados pelo painel enquanto subiam
+        self.pausado = False
+        self._limpeza = 0.0
+        self._revisor = ThreadPoolExecutor(max_workers=16, thread_name_prefix="revisar")
 
     # -- decisão --------------------------------------------------------------------------
 
@@ -211,11 +231,14 @@ class Orquestrador:
 
     # -- pods -----------------------------------------------------------------------------
 
-    def _iniciar_worker(self, pod: ln.Pod, deadman_s: int) -> PodFila:
+    def _iniciar_worker(self, pod: ln.Pod, deadman_s: int, gerador: str | None = None) -> PodFila:
         r, ag = self.remoto, pod.agente
         env = self.cfg.estado / f"fila-{pod.info.id}.env"
+        worker = f"pod-{pod.info.id}"
+        # token só deste pod, válido até o desligamento automático (com folga); revogado no fim
+        token = self.banco.criar_token_worker(worker, gerador, deadman_s + 900)
         linhas = {
-            "RENDER2GO_WORKER_TOKEN": self.cfg.worker_token,
+            "RENDER2GO_WORKER_TOKEN": token,
             "RENDER2GO_SAFETY": "c1-revisao-humana",
             "RENDER2GO_ALLOWED_URL_HOSTS": self.cfg.hosts_permitidos,
         }
@@ -232,7 +255,7 @@ class Orquestrador:
         cmd = self.cfg.fila_cmd.format(
             raiz=r.raiz,
             api=shlex.quote(self.cfg.api_url),
-            worker=f"pod-{pod.info.id}",
+            worker=worker,
             gpus=pod.info.gpus,
             ate=int(ate),
             ocioso=int(self.cfg.ocioso_s),
@@ -241,7 +264,7 @@ class Orquestrador:
         )
         ag.bg(f"{cmd}; echo FIM > {r.raiz}/fila.fim", f"{r.raiz}/fila.log")
         _log(f"pod {pod.nome}: worker da fila iniciado")
-        return PodFila(pod, ate)
+        return PodFila(pod, ate, gerador, worker)
 
     def _subir(self, deadman_s: int, gerador: str | None = None) -> None:
         pronto = False
@@ -260,13 +283,18 @@ class Orquestrador:
             )
             if pod is None:  # o lote_nuvem já encerrou o pod que não subiu (se chegou a existir)
                 return
+            with self.lock:
+                cancelado = gerador in self.cancelados or self.pausado
+            if cancelado:  # desligado pelo painel (ou parada de emergência) enquanto subia
+                _log(f"pod {pod.nome}: desligado pelo painel durante a subida")
+                self.pods_ln.encerrar(pod, "desligado pelo painel", esperar_espelho=False)
+                return
             try:
-                pf = self._iniciar_worker(pod, deadman_s)
-            except (ln.NuvemError, OSError) as e:
+                pf = self._iniciar_worker(pod, deadman_s, gerador)
+            except (ln.NuvemError, OSError, BancoError) as e:
                 _log(f"pod {pod.nome}: worker não iniciou ({e})")
                 self.pods_ln.encerrar(pod, "worker não iniciou")
                 return
-            pf.gerador = gerador
             with self.lock:
                 self.ativos[pod.info.id] = pf
             pronto = True
@@ -287,15 +315,20 @@ class Orquestrador:
         except Exception as e:  # noqa: BLE001 (só a previsão depende disso)
             _log(f"AVISO: registro do gerador ({acao}): {e}")
 
+    def _terminou(self, pf: PodFila) -> bool:
+        try:
+            _, out = pf.pod.agente.exec(f"cat {self.remoto.raiz}/fila.fim 2>/dev/null", 30)
+            return "FIM" in out
+        except (ln.NuvemError, OSError) as e:
+            _log(f"pod {pf.pod.nome}: agente inacessível ({e})")
+            return True
+
     def _revisar(self) -> None:
-        """Encerra pods cujo worker terminou ou cujo agente sumiu."""
-        for pid, pf in list(self.ativos.items()):
-            try:
-                _, out = pf.pod.agente.exec(f"cat {self.remoto.raiz}/fila.fim 2>/dev/null", 30)
-                fim = "FIM" in out
-            except (ln.NuvemError, OSError) as e:
-                _log(f"pod {pf.pod.nome}: agente inacessível ({e})")
-                fim = True
+        """Encerra pods cujo worker terminou ou cujo agente sumiu. Os agentes são consultados ao mesmo
+        tempo: com dezenas de pods, um agente lento (até 30 s) não atrasa o ciclo inteiro."""
+        pods = list(self.ativos.items())
+        terminados = list(self._revisor.map(lambda item: self._terminou(item[1]), pods)) if pods else []
+        for (pid, pf), fim in zip(pods, terminados, strict=True):
             if fim:
                 with self.lock:
                     self.ativos.pop(pid, None)
@@ -308,18 +341,114 @@ class Orquestrador:
                 else:
                     self._encerrar_pod(pf, "fila vazia")
 
-    def _encerrar_pod(self, pf: PodFila, motivo: str) -> None:
+    def _encerrar_pod(self, pf: PodFila, motivo: str, esperar_espelho: bool = True) -> None:
         """Encerra o pod; o gravador antes termina o envio ao espelho (com prazo)."""
+        self._registrar_token(pf)
         try:
-            self.pods_ln.encerrar(pf.pod, motivo)
+            self.pods_ln.encerrar(pf.pod, motivo, esperar_espelho=esperar_espelho)
         finally:
             with self.lock:
                 self.encerrando.pop(pf.pod.info.id, None)
             self._registrar("gerador_fim", pf.gerador, motivo)
             self._registrar("gerador_desligado", pf.gerador)  # fim da cobrança do pod
 
+    def _registrar_token(self, pf: PodFila) -> None:
+        """O pod que sai perde o token na hora (nunca derruba o encerramento)."""
+        try:
+            self.banco.revogar_tokens_worker(worker=pf.worker or f"pod-{pf.pod.info.id}")
+        except Exception as e:  # noqa: BLE001 (o token vence sozinho com o desligamento automático)
+            _log(f"AVISO: revogar o token de {pf.pod.nome}: {e}")
+
+    # -- painel: comandos, pausa e sinal de vida -------------------------------------------------
+
+    def _desligar_gerador(self, gerador: str) -> str:
+        with self.lock:
+            pf = next((p for p in self.ativos.values() if p.gerador == gerador), None)
+            if pf:
+                self.ativos.pop(pf.pod.info.id, None)
+            else:
+                self.cancelados.add(gerador)  # ainda subindo: encerrado assim que o RunPod devolver o pod
+        if pf:
+            self._encerrar_pod(pf, "desligado pelo painel", esperar_espelho=False)
+            return f"pod {pf.pod.info.id} encerrado"
+        try:  # subindo: se o RunPod já criou o pod, encerra agora mesmo pelo id registrado
+            with self.banco.tx() as c:
+                g = c.one("SELECT worker FROM geradores WHERE id = ?", (gerador,))
+            if g and g["worker"]:
+                self.provedor.encerrar(g["worker"].removeprefix("pod-"))
+                self._registrar("gerador_fim", gerador, "desligado pelo painel")
+                self._registrar("gerador_desligado", gerador)
+                return f"pod {g['worker']} encerrado durante a subida"
+        except Exception as e:  # noqa: BLE001 (a subida vê o cancelamento e encerra)
+            _log(f"AVISO: desligar {gerador}: {e}")
+        return "subida cancelada"
+
+    def _sobras_runpod(self) -> int:
+        """Pods render2go-* que o RunPod lista e que este processo não conhece (sobras de um processo
+        anterior ou de um teste): encerrados na parada de emergência."""
+        chave = getattr(self.provedor, "chave", None)
+        if not chave:
+            return 0
+        try:
+            r = runpod_pods._rest("GET", "/pods", chave)
+            pods = r.json() if r.ok else []
+        except Exception as e:  # noqa: BLE001
+            _log(f"AVISO: listar os pods do RunPod: {e}")
+            return 0
+        with self.lock:
+            conhecidos = {p.pod.info.id for p in self.ativos.values()}
+        n = 0
+        for p in pods if isinstance(pods, list) else []:
+            if str(p.get("name", "")).startswith(PREFIXO_PODS) and p.get("id") not in conhecidos:
+                try:
+                    self.provedor.encerrar(p["id"])
+                    n += 1
+                except Exception as e:  # noqa: BLE001
+                    _log(f"AVISO: encerrar a sobra {p.get('id')}: {e}")
+        return n
+
+    def comandos(self) -> None:
+        """Executa os pedidos do painel (desligar um pod, parada de emergência, retomar)."""
+        for cmd in self.banco.comandos_pendentes():
+            try:
+                if cmd["tipo"] == "desligar_pod" and cmd["alvo"]:
+                    resultado = self._desligar_gerador(cmd["alvo"])
+                elif cmd["tipo"] == "emergencia":
+                    self.pausado = True
+                    with self.lock:
+                        n = len(self.ativos) + len(self.encerrando) + self.subindo
+                    self.encerrar_todos("parada de emergência")
+                    sobras = self._sobras_runpod()
+                    resultado = f"{n} pod(s) encerrados" + (f" e {sobras} sobra(s) no RunPod" if sobras else "")
+                else:  # retomar: a pausa sai do estado (a API já gravou)
+                    resultado = "pods liberados"
+                _log(f"painel: {cmd['tipo']} ({cmd['por']}): {resultado}")
+            except Exception as e:  # noqa: BLE001 (o comando fica com o erro; o painel mostra)
+                resultado = f"erro: {e}"
+            self.banco.comando_executado(cmd["id"], resultado)
+
+    def _estado_do_painel(self) -> None:
+        pausa = self.banco.ler_estado("pausado")
+        pausado = bool(pausa and pausa["valor"] == "1")
+        if pausado != self.pausado:
+            _log("PAUSADO pelo painel: nenhum pod novo sobe" if pausado else "pausa retirada pelo painel")
+        self.pausado = pausado
+        if not pausado:
+            with self.lock:
+                self.cancelados.clear()
+        self.banco.definir_estado("orquestrador_vivo", str(time.time()))
+        if time.time() - self._limpeza > LIMPEZA_S:
+            self._limpeza = time.time()
+            n = self.banco.purgar()
+            if any(n.values()):
+                _log("limpeza: " + ", ".join(f"{k} {v}" for k, v in n.items() if v))
+
     def ciclo(self) -> dict:
+        self._estado_do_painel()
+        self.comandos()
         self._revisar()
+        if self.pausado:  # parada de emergência: nada sobe até o painel retomar
+            return {"desejados": 0, "ativos": len(self.ativos), "subindo": self.subindo, "pausado": True}
         trabalho = self.banco.trabalho()
         with self.lock:
             existentes = len(self.ativos) + self.subindo
@@ -352,12 +481,47 @@ class Orquestrador:
             _log(f"fila pede {querem} pod(s); subindo {subiu}")
         return {"desejados": querem, "ativos": len(self.ativos), "subindo": self.subindo}
 
+    def _sobras_do_disco(self) -> None:
+        """Pods que um processo anterior deixou ligados (caiu sem encerrá-los): encerrados agora, em vez
+        de esperar o desligamento automático (até 2 h pagas à toa)."""
+        est = self.cfg.estado / ln.ESTADO / "pods.json"
+        try:
+            sobras = json.loads(est.read_text()) if est.is_file() else []
+        except (OSError, ValueError):
+            sobras = []
+        for p in sobras:
+            try:
+                self.provedor.encerrar(p["id"])
+                _log(f"pod {p['id']} de um processo anterior encerrado")
+            except Exception as e:  # noqa: BLE001 (o desligamento automático cobre)
+                _log(f"AVISO: encerrar a sobra {p.get('id')}: {e}")
+        if sobras:
+            est.write_text("[]")
+
     def rodar(self) -> None:
+        trava = None
+        while not self.parar.is_set():  # só um orquestrador manda nos pods; outro processo espera a vez
+            trava = self.banco.trava_exclusiva(TRAVA_ORQUESTRADOR)
+            if trava:
+                break
+            _log("outro orquestrador está ativo: esperando a vez (nova tentativa em 30 s)")
+            self.parar.wait(30)
+        if trava is None:
+            return
+        try:
+            self._rodar()
+        finally:
+            if hasattr(trava, "close"):
+                trava.close()
+
+    def _rodar(self) -> None:
         _log(
             f"rodando; até {self.cfg.max_pods} pods e US$ {self.cfg.max_usd_h:.2f}/h; GPUs: " + ", ".join(self.cfg.gpus)
         )
+        self._sobras_do_disco()
         try:
             self.banco.geradores_reiniciar()  # pods de um processo anterior não contam mais
+            self.banco.revogar_tokens_worker()  # e os tokens deles também não
         except Exception as e:  # noqa: BLE001 (só a previsão depende disso)
             _log(f"AVISO: registro dos geradores: {e}")
         try:
@@ -372,13 +536,20 @@ class Orquestrador:
             self.encerrar_todos("orquestrador parou")
 
     def encerrar_todos(self, motivo: str) -> None:
-        """Encerra tudo na hora, inclusive o gravador no meio do envio (o espelho completa depois)."""
+        """Encerra tudo na hora, inclusive o gravador no meio do envio (o espelho completa depois) e os
+        pods que ainda estão subindo (o RunPod já os criou: estão em `pods_ln.pods`)."""
         with self.lock:
             pods = list(self.ativos.values()) + list(self.encerrando.values())
+            conhecidos = {p.pod.info.id for p in pods}
         for pf in pods:
+            self._registrar_token(pf)
             self.pods_ln.encerrar(pf.pod, motivo, esperar_espelho=False)
             self._registrar("gerador_fim", pf.gerador, motivo)
             self._registrar("gerador_desligado", pf.gerador)
+        with self.pods_ln.lock:
+            subindo = [p for p in self.pods_ln.pods if p.vivo and p.info.id not in conhecidos]
+        for pod in subindo:  # a subida em andamento vê o pod encerrado e desiste
+            self.pods_ln.encerrar(pod, motivo, esperar_espelho=False)
         with self.lock:
             self.ativos.clear()
             self.encerrando.clear()

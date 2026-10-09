@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Política de Privacidade · Render2Go</title>
+<meta name="description" content="Como o Render2Go trata dados pessoais (LGPD): o que coletamos, para quê, com quem compartilhamos, por quanto tempo guardamos e como exercer seus direitos.">
+<link rel="canonical" href="{{ORIGEM}}/privacidade">
+<meta property="og:title" content="Política de Privacidade · Render2Go">
+<meta property="og:description" content="Dados pessoais no Render2Go: o que coletamos, para quê, por quanto tempo e os seus direitos (LGPD).">
+<meta property="og:url" content="{{ORIGEM}}/privacidade">
+<!--@cabeca-->
+<script src="/estatico/legal.js" defer></script>
+</head>
+<body data-pagina="privacidade">
+<!--@topo-->
+<main id="conteudo" class="conteudo" tabindex="-1">
+  <article class="recipiente estreito texto-legal">
+    <div class="cab-pagina">
+      <h1>Política de Privacidade</h1>
+      <p class="lead">Versão privacidade-v1, em vigor desde 9 de outubro de 2026. Explica como tratamos dados pessoais, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).</p>
+    </div>
+
+    <section aria-labelledby="t-controlador">
+      <h2 id="t-controlador">1. Quem é responsável pelos seus dados</h2>
+      <p>O controlador é <strong>[[EMPRESA_NOME]]</strong> ([[EMPRESA_DOCUMENTO]]), [[EMPRESA_ENDERECO]]. Para qualquer assunto de privacidade e para exercer os seus direitos, o canal é <strong>[[EMAIL_PRIVACIDADE]]</strong>.</p>
+    </section>
+
+    <section aria-labelledby="t-dados">
+      <h2 id="t-dados">2. Que dados tratamos, para quê e com que base legal</h2>
+      <div class="tabela" role="region" aria-label="Tabela de dados tratados (role para o lado)" tabindex="0">
+        <table>
+          <caption class="visualmente-oculto">Dados tratados, finalidade e base legal</caption>
+          <thead><tr><th scope="col">Dados</th><th scope="col">Para quê</th><th scope="col">Base legal (LGPD, art. 7º)</th></tr></thead>
+          <tbody>
+            <tr><td>E-mail, data de criação da conta, plano e saldo</td><td>Criar e manter a conta, enviar o código de entrada, cobrar e devolver pedidos</td><td>Execução do contrato (V)</td></tr>
+            <tr><td>Aceite dos termos e desta política (versão, data, IP)</td><td>Provar o que foi aceito e quando</td><td>Exercício regular de direitos (VI)</td></tr>
+            <tr><td>Registros de acesso: IP, porta de origem, data e hora, navegador; entradas, saídas, pedidos e recargas</td><td>Cumprir o Marco Civil da Internet (art. 15), segurança e investigação de fraudes</td><td>Obrigação legal (II) e legítimo interesse (IX)</td></tr>
+            <tr><td>Identificador aleatório do aparelho, idioma, tela, fuso e outros sinais do navegador (e um resumo deles); verificação “não sou um robô”</td><td>Prevenir robôs, contas falsas e abuso do teste gratuito</td><td>Legítimo interesse (IX)</td></tr>
+            <tr><td>Fotos enviadas, texto do pedido e vídeos gerados</td><td>Gerar e entregar os vídeos; revisão humana do pedido</td><td>Execução do contrato (V)</td></tr>
+            <tr><td>Análise automática “contém pessoas” das fotos e o resumo (SHA-256) de cada foto</td><td>Alertar o revisor quando há pessoas, para conferir a autorização; auditoria</td><td>Legítimo interesse (IX), em proteção das pessoas retratadas</td></tr>
+            <tr><td>Declaração de autorização de imagem (texto, versão, data, IP, aparelho e sinais do navegador)</td><td>Provar que a autorização foi declarada</td><td>Exercício regular de direitos (VI)</td></tr>
+            <tr><td>Recargas: valor, situação, identificador do Pix e os 4 últimos dígitos do CPF/CNPJ</td><td>Creditar o saldo, conciliar pagamentos, obrigações fiscais</td><td>Execução do contrato (V) e obrigação legal (II)</td></tr>
+            <tr><td>Mensagens ao suporte e e-mail para resposta</td><td>Responder e resolver o seu pedido</td><td>Execução do contrato (V) e legítimo interesse (IX)</td></tr>
+            <tr><td>Interesse em opções futuras (“Tenho interesse”)</td><td>Decidir os próximos recursos e avisar você quando saírem</td><td>Legítimo interesse (IX)</td></tr>
+            <tr><td>Escolha do aviso de cookies</td><td>Respeitar e provar a sua escolha</td><td>Obrigação legal (II)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>Pessoas que aparecem nas fotos:</strong> quem envia as fotos garante ter a autorização delas. Não fazemos reconhecimento facial nem extraímos dados biométricos: a análise automática só conta se há pessoas e rostos na foto, sem identificar ninguém. Não usamos fotos nem vídeos para treinar modelos de IA.</p>
+      <p><strong>Pagamentos:</strong> o CPF ou CNPJ de quem paga vai para o Mercado Pago, que exige o documento no Pix; guardamos só os 4 últimos dígitos. Não recebemos dados bancários nem de cartão.</p>
+    </section>
+
+    <section aria-labelledby="t-compartilhamento">
+      <h2 id="t-compartilhamento">3. Com quem compartilhamos</h2>
+      <p>Só com fornecedores que operam os dados em nosso nome, para prestar o serviço, e com autoridades quando a lei ou uma ordem judicial exigir. Não vendemos dados pessoais.</p>
+      <ul>
+        <li><strong>Hetzner</strong> (servidor e banco de dados; Alemanha, União Europeia);</li>
+        <li><strong>Cloudflare</strong> (DNS, armazenamento das fotos e vídeos e a verificação “não sou um robô”; Estados Unidos e rede global);</li>
+        <li><strong>RunPod</strong> (GPUs que geram os vídeos; Estados Unidos e outros países), que recebe cada foto só durante a geração do vídeo;</li>
+        <li><strong>provedor de e-mail transacional</strong> (envio dos códigos de entrada e das respostas do suporte);</li>
+        <li><strong>Mercado Pago</strong> (processamento dos pagamentos por Pix; Brasil).</li>
+      </ul>
+      <p><strong>Transferência internacional:</strong> parte desses fornecedores fica fora do Brasil. A transferência é necessária para executar o contrato (LGPD, art. 33, IX) e é feita com as garantias contratuais de proteção de dados oferecidas por eles (art. 33, II).</p>
+    </section>
+
+    <section aria-labelledby="t-retencao">
+      <h2 id="t-retencao">4. Por quanto tempo guardamos</h2>
+      <ul>
+        <li><strong>Fotos enviadas:</strong> apagadas quando o pedido termina (no máximo 7 dias).</li>
+        <li><strong>Vídeos gerados:</strong> 30 dias.</li>
+        <li><strong>Códigos de entrada:</strong> valem 10 minutos e são apagados em até 2 dias.</li>
+        <li><strong>Registros de acesso:</strong> 6 meses (Marco Civil da Internet), depois apagados.</li>
+        <li><strong>Extrato, recargas e pagamentos:</strong> 5 anos (obrigações fiscais e de consumo).</li>
+        <li><strong>Pedidos, autorizações de imagem e mensagens de suporte:</strong> pelo tempo necessário para defender direitos (até 5 anos).</li>
+        <li><strong>Conta:</strong> enquanto existir. Ao excluir a conta, o e-mail é apagado e a conta deixa de existir para a entrada; ficam só os registros que a lei manda guardar, pelos prazos acima, e um resumo irreversível do e-mail, que serve só para o mesmo e-mail não ganhar outro teste gratuito (legítimo interesse, prevenção a fraude).</li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="t-direitos">
+      <h2 id="t-direitos">5. Seus direitos (LGPD, art. 18)</h2>
+      <p>Você pode pedir: confirmação de que tratamos seus dados; acesso e cópia (portabilidade); correção; anonimização, bloqueio ou eliminação de dados desnecessários; eliminação dos dados tratados com consentimento; informação sobre com quem compartilhamos; revogação do consentimento; oposição a um tratamento; e revisão de decisões automatizadas.</p>
+      <ul>
+        <li><strong>Na sua conta</strong> (“Sua conta”): baixar uma cópia dos seus dados, sair de todos os aparelhos e excluir a conta.</li>
+        <li><strong>Por e-mail:</strong> [[EMAIL_PRIVACIDADE]]. Respondemos em até 15 dias e podemos pedir uma confirmação de que o pedido é seu.</li>
+        <li>Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).</li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="t-automaticas">
+      <h2 id="t-automaticas">6. Decisões automatizadas</h2>
+      <p>Filtros automáticos de conteúdo e a detecção de pessoas ajudam a revisão, mas a decisão de aprovar ou recusar um pedido é de uma pessoa. Se um pedido seu for recusado, o motivo aparece no seu painel e você pode pedir revisão pelo suporte.</p>
+    </section>
+
+    <section aria-labelledby="t-seguranca">
+      <h2 id="t-seguranca">7. Segurança</h2>
+      <p>Usamos conexão criptografada (HTTPS), sessão em cookie protegido (inacessível a scripts), códigos de entrada de uso único, verificação em duas etapas na administração, endereços de envio e de download assinados e de curta duração, acesso restrito aos dados e apagamento das fotos ao fim de cada pedido. Se acontecer um incidente de segurança que possa causar risco relevante, avisamos você e a ANPD (LGPD, art. 48).</p>
+    </section>
+
+    <section aria-labelledby="t-criancas">
+      <h2 id="t-criancas">8. Crianças e adolescentes</h2>
+      <p>O serviço é para maiores de 18 anos e não coletamos dados de crianças como usuárias. Fotos em que aparecem crianças ou adolescentes só podem ser enviadas com a autorização por escrito dos responsáveis legais e no melhor interesse deles (LGPD, art. 14).</p>
+    </section>
+
+    <section aria-labelledby="t-cookies-priv">
+      <h2 id="t-cookies-priv">9. Cookies</h2>
+      <p>Usamos só cookies e armazenamento do navegador necessários para o site funcionar e ser seguro. Detalhes e como mudar a sua escolha na <a href="/cookies">Política de Cookies</a>.</p>
+    </section>
+
+    <section aria-labelledby="t-mudancas-priv">
+      <h2 id="t-mudancas-priv">10. Mudanças nesta política</h2>
+      <p>Quando esta política mudar, a versão nova fica nesta página e avisamos na próxima entrada.</p>
+    </section>
+  </article>
+</main>
+<!--@rodape-->
+<!--@anuncios-->
+</body>
+</html>

@@ -29,12 +29,26 @@ fotos terminam de chegar (`confirmar_envio`), com o preço por vídeo gravado no
 recusado volta inteiro, e cada vídeo que termina em erro ou cancelado volta sozinho (`_fechar_lote`).
 Cada movimento tem uma referência única (ex.: `pedido:<lote>`, `estorno:<job>`): nada é cobrado ou
 devolvido duas vezes. O extrato é registro financeiro: a limpeza do histórico não o apaga.
+
+Contas por e-mail (ADR 0007, 09/10/2026): a conta nasce no 1º acesso com o código que chega por
+e-mail (`codigos`), já no teste gratuito; a sessão fica num cookie HttpOnly e no banco só o SHA-256
+(`sessoes`, também as do painel). O aceite dos termos (`aceites`) e os registros de acesso
+(`acessos`, Marco Civil da Internet: 6 meses) não saem com a limpeza do histórico.
+
+Pagamentos (ADR 0008): cada Pix de recarga é uma linha em `pagamentos`; o crédito entra no saldo uma
+vez só (referência `pagamento:<provedor>:<id>`). Painel → orquestrador: `comandos` (desligar um pod,
+parada de emergência) e `estado` (pausa e sinal de vida do orquestrador). Cada pod recebe um token de
+worker próprio (`tokens_worker`), que vence com o pod e é revogado quando ele é encerrado.
+
+Postgres: conexões num pool (RENDER2GO_DB_POOL, padrão 10 por processo); antes, cada transação abria
+uma conexão nova.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
 import sqlite3
 import statistics
@@ -108,17 +122,100 @@ ESQUEMA = [
         cliente_id TEXT NOT NULL REFERENCES clientes(id), finalidade TEXT NOT NULL,
         quando DOUBLE PRECISION NOT NULL, PRIMARY KEY (cliente_id, finalidade))""",
     "CREATE INDEX IF NOT EXISTS movimentos_lote ON movimentos (lote_id)",
+    # contas por e-mail (ADR 0007): sessões (cliente e painel), códigos de entrada, aceites e acessos
+    """CREATE TABLE IF NOT EXISTS sessoes (
+        id TEXT PRIMARY KEY, tipo TEXT NOT NULL, cliente_id TEXT, admin TEXT, criado DOUBLE PRECISION NOT NULL,
+        expira DOUBLE PRECISION NOT NULL, ultimo_uso DOUBLE PRECISION, ip TEXT, agente TEXT,
+        revogada_em DOUBLE PRECISION)""",
+    """CREATE TABLE IF NOT EXISTS codigos (
+        id TEXT PRIMARY KEY, email_norm TEXT NOT NULL, email TEXT NOT NULL, codigo TEXT NOT NULL,
+        criado DOUBLE PRECISION NOT NULL, expira DOUBLE PRECISION NOT NULL, tentativas INTEGER NOT NULL DEFAULT 0,
+        usado_em DOUBLE PRECISION, ip TEXT, dispositivo TEXT)""",
+    # limites de requisições compartilhados entre processos e servidores (contagem por janela de tempo)
+    """CREATE UNLOGGED TABLE IF NOT EXISTS limites (
+        chave TEXT NOT NULL, janela BIGINT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (chave, janela))""",
+    # aceite dos termos e da política de privacidade (versão, quando, de onde): só inserção
+    """CREATE TABLE IF NOT EXISTS aceites (
+        id TEXT PRIMARY KEY, cliente_id TEXT NOT NULL, documento TEXT NOT NULL, versao TEXT NOT NULL,
+        quando DOUBLE PRECISION NOT NULL, ip TEXT, agente TEXT)""",
+    # registros de acesso à aplicação (Marco Civil da Internet, art. 15: 6 meses): entrada, saída, pedido...
+    """CREATE TABLE IF NOT EXISTS acessos (
+        cliente_id TEXT, evento TEXT NOT NULL, quando DOUBLE PRECISION NOT NULL, ip TEXT, porta INTEGER,
+        agente TEXT, detalhe TEXT)""",
+    # painel → orquestrador (desligar um pod, parada de emergência) e estado compartilhado
+    """CREATE TABLE IF NOT EXISTS comandos (
+        id TEXT PRIMARY KEY, tipo TEXT NOT NULL, alvo TEXT, criado DOUBLE PRECISION NOT NULL, por TEXT,
+        executado_em DOUBLE PRECISION, resultado TEXT)""",
+    """CREATE TABLE IF NOT EXISTS estado (chave TEXT PRIMARY KEY, valor TEXT, atualizado DOUBLE PRECISION NOT NULL)""",
+    # um token de worker por pod: vence com o pod e é revogado quando ele é encerrado
+    """CREATE TABLE IF NOT EXISTS tokens_worker (
+        sha TEXT PRIMARY KEY, worker TEXT NOT NULL, gerador TEXT, criado DOUBLE PRECISION NOT NULL,
+        expira DOUBLE PRECISION NOT NULL, revogado_em DOUBLE PRECISION)""",
+    # recargas por Pix (ADR 0008); registro financeiro: a limpeza do histórico não apaga
+    """CREATE TABLE IF NOT EXISTS pagamentos (
+        id TEXT PRIMARY KEY, cliente_id TEXT NOT NULL REFERENCES clientes(id), valor BIGINT NOT NULL,
+        provedor TEXT NOT NULL, provedor_id TEXT UNIQUE, status TEXT NOT NULL, criado DOUBLE PRECISION NOT NULL,
+        atualizado DOUBLE PRECISION NOT NULL, expira DOUBLE PRECISION, copia_cola TEXT, qr_base64 TEXT,
+        documento TEXT, creditado_em DOUBLE PRECISION, conferido_em DOUBLE PRECISION, detalhe TEXT)""",
+    # o que o painel fez (quem, o quê, de onde): saldo, plano, contas, pods; só inserção
+    """CREATE TABLE IF NOT EXISTS auditoria_admin (
+        quando DOUBLE PRECISION NOT NULL, admin TEXT NOT NULL, acao TEXT NOT NULL, alvo TEXT, detalhe TEXT,
+        ip TEXT)""",
 ]
-# vídeos já iniciados (ou prontos) do cliente nos pedidos em andamento: a vez na fila é por cliente
-INICIADOS_DO_CLIENTE = (
-    "SELECT COUNT(*) FROM jobs k JOIN lotes m ON m.id = k.lote_id WHERE m.cliente_id = l.cliente_id"
-    " AND m.status IN ('aprovado', 'processando') AND k.tipo = 'render' AND k.status <> 'pendente'"
+# índices: depois das colunas novas (um banco antigo ganha a coluna antes do índice que a usa)
+INDICES = [
+    "CREATE UNIQUE INDEX IF NOT EXISTS clientes_email ON clientes (email_norm)",
+    "CREATE INDEX IF NOT EXISTS clientes_email_resumo ON clientes (email_resumo)",
+    "CREATE INDEX IF NOT EXISTS lotes_cliente ON lotes (cliente_id, criado)",
+    "CREATE INDEX IF NOT EXISTS lotes_status ON lotes (status, criado)",
+    "CREATE INDEX IF NOT EXISTS lotes_ip ON lotes (ip)",
+    "CREATE INDEX IF NOT EXISTS lotes_rede ON lotes (rede)",
+    "CREATE INDEX IF NOT EXISTS lotes_dispositivo ON lotes (dispositivo)",
+    "CREATE INDEX IF NOT EXISTS jobs_lote ON jobs (lote_id, tipo)",
+    "CREATE INDEX IF NOT EXISTS jobs_worker ON jobs (worker)",
+    "CREATE INDEX IF NOT EXISTS eventos_lote ON eventos (lote_id, quando)",
+    "CREATE INDEX IF NOT EXISTS consentimentos_lote ON consentimentos (lote_id)",
+    "CREATE INDEX IF NOT EXISTS suporte_ip ON suporte (ip, quando)",
+    "CREATE INDEX IF NOT EXISTS suporte_dispositivo ON suporte (dispositivo, quando)",
+    "CREATE INDEX IF NOT EXISTS suporte_cliente ON suporte (cliente_id, quando)",
+    "CREATE INDEX IF NOT EXISTS cookies_ip ON cookies (ip, quando)",
+    "CREATE INDEX IF NOT EXISTS geradores_estado ON geradores (estado, criado)",
+    "CREATE INDEX IF NOT EXISTS sessoes_cliente ON sessoes (cliente_id)",
+    "CREATE INDEX IF NOT EXISTS codigos_email ON codigos (email_norm, criado)",
+    "CREATE INDEX IF NOT EXISTS aceites_cliente ON aceites (cliente_id)",
+    "CREATE INDEX IF NOT EXISTS acessos_cliente ON acessos (cliente_id, quando)",
+    "CREATE INDEX IF NOT EXISTS acessos_quando ON acessos (quando)",
+    "CREATE INDEX IF NOT EXISTS pagamentos_cliente ON pagamentos (cliente_id, criado)",
+    "CREATE INDEX IF NOT EXISTS pagamentos_status ON pagamentos (status, criado)",
+    "CREATE INDEX IF NOT EXISTS comandos_pendentes ON comandos (executado_em, criado)",
+    "CREATE INDEX IF NOT EXISTS tokens_worker_gerador ON tokens_worker (gerador)",
+    "CREATE INDEX IF NOT EXISTS auditoria_admin_quando ON auditoria_admin (quando)",
+]
+# vídeos já iniciados (ou prontos) de cada cliente nos pedidos em andamento: a vez na fila é por cliente
+INICIADOS_POR_CLIENTE = (
+    "SELECT m.cliente_id, COUNT(*) AS n FROM jobs k JOIN lotes m ON m.id = k.lote_id"
+    " WHERE m.status IN ('aprovado', 'processando') AND k.tipo = 'render' AND k.status <> 'pendente'"
+    " GROUP BY m.cliente_id"
 )
 TIPOS_JOB = ("compilar", "render")
 # dois CREATE TABLE IF NOT EXISTS ao mesmo tempo podem falhar no Postgres (pg_type duplicado)
 TRAVA_ESQUEMA = 20261008
-# tabelas do histórico (pedidos e tudo o que vem deles), na ordem de apagar (chaves estrangeiras)
-HISTORICO = ("jobs", "consentimentos", "fotos", "eventos", "lotes", "suporte", "geradores")
+# tabelas do histórico (pedidos e tudo o que vem deles), na ordem de apagar (chaves estrangeiras).
+# Ficam de fora, de propósito: clientes, sessões, aceites dos termos, registros de acesso (Marco
+# Civil: 6 meses), movimentos e pagamentos (registro financeiro) e a auditoria do painel.
+HISTORICO = (
+    "jobs",
+    "consentimentos",
+    "fotos",
+    "eventos",
+    "lotes",
+    "suporte",
+    "geradores",
+    "codigos",
+    "comandos",
+    "tokens_worker",
+    "limites",
+)
 # colunas que entraram depois da primeira implantação: (tabela, coluna, tipo)
 COLUNAS_NOVAS = [
     ("fotos", "analise", "TEXT"),  # aviso de pessoas no /aprovar (render2go_servico.pessoas)
@@ -136,13 +233,27 @@ COLUNAS_NOVAS = [
     ("geradores", "datacentro", "TEXT"),  # relatório de GPUs no /aprovar
     ("geradores", "pod_criado_em", "DOUBLE PRECISION"),  # o RunPod criou o pod (começa a cobrança)
     ("geradores", "desligado_em", "DOUBLE PRECISION"),  # o pod foi encerrado (fim da cobrança)
+    ("clientes", "email", "TEXT"),  # conta por e-mail (ADR 0007): o endereço para os códigos
+    ("clientes", "email_norm", "TEXT"),  # o mesmo, normalizado (sem pontos/+ no Gmail): uma conta por caixa
+    ("clientes", "termos_versao", "TEXT"),  # versão dos termos aceitos por último
+    ("clientes", "ultimo_acesso", "DOUBLE PRECISION"),
+    ("clientes", "excluido_em", "DOUBLE PRECISION"),  # conta excluída a pedido do titular (LGPD)
+    # resumo irreversível (HMAC) do e-mail de uma conta excluída: o mesmo e-mail não ganha outro teste grátis
+    ("clientes", "email_resumo", "TEXT"),
+    ("lotes", "rede", "TEXT"),  # IPv4 inteiro ou IPv6 /64: limite do teste por rede (troca de IPv6 não escapa)
+    ("lotes", "modelo", "TEXT"),  # modelo de geração (o pod só pega jobs dos modelos que roda)
+    ("lotes", "porta", "INTEGER"),  # porta de origem da conexão (Marco Civil, com o IP e a hora)
 ]
+MODELO_PADRAO = "wan2.2-i2v"
+SESSAO_TIPOS = ("cliente", "admin")
+COMANDOS = ("desligar_pod", "emergencia", "retomar")
 TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno")
 RESOLUCAO = {"rapida": "480p", "alta": "720p"}  # qualidade do pedido → resolução (descrição no extrato)
 # lote que já passou do envio e não foi recusado: conta nos limites do teste gratuito
 ATIVO = "status NOT IN ('aguardando_envio', 'recusado')"
 ATIVO_L = "l." + ATIVO  # o mesmo, com a tabela lotes como "l"
 APROVADOS = ("aprovado", "processando", "concluido", "concluido_com_falhas")
+ORIGEM_EVENTO = ("ip", "dispositivo", "agente", "fuso", "impressao", "porta")  # gravada no evento "criado"
 
 
 class BancoError(Exception):
@@ -166,15 +277,26 @@ def novo_id(prefixo: str) -> str:
 class Banco:
     """`url`: postgresql://... ou sqlite:///caminho (ou sqlite:///:memory:)."""
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, pool: int | None = None):
         self.url = url
         self.pg = url.startswith(("postgresql://", "postgres://"))
         self._lock = threading.RLock()
         if self.pg:
-            import psycopg
             from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
 
-            self._pg = lambda: psycopg.connect(url, row_factory=dict_row, autocommit=False)
+            # um pool por processo (API: um por worker do uvicorn); o Postgres atende ~100 conexões
+            tamanho = pool or max(2, int(os.environ.get("RENDER2GO_DB_POOL", 10)))
+            self._pool = ConnectionPool(
+                url,
+                min_size=1,
+                max_size=tamanho,
+                kwargs={"row_factory": dict_row, "autocommit": False},
+                timeout=15,
+                max_idle=300,
+                name="render2go",
+                open=True,
+            )
         else:
             caminho = url.removeprefix("sqlite:///")
             self._sq = sqlite3.connect(caminho, check_same_thread=False, isolation_level=None)
@@ -182,13 +304,49 @@ class Banco:
             self._sq.execute("PRAGMA foreign_keys=ON")
             self._sq.execute("PRAGMA busy_timeout=5000")
 
+    def trava_exclusiva(self, chave: int) -> Any | None:
+        """Trava de sessão do Postgres numa conexão própria (fora do pool): enquanto a conexão viver, só
+        este processo a tem. Devolve a conexão (quem chama fecha no fim) ou None se outro processo tem a
+        trava. No SQLite (um processo só), sempre consegue."""
+        if not self.pg:
+            return sqlite3  # qualquer objeto verdadeiro: não há outro processo
+        import psycopg
+
+        con = psycopg.connect(self.url, autocommit=True)
+        if con.execute("SELECT pg_try_advisory_lock(%s)", (chave,)).fetchone()[0]:
+            return con
+        con.close()
+        return None
+
+    def lotes_para_analisar(self, limite: int = 20) -> list[str]:
+        """Lotes com foto enviada e ainda sem a análise de pessoas (serviço `render2go-servico analisar`)."""
+        with self.tx() as c:
+            return [
+                r["lote_id"]
+                for r in c.all(
+                    "SELECT f.lote_id, MIN(l.criado) AS criado FROM fotos f JOIN lotes l ON l.id = f.lote_id"
+                    " WHERE f.enviada = 1 AND f.analise IS NULL"
+                    " AND l.status IN ('aguardando_aprovacao', 'aprovado', 'processando')"
+                    " GROUP BY f.lote_id ORDER BY criado LIMIT ?",
+                    (limite,),
+                )
+            ]
+
+    def fechar(self) -> None:
+        """Fecha as conexões (fim do processo e testes)."""
+        if self.pg:
+            self._pool.close()
+        else:
+            self._sq.close()
+
     # -- conexão e transação --------------------------------------------------------------
 
     @contextmanager
     def tx(self) -> Iterator[Any]:
-        """Transação; no SQLite, BEGIN IMMEDIATE (um escritor por vez)."""
+        """Transação; no SQLite, BEGIN IMMEDIATE (um escritor por vez). No Postgres, a conexão vem do
+        pool e volta para ele no fim (commit no sucesso, rollback na exceção)."""
         if self.pg:
-            with self._pg() as con, con.cursor() as cur:
+            with self._pool.connection() as con, con.cursor() as cur:
                 yield _Cur(cur, pg=True)
             return
         with self._lock:
@@ -200,18 +358,25 @@ class Banco:
                 self._sq.execute("ROLLBACK")
                 raise
 
+    def _sql_esquema(self, sql: str) -> str:
+        if self.pg:
+            return sql
+        return sql.replace("DOUBLE PRECISION", "REAL").replace("BIGINT", "INTEGER").replace("UNLOGGED ", "")
+
     def criar_esquema(self) -> None:
         with self.tx() as c:
             if self.pg:  # a API e o orquestrador sobem juntos: um cria as tabelas novas, o outro espera
                 c.run("SELECT pg_advisory_xact_lock(?)", (TRAVA_ESQUEMA,))
             for sql in ESQUEMA:
-                c.run(sql if self.pg else sql.replace("DOUBLE PRECISION", "REAL").replace("BIGINT", "INTEGER"))
+                c.run(self._sql_esquema(sql))
             for tabela, coluna, tipo in COLUNAS_NOVAS:
                 tipo = tipo if self.pg else tipo.replace("DOUBLE PRECISION", "REAL")
                 if self.pg:  # IF NOT EXISTS: a API e o orquestrador sobem juntos
                     c.run(f"ALTER TABLE {tabela} ADD COLUMN IF NOT EXISTS {coluna} {tipo}")
                 elif not any(r["name"] == coluna for r in c.all(f"PRAGMA table_info({tabela})")):
                     c.run(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+            for sql in INDICES:
+                c.run(sql)
 
     def evento(self, c, lote_id: str | None, tipo: str, detalhe: Any = None) -> None:
         c.run(
@@ -221,17 +386,570 @@ class Banco:
 
     # -- clientes -------------------------------------------------------------------------
 
-    def criar_cliente(self, nome: str, cota_fotos_dia: int = 500, plano: str = "pago") -> tuple[str, str]:
-        """Devolve (id, token). O token só existe aqui; o banco guarda o SHA-256."""
+    def criar_cliente(
+        self,
+        nome: str,
+        cota_fotos_dia: int = 500,
+        plano: str = "pago",
+        email: str | None = None,
+        email_norm: str | None = None,
+    ) -> tuple[str, str]:
+        """Devolve (id, token). O token só existe aqui; o banco guarda o SHA-256. Conta por e-mail:
+        o token não é mostrado a ninguém (a pessoa entra com o código que chega no e-mail)."""
         if plano not in PLANOS:
             raise BancoError(f"plano desconhecido: {plano}")
         cid, token = novo_id("cli"), secrets.token_urlsafe(32)
         with self.tx() as c:
+            if email_norm and c.one("SELECT id FROM clientes WHERE email_norm = ?", (email_norm,)):
+                raise BancoError("já existe uma conta com este e-mail")
             c.run(
-                "INSERT INTO clientes (id, nome, token_sha, cota_fotos_dia, plano, criado) VALUES (?, ?, ?, ?, ?, ?)",
-                (cid, nome, sha(token), cota_fotos_dia, plano, time.time()),
+                "INSERT INTO clientes (id, nome, token_sha, cota_fotos_dia, plano, criado, email, email_norm)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (cid, nome, sha(token), cota_fotos_dia, plano, time.time(), email, email_norm),
             )
         return cid, token
+
+    # -- contas por e-mail (ADR 0007) -----------------------------------------------------------
+
+    def conta_por_email(self, email_norm: str) -> dict | None:
+        with self.tx() as c:
+            return c.one("SELECT * FROM clientes WHERE email_norm = ?", (email_norm,))
+
+    def conta_do_email(
+        self, email: str, email_norm: str, plano: str = "teste", cota: int = 500, resumo: str | None = None
+    ) -> tuple[dict, bool]:
+        """A conta deste e-mail; sem conta, cria (no 1º acesso, já no teste gratuito). (conta, nova).
+        `resumo`: HMAC do e-mail; se uma conta excluída tinha esse e-mail, a nova nasce sem o teste grátis."""
+        if plano not in PLANOS:
+            raise BancoError(f"plano desconhecido: {plano}")
+        agora = time.time()
+        with self.tx() as c:
+            atual = c.one("SELECT * FROM clientes WHERE email_norm = ?", (email_norm,))
+            if atual:
+                return atual, False
+            if plano == "teste" and resumo and c.one("SELECT id FROM clientes WHERE email_resumo = ?", (resumo,)):
+                plano = "pago"  # o teste grátis desse e-mail já foi usado por uma conta excluída
+            cid = novo_id("cli")
+            n = c.run(
+                "INSERT INTO clientes (id, nome, token_sha, cota_fotos_dia, plano, criado, email, email_norm)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (email_norm) DO NOTHING",
+                (cid, email, sha(secrets.token_urlsafe(32)), cota, plano, agora, email, email_norm),
+            )
+            conta = c.one("SELECT * FROM clientes WHERE email_norm = ?", (email_norm,))
+        return conta, bool(n)
+
+    def definir_email(self, cliente_id: str, email: str, email_norm: str) -> None:
+        """Liga um e-mail a uma conta antiga (código de acesso): a pessoa passa a entrar pelo e-mail."""
+        with self.tx() as c:
+            dono = c.one("SELECT id FROM clientes WHERE email_norm = ?", (email_norm,))
+            if dono and dono["id"] != cliente_id:
+                raise BancoError("este e-mail já é de outra conta")
+            if not c.run("UPDATE clientes SET email = ?, email_norm = ? WHERE id = ?", (email, email_norm, cliente_id)):
+                raise BancoError("cliente não encontrado")
+
+    def mudar_plano(self, cliente_id: str, plano: str) -> None:
+        if plano not in PLANOS:
+            raise BancoError(f"plano desconhecido: {plano}")
+        with self.tx() as c:
+            if not c.run("UPDATE clientes SET plano = ? WHERE id = ?", (plano, cliente_id)):
+                raise BancoError("cliente não encontrado")
+
+    def reativar_cliente(self, cliente_id: str) -> bool:
+        with self.tx() as c:
+            return bool(
+                c.run("UPDATE clientes SET ativo = 1 WHERE id = ? AND ativo = 0 AND excluido_em IS NULL", (cliente_id,))
+            )
+
+    def registrar_aceite(self, cliente_id: str, documentos: dict[str, str], origem: dict) -> int:
+        """Aceite dos documentos (ex.: {"termos": "termos-v1", "privacidade": "privacidade-v1"}) que a
+        conta ainda não aceitou nessa versão; devolve quantos foram gravados."""
+        agora, novos = time.time(), 0
+        with self.tx() as c:
+            for doc, versao in documentos.items():
+                if c.one(
+                    "SELECT id FROM aceites WHERE cliente_id = ? AND documento = ? AND versao = ?",
+                    (cliente_id, doc, versao),
+                ):
+                    continue
+                c.run(
+                    "INSERT INTO aceites (id, cliente_id, documento, versao, quando, ip, agente)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (novo_id("ace"), cliente_id, doc, versao, agora, origem.get("ip"), origem.get("agente")),
+                )
+                novos += 1
+            if "termos" in documentos:
+                c.run("UPDATE clientes SET termos_versao = ? WHERE id = ?", (documentos["termos"], cliente_id))
+        return novos
+
+    def registrar_acesso(self, cliente_id: str | None, evento: str, origem: dict, detalhe: Any = None) -> None:
+        """Registro de acesso (Marco Civil, art. 15): conta, evento, IP, porta de origem e hora (UTC)."""
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO acessos (cliente_id, evento, quando, ip, porta, agente, detalhe)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    cliente_id,
+                    evento,
+                    time.time(),
+                    origem.get("ip"),
+                    origem.get("porta"),
+                    (origem.get("agente") or "")[:300] or None,
+                    json.dumps(detalhe, ensure_ascii=False) if detalhe is not None else None,
+                ),
+            )
+            if cliente_id and evento == "entrada":
+                c.run("UPDATE clientes SET ultimo_acesso = ? WHERE id = ?", (time.time(), cliente_id))
+
+    def purgar(self, acessos_dias: int = 190) -> dict[str, int]:
+        """Limpeza periódica: registros de acesso vencidos (o Marco Civil pede 6 meses), códigos e
+        limites antigos, sessões e tokens de worker vencidos."""
+        agora = time.time()
+        with self.tx() as c:
+            return {
+                "acessos": c.run("DELETE FROM acessos WHERE quando < ?", (agora - max(183, acessos_dias) * 86400,)),
+                "codigos": c.run("DELETE FROM codigos WHERE criado < ?", (agora - 2 * 86400,)),
+                "limites": c.run("DELETE FROM limites WHERE janela < ?", (int(agora) - 2 * 86400,)),
+                "sessoes": c.run("DELETE FROM sessoes WHERE expira < ?", (agora - 30 * 86400,)),
+                "tokens_worker": c.run("DELETE FROM tokens_worker WHERE expira < ?", (agora - 86400,)),
+            }
+
+    def dados_da_conta(self, cliente_id: str) -> dict[str, Any]:
+        """Tudo o que o serviço guarda sobre a conta (LGPD, art. 18: acesso e portabilidade)."""
+        with self.tx() as c:
+            conta = c.one(
+                "SELECT id, nome, email, plano, ativo, criado, termos_versao, ultimo_acesso FROM clientes WHERE id = ?",
+                (cliente_id,),
+            )
+            if conta is None:
+                raise BancoError("cliente não encontrado")
+            return {
+                "conta": conta,
+                "aceites": c.all(
+                    "SELECT documento, versao, quando, ip FROM aceites WHERE cliente_id = ? ORDER BY quando",
+                    (cliente_id,),
+                ),
+                "acessos": c.all(
+                    "SELECT evento, quando, ip, porta, agente FROM acessos WHERE cliente_id = ? ORDER BY quando DESC"
+                    " LIMIT 1000",
+                    (cliente_id,),
+                ),
+                "sessoes": c.all(
+                    "SELECT criado, expira, ultimo_uso, ip, agente, revogada_em FROM sessoes"
+                    " WHERE cliente_id = ? AND tipo = 'cliente' ORDER BY criado DESC",
+                    (cliente_id,),
+                ),
+                "pedidos": c.all(
+                    "SELECT id, status, pedido, n_fotos, criado, concluido_em, motivo, ip, dispositivo, agente, fuso"
+                    " FROM lotes WHERE cliente_id = ? ORDER BY criado DESC",
+                    (cliente_id,),
+                ),
+                "autorizacoes": c.all(
+                    "SELECT lote_id, declarante, texto_versao, texto, quando, ip, dispositivo FROM consentimentos"
+                    " WHERE cliente_id = ? ORDER BY quando",
+                    (cliente_id,),
+                ),
+                "movimentos": c.all(
+                    "SELECT quando, tipo, valor, lote_id, descricao FROM movimentos WHERE cliente_id = ?"
+                    " ORDER BY quando",
+                    (cliente_id,),
+                ),
+                "pagamentos": c.all(
+                    "SELECT id, valor, provedor, status, criado, creditado_em, documento FROM pagamentos"
+                    " WHERE cliente_id = ? ORDER BY criado",
+                    (cliente_id,),
+                ),
+                "suporte": c.all(
+                    "SELECT assunto, mensagem, email, quando FROM suporte WHERE cliente_id = ? ORDER BY quando",
+                    (cliente_id,),
+                ),
+                "interesses": c.all(
+                    "SELECT finalidade, quando FROM interesses WHERE cliente_id = ? ORDER BY quando", (cliente_id,)
+                ),
+            }
+
+    def excluir_conta(self, cliente_id: str, resumo: str | None = None) -> None:
+        """Exclusão a pedido do titular (LGPD, art. 18, VI): a conta deixa de existir para o login, o
+        e-mail é apagado e as sessões caem. Ficam, pelo tempo que a lei pede, o extrato e os pagamentos
+        (registro financeiro) e os registros de acesso (Marco Civil). Saldo positivo bloqueia: o
+        reembolso é pedido pelo suporte antes."""
+        agora = time.time()
+        with self.tx() as c:
+            self._travar_cliente(c, cliente_id)
+            if self._saldo(c, cliente_id) > 0:
+                raise BancoError("a conta ainda tem saldo: peça o reembolso pelo suporte antes de excluir")
+            em_curso = c.one(
+                "SELECT COUNT(*) AS n FROM lotes WHERE cliente_id = ?"
+                " AND status IN ('aguardando_aprovacao', 'aprovado', 'processando')",
+                (cliente_id,),
+            )
+            if int(em_curso["n"]):
+                raise BancoError("há pedidos em andamento: espere terminar para excluir a conta")
+            n = c.run(
+                "UPDATE clientes SET ativo = 0, excluido_em = ?, email = NULL, email_norm = NULL, nome = ?,"
+                " token_sha = ?, email_resumo = ? WHERE id = ? AND excluido_em IS NULL",
+                (agora, "conta excluída", sha(secrets.token_urlsafe(32)), resumo, cliente_id),
+            )
+            if not n:
+                raise BancoError("cliente não encontrado")
+            c.run(
+                "UPDATE sessoes SET revogada_em = ? WHERE cliente_id = ? AND revogada_em IS NULL", (agora, cliente_id)
+            )
+            c.run("DELETE FROM interesses WHERE cliente_id = ?", (cliente_id,))
+            c.run("UPDATE suporte SET email = NULL WHERE cliente_id = ?", (cliente_id,))
+
+    # -- códigos de entrada por e-mail ----------------------------------------------------------
+
+    def criar_codigo(self, email_norm: str, email: str, codigo_hash: str, validade_s: float, origem: dict) -> str:
+        """Novo código para o e-mail; os anteriores ainda não usados deixam de valer."""
+        agora = time.time()
+        cid = novo_id("cod")
+        with self.tx() as c:
+            c.run(
+                "UPDATE codigos SET usado_em = ? WHERE email_norm = ? AND usado_em IS NULL",
+                (agora, email_norm),
+            )
+            c.run(
+                "INSERT INTO codigos (id, email_norm, email, codigo, criado, expira, ip, dispositivo)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    cid,
+                    email_norm,
+                    email,
+                    codigo_hash,
+                    agora,
+                    agora + validade_s,
+                    origem.get("ip"),
+                    origem.get("dispositivo"),
+                ),
+            )
+        return cid
+
+    def conferir_codigo(self, email_norm: str, codigo_hash: str, max_tentativas: int = 5) -> bool:
+        """Confere o código mais recente do e-mail (vale uma vez, dentro do prazo e de `max_tentativas`)."""
+        import hmac as _hmac
+
+        agora = time.time()
+        trava = " FOR UPDATE" if self.pg else ""
+        with self.tx() as c:
+            cod = c.one(
+                "SELECT id, codigo, tentativas FROM codigos WHERE email_norm = ? AND usado_em IS NULL AND expira > ?"
+                " ORDER BY criado DESC LIMIT 1" + trava,
+                (email_norm, agora),
+            )
+            if cod is None:
+                return False
+            if _hmac.compare_digest(cod["codigo"], codigo_hash):
+                c.run("UPDATE codigos SET usado_em = ? WHERE id = ?", (agora, cod["id"]))
+                return True
+            tentativas = int(cod["tentativas"]) + 1
+            c.run(
+                "UPDATE codigos SET tentativas = ?, usado_em = ? WHERE id = ?",
+                (tentativas, agora if tentativas >= max_tentativas else None, cod["id"]),
+            )
+            return False
+
+    # -- sessões (cliente e painel) -------------------------------------------------------------
+
+    def criar_sessao(
+        self, tipo: str, validade_s: float, origem: dict, cliente_id: str | None = None, admin: str | None = None
+    ) -> str:
+        """Devolve o token da sessão (vai só para o cookie); o banco guarda o SHA-256."""
+        if tipo not in SESSAO_TIPOS:
+            raise BancoError(f"tipo de sessão desconhecido: {tipo}")
+        token, agora = secrets.token_urlsafe(32), time.time()
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO sessoes (id, tipo, cliente_id, admin, criado, expira, ultimo_uso, ip, agente)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    sha(token),
+                    tipo,
+                    cliente_id,
+                    admin,
+                    agora,
+                    agora + validade_s,
+                    agora,
+                    origem.get("ip"),
+                    (origem.get("agente") or "")[:300] or None,
+                ),
+            )
+        return token
+
+    def sessao(self, token: str, tipo: str) -> dict | None:
+        """Sessão válida (não vencida nem revogada); a de cliente vem com a conta (ativa)."""
+        agora = time.time()
+        with self.tx() as c:
+            s = c.one(
+                "SELECT * FROM sessoes WHERE id = ? AND tipo = ? AND revogada_em IS NULL AND expira > ?",
+                (sha(token), tipo, agora),
+            )
+            if s is None:
+                return None
+            if tipo == "cliente":
+                cli = c.one("SELECT * FROM clientes WHERE id = ? AND ativo = 1", (s["cliente_id"],))
+                if cli is None:
+                    return None
+                s["cliente"] = cli
+            if agora - float(s["ultimo_uso"] or 0) > 300:  # sem escrever a cada requisição
+                c.run("UPDATE sessoes SET ultimo_uso = ? WHERE id = ?", (agora, s["id"]))
+            return s
+
+    def revogar_sessao(self, token: str) -> None:
+        with self.tx() as c:
+            c.run("UPDATE sessoes SET revogada_em = ? WHERE id = ? AND revogada_em IS NULL", (time.time(), sha(token)))
+
+    def revogar_sessoes(self, cliente_id: str | None = None, tipo: str = "cliente") -> int:
+        """Todas as sessões da conta (sair de todos os aparelhos); sem conta, todas as do tipo."""
+        with self.tx() as c:
+            if cliente_id:
+                return c.run(
+                    "UPDATE sessoes SET revogada_em = ? WHERE cliente_id = ? AND tipo = ? AND revogada_em IS NULL",
+                    (time.time(), cliente_id, tipo),
+                )
+            return c.run(
+                "UPDATE sessoes SET revogada_em = ? WHERE tipo = ? AND revogada_em IS NULL", (time.time(), tipo)
+            )
+
+    # -- limites de requisições (compartilhados entre processos) --------------------------------
+
+    def contar(self, chave: str, janela_s: int, somar: bool = True) -> int:
+        """Conta na janela fixa de `janela_s` segundos que contém agora; `somar` acrescenta 1 antes.
+        Postgres: tabela UNLOGGED (sem WAL), uma linha por chave e janela."""
+        janela = int(time.time() // janela_s) * janela_s
+        chave = f"{janela_s}:{chave}"[:300]
+        with self.tx() as c:
+            if not somar:
+                r = c.one("SELECT n FROM limites WHERE chave = ? AND janela = ?", (chave, janela))
+                return int(r["n"]) if r else 0
+            r = c.one(
+                "INSERT INTO limites (chave, janela, n) VALUES (?, ?, 1)"
+                " ON CONFLICT (chave, janela) DO UPDATE SET n = limites.n + 1 RETURNING n",
+                (chave, janela),
+            )
+            return int(r["n"])
+
+    # -- painel: auditoria, comandos para o orquestrador e estado ---------------------------------
+
+    def auditar(
+        self, admin: str, acao: str, alvo: str | None = None, detalhe: Any = None, ip: str | None = None
+    ) -> None:
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO auditoria_admin (quando, admin, acao, alvo, detalhe, ip) VALUES (?, ?, ?, ?, ?, ?)",
+                (time.time(), admin, acao, alvo, json.dumps(detalhe, ensure_ascii=False) if detalhe else None, ip),
+            )
+
+    def auditoria_admin(self, limite: int = 100) -> list[dict]:
+        with self.tx() as c:
+            return c.all(
+                "SELECT quando, admin, acao, alvo, detalhe, ip FROM auditoria_admin ORDER BY quando DESC LIMIT ?",
+                (limite,),
+            )
+
+    def definir_estado(self, chave: str, valor: str | None) -> None:
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO estado (chave, valor, atualizado) VALUES (?, ?, ?)"
+                " ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor, atualizado = excluded.atualizado",
+                (chave, valor, time.time()),
+            )
+
+    def ler_estado(self, chave: str) -> dict | None:
+        with self.tx() as c:
+            return c.one("SELECT valor, atualizado FROM estado WHERE chave = ?", (chave,))
+
+    def comando(self, tipo: str, por: str, alvo: str | None = None) -> str:
+        """Pedido do painel ao orquestrador (ele executa no próximo ciclo, em até ~10 s)."""
+        if tipo not in COMANDOS:
+            raise BancoError(f"comando desconhecido: {tipo}")
+        cid = novo_id("cmd")
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO comandos (id, tipo, alvo, criado, por) VALUES (?, ?, ?, ?, ?)",
+                (cid, tipo, alvo, time.time(), por),
+            )
+        return cid
+
+    def comandos_pendentes(self) -> list[dict]:
+        with self.tx() as c:
+            return c.all("SELECT * FROM comandos WHERE executado_em IS NULL ORDER BY criado")
+
+    def comando_executado(self, cid: str, resultado: str) -> None:
+        with self.tx() as c:
+            c.run(
+                "UPDATE comandos SET executado_em = ?, resultado = ? WHERE id = ?", (time.time(), resultado[:500], cid)
+            )
+
+    def comandos_recentes(self, limite: int = 20) -> list[dict]:
+        with self.tx() as c:
+            return c.all("SELECT * FROM comandos ORDER BY criado DESC LIMIT ?", (limite,))
+
+    def geradores_ativos(self) -> list[dict]:
+        """Pods ligados agora (subindo ou prontos), para o painel desligar um deles."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT g.id, g.worker, g.gpu, g.usd_h, g.estado, g.criado, g.pronto_em, g.datacentro,"
+                " (SELECT COUNT(*) FROM jobs j WHERE j.worker = g.worker AND g.worker IS NOT NULL"
+                "  AND j.status = 'em_andamento') AS em_andamento"
+                " FROM geradores g WHERE g.estado IN ('subindo', 'pronto') ORDER BY g.criado"
+            )
+
+    # -- tokens de worker por pod -----------------------------------------------------------------
+
+    def criar_token_worker(self, worker: str, gerador: str | None, validade_s: float) -> str:
+        token, agora = secrets.token_urlsafe(32), time.time()
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO tokens_worker (sha, worker, gerador, criado, expira) VALUES (?, ?, ?, ?, ?)",
+                (sha(token), worker, gerador, agora, agora + validade_s),
+            )
+        return token
+
+    def worker_do_token(self, token: str) -> str | None:
+        """Nome do worker dono do token (válido e não revogado), ou None."""
+        with self.tx() as c:
+            r = c.one(
+                "SELECT worker FROM tokens_worker WHERE sha = ? AND revogado_em IS NULL AND expira > ?",
+                (sha(token), time.time()),
+            )
+        return r["worker"] if r else None
+
+    def revogar_tokens_worker(self, worker: str | None = None, gerador: str | None = None) -> int:
+        with self.tx() as c:
+            if gerador:
+                return c.run(
+                    "UPDATE tokens_worker SET revogado_em = ? WHERE gerador = ? AND revogado_em IS NULL",
+                    (time.time(), gerador),
+                )
+            if worker:
+                return c.run(
+                    "UPDATE tokens_worker SET revogado_em = ? WHERE worker = ? AND revogado_em IS NULL",
+                    (time.time(), worker),
+                )
+            return c.run("UPDATE tokens_worker SET revogado_em = ? WHERE revogado_em IS NULL", (time.time(),))
+
+    # -- pagamentos (ADR 0008) --------------------------------------------------------------------
+
+    def criar_pagamento(self, cliente_id: str, valor: int, provedor: str, documento: str | None) -> str:
+        pid, agora = novo_id("pag"), time.time()
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO pagamentos (id, cliente_id, valor, provedor, status, criado, atualizado, documento)"
+                " VALUES (?, ?, ?, ?, 'criando', ?, ?, ?)",
+                (pid, cliente_id, valor, provedor, agora, agora, documento),
+            )
+        return pid
+
+    def pagamento_criado(
+        self, pid: str, provedor_id: str, status: str, expira: float, copia_cola: str | None, qr_base64: str | None
+    ) -> None:
+        with self.tx() as c:
+            c.run(
+                "UPDATE pagamentos SET provedor_id = ?, status = ?, expira = ?, copia_cola = ?, qr_base64 = ?,"
+                " atualizado = ? WHERE id = ?",
+                (provedor_id, status, expira, copia_cola, qr_base64, time.time(), pid),
+            )
+
+    def pagamento(self, pid: str, cliente_id: str | None = None) -> dict | None:
+        with self.tx() as c:
+            if cliente_id:
+                return c.one("SELECT * FROM pagamentos WHERE id = ? AND cliente_id = ?", (pid, cliente_id))
+            return c.one("SELECT * FROM pagamentos WHERE id = ?", (pid,))
+
+    def pagamentos(self, cliente_id: str | None = None, limite: int = 20) -> list[dict]:
+        campos = (
+            "p.id, p.cliente_id, p.valor, p.provedor, p.provedor_id, p.status, p.criado, p.atualizado, p.expira,"
+            " p.creditado_em, p.documento, k.email"
+        )
+        with self.tx() as c:
+            if cliente_id:
+                return c.all(
+                    f"SELECT {campos} FROM pagamentos p JOIN clientes k ON k.id = p.cliente_id"
+                    " WHERE p.cliente_id = ? ORDER BY p.criado DESC LIMIT ?",
+                    (cliente_id, limite),
+                )
+            return c.all(
+                f"SELECT {campos} FROM pagamentos p JOIN clientes k ON k.id = p.cliente_id"
+                " ORDER BY p.criado DESC LIMIT ?",
+                (limite,),
+            )
+
+    def pagamentos_pendentes(self, cliente_id: str) -> int:
+        with self.tx() as c:
+            r = c.one(
+                "SELECT COUNT(*) AS n FROM pagamentos WHERE cliente_id = ? AND status IN ('criando', 'pendente')"
+                " AND (expira IS NULL OR expira > ?)",
+                (cliente_id, time.time()),
+            )
+        return int(r["n"])
+
+    def atualizar_pagamento(self, pid: str, status: str, detalhe: Any = None) -> None:
+        """Situação nova vinda do provedor (pendente, recusado, cancelado, expirado...). O aprovado
+        passa por `creditar_pagamento`."""
+        with self.tx() as c:
+            c.run(
+                "UPDATE pagamentos SET status = ?, detalhe = ?, atualizado = ?, conferido_em = ?"
+                " WHERE id = ? AND status <> 'aprovado'",
+                (status, json.dumps(detalhe, ensure_ascii=False) if detalhe else None, time.time(), time.time(), pid),
+            )
+
+    def marcar_conferido(self, pid: str) -> None:
+        with self.tx() as c:
+            c.run("UPDATE pagamentos SET conferido_em = ? WHERE id = ?", (time.time(), pid))
+
+    def creditar_pagamento(self, pid: str, valor_pago: int, provedor_id: str, detalhe: Any = None) -> bool:
+        """Pagamento aprovado pelo provedor: o valor entra no saldo uma vez só (mesma transação). A conta
+        do teste gratuito passa para o plano pago. False se já tinha entrado."""
+        agora = time.time()
+        trava = " FOR UPDATE" if self.pg else ""
+        with self.tx() as c:
+            p = c.one("SELECT * FROM pagamentos WHERE id = ?" + trava, (pid,))
+            if p is None:
+                raise BancoError("pagamento não encontrado")
+            if p["provedor_id"] and str(p["provedor_id"]) != str(provedor_id):
+                raise BancoError("o pagamento do provedor não é deste pedido de recarga")
+            if int(valor_pago) != int(p["valor"]):
+                raise BancoError(f"valor pago ({valor_pago}) diferente do pedido ({p['valor']})")
+            if p["creditado_em"] is not None:
+                return False
+            self._travar_cliente(c, p["cliente_id"])
+            ref = f"pagamento:{p['provedor']}:{provedor_id}"
+            novo = self._movimento(
+                c, p["cliente_id"], "recarga", int(p["valor"]), ref, descricao="Recarga por Pix", por=p["provedor"]
+            )
+            c.run(
+                "UPDATE pagamentos SET status = 'aprovado', creditado_em = ?, atualizado = ?, conferido_em = ?,"
+                " provedor_id = ?, detalhe = ? WHERE id = ?",
+                (agora, agora, agora, provedor_id, json.dumps(detalhe, ensure_ascii=False) if detalhe else None, pid),
+            )
+            c.run("UPDATE clientes SET plano = 'pago' WHERE id = ? AND plano = 'teste'", (p["cliente_id"],))
+            return novo
+
+    def estornar_pagamento(self, pid: str, status: str, detalhe: Any = None) -> int:
+        """Pagamento creditado e depois devolvido pelo provedor (estorno, contestação): desconta do saldo
+        o que ainda houver (devolve quanto descontou); o resto fica para o painel resolver."""
+        agora = time.time()
+        with self.tx() as c:
+            p = c.one("SELECT * FROM pagamentos WHERE id = ?", (pid,))
+            if p is None or p["creditado_em"] is None or p["status"] == status:
+                return 0
+            self._travar_cliente(c, p["cliente_id"])
+            desconto = min(int(p["valor"]), max(0, self._saldo(c, p["cliente_id"])))
+            if desconto:
+                self._movimento(
+                    c,
+                    p["cliente_id"],
+                    "ajuste",
+                    -desconto,
+                    f"estorno-pagamento:{p['provedor']}:{p['provedor_id']}",
+                    descricao=f"Recarga devolvida pelo banco ({status})",
+                    por=p["provedor"],
+                )
+            c.run(
+                "UPDATE pagamentos SET status = ?, atualizado = ?, detalhe = ? WHERE id = ?",
+                (status, agora, json.dumps(detalhe, ensure_ascii=False) if detalhe else None, pid),
+            )
+        return desconto
 
     def fotos_total(self, cliente_id: str) -> int:
         """Fotos de todos os lotes não recusados do cliente (limite do teste gratuito)."""
@@ -251,14 +969,15 @@ class Banco:
             )
         return int(r["n"])
 
-    def fotos_teste_ip(self, ip: str, exceto: str | None = None) -> int:
-        """Fotos de teste gratuito pedidas a partir deste IP, somando todos os clientes de teste."""
+    def fotos_teste_ip(self, ip: str, exceto: str | None = None, rede: str | None = None) -> int:
+        """Fotos de teste gratuito pedidas a partir deste IP (ou da mesma rede: IPv6 conta pelo /64, já
+        que quem tem um endereço IPv6 costuma ter o /64 inteiro), somando todos os clientes de teste."""
         with self.tx() as c:
             r = c.one(
                 "SELECT COALESCE(SUM(l.n_fotos), 0) AS n FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
-                f" WHERE l.ip = ? AND k.plano = 'teste' AND {ATIVO_L}"
+                f" WHERE (l.ip = ? OR l.rede = ?) AND k.plano = 'teste' AND {ATIVO_L}"
                 " AND l.id <> ?",
-                (ip, exceto or ""),
+                (ip, rede or ip, exceto or ""),
             )
         return int(r["n"])
 
@@ -317,17 +1036,17 @@ class Banco:
                 (*args, limite),
             )
 
-    def uso_por_ip(self, limite: int = 50) -> list[dict]:
-        """Fotos e pedidos por IP (só lotes que passaram do envio e não foram recusados)."""
+    def uso_por_ip(self, limite: int = 50, dias: int = 90) -> list[dict]:
+        """Fotos e pedidos por IP nos últimos `dias` (só lotes que passaram do envio e não foram recusados)."""
         with self.tx() as c:
             return c.all(
                 "SELECT l.ip, COUNT(*) AS pedidos, COALESCE(SUM(l.n_fotos), 0) AS fotos,"
                 " COALESCE(SUM(CASE WHEN k.plano = 'teste' THEN l.n_fotos ELSE 0 END), 0) AS fotos_teste,"
                 " COUNT(DISTINCT l.cliente_id) AS clientes, COUNT(DISTINCT l.dispositivo) AS dispositivos,"
                 " MAX(l.criado) AS ultimo FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
-                f" WHERE l.ip IS NOT NULL AND {ATIVO_L}"
+                f" WHERE l.ip IS NOT NULL AND l.criado > ? AND {ATIVO_L}"
                 " GROUP BY l.ip ORDER BY ultimo DESC LIMIT ?",
-                (limite,),
+                (time.time() - dias * 86400, limite),
             )
 
     def uso_por_dispositivo(self, dias: int = 90, limite: int = 50) -> list[dict]:
@@ -412,20 +1131,46 @@ class Banco:
 
     def cliente(self, cliente_id: str) -> dict | None:
         with self.tx() as c:
-            return c.one("SELECT id, nome, plano, ativo FROM clientes WHERE id = ?", (cliente_id,))
+            return c.one(
+                "SELECT id, nome, plano, ativo, email, criado, excluido_em FROM clientes WHERE id = ?", (cliente_id,)
+            )
 
     def cliente_por_token(self, token: str) -> dict | None:
         with self.tx() as c:
             return c.one("SELECT * FROM clientes WHERE token_sha = ? AND ativo = 1", (sha(token),))
 
-    def clientes(self) -> list[dict]:
-        """Todos os clientes com o saldo (para o /aprovar)."""
+    def clientes(self, busca: str | None = None, limite: int = 200) -> list[dict]:
+        """Clientes com o saldo (para o painel), os mais recentes primeiro; `busca` filtra por e-mail,
+        nome ou id (com milhares de contas, a lista não vem inteira)."""
+        onde, args = "", ()
+        if busca:
+            termo = f"%{busca.strip().lower()[:100]}%"
+            onde, args = (
+                " WHERE LOWER(COALESCE(k.email, '')) LIKE ? OR LOWER(k.nome) LIKE ? OR k.id LIKE ?",
+                (
+                    termo,
+                    termo,
+                    termo,
+                ),
+            )
         with self.tx() as c:
             return c.all(
-                "SELECT k.id, k.nome, k.plano, k.ativo, k.criado,"
+                "SELECT k.id, k.nome, k.email, k.plano, k.ativo, k.criado, k.ultimo_acesso, k.excluido_em,"
                 " COALESCE((SELECT SUM(m.valor) FROM movimentos m WHERE m.cliente_id = k.id), 0) AS saldo"
-                " FROM clientes k ORDER BY k.criado DESC"
+                f" FROM clientes k{onde} ORDER BY k.criado DESC LIMIT ?",
+                (*args, limite),
             )
+
+    def contar_clientes(self) -> dict[str, int]:
+        with self.tx() as c:
+            r = c.one(
+                "SELECT COUNT(*) AS total, SUM(CASE WHEN plano = 'teste' THEN 1 ELSE 0 END) AS teste,"
+                " SUM(CASE WHEN plano = 'pago' THEN 1 ELSE 0 END) AS pago,"
+                " SUM(CASE WHEN email IS NOT NULL THEN 1 ELSE 0 END) AS com_email,"
+                " SUM(CASE WHEN criado > ? THEN 1 ELSE 0 END) AS novos_24h FROM clientes WHERE excluido_em IS NULL",
+                (time.time() - 86400,),
+            )
+        return {k: int(r[k] or 0) for k in ("total", "teste", "pago", "com_email", "novos_24h")}
 
     # -- saldo pré-pago ---------------------------------------------------------------------
 
@@ -589,7 +1334,8 @@ class Banco:
                 raise BancoError("cliente não encontrado")
             c.run(
                 "INSERT INTO lotes (id, cliente_id, status, pedido, n_fotos, prioridade, criado, ip, dispositivo,"
-                " agente, fuso, impressao, preco_video) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " agente, fuso, impressao, preco_video, rede, modelo, porta)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     lid,
                     cliente_id,
@@ -604,6 +1350,9 @@ class Banco:
                     o.get("fuso"),
                     o.get("impressao"),
                     preco_video,
+                    o.get("rede") or o.get("ip"),
+                    pedido.get("modelo") or MODELO_PADRAO,
+                    o.get("porta"),
                 ),
             )
             if autorizacao:
@@ -641,7 +1390,12 @@ class Banco:
                         f["chave"].replace("{lote}", lid),
                     ),
                 )
-            self.evento(c, lid, "criado", {"fotos": len(fotos), "autorizacao": bool(autorizacao), **o})
+            self.evento(
+                c,
+                lid,
+                "criado",
+                {"fotos": len(fotos), "autorizacao": bool(autorizacao), **{k: o.get(k) for k in ORIGEM_EVENTO}},
+            )
         return lid
 
     # -- suporte --------------------------------------------------------------------------
@@ -713,15 +1467,11 @@ class Banco:
             )
         return sum(float(r["segundos"]) for r in linhas) / len(linhas) if linhas else None
 
-    def videos_a_frente(self, lote: dict) -> dict[str, int]:
-        """Na ordem da fila (ver `reivindicar`), quantos vídeos saem antes do 1º vídeo pendente deste
-        lote ("primeiro") e quantos, contando os do próprio lote, até o último dele ("ultimo").
-
-        Entram os vídeos em andamento (ocupam as GPUs agora), os de prioridade melhor, os pedidos
-        anteriores do mesmo cliente e, dos outros clientes da mesma prioridade, a vez intercalada:
-        cada um anda até alcançar os vídeos iniciados deste cliente (no empate, quem pediu antes)."""
+    def linhas_fila(self) -> list[dict]:
+        """Retrato da fila (vídeos por lote em andamento) para `videos_a_frente`: a API guarda por
+        alguns segundos e usa o mesmo retrato em todas as previsões desse intervalo."""
         with self.tx() as c:
-            linhas = c.all(
+            return c.all(
                 "SELECT l.id, l.cliente_id, l.prioridade, l.criado,"
                 " SUM(CASE WHEN j.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,"
                 " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS andamento,"
@@ -730,6 +1480,17 @@ class Banco:
                 " WHERE j.tipo = 'render' AND l.status IN ('aprovado', 'processando')"
                 " GROUP BY l.id, l.cliente_id, l.prioridade, l.criado"
             )
+
+    def videos_a_frente(self, lote: dict, linhas: list[dict] | None = None) -> dict[str, int]:
+        """Na ordem da fila (ver `reivindicar`), quantos vídeos saem antes do 1º vídeo pendente deste
+        lote ("primeiro") e quantos, contando os do próprio lote, até o último dele ("ultimo").
+
+        Entram os vídeos em andamento (ocupam as GPUs agora), os de prioridade melhor, os pedidos
+        anteriores do mesmo cliente e, dos outros clientes da mesma prioridade, a vez intercalada:
+        cada um anda até alcançar os vídeos iniciados deste cliente (no empate, quem pediu antes).
+        `linhas`: retrato da fila já lido (`linhas_fila`); sem ele, lê agora."""
+        if linhas is None:
+            linhas = self.linhas_fila()
         p, cli, este = lote["prioridade"], lote["cliente_id"], (lote["criado"], lote["id"])
         fixos = meus_antes = meus_pendentes = iniciados_meus = pend_lote = anda_lote = 0
         outros: dict[str, list[float]] = {}  # cliente → [pendentes, iniciados, pedido pendente mais antigo]
@@ -826,6 +1587,16 @@ class Banco:
                 " SUM(CASE WHEN k.plano = 'teste' THEN 1 ELSE 0 END) AS clientes_teste, MAX(i.quando) AS ultimo"
                 " FROM interesses i JOIN clientes k ON k.id = i.cliente_id"
                 " GROUP BY i.finalidade ORDER BY clientes DESC, ultimo DESC"
+            )
+
+    def interesses_detalhados(self, limite: int = 200) -> list[dict]:
+        """Cada clique em "Tenho interesse": quem (conta e e-mail, para avisar quando a opção sair), plano e
+        quando, do mais recente para o mais antigo."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT i.finalidade, i.quando, k.id AS cliente_id, k.nome, k.email, k.plano"
+                " FROM interesses i JOIN clientes k ON k.id = i.cliente_id ORDER BY i.quando DESC LIMIT ?",
+                (limite,),
             )
 
     def relatorio_geradores(self, desde: float, limite: int = 200) -> dict[str, Any]:
@@ -1066,10 +1837,13 @@ class Banco:
 
     # -- fila -----------------------------------------------------------------------------
 
-    def reivindicar(self, worker: str, lease_s: float = 900, tipos: list[str] | None = None) -> dict | None:
+    def reivindicar(
+        self, worker: str, lease_s: float = 900, tipos: list[str] | None = None, modelos: list[str] | None = None
+    ) -> dict | None:
         """Próximo job (compilar antes de render; render só com o prompt pronto).
 
-        `tipos`: só esses tipos de job (o pod que ainda baixa os modelos pega só "compilar")."""
+        `tipos`: só esses tipos de job (o pod que ainda baixa os modelos pega só "compilar").
+        `modelos`: só pedidos desses modelos de geração (cada pod roda os seus; sem a lista, qualquer um)."""
         tipos = list(tipos or TIPOS_JOB)
         if not tipos or not set(tipos) <= set(TIPOS_JOB):
             raise BancoError(f"tipos de job inválidos: {tipos}")
@@ -1094,15 +1868,23 @@ class Banco:
                 (agora, agora),
             )
             # vez por cliente (menos vídeos iniciados primeiro); no mesmo cliente, o pedido mais antigo;
-            # no mesmo pedido, a ordem da lista que o cliente vê (arquivo)
+            # no mesmo pedido, a ordem da lista que o cliente vê (arquivo). A contagem por cliente sai uma
+            # vez só (CTE), e não uma vez por job candidato: com milhares de jobs na fila, a consulta
+            # continua rápida para dezenas de pods perguntando ao mesmo tempo
+            filtro_modelo, args_modelo = "", ()
+            if modelos:
+                filtro_modelo = f" AND COALESCE(l.modelo, ?) IN ({', '.join('?' * len(modelos))})"
+                args_modelo = (MODELO_PADRAO, *modelos)
             job = c.one(
-                "SELECT j.* FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                f"WITH inic AS ({INICIADOS_POR_CLIENTE})"
+                " SELECT j.* FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                " LEFT JOIN inic ON inic.cliente_id = l.cliente_id"
                 " WHERE j.status = 'pendente' AND l.status IN ('aprovado', 'processando')"
                 " AND (j.tipo = 'compilar' OR l.prompt_en IS NOT NULL)"
-                f" AND j.tipo IN ({', '.join('?' * len(tipos))})"
+                f" AND j.tipo IN ({', '.join('?' * len(tipos))}){filtro_modelo}"
                 " ORDER BY CASE j.tipo WHEN 'compilar' THEN 0 ELSE 1 END, l.prioridade,"
-                f" ({INICIADOS_DO_CLIENTE}), l.criado, l.id, j.criado, j.arquivo, j.id LIMIT 1" + trava,
-                tuple(tipos),
+                " COALESCE(inic.n, 0), l.criado, l.id, j.criado, j.arquivo, j.id LIMIT 1" + trava,
+                (*tipos, *args_modelo),
             )
             if job is None:
                 return None
@@ -1217,17 +1999,48 @@ class Banco:
         with self.tx() as c:
             return c.all("SELECT * FROM jobs WHERE lote_id = ? ORDER BY tipo, arquivo", (lote_id,))
 
+    def jobs_de(self, lotes: list[str]) -> dict[str, list[dict]]:
+        """Os jobs de render de vários lotes numa consulta só (lista de pedidos do cliente)."""
+        if not lotes:
+            return {}
+        with self.tx() as c:
+            linhas = c.all(
+                "SELECT id, lote_id, tipo, arquivo, status, aviso FROM jobs"
+                f" WHERE lote_id IN ({', '.join('?' * len(lotes))}) AND tipo = 'render' ORDER BY arquivo",
+                tuple(lotes),
+            )
+        por: dict[str, list[dict]] = {lid: [] for lid in lotes}
+        for j in linhas:
+            por[j["lote_id"]].append(j)
+        return por
+
+    def cobrancas(self, lotes: list[str]) -> dict[str, dict[str, int]]:
+        """`cobranca` de vários lotes numa consulta só."""
+        if not lotes:
+            return {}
+        with self.tx() as c:
+            linhas = c.all(
+                "SELECT lote_id, COALESCE(SUM(CASE WHEN tipo = 'pedido' THEN -valor ELSE 0 END), 0) AS cobrado,"
+                " COALESCE(SUM(CASE WHEN tipo = 'estorno' THEN valor ELSE 0 END), 0) AS devolvido"
+                f" FROM movimentos WHERE lote_id IN ({', '.join('?' * len(lotes))}) GROUP BY lote_id",
+                tuple(lotes),
+            )
+        out = {lid: {"cobrado": 0, "devolvido": 0} for lid in lotes}
+        for r in linhas:
+            out[r["lote_id"]] = {"cobrado": int(r["cobrado"]), "devolvido": int(r["devolvido"])}
+        return out
+
     def trabalho(self) -> list[dict]:
         """Para o orquestrador: renders pendentes e em andamento por lote, com o pedido
         (qualidade e duração decidem o tempo por vídeo) e a prioridade."""
         with self.tx() as c:
             return c.all(
-                "SELECT l.id AS lote_id, l.pedido, l.prioridade, MIN(j.criado) AS mais_antigo,"
+                "SELECT l.id AS lote_id, l.pedido, l.prioridade, l.modelo, MIN(j.criado) AS mais_antigo,"
                 " SUM(CASE WHEN j.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,"
                 " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS em_andamento"
                 " FROM jobs j JOIN lotes l ON l.id = j.lote_id"
                 " WHERE l.status IN ('aprovado', 'processando') AND j.status IN ('pendente', 'em_andamento')"
-                " GROUP BY l.id, l.pedido, l.prioridade ORDER BY l.prioridade, MIN(j.criado)"
+                " GROUP BY l.id, l.pedido, l.prioridade, l.modelo ORDER BY l.prioridade, MIN(j.criado)"
             )
 
     def fila(self) -> dict[str, int]:

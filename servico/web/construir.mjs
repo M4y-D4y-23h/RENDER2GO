@@ -8,6 +8,10 @@
 // - A saída fica em publico/, versionada: a imagem do serviço não roda Node, e o CI confere se
 //   publico/ está em dia com src/. Os arquivos da marca (fonte, logo, ícones, og.jpg) vêm do
 //   tools/marca.py e não são tocados aqui.
+// - O script do painel vai para publico/privado/ (fora de /estatico/): a API só o entrega no endereço
+//   secreto do painel, e a página do painel o chama pelo caminho relativo "painel.js".
+// - Sem robots.txt: ele seria uma lista pública de caminhos. O que não é público responde com
+//   X-Robots-Tag: noindex (a API), e o sitemap lista só as páginas públicas.
 import { build } from "esbuild";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -22,7 +26,9 @@ const ESTATICO = join(PUBLICO, "estatico");
 const ORIGEM = (process.env.RENDER2GO_URL_PUBLICA || "https://app.render2go.com").replace(/\/+$/, "");
 // navegadores suportados: os dos últimos anos (Safari 15+, Chrome/Edge/Firefox 100+)
 const ALVOS = ["es2020", "chrome100", "edge100", "firefox100", "safari15", "ios15"];
-const PAGINAS_JS = ["inicio", "cliente", "suporte", "aprovar"];
+const PAGINAS_JS = ["inicio", "cliente", "suporte", "legal", "verificacao"];
+const PRIVADO = join(PUBLICO, "privado"); // script do painel: só no endereço secreto (não em /estatico/)
+const PUBLICAS = ["/", "/suporte", "/termos", "/privacidade", "/cookies"]; // páginas do sitemap
 const ICONES = JSON.parse(readFileSync(join(SRC, "icones.json"), "utf8"));
 
 const ler = (caminho) => readFileSync(caminho, "utf8");
@@ -36,6 +42,7 @@ for (const nome of readdirSync(PUBLICO)) {
 for (const nome of readdirSync(ESTATICO)) {
   if (/\.js$/.test(nome) || nome === "estilo.css") rmSync(join(ESTATICO, nome));
 }
+rmSync(PRIVADO, { recursive: true, force: true });
 
 // 2) JavaScript e CSS
 const comum = { bundle: true, minify: true, target: ALVOS, charset: "utf8", legalComments: "none", logLevel: "warning" };
@@ -46,6 +53,7 @@ await build({
   entryNames: "[name]",
   format: "iife",
 });
+await build({ ...comum, entryPoints: [join(SRC, "ts", "painel.ts")], outfile: join(PRIVADO, "painel.js"), format: "iife" });
 await build({ ...comum, entryPoints: [join(SRC, "css", "estilo.css")], outfile: join(ESTATICO, "estilo.css"), external: ["/estatico/*"] });
 
 // 3) versões: ?v=<hash> em toda referência a um arquivo existente de publico/estatico (e da raiz)
@@ -63,7 +71,7 @@ const versionar = (texto) =>
 const css = join(ESTATICO, "estilo.css");
 writeFileSync(css, versionar(ler(css)));
 
-// 4) manifesto, robots e sitemap
+// 4) manifesto e sitemap (sem robots.txt, de propósito)
 const manifesto = {
   name: "Render2Go",
   short_name: "Render2Go",
@@ -83,11 +91,10 @@ const manifesto = {
   ],
 };
 writeFileSync(join(PUBLICO, "manifest.webmanifest"), versionar(JSON.stringify(manifesto, null, 2)) + "\n");
-writeFileSync(join(PUBLICO, "robots.txt"), `User-agent: *\nDisallow: /api/\n\nSitemap: ${ORIGEM}/sitemap.xml\n`);
 writeFileSync(
   join(PUBLICO, "sitemap.xml"),
   '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-    ["/", "/suporte"].map((c) => `  <url><loc>${ORIGEM}${c}</loc></url>\n`).join("") +
+    PUBLICAS.map((c) => `  <url><loc>${ORIGEM}${c}</loc></url>\n`).join("") +
     "</urlset>\n",
 );
 
@@ -110,6 +117,11 @@ for (const arquivo of readdirSync(join(SRC, "paginas")).filter((n) => n.endsWith
   if (pagina) html = html.replaceAll(`data-nav="${pagina}"`, `data-nav="${pagina}" aria-current="page"`);
   html = html.replace(/<(script|link)\b([^>]*?)(src|href)="(\/estatico\/[a-z0-9._-]+\.(?:js|css)\?v=[0-9a-f]+)"/g,
     (tag, nome, antes, attr, url) => `<${nome}${antes}${attr}="${url}" integrity="${integridade(url)}"`);
+  // painel: o script relativo ("painel.js", servido só no endereço secreto) também ganha versão e SRI
+  html = html.replace(/<script src="painel\.js"/g, () => {
+    const dados = readFileSync(join(PRIVADO, "painel.js"));
+    return `<script src="painel.js?v=${versao(dados)}" integrity="sha384-${hash(dados, "sha384").toString("base64")}"`;
+  });
   const restante = /<!--@|\{\{[A-Z]+\}\}/.exec(html);
   if (restante) throw new Error(`${arquivo}: marcador não expandido perto de "${html.slice(restante.index, restante.index + 40)}"`);
   // minificação segura: sem comentários, sem recuo e sem linhas vazias (as páginas não têm <pre>)
@@ -118,7 +130,7 @@ for (const arquivo of readdirSync(join(SRC, "paginas")).filter((n) => n.endsWith
   writeFileSync(join(PUBLICO, arquivo), html);
 }
 
-const tamanhos = [...readdirSync(PUBLICO).filter((n) => /\.(html|webmanifest|txt|xml)$/.test(n)), ...readdirSync(ESTATICO).filter((n) => /\.(js|css)$/.test(n)).map((n) => `estatico/${n}`)]
+const tamanhos = [...readdirSync(PUBLICO).filter((n) => /\.(html|webmanifest|txt|xml)$/.test(n)), ...readdirSync(ESTATICO).filter((n) => /\.(js|css)$/.test(n)).map((n) => `estatico/${n}`), "privado/painel.js"]
   .sort()
   .map((n) => `${String(readFileSync(join(PUBLICO, n)).length).padStart(7)}  publico/${n}`);
 console.log(tamanhos.join("\n"));

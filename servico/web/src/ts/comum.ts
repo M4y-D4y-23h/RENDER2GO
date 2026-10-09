@@ -190,6 +190,29 @@ export function urlSegura(url: string | null | undefined): string | null {
 
 // -- armazenamento no navegador --------------------------------------------------------------------
 
+// a sessão fica num cookie HttpOnly (o JavaScript não lê nem guarda credencial nenhuma); aqui fica só a
+// marca "entrou neste navegador", para o painel aparecer desde o 1º quadro (inicio.ts)
+export function conectado(chave: string): boolean {
+  try {
+    return localStorage.getItem(chave) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function marcarConectado(chave: string, sim: boolean): void {
+  try {
+    if (sim) localStorage.setItem(chave, "1");
+    else localStorage.removeItem(chave);
+    // códigos de acesso que versões antigas da página guardavam no navegador saem daqui
+    for (const antiga of ["render2go-token-cliente", "render2go-token-admin", "gpu" + "2go-token-cliente", "gpu" + "2go-token-admin"]) {
+      localStorage.removeItem(antiga);
+    }
+  } catch {
+    /* sem armazenamento local: a página confere a sessão com a API a cada visita */
+  }
+}
+
 // chaves com o nome antigo do projeto (antes de Render2Go) são lidas uma vez e migradas
 function migrarChave(chave: string): void {
   const antiga = chave.replace("render2go-", "gpu" + "2go-");
@@ -198,26 +221,8 @@ function migrarChave(chave: string): void {
   if (valor) localStorage.removeItem(antiga);
 }
 
-export function lerToken(chave: string): string {
-  try {
-    migrarChave(chave);
-    return localStorage.getItem(chave) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-export function gravarToken(chave: string, valor: string): void {
-  try {
-    if (valor) localStorage.setItem(chave, valor);
-    else localStorage.removeItem(chave);
-  } catch {
-    /* sem armazenamento local: o código vale só nesta página */
-  }
-}
-
 // identificador deste navegador (limite do teste por dispositivo e registro de auditoria);
-// janela anônima ou dados apagados geram outro, e a API mantém um teto por IP
+// janela anônima ou dados apagados geram outro, e a API mantém um teto por rede
 function uuid4(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   const b = crypto.getRandomValues(new Uint8Array(16));
@@ -284,13 +289,16 @@ function antecipado(caminho: string): Promise<Response> | null {
   return p;
 }
 
-export async function api<T>(caminho: string, token: string, init: RequestInit = {}): Promise<T> {
+/** Pedido à API: a sessão vai no cookie (mesmo site); o cabeçalho X-Render2Go mostra que o pedido saiu
+ * desta página (outro site não consegue mandá-lo), e a API recusa sem ele quem muda alguma coisa. */
+export async function api<T>(caminho: string, init: RequestInit = {}): Promise<T> {
   const pedir = () =>
     fetch(caminho, {
+      credentials: "same-origin",
       ...init,
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         "Content-Type": "application/json",
+        "X-Render2Go": "1",
         "X-Dispositivo": dispositivo(),
         "X-Fuso": fuso(),
         ...(init.headers ?? {}),
@@ -312,78 +320,11 @@ export function textoErro(e: unknown): string {
   return capitalizar(e instanceof Error ? e.message : String(e));
 }
 
-// -- sessão (código de acesso) ----------------------------------------------------------------------
-
-/**
- * Entrada com código (cliente e aprovador). Com código guardado, o painel aparece direto (inicio.js);
- * código recusado pela API (401) volta ao formulário com a mensagem; falha de rede mantém a sessão.
- * aoEntrar carrega a página e lança ErroApi se a API recusar o código.
- */
-export function sessao(chave: string, aoEntrar: (token: string) => Promise<void>): void {
-  const raiz = document.documentElement;
-  const form = el<HTMLFormElement>("form-token");
-  const campo = el<HTMLInputElement>("token");
-  const msg = el("msg-entrada");
-  const sair = el<HTMLButtonElement>("sair");
-  const enviar = form.querySelector<HTMLButtonElement>("button[type=submit]")!;
-  mostrarSenha(el<HTMLButtonElement>("mostrar-token"), campo);
-
-  const voltarAoFormulario = (texto: string) => {
-    gravarToken(chave, "");
-    raiz.classList.remove("com-sessao");
-    sair.hidden = true;
-    aviso(msg, texto, "erro");
-    marcarErro(campo, true);
-    campo.focus();
-    anunciar(texto, true);
-  };
-
-  const entrar = async (token: string, focar: boolean) => {
-    raiz.classList.add("com-sessao");
-    sair.hidden = false;
-    try {
-      await aoEntrar(token);
-      if (focar) el("titulo-painel").focus();
-    } catch (e) {
-      if (e instanceof ErroApi && e.status === 401) {
-        voltarAoFormulario("Código de acesso inválido ou desativado. Confira o código e tente de novo.");
-      } else {
-        const painelMsg = document.getElementById("msg-painel") ?? document.getElementById("msg");
-        if (painelMsg) {
-          const tentar = criar("button", { type: "button", className: "botao pequeno", textContent: "Tentar de novo" });
-          tentar.addEventListener("click", () => location.reload());
-          aviso(painelMsg, [criar("p", { textContent: `Não foi possível carregar: ${textoErro(e)}` }), tentar], "erro");
-        }
-        anunciar(`Não foi possível carregar: ${textoErro(e)}`, true);
-      }
-    }
-  };
-
-  form.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const t = campo.value.trim();
-    if (!t) {
-      aviso(msg, "Digite o seu código de acesso.", "erro");
-      marcarErro(campo, true);
-      campo.focus();
-      return;
-    }
-    aviso(msg, "");
-    marcarErro(campo, false);
-    gravarToken(chave, t);
-    ocupado(enviar, true);
-    await entrar(t, true);
-    ocupado(enviar, false);
-  });
-  campo.addEventListener("input", () => marcarErro(campo, false));
-  sair.addEventListener("click", () => {
-    gravarToken(chave, "");
-    location.reload();
-  });
-
-  const atual = lerToken(chave);
-  if (atual) entrar(atual, false);
-  else raiz.classList.remove("com-sessao");
+/** Botão de "Tentar de novo" numa caixa de aviso (falha de rede ao carregar o painel). */
+export function avisoComRecarga(alvo: HTMLElement, texto: string): void {
+  const tentar = criar("button", { type: "button", className: "botao pequeno", textContent: "Tentar de novo" });
+  tentar.addEventListener("click", () => location.reload());
+  aviso(alvo, [criar("p", { textContent: texto }), tentar], "erro");
 }
 
 // -- listas que se atualizam sozinhas ---------------------------------------------------------------

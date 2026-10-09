@@ -92,7 +92,8 @@ class ApiFila:
         raise FilaError(f"API inacessível ({rota}): {erro}")
 
     def reivindicar(self, tipos: list[str] | None = None) -> dict | None:
-        corpo: dict[str, Any] = {"worker": self.worker}
+        # só pedidos dos modelos que este pod roda (a API filtra; o pod confere de novo)
+        corpo: dict[str, Any] = {"worker": self.worker, "modelos": sorted(MODELOS)}
         if tipos:
             corpo["tipos"] = tipos
         r = self._post("/api/worker/reivindicar", corpo)

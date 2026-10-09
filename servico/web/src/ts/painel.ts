@@ -1,31 +1,42 @@
-// Página do aprovador (/aprovar, só o dono): revisão dos pedidos (ADR 0004), histórico, uso por IP e
-// por dispositivo, relatório das GPUs, mensagens de suporte e cadastro de clientes.
+// Painel do dono do serviço (no endereço secreto RENDER2GO_ADMIN_CAMINHO; ADR 0004 e 0007): revisão dos
+// pedidos, histórico, uso por IP e por dispositivo, pods ligados (desligar um ou parada de emergência),
+// relatório das GPUs, "Tenho interesse" (cada clique), recargas por Pix, suporte, contas e saldo e o que
+// está configurado (segurança). Entrada com o token e o código do autenticador; a sessão fica num cookie
+// HttpOnly restrito ao caminho do painel. A API do painel fica no mesmo caminho (BASE + "/api/...").
 import {
   ESTADOS,
+  ErroApi,
   type ItemLista,
   anunciar,
   api,
   aviso,
+  avisoComRecarga,
   baixarJson,
+  conectado,
   confirmar,
   criar,
   curto,
   el,
   hora,
   icone,
+  marcarConectado,
   marcarErro,
+  mostrarSenha,
   ocupado,
   plural,
   quando,
   reais,
   reconciliar,
   repetir,
-  sessao,
   tempo,
   textoErro,
   urlSegura,
   vazio,
 } from "./comum";
+
+// a página e a API do painel ficam no mesmo endereço secreto: /<painel>/ e /<painel>/api/...
+const BASE = location.pathname.replace(/\/+$/, "");
+const CHAVE_PAINEL = "render2go-painel-conectado";
 
 // análise automática de cada foto (render2go_servico/pessoas.py); null = ainda analisando
 type Analise = { pessoas?: number; rostos?: number; erro?: string } | null;
@@ -133,9 +144,41 @@ type RelatorioGpus = {
 };
 
 type Interesse = { finalidade: string; titulo: string; tipo: string; clientes: number; clientes_teste: number; ultimo: number };
+type Clique = { finalidade: string; titulo: string; tipo: string; quando: number; cliente_id: string; nome: string; email: string | null; plano: string };
+type Interesses = { resumo: Interesse[]; cliques: Clique[] };
+type Pod = { id: string; worker: string | null; gpu: string | null; usd_h: number | null; estado: string; criado: number; pronto_em: number | null; datacentro: string | null; em_andamento: number };
+type Comando = { id: string; tipo: string; alvo: string | null; criado: number; por: string | null; executado_em: number | null; resultado: string | null };
+type Pods = { pods: Pod[]; pausado: boolean; pausado_em: number | null; orquestrador_visto_s: number | null; comandos: Comando[] };
+type Pagamento = { id: string; cliente_id: string; email: string | null; valor: number; provedor: string; status: string; criado: number; creditado_em: number | null; documento: string | null };
+type Acao = { quando: number; admin: string; acao: string; alvo: string | null; detalhe: string | null; ip: string | null };
+type Seguranca = {
+  turnstile: boolean;
+  turnstile_desligado: boolean;
+  email: boolean;
+  suporte_email: boolean;
+  totp: boolean;
+  admin_ips: number;
+  pagamento: boolean;
+  cookie_seguro: boolean;
+  analise: string;
+  segredo_contas: boolean;
+  orquestrador_visto_s: number | null;
+  contas: Record<string, number>;
+  auditoria: Acao[];
+};
 
-type Cliente = { id: string; nome: string; plano: string; ativo: number | boolean; criado: number; saldo: number };
-type Clientes = { clientes: Cliente[]; precos: Record<string, number>; planos_cobrados: string[] };
+type Cliente = {
+  id: string;
+  nome: string;
+  email: string | null;
+  plano: string;
+  ativo: number | boolean;
+  criado: number;
+  ultimo_acesso: number | null;
+  excluido_em: number | null;
+  saldo: number;
+};
+type Clientes = { clientes: Cliente[]; resumo: Record<string, number>; precos: Record<string, number>; planos_cobrados: string[] };
 
 const QUALIDADES: Record<string, string> = { rapida: "rápida (480p)", alta: "alta (720p)" };
 
@@ -173,7 +216,7 @@ function meta(partes: (string | Node)[]): HTMLElement {
   return criar("p", { className: "meta" }, partes.map((x) => criar("span", {}, [x])));
 }
 
-function cartaoPendente(p: Pendente, token: string, aoMudar: () => void, imagens: Map<string, HTMLImageElement>): HTMLElement {
+function cartaoPendente(p: Pendente, aoMudar: () => void, imagens: Map<string, HTMLImageElement>): HTMLElement {
   const msg = criar("div", { className: "aviso", hidden: true });
   const fotos = criar("div", { className: "grade" });
   for (const f of p.fotos) {
@@ -202,7 +245,7 @@ function cartaoPendente(p: Pendente, token: string, aoMudar: () => void, imagens
     ocupado(botao, true);
     try {
       const corpo = acao === "recusar" ? JSON.stringify({ motivo: motivo.value.trim() }) : undefined;
-      await api(`/api/admin/lotes/${p.lote}/${acao}`, token, { method: "POST", body: corpo });
+      await api(`${BASE}/api/lotes/${p.lote}/${acao}`, { method: "POST", body: corpo });
       anunciar(acao === "aprovar" ? "Pedido aprovado e enviado para a fila." : "Pedido recusado.");
       aoMudar();
     } catch (e) {
@@ -253,7 +296,7 @@ function cartaoPendente(p: Pendente, token: string, aoMudar: () => void, imagens
   ]);
 }
 
-function itemHistorico(x: ItemHistorico, token: string, aoMudar: () => void): HTMLElement {
+function itemHistorico(x: ItemHistorico, aoMudar: () => void): HTMLElement {
   const msg = criar("div", { className: "aviso", hidden: true });
   const detalhes: string[] = [];
   if (x.aprovado_em) detalhes.push(`aprovado em ${quando(x.aprovado_em)} por ${x.aprovado_por ?? "?"}`);
@@ -266,7 +309,7 @@ function itemHistorico(x: ItemHistorico, token: string, aoMudar: () => void): HT
   auditoria.addEventListener("click", async () => {
     ocupado(auditoria, true);
     try {
-      baixarJson(await api<unknown>(`/api/admin/lotes/${x.lote}/auditoria`, token), `auditoria-${x.lote}.json`);
+      baixarJson(await api<unknown>(`${BASE}/api/lotes/${x.lote}/auditoria`), `auditoria-${x.lote}.json`);
     } catch (e) {
       aviso(msg, textoErro(e), "erro");
     } finally {
@@ -292,19 +335,19 @@ function itemHistorico(x: ItemHistorico, token: string, aoMudar: () => void): HT
   }
   linhas.push(acoes, msg);
   if (x.cliente_ativo) {
-    const botao = criar("button", { type: "button", className: "botao pequeno perigo", dados: { foco: `${x.lote}:desativar` } }, [icone("bloquear"), "Desativar o código deste cliente"]);
+    const botao = criar("button", { type: "button", className: "botao pequeno perigo", dados: { foco: `${x.lote}:desativar` } }, [icone("bloquear"), "Desativar esta conta"]);
     botao.addEventListener("click", async () => {
       const ok = await confirmar({
-        titulo: "Desativar o código?",
-        texto: `O código de acesso de ${x.cliente_nome} deixa de valer na hora: a pessoa não entra mais na página.`,
+        titulo: "Desativar a conta?",
+        texto: `A conta de ${x.cliente_nome} deixa de valer na hora: as sessões caem e a pessoa não entra mais (nem por e-mail, nem por código).`,
         confirmar: "Desativar",
         perigo: true,
       });
       if (!ok) return;
       ocupado(botao, true);
       try {
-        await api(`/api/admin/clientes/${x.cliente}/desativar`, token, { method: "POST" });
-        anunciar(`Código de ${x.cliente_nome} desativado.`);
+        await api(`${BASE}/api/clientes/${x.cliente}/desativar`, { method: "POST" });
+        anunciar(`Conta de ${x.cliente_nome} desativada.`);
         aoMudar();
       } catch (e) {
         ocupado(botao, false);
@@ -313,7 +356,7 @@ function itemHistorico(x: ItemHistorico, token: string, aoMudar: () => void): HT
     });
     acoes.append(botao);
   } else {
-    acoes.append(criar("span", { className: "selo erro" }, [icone("bloquear"), "Código do cliente desativado"]));
+    acoes.append(criar("span", { className: "selo erro" }, [icone("bloquear"), "Conta desativada"]));
   }
   return criar("article", { className: "cartao hist" }, linhas);
 }
@@ -458,72 +501,285 @@ function tabelaGpus(r: RelatorioGpus): HTMLElement {
 function tabelaInteresses(xs: Interesse[]): HTMLElement {
   if (!xs.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhum interesse registrado ainda." });
   return tabela(
-    [["Opção", false], ["Tipo", false], ["Clientes", true], ["Destes, no teste grátis", true], ["Último", false]],
+    [["Opção", false], ["Tipo", false], ["Contas", true], ["Destas, no teste grátis", true], ["Último", false]],
     xs.map((x) => ({ celulas: [x.titulo, x.tipo, x.clientes, x.clientes_teste, tempo(x.ultimo)] })),
     "Interesse nas opções em breve",
   );
 }
 
-function tabelaClientes(r: Clientes, token: string, msg: HTMLElement): HTMLElement {
-  if (!r.clientes.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhum cliente cadastrado ainda." });
+function tabelaCliques(xs: Clique[]): HTMLElement {
+  if (!xs.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhum clique ainda." });
   return tabela(
-    [["Cliente", false], ["Plano", false], ["Saldo", true], ["Situação", false], ["Cadastrado", false], ["Extrato", false]],
-    r.clientes.map((k) => {
-      const cobrado = r.planos_cobrados.includes(k.plano);
-      let extrato: Node | string = "—";
-      if (cobrado) {
-        const botao = criar("button", { type: "button", className: "botao pequeno" }, [icone("baixar"), "Baixar"]);
-        botao.setAttribute("aria-label", `Baixar o extrato de ${k.nome}`);
-        botao.addEventListener("click", async () => {
-          ocupado(botao, true);
-          try {
-            baixarJson(await api<unknown>(`/api/admin/clientes/${k.id}/extrato`, token), `extrato-${k.id}.json`);
-          } catch (e) {
-            aviso(msg, textoErro(e), "erro");
-          } finally {
-            ocupado(botao, false);
-          }
-        });
-        extrato = botao;
-      }
-      return { celulas: [k.nome, k.plano, cobrado ? reais(k.saldo) : "—", k.ativo ? "ativo" : "desativado", tempo(k.criado), extrato] };
-    }),
-    "Clientes e saldo",
+    [["Quando", false], ["Opção", false], ["Conta", false], ["E-mail", false], ["Plano", false]],
+    xs.map((x) => ({ celulas: [tempo(x.quando), x.titulo, x.nome, x.email ?? "—", x.plano] })),
+    "Cada clique em Tenho interesse",
   );
 }
 
-function iniciarAprovador(): void {
+const SITUACAO_POD: Record<string, string> = { subindo: "subindo", pronto: "ligado" };
+const COMANDOS: Record<string, string> = { desligar_pod: "Desligar pod", emergencia: "Parada de emergência", retomar: "Retomar" };
+
+function tabelaPods(r: Pods, aoMudar: () => void, msg: HTMLElement): HTMLElement {
+  if (!r.pods.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhum pod ligado agora." });
+  return tabela(
+    [["Ligou em", false], ["Pod", false], ["GPU", false], ["Datacenter", false], ["US$/h", true], ["Situação", false], ["Vídeos gerando", true], ["Ação", false]],
+    r.pods.map((p) => {
+      const desligar = criar("button", { type: "button", className: "botao pequeno perigo" }, [icone("bloquear"), "Desligar"]);
+      desligar.setAttribute("aria-label", `Desligar o pod ${p.worker ?? p.id}`);
+      desligar.addEventListener("click", async () => {
+        const ok = await confirmar({
+          titulo: "Desligar este pod?",
+          texto: `O pod ${p.worker ?? p.id} (${p.gpu ?? "GPU"}) é encerrado no RunPod. Os vídeos que ele estava gerando voltam para a fila e saem em outro pod.`,
+          confirmar: "Desligar",
+          perigo: true,
+        });
+        if (!ok) return;
+        ocupado(desligar, true);
+        try {
+          await api(`${BASE}/api/pods/${encodeURIComponent(p.id)}/desligar`, { method: "POST" });
+          anunciar("Pedido de desligamento enviado ao orquestrador.");
+          aoMudar();
+        } catch (e) {
+          ocupado(desligar, false);
+          aviso(msg, textoErro(e), "erro");
+        }
+      });
+      return {
+        celulas: [tempo(p.criado), p.worker ?? "—", p.gpu ?? "—", p.datacentro ?? "—", p.usd_h == null ? "—" : p.usd_h.toFixed(2).replace(".", ","), SITUACAO_POD[p.estado] ?? p.estado, p.em_andamento, desligar],
+      };
+    }),
+    "Pods ligados agora",
+  );
+}
+
+function tabelaPagamentos(xs: Pagamento[], aoMudar: () => void, msg: HTMLElement): HTMLElement {
+  if (!xs.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhuma recarga ainda." });
+  return tabela(
+    [["Quando", false], ["Conta", false], ["Valor", true], ["Situação", false], ["Creditado", false], ["Documento", false], ["Ação", false]],
+    xs.map((p) => {
+      let acao: Node | string = "—";
+      if (["pendente", "criando", "divergente", "erro"].includes(p.status)) {
+        const conferir = criar("button", { type: "button", className: "botao pequeno" }, [icone("atualizar"), "Conferir"]);
+        conferir.setAttribute("aria-label", `Conferir no Mercado Pago a recarga de ${reais(p.valor)}`);
+        conferir.addEventListener("click", async () => {
+          ocupado(conferir, true);
+          try {
+            const r = await api<{ status: string }>(`${BASE}/api/pagamentos/${encodeURIComponent(p.id)}/conferir`, { method: "POST" });
+            anunciar(`Recarga conferida: ${r.status}.`);
+            aoMudar();
+          } catch (e) {
+            aviso(msg, textoErro(e), "erro");
+          } finally {
+            ocupado(conferir, false);
+          }
+        });
+        acao = conferir;
+      }
+      return {
+        classe: p.status === "divergente" || p.status === "contestado" ? "sinal" : "",
+        celulas: [tempo(p.criado), p.email ?? p.cliente_id, reais(p.valor), p.status, p.creditado_em ? tempo(p.creditado_em) : "—", p.documento ?? "—", acao],
+      };
+    }),
+    "Recargas por Pix",
+  );
+}
+
+const PLANOS_PAINEL = ["teste", "pago", "interno"];
+
+function tabelaClientes(r: Clientes, msg: HTMLElement, aoMudar: () => void): HTMLElement {
+  if (!r.clientes.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhuma conta encontrada." });
+  const acaoConta = async (botao: HTMLButtonElement, caminho: string, corpo: unknown, sucesso: string) => {
+    ocupado(botao, true);
+    try {
+      await api(`${BASE}/api/clientes/${caminho}`, { method: "POST", body: corpo === undefined ? undefined : JSON.stringify(corpo) });
+      anunciar(sucesso);
+      aoMudar();
+    } catch (e) {
+      aviso(msg, textoErro(e), "erro");
+      ocupado(botao, false);
+    }
+  };
+  return tabela(
+    [["Conta", false], ["Plano", false], ["Saldo", true], ["Situação", false], ["Último acesso", false], ["Criada", false], ["Ações", false]],
+    r.clientes.map((k) => {
+      const cobrado = r.planos_cobrados.includes(k.plano);
+      const id = encodeURIComponent(k.id);
+      const acoes = criar("div", { className: "acoes-linha" });
+      if (cobrado) {
+        const extrato = criar("button", { type: "button", className: "botao pequeno" }, [icone("baixar"), "Extrato"]);
+        extrato.setAttribute("aria-label", `Baixar o extrato de ${k.email ?? k.nome}`);
+        extrato.addEventListener("click", async () => {
+          ocupado(extrato, true);
+          try {
+            baixarJson(await api<unknown>(`${BASE}/api/clientes/${id}/extrato`), `extrato-${k.id}.json`);
+          } catch (e) {
+            aviso(msg, textoErro(e), "erro");
+          } finally {
+            ocupado(extrato, false);
+          }
+        });
+        acoes.append(extrato);
+      }
+      if (!k.excluido_em) {
+        const plano = criar("select", {}, PLANOS_PAINEL.map((p) => criar("option", { value: p, textContent: p, selected: p === k.plano })));
+        plano.setAttribute("aria-label", `Plano de ${k.email ?? k.nome}`);
+        const mudar = criar("button", { type: "button", className: "botao pequeno" }, ["Mudar plano"]);
+        mudar.addEventListener("click", async () => {
+          if (plano.value === k.plano) return;
+          const ok = await confirmar({ titulo: "Mudar o plano?", texto: `${k.email ?? k.nome}: de ${k.plano} para ${plano.value}.`, confirmar: "Mudar" });
+          if (ok) await acaoConta(mudar, `${id}/plano`, { plano: plano.value }, "Plano alterado.");
+        });
+        acoes.append(plano, mudar);
+        if (!k.email) {
+          const ligar = criar("button", { type: "button", className: "botao pequeno" }, [icone("mensagem"), "Ligar e-mail"]);
+          ligar.addEventListener("click", async () => {
+            const email = window.prompt(`E-mail para ${k.nome} entrar sem o código de acesso:`)?.trim();
+            if (email) await acaoConta(ligar, `${id}/email`, { email }, "E-mail ligado à conta.");
+          });
+          acoes.append(ligar);
+        }
+        const ativo = Boolean(k.ativo);
+        const alternar = criar("button", { type: "button", className: `botao pequeno ${ativo ? "perigo" : "sucesso"}` }, [icone(ativo ? "bloquear" : "ok"), ativo ? "Desativar" : "Reativar"]);
+        alternar.addEventListener("click", async () => {
+          const ok = await confirmar({
+            titulo: ativo ? "Desativar a conta?" : "Reativar a conta?",
+            texto: ativo ? `${k.email ?? k.nome} deixa de entrar na hora (as sessões caem).` : `${k.email ?? k.nome} volta a entrar.`,
+            confirmar: ativo ? "Desativar" : "Reativar",
+            perigo: ativo,
+          });
+          if (ok) await acaoConta(alternar, `${id}/${ativo ? "desativar" : "reativar"}`, undefined, ativo ? "Conta desativada." : "Conta reativada.");
+        });
+        acoes.append(alternar);
+      }
+      const situacao = k.excluido_em ? "excluída" : k.ativo ? "ativa" : "desativada";
+      return {
+        celulas: [k.email ?? k.nome, k.plano, cobrado ? reais(k.saldo) : "—", situacao, k.ultimo_acesso ? tempo(k.ultimo_acesso) : "—", tempo(k.criado), acoes],
+      };
+    }),
+    "Contas e saldo",
+  );
+}
+
+function listaChecagem(r: Seguranca): HTMLElement[] {
+  const item = (ok: boolean, texto: string, falta: string) =>
+    criar("li", { className: ok ? "ok" : "falta" }, [icone(ok ? "ok" : "alerta"), criar("span", { textContent: ok ? texto : falta })]);
+  const visto = r.orquestrador_visto_s;
+  return [
+    item(r.turnstile, "Verificação “não sou um robô” (Turnstile) ligada.", r.turnstile_desligado ? "Turnstile DESLIGADO de propósito (só para desenvolvimento)." : "Turnstile não configurado: a entrada por e-mail e o suporte sem conta estão recusando pedidos."),
+    item(r.email, "E-mail (SMTP) configurado: os códigos de entrada saem.", "SMTP não configurado: ninguém consegue receber o código para entrar."),
+    item(r.suporte_email, "Mensagens de suporte chegam no seu e-mail.", "Suporte só no painel (falta RENDER2GO_SUPORTE_PARA)."),
+    item(r.totp, "Painel com código do autenticador (2 fatores).", "Painel SEM o código do autenticador: configure RENDER2GO_ADMIN_TOTP."),
+    item(r.admin_ips > 0, `Painel restrito a ${plural(r.admin_ips, "rede", "redes")}.`, "Painel aberto a qualquer IP (opcional: RENDER2GO_ADMIN_IPS)."),
+    item(r.pagamento, "Recarga por Pix (Mercado Pago) ligada.", "Recarga por Pix desligada: os clientes recarregam pelo suporte."),
+    item(r.cookie_seguro, "Cookies só por HTTPS.", "Cookies sem HTTPS (só para desenvolvimento local)."),
+    item(r.segredo_contas, "Segredo próprio das contas configurado.", "Sem RENDER2GO_SEGREDO_CONTAS (os códigos usam uma chave derivada do segredo de aprovação)."),
+    item(r.analise !== "desligada", `Aviso de pessoas nas fotos: ${r.analise === "separada" ? "serviço próprio" : "na API"}.`, "Aviso de pessoas desligado."),
+    item(visto !== null && visto < 120, `Orquestrador ativo (visto há ${Math.round(visto ?? 0)} s).`, visto === null ? "O orquestrador ainda não deu sinal." : `Orquestrador sem sinal há ${Math.round(visto)} s: confira o contêiner.`),
+  ];
+}
+
+function tabelaAuditoria(xs: Acao[]): HTMLElement {
+  if (!xs.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhuma ação registrada ainda." });
+  return tabela(
+    [["Quando", false], ["Quem", false], ["Ação", false], ["Alvo", false], ["IP", false]],
+    xs.map((a) => ({ classe: a.acao === "entrada_recusada" ? "sinal" : "", celulas: [tempo(a.quando), a.admin, a.acao, a.alvo ?? "—", a.ip ?? "—"] })),
+    "Ações do painel",
+  );
+}
+
+function iniciarPainel(): void {
+  const raiz = document.documentElement;
   const msg = el("msg");
   const atualizar = el<HTMLButtonElement>("atualizar");
+  const sair = el<HTMLButtonElement>("sair");
   const imagens = new Map<string, HTMLImageElement>();
-  let token = "";
   let grupo = "todos";
 
   const listarHistorico = async () => {
-    const r = await api<{ lotes: ItemHistorico[]; ips: UsoIp[]; dispositivos: UsoDispositivo[] }>(`/api/admin/historico?grupo=${encodeURIComponent(grupo)}`, token);
+    const r = await api<{ lotes: ItemHistorico[]; ips: UsoIp[]; dispositivos: UsoDispositivo[] }>(`${BASE}/api/historico?grupo=${encodeURIComponent(grupo)}`);
     reconciliar(
       el("historico"),
-      r.lotes.map((x) => ({ chave: x.lote, assinatura: JSON.stringify(x), criar: () => itemHistorico(x, token, listar) })),
+      r.lotes.map((x) => ({ chave: x.lote, assinatura: JSON.stringify(x), criar: () => itemHistorico(x, listar) })),
       () => vazio("Nenhum pedido neste filtro.", "Troque o filtro para ver outros pedidos.", "pedidos"),
     );
     el("ips").replaceChildren(tabelaIps(r.ips));
     el("dispositivos").replaceChildren(tabelaDispositivos(r.dispositivos));
-    const sup = await api<{ email_configurado: boolean; mensagens: MensagemSuporte[] }>("/api/admin/suporte", token);
+  };
+
+  const listarSuporte = async () => {
+    const sup = await api<{ email_configurado: boolean; mensagens: MensagemSuporte[] }>(`${BASE}/api/suporte`);
     el("suporte-config").textContent = sup.email_configurado
       ? "As mensagens também chegam no seu e-mail."
-      : "E-mail não configurado: as mensagens ficam só aqui (veja docs/09, seção de suporte).";
+      : "E-mail do suporte não configurado: as mensagens ficam só aqui (veja docs/09, seção de suporte).";
     reconciliar(el("suporte"), listaSuporte(sup.mensagens), () => vazio("Nenhuma mensagem ainda.", "As mensagens enviadas pelo /suporte aparecem aqui.", "mensagem"));
-    await listarClientes();
-    await listarGpus();
-    el("interesses").replaceChildren(tabelaInteresses(await api<Interesse[]>("/api/admin/interesses", token)));
   };
+
+  // -- pods: desligar um ou parar tudo ------------------------------------------------------------
+  const listarPods = async () => {
+    const r = await api<Pods>(`${BASE}/api/pods`);
+    const visto = r.orquestrador_visto_s;
+    el("estado-orquestrador").textContent = [
+      r.pausado ? `PAUSADO desde ${r.pausado_em ? quando(r.pausado_em) : "agora"}: nenhum pod novo sobe.` : "Funcionando: o orquestrador liga pods conforme a fila.",
+      visto === null ? "O orquestrador ainda não deu sinal." : visto < 120 ? `Orquestrador visto há ${Math.round(visto)} s.` : `ATENÇÃO: orquestrador sem sinal há ${Math.round(visto)} s.`,
+    ].join(" ");
+    el("emergencia").hidden = r.pausado && !r.pods.length;
+    el("retomar").hidden = !r.pausado;
+    el("pods").replaceChildren(tabelaPods(r, () => void aposAcaoPods(), msg));
+    el("n-pods").textContent = r.pods.length ? String(r.pods.length) : "";
+    el("comandos").replaceChildren(
+      ...(r.comandos.length
+        ? r.comandos.map((c) =>
+            criar("li", {}, [
+              criar("span", {}, [tempo(c.criado), ` · ${COMANDOS[c.tipo] ?? c.tipo}${c.alvo ? ` (${curto(c.alvo)})` : ""} · ${c.por ?? "?"}`]),
+              criar("span", { className: "valor", textContent: c.executado_em ? c.resultado ?? "feito" : "aguardando o orquestrador" }),
+            ]),
+          )
+        : [criar("li", { className: "fraco", textContent: "Nenhum comando ainda." })]),
+    );
+  };
+  // depois de uma ação nos pods, a lista e o registro de ações (auditoria) mudam juntos
+  const aposAcaoPods = () =>
+    Promise.all([listarPods(), listarSeguranca()]).catch((e) => aviso(msg, `Não foi possível atualizar: ${textoErro(e)}`, "erro"));
+  el("emergencia").addEventListener("click", async () => {
+    const ok = await confirmar({
+      titulo: "Parada de emergência?",
+      texto: "Todos os pods são encerrados e nenhum pod novo sobe até você clicar em “Retomar”. Os vídeos em andamento voltam para a fila e os clientes esperam.",
+      confirmar: "Parar tudo",
+      perigo: true,
+    });
+    if (!ok) return;
+    const b = el<HTMLButtonElement>("emergencia");
+    ocupado(b, true);
+    try {
+      await api(`${BASE}/api/pods/emergencia`, { method: "POST" });
+      anunciar("Parada de emergência enviada. Nenhum pod novo sobe até retomar.", true);
+      await aposAcaoPods();
+    } catch (e) {
+      aviso(msg, textoErro(e), "erro");
+    } finally {
+      ocupado(b, false);
+    }
+  });
+  el("retomar").addEventListener("click", async () => {
+    const b = el<HTMLButtonElement>("retomar");
+    ocupado(b, true);
+    try {
+      await api(`${BASE}/api/pods/retomar`, { method: "POST" });
+      anunciar("Pods liberados de novo.");
+      await aposAcaoPods();
+    } catch (e) {
+      aviso(msg, textoErro(e), "erro");
+    } finally {
+      ocupado(b, false);
+    }
+  });
 
   // -- GPUs (pods do orquestrador) ---------------------------------------------------------------
   let dias = 30;
   let relatorioGpus: RelatorioGpus | null = null;
   let assinaturaGpus = "";
   const listarGpus = async () => {
-    const r = await api<RelatorioGpus>(`/api/admin/geradores?dias=${dias}`, token);
+    const r = await api<RelatorioGpus>(`${BASE}/api/geradores?dias=${dias}`);
     relatorioGpus = r;
     // a cada 30 s só o tempo das GPUs ligadas muda: a tabela é refeita, o foco e a rolagem ficam
     const assinatura = JSON.stringify([dias, r.geradores.map((g) => [g.id, g.estado, g.videos_ok, g.videos_erro, g.videos_andamento, Math.round(g.ligado_s / 60)])]);
@@ -534,7 +790,6 @@ function iniciarAprovador(): void {
       ? criar("p", { className: "fraco", textContent: "* Estimado: o orquestrador parou sem registrar o desligamento (o desligamento automático do pod encerra no máximo 2 h depois) ou a GPU não informou o preço." })
       : null;
     el("gpus").replaceChildren(...[tabelaGpus(r), nota].filter((x): x is HTMLElement => !!x));
-    el("n-gpus").textContent = r.totais.ligados_agora ? String(r.totais.ligados_agora) : "";
   };
   for (const b of Array.from(el("filtros-gpus").querySelectorAll<HTMLButtonElement>("button"))) {
     b.addEventListener("click", () => {
@@ -556,20 +811,42 @@ function iniciarAprovador(): void {
     }
   });
 
-  // -- clientes e saldo (pré-pago) ---------------------------------------------------------------
+  // -- interesse, pagamentos e segurança ------------------------------------------------------------
+  const listarInteresses = async () => {
+    const r = await api<Interesses>(`${BASE}/api/interesses`);
+    el("interesses").replaceChildren(tabelaInteresses(r.resumo));
+    el("cliques").replaceChildren(tabelaCliques(r.cliques));
+  };
+  const listarPagamentos = async () => {
+    const r = await api<{ configurado: boolean; pagamentos: Pagamento[] }>(`${BASE}/api/pagamentos`);
+    el("pagamentos-config").textContent = r.configurado
+      ? "Recarga automática ligada (Mercado Pago). Cada Pix pago entra sozinho no saldo, uma vez só. “Conferir” pergunta de novo ao Mercado Pago."
+      : "Recarga automática desligada: configure o Mercado Pago (docs/09) ou lance as recargas à mão em “Contas e saldo”.";
+    el("pagamentos").replaceChildren(tabelaPagamentos(r.pagamentos, () => void listarPagamentos(), msg));
+  };
+  const listarSeguranca = async () => {
+    const r = await api<Seguranca>(`${BASE}/api/seguranca`);
+    el("checagem").replaceChildren(...listaChecagem(r));
+    el("auditoria").replaceChildren(tabelaAuditoria(r.auditoria));
+  };
+
+  // -- contas e saldo (pré-pago) ------------------------------------------------------------------
   const selCliente = el<HTMLSelectElement>("saldo-cliente");
+  let busca = "";
   let assinaturaClientes = "";
   const listarClientes = async () => {
-    const r = await api<Clientes>("/api/admin/clientes", token);
+    const r = await api<Clientes>(`${BASE}/api/clientes${busca ? `?busca=${encodeURIComponent(busca)}` : ""}`);
     const assinatura = JSON.stringify(r);
     if (assinatura === assinaturaClientes) return; // nada mudou: a tabela e a escolha ficam como estão
     assinaturaClientes = assinatura;
-    el("clientes").replaceChildren(tabelaClientes(r, token, el("saldo-msg")));
+    el("clientes").replaceChildren(tabelaClientes(r, el("saldo-msg"), () => void listarClientes()));
+    const t = r.resumo;
+    el("resumo-contas").textContent = `${plural(t.total ?? 0, "conta", "contas")}: ${t.teste ?? 0} no teste grátis, ${t.pago ?? 0} no pré-pago; ${t.novos_24h ?? 0} nas últimas 24 h.`;
     const escolhido = selCliente.value;
     const pagantes = r.clientes.filter((k) => k.ativo && r.planos_cobrados.includes(k.plano));
     selCliente.replaceChildren(
-      criar("option", { value: "", textContent: pagantes.length ? "Escolha o cliente" : "Nenhum cliente do plano pago" }),
-      ...pagantes.map((k) => criar("option", { value: k.id, textContent: `${k.nome} · saldo ${reais(k.saldo)}` })),
+      criar("option", { value: "", textContent: pagantes.length ? "Escolha a conta" : "Nenhuma conta do plano pago nesta busca" }),
+      ...pagantes.map((k) => criar("option", { value: k.id, textContent: `${k.email ?? k.nome} · saldo ${reais(k.saldo)}` })),
     );
     if (pagantes.some((k) => k.id === escolhido)) selCliente.value = escolhido;
     const p = r.precos;
@@ -577,10 +854,15 @@ function iniciarAprovador(): void {
       `Pré-pago: 480p a ${reais(p.rapida ?? 0)} e 720p a ${reais(p.alta ?? 0)} por segundo de vídeo. ` +
       "O pedido é cobrado quando as fotos chegam; pedido recusado e vídeo que não sai voltam sozinhos para o saldo.";
   };
+  el<HTMLFormElement>("form-busca").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    busca = el<HTMLInputElement>("busca-cliente").value.trim();
+    listarClientes().catch((e) => aviso(msg, textoErro(e), "erro"));
+  });
 
   const listar = async (): Promise<boolean> => {
     try {
-      const lotes = await api<Pendente[]>("/api/admin/lotes", token);
+      const lotes = await api<Pendente[]>(`${BASE}/api/lotes`);
       const vivos = new Set(lotes.flatMap((p) => p.fotos.map((f) => `${p.lote}/${f.nome}`)));
       for (const chave of imagens.keys()) if (!vivos.has(chave)) imagens.delete(chave);
       reconciliar(
@@ -588,19 +870,24 @@ function iniciarAprovador(): void {
         lotes.map((p) => ({
           chave: p.lote,
           assinatura: JSON.stringify([p.fotos.map((f) => [f.nome, f.analise]), p.autorizacao, p.pedido, p.filtro_c1]),
-          criar: () => cartaoPendente(p, token, listar, imagens),
+          criar: () => cartaoPendente(p, listar, imagens),
         })),
         () => vazio("Nada aguardando revisão.", "Os pedidos novos aparecem aqui assim que as fotos chegam.", "ok"),
       );
       el("n-pendentes").textContent = lotes.length ? String(lotes.length) : "";
-      document.title = lotes.length ? `(${lotes.length}) Revisão · Render2Go` : "Revisão · Render2Go";
-      await listarHistorico();
+      document.title = lotes.length ? `(${lotes.length}) Painel · Render2Go` : "Painel · Render2Go";
+      await Promise.all([listarPods(), listarHistorico(), listarSuporte(), listarClientes(), listarGpus(), listarInteresses(), listarPagamentos(), listarSeguranca()]);
       el("atualizado").textContent = `Atualizado às ${hora()}`;
       aviso(msg, "");
     } catch (e) {
+      if (e instanceof ErroApi && e.status === 401) {
+        marcarConectado(CHAVE_PAINEL, false);
+        location.reload(); // a sessão do painel venceu (12 h): volta para a entrada
+        return false;
+      }
       aviso(msg, `Não foi possível carregar: ${textoErro(e)}`, "erro");
     }
-    return true; // a revisão continua atualizando enquanto a aba está visível
+    return true; // o painel continua atualizando enquanto a aba está visível
   };
   const atualizacao = repetir(listar, 30000);
 
@@ -611,65 +898,98 @@ function iniciarAprovador(): void {
       listarHistorico().catch((e) => aviso(msg, `Não foi possível carregar: ${textoErro(e)}`, "erro"));
     });
   }
-  sessao("render2go-token-admin", async (t) => {
-    token = t;
-    await api("/api/admin/suporte", token); // confere o token antes de mostrar o painel
-    atualizar.hidden = false;
+
+  // -- entrada no painel: token + código do autenticador ---------------------------------------------
+  const form = el<HTMLFormElement>("form-admin");
+  const campoToken = el<HTMLInputElement>("admin-token");
+  const campoTotp = el<HTMLInputElement>("admin-totp");
+  const msgEntrada = el("msg-entrada");
+  mostrarSenha(el<HTMLButtonElement>("mostrar-token"), campoToken);
+  const mostrarPainel = (focar: boolean) => {
+    raiz.classList.add("com-sessao");
+    atualizar.hidden = sair.hidden = false;
+    marcarConectado(CHAVE_PAINEL, true);
     atualizacao.agora();
+    if (focar) el("titulo-painel").focus();
+  };
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const token = campoToken.value.trim();
+    if (!token) {
+      aviso(msgEntrada, "Digite o token de administração.", "erro");
+      marcarErro(campoToken, true);
+      campoToken.focus();
+      return;
+    }
+    const botao = el<HTMLButtonElement>("admin-entrar");
+    ocupado(botao, true);
+    try {
+      await api(`${BASE}/api/entrar`, { method: "POST", body: JSON.stringify({ token, totp: campoTotp.value.replace(/\D/g, "") || null }) });
+      campoToken.value = campoTotp.value = "";
+      aviso(msgEntrada, "");
+      mostrarPainel(true);
+    } catch (e) {
+      aviso(msgEntrada, textoErro(e), "erro");
+      anunciar(textoErro(e), true);
+      campoTotp.value = "";
+      (e instanceof ErroApi && e.status === 401 ? campoTotp : campoToken).focus();
+    } finally {
+      ocupado(botao, false);
+    }
+  });
+  for (const campo of [campoToken, campoTotp]) campo.addEventListener("input", () => marcarErro(campo, false));
+  sair.addEventListener("click", async () => {
+    await api(`${BASE}/api/sair`, { method: "POST" }).catch(() => undefined);
+    marcarConectado(CHAVE_PAINEL, false);
+    location.reload();
   });
   atualizar.addEventListener("click", async () => {
     ocupado(atualizar, true);
     await listar();
     ocupado(atualizar, false);
-    anunciar("Lista atualizada.");
+    anunciar("Painel atualizado.");
   });
+  // sessão ainda válida (cookie HttpOnly): o painel aparece direto
+  if (conectado(CHAVE_PAINEL)) raiz.classList.add("com-sessao");
+  const semSessao = () => {
+    raiz.classList.remove("com-sessao");
+    marcarConectado(CHAVE_PAINEL, false);
+    campoToken.focus();
+  };
+  api<{ admin: string | null }>(`${BASE}/api/sessao`)
+    .then((s) => (s.admin ? mostrarPainel(false) : semSessao()))
+    .catch((e) => {
+      semSessao();
+      avisoComRecarga(msgEntrada, `Não foi possível falar com o servidor: ${textoErro(e)}`);
+    });
 
+  // -- nova conta --------------------------------------------------------------------------------
   const formCliente = el<HTMLFormElement>("form-cliente");
-  const nome = el<HTMLInputElement>("cliente-nome");
-  nome.addEventListener("input", () => marcarErro(nome, false));
+  const email = el<HTMLInputElement>("cliente-email");
+  email.addEventListener("input", () => marcarErro(email, false));
   formCliente.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const saida = el("token-novo");
-    if (nome.value.trim().length < 2) {
-      marcarErro(nome, true);
-      aviso(saida, "Escreva o nome do cliente (pelo menos 2 letras).", "erro");
-      nome.focus();
+    const saida = el("cliente-msg");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.value.trim())) {
+      marcarErro(email, true);
+      aviso(saida, "Escreva o e-mail da conta.", "erro");
+      email.focus();
       return;
     }
     const botao = el<HTMLButtonElement>("cliente-enviar");
     ocupado(botao, true);
     try {
-      const r = await api<{ cliente: string; token: string }>("/api/admin/clientes", token, {
+      const r = await api<{ cliente: string; email: string; plano: string }>(`${BASE}/api/clientes`, {
         method: "POST",
         body: JSON.stringify({
-          nome: nome.value.trim(),
+          email: email.value.trim(),
           plano: el<HTMLSelectElement>("cliente-plano").value,
           cota_fotos_dia: Number(el<HTMLInputElement>("cliente-cota").value) || 500,
         }),
       });
-      const codigo = criar("code", { id: "token-valor", textContent: r.token });
-      const copiar = criar("button", { type: "button", className: "botao pequeno" }, [icone("copiar"), "Copiar"]);
-      copiar.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(r.token);
-          anunciar("Código copiado.");
-          copiar.replaceChildren(icone("ok"), "Copiado");
-        } catch {
-          getSelection()?.selectAllChildren(codigo); // sem permissão: deixa selecionado para Ctrl+C
-        }
-      });
-      aviso(
-        saida,
-        [
-          criar("p", { textContent: `Cliente ${r.cliente}. Código de acesso (aparece só agora; envie ao cliente por um canal seguro):` }),
-          criar("div", { className: "codigo-gerado" }, [codigo, copiar]),
-        ],
-        "ok",
-      );
-      saida.classList.add("token");
-      anunciar("Cliente cadastrado. O código aparece só agora.");
+      aviso(saida, `Conta ${r.email} criada no plano ${r.plano}. A pessoa entra pela página inicial com o código que chega no e-mail.`, "ok");
+      anunciar("Conta criada.");
       formCliente.reset();
-      copiar.focus();
       void listarClientes().catch(() => undefined);
     } catch (e) {
       aviso(saida, textoErro(e), "erro");
@@ -686,7 +1006,7 @@ function iniciarAprovador(): void {
     ev.preventDefault();
     const saida = el("saldo-msg");
     const faltando: [HTMLElement, string][] = [
-      [selCliente, selCliente.value ? "" : "Escolha o cliente."],
+      [selCliente, selCliente.value ? "" : "Escolha a conta (busque por e-mail acima)."],
       [valor, /^-?\d{1,7}([.,]\d{1,2})?$/.test(valor.value.trim()) ? "" : "Escreva o valor em reais, ex.: 50 ou 19,90."],
       [descricao, descricao.value.trim().length >= 3 ? "" : "Escreva uma descrição (o cliente vê no extrato)."],
     ];
@@ -697,7 +1017,7 @@ function iniciarAprovador(): void {
       erro[0].focus();
       return;
     }
-    const nome = selCliente.selectedOptions[0]?.textContent?.split(" · ")[0] ?? "o cliente";
+    const nome = selCliente.selectedOptions[0]?.textContent?.split(" · ")[0] ?? "a conta";
     const ok = await confirmar({
       titulo: "Lançar no saldo?",
       texto: `${valor.value.trim().startsWith("-") ? "Descontar" : "Adicionar"} R$ ${valor.value.trim().replace(/^-/, "")} ${valor.value.trim().startsWith("-") ? "do" : "ao"} saldo de ${nome}.`,
@@ -707,7 +1027,7 @@ function iniciarAprovador(): void {
     const botao = el<HTMLButtonElement>("saldo-enviar");
     ocupado(botao, true);
     try {
-      const r = await api<{ saldo: number }>(`/api/admin/clientes/${selCliente.value}/saldo`, token, {
+      const r = await api<{ saldo: number }>(`${BASE}/api/clientes/${encodeURIComponent(selCliente.value)}/saldo`, {
         method: "POST",
         body: JSON.stringify({ valor: valor.value.trim(), descricao: descricao.value.trim(), referencia: el<HTMLInputElement>("saldo-referencia").value.trim() || null }),
       });
@@ -723,4 +1043,4 @@ function iniciarAprovador(): void {
   });
 }
 
-document.addEventListener("DOMContentLoaded", iniciarAprovador);
+document.addEventListener("DOMContentLoaded", iniciarPainel);

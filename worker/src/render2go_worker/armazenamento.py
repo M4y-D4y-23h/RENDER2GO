@@ -97,10 +97,13 @@ class Armazenamento:
         agora: dt.datetime | None = None,
         content_type: str | None = None,
         extra: dict[str, str] | None = None,
+        content_length: int | None = None,
     ) -> str:
         """URL pré-assinada (SigV4 por query string) para um objeto e um método.
 
-        `extra`: parâmetros assinados junto (ex.: partNumber e uploadId de uma parte)."""
+        `extra`: parâmetros assinados junto (ex.: partNumber e uploadId de uma parte).
+        `content_length`: o PUT só aceita exatamente esses bytes (o navegador manda o
+        Content-Length sozinho; um arquivo maior ou menor que o declarado é recusado com 403)."""
         if metodo not in METODOS_URL:
             raise ArmazenamentoError(f"método não permitido: {metodo}")
         if not 1 <= expira_s <= 7 * 24 * 3600:
@@ -111,6 +114,10 @@ class Armazenamento:
         cabecalhos = {"host": host}
         if content_type:  # o PUT só aceita o tipo assinado
             cabecalhos["content-type"] = content_type
+        if content_length is not None:
+            if content_length < 0:
+                raise ArmazenamentoError("content_length negativo")
+            cabecalhos["content-length"] = str(int(content_length))
         assinados = ";".join(sorted(cabecalhos))
         escopo = f"{data[:8]}/{self.regiao}/s3/aws4_request"
         params = {
