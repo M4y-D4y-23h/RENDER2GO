@@ -149,3 +149,19 @@ def test_support_without_an_account_needs_the_robot_check(banco, monkeypatch):
     # com conta (código de acesso), sem verificação
     tok = _cliente(api)
     assert _mandar(api, tok, dispositivo=D2).status_code == 200
+
+
+def test_sender_falls_back_to_the_system_address_when_the_smtp_user_is_not_an_email(monkeypatch):
+    """No Amazon SES, o usuário do SMTP é uma chave (AKIA...), não um e-mail: sem RENDER2GO_SUPORTE_DE, o
+    suporte usa o remetente dos códigos (de um domínio verificado). No Gmail, o usuário continua valendo."""
+    for k in ("RENDER2GO_SUPORTE_DE", "RENDER2GO_SUPORTE_PARA"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("RENDER2GO_SMTP_HOST", "email-smtp.sa-east-1.amazonaws.com")
+    monkeypatch.setenv("RENDER2GO_SMTP_USUARIO", "AKIAIOSFODNN7EXAMPLE")
+    monkeypatch.setenv("RENDER2GO_EMAIL_DE", "Render2Go <nao-responda@render2go.com>")
+    cfg = suporte.ConfigEmail.do_ambiente()
+    assert cfg.de == cfg.de_sistema == "Render2Go <nao-responda@render2go.com>"
+    monkeypatch.setenv("RENDER2GO_SMTP_USUARIO", "dono@gmail.com")
+    assert suporte.ConfigEmail.do_ambiente().de == "dono@gmail.com"
+    monkeypatch.setenv("RENDER2GO_SUPORTE_DE", "Render2Go Suporte <suporte@render2go.com>")
+    assert suporte.ConfigEmail.do_ambiente().de == "Render2Go Suporte <suporte@render2go.com>"

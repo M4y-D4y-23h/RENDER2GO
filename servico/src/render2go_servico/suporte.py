@@ -60,7 +60,15 @@ class ConfigEmail:
             return None
         para = os.environ.get("RENDER2GO_SUPORTE_PARA", "").strip()
         usuario = os.environ.get("RENDER2GO_SMTP_USUARIO", "").strip() or None
-        de = os.environ.get("RENDER2GO_SUPORTE_DE", "").strip() or usuario or para
+        de_sistema = os.environ.get("RENDER2GO_EMAIL_DE", "").strip() or None
+        # remetente do suporte: o configurado; senão o usuário do SMTP, se for um e-mail (Gmail); senão o
+        # dos códigos. No SES o usuário do SMTP não é e-mail, e um remetente inválido faz o envio ser recusado
+        de = (
+            os.environ.get("RENDER2GO_SUPORTE_DE", "").strip()
+            or (usuario if usuario and "@" in usuario else None)
+            or de_sistema
+            or para
+        )
         return cls(
             host=host,
             para=para,
@@ -69,7 +77,7 @@ class ConfigEmail:
             tls=os.environ.get("RENDER2GO_SMTP_TLS", "starttls").strip().lower(),
             usuario=usuario,
             senha=os.environ.get("RENDER2GO_SMTP_SENHA") or None,
-            de_sistema=os.environ.get("RENDER2GO_EMAIL_DE", "").strip() or None,
+            de_sistema=de_sistema,
         )
 
 

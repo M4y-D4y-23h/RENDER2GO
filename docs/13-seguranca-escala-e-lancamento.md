@@ -173,29 +173,65 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
 
 #### 6.1.1 Passo a passo: e-mail pelo Amazon SES
 
-1. **Conta da AWS** (aws.amazon.com), com verificação em duas etapas no usuário raiz. No console, escolha a região **América do Sul (São Paulo)**, `sa-east-1`, no canto superior direito.
-2. **Domínio:** Amazon SES → **Identities** → **Create identity** → **Domain** → `render2go.com` → em "Advanced DKIM settings", **Easy DKIM** (RSA 2048) → **Create identity**.
-3. **DNS na Cloudflare:** cadastre os 3 registros **CNAME** de DKIM que o SES mostrar, com a nuvem **cinza (DNS only)**; com a nuvem laranja o DKIM não confere. Em alguns minutos a identidade fica "Verified".
-4. **MAIL FROM próprio** (alinha o SPF ao seu domínio, o que o DMARC confere): na identidade → **Custom MAIL FROM domain** → `envio.render2go.com` → cadastre na Cloudflare o **MX** e o **TXT** (SPF) que o SES mostrar.
-5. **DMARC:** TXT em `_dmarc.render2go.com` com `v=DMARC1; p=none; rua=mailto:<seu e-mail>`. Depois de 2 semanas sem falhas nos relatórios, troque para `p=quarantine`.
-6. **Sair do sandbox:** SES → **Account dashboard** → **Request production access**:
-   - tipo **Transactional** e site `https://app.render2go.com`;
-   - na descrição: "códigos de acesso de uso único, enviados só a quem pede na página, com verificação anti-robô e limites por e-mail e por rede; sem marketing; acompanhamos bounces e reclamações";
-   - peça os limites do pico (ex.: 50 mil por dia, 20 por segundo).
-   A AWS costuma responder em até 1 dia útil.
-7. **Preço:** SES → **Pricing plan** → **Cancel plan** (volta ao à la carte, US$ 0,10 por mil).
-8. **Senha do SMTP:** SES → **SMTP settings** → **Create SMTP credentials**. O usuário e a senha aparecem uma vez só: guarde no gerenciador de senhas. Não são as chaves de acesso da AWS.
-9. **`.env` do servidor:**
-   ```
-   RENDER2GO_SMTP_HOST=email-smtp.sa-east-1.amazonaws.com
-   RENDER2GO_SMTP_PORTA=587
-   RENDER2GO_SMTP_TLS=starttls
-   RENDER2GO_SMTP_USUARIO=<usuário SMTP do passo 8>
-   RENDER2GO_SMTP_SENHA=<senha SMTP do passo 8>
-   RENDER2GO_EMAIL_DE=Render2Go <nao-responda@render2go.com>
-   ```
-10. **Conferir:** peça um código para um Gmail seu. Ele precisa chegar na caixa de entrada; no Gmail, "Mostrar original" deve dizer **PASS** em SPF, DKIM e DMARC.
-11. **Acompanhar:** SES → **Reputation metrics**. Mantenha os e-mails devolvidos (bounces) abaixo de 5% e as reclamações abaixo de 0,1%; acima disso, a AWS revisa a conta e pode pausar o envio. A lista de provedores aceitos já evita a maior parte dos e-mails inválidos.
+Conferido nas páginas da AWS em 09/10/2026. Os nomes dos menus estão em inglês, como no console.
+
+**A. Conta da AWS** (uma vez)
+1. Em aws.amazon.com → **Create an AWS Account**: e-mail, nome da conta, cartão de crédito internacional e telefone. Escolha o plano **Paid**. O plano **Free** encerra a conta depois de 6 meses (ou quando os créditos acabam), e o e-mail pararia. Os créditos de conta nova (até US$ 200) valem nos dois planos.
+2. **Verificação em duas etapas no usuário raiz:** menu da conta (canto superior direito) → **Security credentials** → **Assign MFA device**.
+3. **Alerta de gasto:** **Billing and Cost Management** → **Budgets** → **Create budget** → modelo "Monthly cost budget" → US$ 10 e o seu e-mail. Se a senha do SMTP vazar, você fica sabendo antes da fatura.
+
+**B. Domínio no SES** (região São Paulo)
+4. No console, escolha a região **South America (São Paulo)**, `sa-east-1` (canto superior direito), e abra o **Amazon SES**. Se aparecer o assistente "Get started", ele pede as mesmas coisas dos passos 5 e 9.
+5. **Identities** → **Create identity** → **Domain** → `render2go.com` → em "Advanced DKIM settings", **Easy DKIM** com **RSA_2048_BIT** → **Create identity**.
+6. **DKIM na Cloudflare** (DNS do `render2go.com`): cadastre os 3 registros **CNAME** que o SES mostrar (nome `xxxx._domainkey`, destino `xxxx.dkim.amazonses.com`), com o **Proxy status em "DNS only"** (nuvem cinza). Com a nuvem laranja o DKIM não confere. Em minutos a identidade fica **Verified**.
+7. **MAIL FROM próprio** (alinha o SPF ao domínio, o que o DMARC confere): na identidade → **Custom MAIL FROM domain** → **Edit** → marque **Use a custom MAIL FROM domain** → `envio` → "Behavior on MX failure": **Use default MAIL FROM domain** → **Save changes**. Na Cloudflare:
+   - **MX** `envio` → `feedback-smtp.sa-east-1.amazonses.com`, prioridade 10;
+   - **TXT** `envio` → `v=spf1 include:amazonses.com ~all`.
+8. **DMARC** na Cloudflare: **TXT** `_dmarc` → `v=DMARC1; p=none; rua=mailto:<seu e-mail>`. Depois de 2 semanas sem falhas nos relatórios, troque `p=none` por `p=quarantine`.
+9. **Teste ainda no sandbox**, que só envia para endereços verificados:
+   - **Create identity** → **Email address** → o seu Gmail → clique no link que chega;
+   - na identidade `render2go.com` → **Send test email**, de `teste@render2go.com` para o seu Gmail;
+   - no Gmail → ⋮ → **Mostrar original**: SPF, DKIM e DMARC devem estar **PASS**.
+
+**C. Produção, preço e limites**
+10. **Preço:** **Pricing plan** → **Cancel plan**. A conta nova começa no plano Essentials (US$ 0,16 por mil); assim volta ao à la carte (US$ 0,10 por mil).
+11. **Sair do sandbox:** **Account dashboard** → no aviso "Your Amazon SES account is in the sandbox", **View Get set up page** → **Request production access**:
+    - **Mail type:** Transactional;
+    - **Website URL:** `https://app.render2go.com`;
+    - **Additional contacts:** o seu e-mail;
+    - **Preferred contact language:** English;
+    - marque o **Acknowledgement** → **Submit request**.
+
+    A AWS responde em até 24 h. Se pedir mais detalhes (em inglês), responda pelo caso de suporte que ela abrir, com este texto (ajuste o volume):
+
+    > Render2Go (https://app.render2go.com) is a Brazilian service that turns product photos into short videos for small businesses. We use SES only for transactional email: one-time sign-in codes (8 digits, valid for 10 minutes), sent only to a person who requested one on our website, and replies to support requests. No marketing or bulk email. Abuse controls: Cloudflare Turnstile bot check, rate limits per email address, network and device, and only well-known mailbox providers are accepted. Bounces and complaints go to the SES account-level suppression list, and we watch the reputation dashboard. Expected volume at launch: up to 5,000 emails per day.
+12. **Limites:** depois da aprovação, o **Account dashboard** mostra quantos e-mails por dia e por segundo a conta pode mandar. Para aumentar, antes de uma campanha grande: console **Service Quotas** → região São Paulo → **AWS services** → **Amazon Simple Email Service (SES)** → **Sending quota** (por dia) ou **Sending rate** (por segundo) → pedir o aumento (resposta em até 24 h).
+
+**D. Credenciais e servidor**
+13. **SMTP settings** → **Create SMTP credentials** → aceite o nome de usuário sugerido → **Create user** → **Show** → **Download .csv file**. O usuário e a senha aparecem uma vez só: guarde no gerenciador de senhas. Não são as chaves de acesso da AWS. Se perder a senha, apague esse usuário no IAM e crie outro.
+14. **`.env` pelo terminal** (PowerShell → `ssh` no servidor): cole o bloco inteiro de uma vez e, quando ele pedir, cole o usuário e a senha do SMTP (a senha não aparece na tela nem fica no histórico; se a colagem vier vazia, ele pergunta de novo). Ele grava o servidor de São Paulo na porta 587 (a Hetzner bloqueia a saída nas portas 25 e 465) e os remetentes `nao-responda@` e `suporte@render2go.com`; o `.env` anterior fica em `.env.antes-ses`, e o `RENDER2GO_SUPORTE_PARA` (onde você recebe o suporte) não muda.
+    ```bash
+    {
+      cd ~/GPU2GO/servico/implantacao && cp -p .env .env.antes-ses
+      USUARIO=; while [ -z "$USUARIO" ]; do read -rp "Usuário SMTP do SES: " USUARIO; USUARIO=${USUARIO//[$'\t\r ']}; done
+      SENHA=; while [ -z "$SENHA" ]; do read -rsp "Senha SMTP do SES (não aparece na tela): " SENHA; echo; SENHA=${SENHA//[$'\t\r ']}; done
+      sed -i -E '/^RENDER2GO_(SMTP_HOST|SMTP_PORTA|SMTP_TLS|SMTP_USUARIO|SMTP_SENHA|EMAIL_DE|SUPORTE_DE)=/d' .env
+      [ -n "$(tail -c1 .env)" ] && echo >> .env
+      printf '%s\n' \
+        'RENDER2GO_SMTP_HOST=email-smtp.sa-east-1.amazonaws.com' \
+        'RENDER2GO_SMTP_PORTA=587' \
+        'RENDER2GO_SMTP_TLS=starttls' \
+        "RENDER2GO_SMTP_USUARIO=$USUARIO" \
+        "RENDER2GO_SMTP_SENHA=$SENHA" \
+        'RENDER2GO_EMAIL_DE=Render2Go <nao-responda@render2go.com>' \
+        'RENDER2GO_SUPORTE_DE=Render2Go Suporte <suporte@render2go.com>' >> .env
+      unset USUARIO SENHA
+      grep -E '^RENDER2GO_(SMTP_HOST|SMTP_PORTA|SMTP_TLS|SMTP_USUARIO|EMAIL_DE|SUPORTE_DE|SUPORTE_PARA)=' .env
+      awk '/^RENDER2GO_SMTP_SENHA=/{print "Senha SMTP gravada: " length($0) - 21 " caracteres"}' .env
+    }
+    ```
+15. **Conferir, depois da atualização do servidor** (`docs/09`, seção 0): `docker compose logs api | grep AVISO` não fala mais do SMTP. Peça um código em https://app.render2go.com com um Gmail: ele chega na caixa de entrada, e "Mostrar original" diz **PASS** em SPF, DKIM e DMARC. Uma mensagem de teste em `/suporte` chega no `RENDER2GO_SUPORTE_PARA`.
+16. **Acompanhar:** SES → **Reputation metrics**. Mantenha os devolvidos (bounces) abaixo de 5% e as reclamações abaixo de 0,1%; acima disso, a AWS revisa a conta e pode pausar o envio.
 
 #### 6.1.2 Passo a passo: "não sou um robô" (Cloudflare Turnstile)
 
@@ -213,13 +249,12 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
    ```
    O `DOMINIO` continua `app.render2go.com`: não troque para `render2go.com`, porque o Caddy usa o `DOMINIO` para o certificado e o endereço do site.
 
-   **Pelo terminal** (PowerShell → `ssh` no servidor): cole o bloco inteiro de uma vez e, quando ele pedir, cole cada chave e tecle Enter. A Secret Key não aparece na tela nem fica no histórico; a linha antiga de cada chave é trocada, sem duplicar; e o `.env` anterior fica em `.env.antes-turnstile`.
+   **Pelo terminal** (PowerShell → `ssh` no servidor): cole o bloco inteiro de uma vez e, quando ele pedir, cole cada chave e tecle Enter. A Secret Key não aparece na tela nem fica no histórico; colagem vazia é perguntada de novo; a linha antiga de cada chave é trocada, sem duplicar; e o `.env` anterior fica em `.env.antes-turnstile`.
    ```bash
    {
      cd ~/GPU2GO/servico/implantacao && cp -p .env .env.antes-turnstile
-     read -rp "Site Key: " SITE
-     read -rsp "Secret Key (não aparece na tela): " SEGREDO; echo
-     SITE=${SITE//[$'\t\r ']}; SEGREDO=${SEGREDO//[$'\t\r ']}
+     SITE=; while [ -z "$SITE" ]; do read -rp "Site Key: " SITE; SITE=${SITE//[$'\t\r ']}; done
+     SEGREDO=; while [ -z "$SEGREDO" ]; do read -rsp "Secret Key (não aparece na tela): " SEGREDO; echo; SEGREDO=${SEGREDO//[$'\t\r ']}; done
      sed -i '/^RENDER2GO_TURNSTILE_SITE=/d; /^RENDER2GO_TURNSTILE_SEGREDO=/d' .env
      [ -n "$(tail -c1 .env)" ] && echo >> .env
      printf 'RENDER2GO_TURNSTILE_SITE=%s\nRENDER2GO_TURNSTILE_SEGREDO=%s\n' "$SITE" "$SEGREDO" >> .env
