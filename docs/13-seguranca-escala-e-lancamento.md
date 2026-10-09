@@ -212,6 +212,22 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
    RENDER2GO_TURNSTILE_SEGREDO=<Secret Key>
    ```
    O `DOMINIO` continua `app.render2go.com`: não troque para `render2go.com`, porque o Caddy usa o `DOMINIO` para o certificado e o endereço do site.
+
+   **Pelo terminal** (PowerShell → `ssh` no servidor): cole o bloco inteiro de uma vez e, quando ele pedir, cole cada chave e tecle Enter. A Secret Key não aparece na tela nem fica no histórico; a linha antiga de cada chave é trocada, sem duplicar; e o `.env` anterior fica em `.env.antes-turnstile`.
+   ```bash
+   {
+     cd ~/GPU2GO/servico/implantacao && cp -p .env .env.antes-turnstile
+     read -rp "Site Key: " SITE
+     read -rsp "Secret Key (não aparece na tela): " SEGREDO; echo
+     SITE=${SITE//[$'\t\r ']}; SEGREDO=${SEGREDO//[$'\t\r ']}
+     sed -i '/^RENDER2GO_TURNSTILE_SITE=/d; /^RENDER2GO_TURNSTILE_SEGREDO=/d' .env
+     [ -n "$(tail -c1 .env)" ] && echo >> .env
+     printf 'RENDER2GO_TURNSTILE_SITE=%s\nRENDER2GO_TURNSTILE_SEGREDO=%s\n' "$SITE" "$SEGREDO" >> .env
+     unset SITE SEGREDO
+     grep '^RENDER2GO_TURNSTILE_SITE=' .env
+     awk -F= '/^RENDER2GO_TURNSTILE_SEGREDO=/{print "Secret Key gravada: " length($2) " caracteres"}' .env
+   }
+   ```
 5. Aplique com `docker compose up -d api`; na atualização desta versão, isso já entra no `docker compose up -d` do `docs/09`.
 6. **Conferir:**
    - `docker compose logs api | grep AVISO` não fala mais do Turnstile;
