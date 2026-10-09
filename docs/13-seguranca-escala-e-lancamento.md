@@ -173,7 +173,7 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
 
 #### 6.1.1 Passo a passo: e-mail pelo Amazon SES
 
-Conferido nas páginas da AWS em 09/10/2026. Os nomes dos menus estão em inglês, como no console.
+Conferido nas páginas da AWS em 09/10/2026. Os nomes dos menus estão em inglês; com o console em português, alguns vêm traduzidos ao lado.
 
 **A. Conta da AWS** (uma vez)
 1. Em aws.amazon.com → **Create an AWS Account**: e-mail, nome da conta, cartão de crédito internacional e telefone. Escolha o plano **Paid**. O plano **Free** encerra a conta depois de 6 meses (ou quando os créditos acabam), e o e-mail pararia. Os créditos de conta nova (até US$ 200) valem nos dois planos.
@@ -181,20 +181,30 @@ Conferido nas páginas da AWS em 09/10/2026. Os nomes dos menus estão em inglê
 3. **Alerta de gasto:** **Billing and Cost Management** → **Budgets** → **Create budget** → modelo "Monthly cost budget" → US$ 10 e o seu e-mail. Se a senha do SMTP vazar, você fica sabendo antes da fatura.
 
 **B. Domínio no SES** (região São Paulo)
-4. No console, escolha a região **South America (São Paulo)**, `sa-east-1` (canto superior direito), e abra o **Amazon SES**. Se aparecer o assistente "Get started", ele pede as mesmas coisas dos passos 5 e 9.
-5. **Identities** → **Create identity** → **Domain** → `render2go.com` → em "Advanced DKIM settings", **Easy DKIM** com **RSA_2048_BIT** → **Create identity**.
-6. **DKIM na Cloudflare** (DNS do `render2go.com`): cadastre os 3 registros **CNAME** que o SES mostrar (nome `xxxx._domainkey`, destino `xxxx.dkim.amazonses.com`), com o **Proxy status em "DNS only"** (nuvem cinza). Com a nuvem laranja o DKIM não confere. Em minutos a identidade fica **Verified**.
-7. **MAIL FROM próprio** (alinha o SPF ao domínio, o que o DMARC confere): na identidade → **Custom MAIL FROM domain** → **Edit** → marque **Use a custom MAIL FROM domain** → `envio` → "Behavior on MX failure": **Use default MAIL FROM domain** → **Save changes**. Na Cloudflare:
-   - **MX** `envio` → `feedback-smtp.sa-east-1.amazonses.com`, prioridade 10;
+4. No console, escolha a região **South America (São Paulo)**, `sa-east-1` (canto superior direito; o endereço da página tem `region=sa-east-1`), e abra o **Amazon SES**. Identidades, sandbox, plano e credenciais valem só na região em que foram criados, e o `.env` do passo 14 usa a de São Paulo.
+5. **Conta nova abre o assistente "Get started"** (no console em português, "Configurar", com 7 etapas), que cria de uma vez o domínio, o MAIL FROM (passo 7) e o e-mail do teste (passo 9):
+   - **e-mail:** o seu Gmail (recebe o link de confirmação e o teste do passo 9);
+   - **domínio de envio:** `render2go.com`; **MAIL FROM domain** (em português, "Domínio MAIL FROM"): `envio`; "Behavior on MX failure": **Use default MAIL FROM domain** ("Usar o domínio MAIL FROM padrão"). Com "Reject message", um erro no registro MX pararia os códigos de entrada;
+   - **plano de preços** ("Select pricing plan"): siga sem plano (à la carte), se a etapa deixar. Se ela obrigar a escolher, fique no Essentials e cancele no passo 10: o cancelamento vale no início do próximo ciclo de cobrança, e até lá a diferença é de US$ 0,06 por mil;
+   - **etapas opcionais** (Virtual Deliverability Manager, pool de IPs dedicados, gerenciamento de locatários): deixe tudo desligado e avance. Sem plano, o Virtual Deliverability Manager custa US$ 0,07 por mil a mais, e a "entrega compartilhada otimizada" dele pode segurar e-mails de propósito, o que atrasaria os códigos de 10 minutos. IP dedicado começa em US$ 15 por mês e só compensa com centenas de milhares de e-mails por dia. Locatários servem para quem manda e-mail em nome dos domínios dos clientes;
+   - na revisão, **Get started**. Depois, a página **Get set up** mostra o que falta: clicar no link que chega no Gmail e publicar o DNS (**Get DNS records**, passos 6 a 8).
+
+   Sem o assistente (conta que já tem identidades): **Identities** → **Create identity** → **Domain** → `render2go.com` → em "Advanced DKIM settings", **Easy DKIM** com **RSA_2048_BIT** → **Create identity**; o MAIL FROM fica no passo 7.
+6. **DKIM na Cloudflare** (DNS do `render2go.com`): cadastre os 3 registros **CNAME** que o SES mostrar (nome `xxxx._domainkey`, destino `xxxx.dkim.amazonses.com`), com o **Proxy status em "DNS only"** (nuvem cinza). Com a nuvem laranja o DKIM não confere. No campo **Name** da Cloudflare, tanto faz colar o nome inteiro (`xxxx._domainkey.render2go.com`) ou só o começo; ela não duplica o domínio. Em minutos a identidade fica **Verified**.
+7. **MAIL FROM próprio** (alinha o SPF ao domínio, o que o DMARC confere). Se não foi feito no assistente: na identidade → **Custom MAIL FROM domain** → **Edit** → marque **Use a custom MAIL FROM domain** → `envio` → "Behavior on MX failure": **Use default MAIL FROM domain** → **Save changes**. Na Cloudflare:
+   - **MX** `envio` → `feedback-smtp.sa-east-1.amazonses.com`, prioridade 10 (o SES mostra os dois juntos, `10 feedback-smtp...`; na Cloudflare a prioridade tem campo próprio);
    - **TXT** `envio` → `v=spf1 include:amazonses.com ~all`.
-8. **DMARC** na Cloudflare: **TXT** `_dmarc` → `v=DMARC1; p=none; rua=mailto:<seu e-mail>`. Depois de 2 semanas sem falhas nos relatórios, troque `p=none` por `p=quarantine`.
+8. **DMARC** na Cloudflare:
+   - **TXT** `_dmarc` → `v=DMARC1; p=none`. Se já existir um `_dmarc`, edite esse: com dois, os provedores ignoram os dois;
+   - relatórios: **Email** → **DMARC Management** → **Enable DMARC Management**. A Cloudflare acrescenta ao registro um `rua` com um endereço dela e mostra os relatórios no painel. Não use o seu Gmail no `rua`: endereço de outro domínio só recebe relatórios se esse domínio autorizar no DNS dele, e o Gmail não autoriza;
+   - depois de 2 semanas com tudo aprovado nos relatórios, troque `p=none` por `p=quarantine`.
 9. **Teste ainda no sandbox**, que só envia para endereços verificados:
-   - **Create identity** → **Email address** → o seu Gmail → clique no link que chega;
+   - se o Gmail não entrou pelo assistente: **Create identity** → **Email address** → o seu Gmail; clique no link que chega;
    - na identidade `render2go.com` → **Send test email**, de `teste@render2go.com` para o seu Gmail;
    - no Gmail → ⋮ → **Mostrar original**: SPF, DKIM e DMARC devem estar **PASS**.
 
 **C. Produção, preço e limites**
-10. **Preço:** **Pricing plan** → **Cancel plan**. A conta nova começa no plano Essentials (US$ 0,16 por mil); assim volta ao à la carte (US$ 0,10 por mil).
+10. **Preço:** **Pricing plan** → **Cancel plan**. A conta nova começa no plano Essentials (US$ 0,16 por mil); assim volta ao à la carte (US$ 0,10 por mil). Se a página já mostrar à la carte (sem plano), não há nada a fazer. Nenhum recurso pago liga sozinho: o Virtual Deliverability Manager só cobra se for ativado (passo 5).
 11. **Sair do sandbox:** **Account dashboard** → no aviso "Your Amazon SES account is in the sandbox", **View Get set up page** → **Request production access**:
     - **Mail type:** Transactional;
     - **Website URL:** `https://app.render2go.com`;
