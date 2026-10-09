@@ -112,6 +112,52 @@ def saldo(banco, cliente_id: str, valor: str, descricao: str, referencia: str | 
     return 0
 
 
+def socket_da_api(host: str, porta: int):
+    """Socket de escuta da API, criado aqui e não pelo uvicorn: com IPPROTO_TCP e TCP_NODELAY. O do
+    uvicorn (protocolo 0) faz o asyncio não desligar o algoritmo de Nagle nas conexões aceitas, e com
+    vários processos cada resposta numa conexão reaproveitada (o Caddy reaproveita) esperava ~40 ms pelo
+    ACK atrasado do outro lado (medido: 44 ms contra menos de 1 ms; docs/13, seção 4)."""
+    import socket
+
+    familia = socket.AF_INET6 if ":" in host else socket.AF_INET
+    sock = socket.socket(familia, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)  # as conexões aceitas herdam (Linux)
+    sock.bind((host, porta))
+    sock.set_inheritable(True)
+    return sock
+
+
+def api(host: str, porta: int, workers: int) -> int:
+    """Vários processos (--workers): o uvicorn cria um app por processo pela fábrica. O Caddy é o único que
+    fala com a API e sempre manda o IP real em X-Render2Go-IP (proxy_headers desligado: o X-Forwarded-For
+    de fora não vale). Sem o cabeçalho "server: uvicorn" nas respostas."""
+    import uvicorn
+    from uvicorn.supervisors import Multiprocess
+
+    config = uvicorn.Config(
+        "render2go_servico.api:criar_app",
+        factory=True,
+        host=host,
+        port=porta,
+        workers=max(1, workers),
+        proxy_headers=False,
+        server_header=False,
+        timeout_keep_alive=30,
+    )
+    servidor = uvicorn.Server(config)
+    sock = socket_da_api(host, porta)
+    try:
+        if config.workers > 1:
+            Multiprocess(config, target=servidor.run, sockets=[sock]).run()
+        else:
+            servidor.run(sockets=[sock])
+    except KeyboardInterrupt:
+        pass
+    # um processo só e a subida falhou (variável faltando): sai com erro, e o contêiner reinicia
+    return 3 if config.workers == 1 and not servidor.started else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="render2go-servico", description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -152,22 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
 
     if a.cmd == "api":
-        import uvicorn
-
-        # vários processos (--workers): o uvicorn cria um app por processo pela fábrica. O Caddy é o único
-        # que fala com a API e sempre manda o IP real em X-Render2Go-IP (proxy_headers desligado: o
-        # X-Forwarded-For de fora não vale). Sem o cabeçalho "server: uvicorn" nas respostas.
-        uvicorn.run(
-            "render2go_servico.api:criar_app",
-            factory=True,
-            host=a.host,
-            port=a.porta,
-            workers=max(1, a.workers),
-            proxy_headers=False,
-            server_header=False,
-            timeout_keep_alive=30,
-        )
-        return 0
+        return api(a.host, a.porta, a.workers)
     if a.cmd == "totp-novo":
         from render2go_servico.contas import novo_segredo_totp, uri_totp
 

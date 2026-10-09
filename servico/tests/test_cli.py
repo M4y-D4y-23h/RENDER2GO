@@ -98,3 +98,23 @@ def test_balance_top_up_and_client_list_from_the_command_line(banco, capsys, mon
     assert cli.main(["clientes"]) == 0
     linhas = {linha.split()[0]: linha for linha in capsys.readouterr().out.splitlines()}
     assert "R$ 15,00" in linhas[cid] and "Loja" in linhas[cid] and "R$ 0,00" in linhas[teste]
+
+
+def test_api_socket_turns_off_nagle_for_every_accepted_connection():
+    """Com vários processos, o socket do uvicorn (protocolo 0) deixava o Nagle ligado nas conexões
+    aceitas, e cada resposta numa conexão reaproveitada pelo Caddy esperava ~40 ms (docs/13, seção 4)."""
+    import socket
+
+    from render2go_servico.cli import socket_da_api
+
+    escuta = socket_da_api("127.0.0.1", 0)
+    try:
+        assert escuta.proto == socket.IPPROTO_TCP
+        assert escuta.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY) == 1
+        escuta.listen(1)
+        with socket.create_connection(escuta.getsockname(), timeout=5):
+            aceita, _ = escuta.accept()
+            with aceita:
+                assert aceita.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY) == 1  # herdado
+    finally:
+        escuta.close()
