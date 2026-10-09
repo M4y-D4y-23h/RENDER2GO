@@ -910,6 +910,24 @@ progress::-moz-progress-bar {
   background: rgb(26 24 48 / 0.35);
 }
 
+/* foto menor que o vídeo (vai ser ampliada): aviso na própria miniatura, sem bloquear o envio */
+.miniatura.pequena {
+  border: 2px solid var(--cor-alerta-borda);
+}
+
+.miniatura .baixa {
+  position: absolute;
+  left: 0.25rem;
+  bottom: 0.25rem;
+  padding: 0 var(--esp-1);
+  border-radius: var(--raio-sm);
+  background: var(--cor-alerta-fundo);
+  color: var(--cor-alerta);
+  font-size: var(--texto-xs);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
 .miniatura.mais {
   display: grid;
   place-items: center;

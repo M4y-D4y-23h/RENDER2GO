@@ -1,4 +1,4 @@
-# Fidelidade do compilador: resultados (05/10/2026)
+# Fidelidade do compilador: resultados (05/10/2026; I2V v6 em 09/10/2026)
 
 Casos: [`cases.v1.json`](cases.v1.json), todos SFW. São 24 casos de I2V e 12 de T2V que contam para a nota, mais 3 informativos da regra `REFUSED`, com 3 seeds por caso. Limites fixados **antes** da primeira rodada: 85% dos casos passando em todos os critérios, 100% do texto entre aspas preservado e 95% sem invenção.
 
@@ -49,3 +49,36 @@ python tools/eval_compiler.py --ollama http://127.0.0.1:11434 \
   --version i2v=3 --version i2v=4 --version i2v=5 \
   --model huihui_ai/qwen2.5-abliterate:7b --out saida/fidelidade
 ```
+
+## Rodada de 09/10/2026: I2V v6 (serviço)
+
+**Por quê:** no teste gratuito de 08/10, o pedido "crie um vídeo de apresentação desses carros pra cada uma dessas fotos" foi traduzido ao pé da letra, no plural, e 2 dos 5 vídeos trocaram de carro no meio. O texto do cliente vale para cada foto, uma de cada vez, e o v5 não sabia disso.
+
+**O que a v6 acrescenta à v5** ([`compiler-i2v.v6.txt`](../../prompts/compiler-i2v.v6.txt)):
+- uma foto, uma cena: ordens ao serviço ("crie um vídeo", "pra cada foto", "para o Instagram") saem, e as palavras video, photo, presentation, cut e transition nunca aparecem;
+- o sujeito principal vai no singular ("desses carros" = "the car");
+- pedido sem ação ("deixe bonito") vira movimento suave de luz sobre o produto, com a câmera parada;
+- tudo em inglês; a linha `continuidade` (presets v3) entra na lista das linhas fixas.
+
+**Casos:** [`cases.v2.json`](cases.v2.json) = os 39 da v1, sem mudar nenhum, mais 6 `i2v-servico-*` (ordem ao serviço, pedido leigo, plural, pedido detalhado, "em cada foto", plural com ação), com os presets do estilo Livre. Nenhum caso repete as palavras dos exemplos do prompt. Limites iguais. CPU, Ollama 0.35.1, 7B, seeds 1–3.
+
+| Prompt | Todos os casos | Sem o limite de palavras | Casos da v1 | Casos do serviço | Sem invenção | Aspas | Mediana |
+|---|---|---|---|---|---|---|---|
+| I2V v5 | 42% | 59% | 49% | 17% | 83% | 100% | 6,8 s |
+| **I2V v6** | **66%** | **74%** | **65%** | **67%** | **94%** | 100% | 5,2 s |
+
+Relatórios: [`relatorios/2026-10-09-cpu-i2v5-casos-v2-7b.md`](relatorios/2026-10-09-cpu-i2v5-casos-v2-7b.md) e [`relatorios/2026-10-09-cpu-i2v6-7b.md`](relatorios/2026-10-09-cpu-i2v6-7b.md).
+
+**Como chegou na v6 final (três rodadas, todas registradas aqui):**
+1. O 1º rascunho mandava "The camera slowly pushes in." no pedido sem ação. O 7B passou a escrever isso em quase todo pedido, inclusive com ação, e às vezes junto com "Static camera.": casos que a v5 acertava (câmera parada, de frente, corpo inteiro) caíram. A aproximação saiu do prompt.
+2. O código agora remove "Static camera." quando o próprio LLM descreve a câmera se movendo (`compiler.drop_contradictory_static_camera`; só quando a câmera é o sujeito da frase). A v5 de referência rodou antes dessa regra.
+3. Os exemplos das regras usam palavras que não estão nos casos (sapatos, bolsas, lojas, vitrine).
+
+**O que ainda falha na v6:**
+- "os produtos giram devagar" continua "The products" (0 de 3): o plural com verbo resiste à regra;
+- "faróis" sai como "Faros" (0 de 3 no caso detalhado; a v5 traduzia);
+- 1 das 18 saídas do serviço escreveu "She" num pedido leigo, sem pessoa no pedido;
+- ainda abaixo do limite de 85% de todos os casos, como todas as versões medidas.
+
+**Decisão:** **I2V v6 em produção** (`compiler.PROFILES`), por ganhar em todos os recortes medidos. A conferência do vídeo inteiro (`conferencia.py`) continua sendo a rede de segurança para vídeo que troca de produto, independente do texto.
+

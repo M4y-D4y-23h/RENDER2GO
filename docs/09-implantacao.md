@@ -2,7 +2,25 @@
 
 Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as fotos pela página, o aprovador libera, os pods renderizam e o cliente baixa os vídeos.
 
-## 0. Atualização de 09/10/2026: pré-pago, preços por segundo e teste com 5 fotos
+## 0. Atualização de 09/10/2026 (2): qualidade dos vídeos, pedidos leigos e relatório de GPUs
+
+No servidor, **sem pedido gerando** (reiniciar o orquestrador desliga os pods ligados):
+
+```bash
+cd ~/GPU2GO && git pull
+cd servico/implantacao
+docker compose up -d --build
+docker compose ps --format "table {{.Service}}\t{{.Status}}"
+```
+
+- **O que muda:**
+  - **Vídeo que troca de produto no meio não chega ao cliente.** O worker confere a continuidade do vídeo inteiro (cor do centro de cada quadro); corte brusco ou mudança de cor reprova, e o vídeo é refeito com outra seed. Se não sair em 3 tentativas, ele falha e, no pré-pago, volta para o saldo (seção 5.1.9).
+  - **Tradutor v6 e termos de cena única** em todos os estilos: o texto vale para cada foto; "crie um vídeo desses carros pra cada foto" vira a cena de um carro; pedido leigo vira movimento suave.
+  - **Página do cliente:** aviso de foto pequena (a foto vai ser ampliada) e exemplos de pedido simples e detalhado.
+  - **`/aprovar`, seção "GPUs":** cada pod que subiu, com tempo ligado, vídeos e custo estimado (seção 5.1.8).
+- **Recomendado, se ainda não fez:** `RENDER2GO_AGRUPAR_TESTE_MIN=0` no `.env` (teste gratuito sem os 10 min de espera para juntar testes; seção 5.1) e saldo no RunPod (abaixo de ~US$ 1,60 o orquestrador não liga pods).
+
+## 0.0 Atualização de 09/10/2026 (1): pré-pago, preços por segundo e teste com 5 fotos
 
 No servidor:
 
@@ -25,7 +43,7 @@ docker compose exec api render2go-servico saldo cli_xxxxxxxxxxxxxxxx 50 --descri
   - **Recarga:** o cliente paga por fora (Pix) e você lança em `/aprovar`, seção "Clientes e saldo", ou pelo terminal (seção 5.1.7). Ainda não há pagamento automático.
 - **Atenção:** um cliente do plano pago com saldo zero não consegue mais pedir. Lance o saldo dos clientes atuais logo depois de atualizar.
 
-## 0.0 Atualização de 08/10/2026 (noite): fila, previsão, subida, GPU e limpeza do histórico (já feita)
+## 0.0.1 Atualização de 08/10/2026 (noite): fila, previsão, subida, GPU e limpeza do histórico (já feita)
 
 No servidor:
 
@@ -275,7 +293,7 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **Sempre:** um ponto pulsando e "Atualizado às HH:MM:SS". A página se atualiza sozinha a cada 10 s. Nenhuma etapa interna aparece.
 - **Vídeos prontos:** "Assistir" abre o vídeo na própria página (com "Abrir em outra aba" e "Baixar" ao lado); "Baixar" também aparece em cada vídeo da lista.
 - **Antes de enviar:** o cliente vê as miniaturas das fotos escolhidas (pode tirar uma por uma), um exemplo de texto para o estilo escolhido e o envio em bytes e porcentagem, com um ✓ em cada foto que terminou de subir. Fechar a página no meio do envio pede confirmação.
-- **Estilo "Livre (descreva o que quiser)":** o primeiro da lista, para pedidos que não se encaixam nos outros. Ele usa só ritmo e estilo naturais, e o texto do cliente decide o movimento (`worker/presets/receitas.v2.json`). Foto com pessoa continua exigindo a autorização, e o `/aprovar` avisa.
+- **Estilo "Livre (descreva o que quiser)":** o primeiro da lista, para pedidos que não se encaixam nos outros. Ele usa só ritmo e estilo naturais, e o texto do cliente decide o movimento (`worker/presets/receitas.v3.json`). Foto com pessoa continua exigindo a autorização, e o `/aprovar` avisa.
 - **Modelo de geração:** a página mostra os modelos oferecidos (hoje só o Wan 2.2) e o pedido guarda qual foi usado. Para acrescentar um modelo, veja `servico/src/render2go_servico/modelos.py`. O worker recusa modelo que não conhece.
 
 ## 5.1.4 Aviso de cookies
@@ -327,6 +345,25 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
   ```
 - **Extrato:** botão "Baixar" na tabela "Clientes e saldo" (JSON com todos os movimentos). O extrato é registro financeiro: o `apagar-historico` não o apaga.
 - **Teste gratuito e plano interno** não usam saldo.
+
+## 5.1.8 Relatório de GPUs (`/aprovar`, seção "GPUs")
+
+- **Uma linha por GPU (pod) que o orquestrador ligou:** quando ligou, id do pod no RunPod (`pod-…`), GPU, datacenter, preço por hora, tempo até o 1º vídeo, tempo ligado, vídeos entregues (entre parênteses, os que estão gerando), vídeos que falharam, pedidos atendidos, uso da GPU (tempo gerando ÷ tempo ligado), custo estimado e situação ("ligada", "desligada: fila vazia", "falhou na subida: não subiu").
+- **Totais do período** (24 h, 7, 30 ou 90 dias): GPUs ligadas, tempo ligado, custo estimado, vídeos entregues, custo por vídeo e falhas. "Baixar relatório" salva tudo em JSON.
+- **Como o custo é calculado:** preço por hora × tempo ligado, da criação do pod pelo RunPod até o encerramento. O pod que falha na instalação também aparece, porque também é cobrado. Um asterisco marca o tempo estimado: o orquestrador parou sem registrar o desligamento (o desligamento automático encerra o pod em no máximo 2 h) ou a GPU não informou o preço.
+- **Confira com a fatura do RunPod** de vez em quando: o relatório é uma estimativa e não inclui armazenamento nem taxas.
+- **Pods de antes de 09/10** aparecem sem datacenter e com o desligamento estimado (fim da fila).
+- **A limpeza do histórico** (`apagar-historico`) apaga também estes registros.
+
+## 5.1.9 Conferência automática dos vídeos
+
+- **1º quadro:** o vídeo começa na foto certa (similaridade ≥ 0,9).
+- **Continuidade (desde 09/10):** a cor média do centro de cada quadro não pode se afastar mais de 40 da do 1º quadro (deriva) nem pular mais de 12 de um quadro para o seguinte (salto). Pega o corte para outro produto e a fusão em outro produto de outra cor. Não pega a troca por um produto da mesma cor.
+- **Vídeo reprovado:** não é enviado; volta para a fila com outra seed. Depois de 3 tentativas, o vídeo falha (no pré-pago, volta para o saldo). O motivo fica no job (`erro`), e as medidas em `deriva_cor` e `salto_cor`, para calibrar os limites:
+  ```bash
+  docker compose exec postgres psql -U gpu2go gpu2go -c "SELECT arquivo, status, tentativas, round(deriva_cor::numeric, 1) AS deriva, round(salto_cor::numeric, 1) AS salto, erro FROM jobs WHERE tipo = 'render' ORDER BY atualizado DESC LIMIT 20"
+  ```
+- **A folha de conferência** (foto, início, meio e fim de cada vídeo) continua no armazenamento, para revisar um lote em minutos.
 
 ## 5.2 O que fica guardado
 

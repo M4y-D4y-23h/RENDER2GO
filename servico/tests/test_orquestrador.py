@@ -143,6 +143,24 @@ def test_pods_follow_the_queue_and_shut_down_when_the_worker_ends(orq, banco):
         linhas = c.all("SELECT worker, estado, pronto_em FROM geradores ORDER BY worker")
     assert [(x["worker"], x["estado"]) for x in linhas] == [("pod-p1", "encerrado"), ("pod-p2", "encerrado")]
     assert all(x["pronto_em"] for x in linhas)
+    # relatório de GPUs: criação e desligamento registrados, com preço e tempo ligado
+    rel = banco.relatorio_geradores(0)
+    assert rel["totais"]["pods"] == 2 and rel["totais"]["ligados_agora"] == 0
+    for g in rel["geradores"]:
+        assert g["usd_h"] == 2.0 and g["desligado_em"] and not g["ligado_estimado"]
+        assert g["custo_usd"] == pytest.approx(2.0 * g["ligado_s"] / 3600, abs=1e-4)
+
+
+def test_a_pod_that_fails_installation_still_shows_its_id_and_cost(orq, banco):
+    _lote(banco, 2, plano="pago")
+    o = orq()
+    o.remoto.instalar = "echo FALHOU instalação de teste > {raiz}/estado"
+    assert o.ciclo()["subindo"] == 1
+    assert _esperar(lambda: o.subindo == 0)
+    assert o.provedor.encerrados == ["p1"] and not o.ativos
+    (g,) = banco.relatorio_geradores(0)["geradores"]
+    assert (g["pod"], g["estado"], g["motivo"], g["usd_h"]) == ("pod-p1", "falhou", "não subiu", 2.0)
+    assert g["desligado_em"] and g["ligado_s"] > 0 and g["custo_usd"] is not None and g["videos_ok"] == 0
 
 
 def test_services_and_worker_start_while_models_still_download(orq, banco, tmp_path):

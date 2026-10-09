@@ -113,8 +113,9 @@ Todos em `servico/web/src/css/componentes.css`, usados pelas três páginas:
 | Aviso | `.aviso` + `info`, `ok`, `erro`, `alerta` | Sempre com ícone e texto |
 | Selo de estado | `.selo.estado-<status>`, `.selo.pessoas` | Cores dos estados (seção 1.3) |
 | Previsão e progresso | `.previsao`, `.pulso`, `progress`, `.progresso-texto` | Barra anil → urucum |
-| Fotos | `.soltar`, `.previa`, `.miniatura` | Remover por foto; ✓ quando a foto termina de subir |
-| Sugestão | `.sugestao` | Exemplo de texto do estilo escolhido |
+| Fotos | `.soltar`, `.previa`, `.miniatura` (+ `.pequena`, `.baixa`) | Remover por foto; ✓ quando a foto termina de subir; selo "baixa resolução" e aviso `#aviso-fotos` quando a foto vai ser ampliada 1,5× ou mais |
+| Sugestão e exemplos | `.sugestao`, `.exemplos-pedido` | Exemplo do estilo escolhido; exemplos simples e detalhados num `<details>` |
+| Totais do relatório | `.resumo-gpus` (`<dl>`) | Números do período na seção "GPUs" do `/aprovar` |
 | Vídeos e player | `.videos`, `.video`, `<dialog>` | Assistir na página, abrir em outra aba, baixar |
 | Confirmação | `dialog.confirmacao` | No lugar do `confirm()` do navegador |
 | Tabela | `.tabela` | Rola dentro da caixa; `caption` e `scope` |

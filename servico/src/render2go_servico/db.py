@@ -70,7 +70,7 @@ ESQUEMA = [
         foto_id TEXT REFERENCES fotos(id), variacao INTEGER, seed BIGINT, arquivo TEXT,
         status TEXT NOT NULL, tentativas INTEGER NOT NULL DEFAULT 0, lease_ate DOUBLE PRECISION,
         worker TEXT, segundos DOUBLE PRECISION, aviso TEXT, erro TEXT,
-        similaridade DOUBLE PRECISION, bytes_video BIGINT,
+        similaridade DOUBLE PRECISION, bytes_video BIGINT, deriva_cor DOUBLE PRECISION, salto_cor DOUBLE PRECISION,
         criado DOUBLE PRECISION NOT NULL, atualizado DOUBLE PRECISION NOT NULL)""",
     "CREATE INDEX IF NOT EXISTS jobs_fila ON jobs (status, criado)",
     """CREATE TABLE IF NOT EXISTS eventos (
@@ -94,7 +94,8 @@ ESQUEMA = [
     """CREATE TABLE IF NOT EXISTS geradores (
         id TEXT PRIMARY KEY, worker TEXT, gpu TEXT, usd_h DOUBLE PRECISION, estado TEXT NOT NULL,
         criado DOUBLE PRECISION NOT NULL, pronto_em DOUBLE PRECISION, primeiro_video_em DOUBLE PRECISION,
-        encerrado_em DOUBLE PRECISION, motivo TEXT)""",
+        encerrado_em DOUBLE PRECISION, motivo TEXT, datacentro TEXT, pod_criado_em DOUBLE PRECISION,
+        desligado_em DOUBLE PRECISION)""",
     # saldo pré-pago: um movimento por recarga, ajuste, cobrança de pedido ou estorno (centavos de real).
     # Sem chave estrangeira para lotes e jobs: o extrato fica depois da limpeza do histórico.
     """CREATE TABLE IF NOT EXISTS movimentos (
@@ -126,6 +127,11 @@ COLUNAS_NOVAS = [
     ("lotes", "impressao", "TEXT"),  # resumo dos sinais do navegador (acha o mesmo navegador sem o identificador)
     ("consentimentos", "sinais", "TEXT"),  # sinais do navegador no momento da declaração (JSON)
     ("lotes", "preco_video", "BIGINT"),  # centavos por vídeo do pré-pago (NULL: teste ou interno)
+    ("jobs", "deriva_cor", "DOUBLE PRECISION"),  # continuidade do vídeo (render2go_worker.conferencia)
+    ("jobs", "salto_cor", "DOUBLE PRECISION"),
+    ("geradores", "datacentro", "TEXT"),  # relatório de GPUs no /aprovar
+    ("geradores", "pod_criado_em", "DOUBLE PRECISION"),  # o RunPod criou o pod (começa a cobrança)
+    ("geradores", "desligado_em", "DOUBLE PRECISION"),  # o pod foi encerrado (fim da cobrança)
 ]
 TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno")
 RESOLUCAO = {"rapida": "480p", "alta": "720p"}  # qualidade do pedido → resolução (descrição no extrato)
@@ -768,6 +774,107 @@ class Banco:
             )
         return gid
 
+    def gerador_criado(
+        self, gid: str, worker: str, gpu: str | None, usd_h: float | None, datacentro: str | None = None
+    ) -> None:
+        """O RunPod criou o pod: id, GPU, preço e datacenter, antes da instalação (que pode falhar)."""
+        with self.tx() as c:
+            c.run(
+                "UPDATE geradores SET worker = ?, gpu = ?, usd_h = ?, datacentro = ?, pod_criado_em = ? WHERE id = ?",
+                (worker, gpu, usd_h, datacentro, time.time(), gid),
+            )
+
+    def gerador_desligado(self, gid: str) -> None:
+        """O pod foi encerrado no RunPod (fim da cobrança)."""
+        with self.tx() as c:
+            c.run(
+                "UPDATE geradores SET desligado_em = ? WHERE id = ? AND desligado_em IS NULL",
+                (time.time(), gid),
+            )
+
+    def relatorio_geradores(self, desde: float, limite: int = 200) -> dict[str, Any]:
+        """Relatório de cada pod para o /aprovar: identificação, horários, vídeos e custo estimado.
+
+        Tempo ligado: da criação do pod (ou da decisão de subir, nos registros antigos) até o
+        desligamento; sem o desligamento registrado (orquestrador que caiu), até o fim da fila,
+        marcado como estimado. Custo = preço por hora × tempo ligado (o RunPod cobra por tempo)."""
+        agora = time.time()
+        por_worker = (
+            "SELECT {expr} FROM jobs j WHERE j.worker = g.worker AND g.worker IS NOT NULL AND j.tipo = '{tipo}'{extra}"
+        )
+        campos = {
+            "videos_ok": por_worker.format(expr="COUNT(*)", tipo="render", extra=" AND j.status = 'ok'"),
+            "videos_erro": por_worker.format(expr="COUNT(*)", tipo="render", extra=" AND j.status = 'erro'"),
+            "videos_andamento": por_worker.format(
+                expr="COUNT(*)", tipo="render", extra=" AND j.status = 'em_andamento'"
+            ),
+            "traducoes": por_worker.format(expr="COUNT(*)", tipo="compilar", extra=" AND j.status = 'ok'"),
+            "lotes": por_worker.format(expr="COUNT(DISTINCT j.lote_id)", tipo="render", extra=""),
+            "segundos_render": por_worker.format(
+                expr="COALESCE(SUM(j.segundos), 0)", tipo="render", extra=" AND j.status = 'ok'"
+            ),
+        }
+        sub = ", ".join(f"({q}) AS {nome}" for nome, q in campos.items())
+        with self.tx() as c:
+            linhas = c.all(
+                f"SELECT g.*, {sub} FROM geradores g WHERE g.criado >= ? ORDER BY g.criado DESC LIMIT ?",
+                (desde, limite),
+            )
+        geradores = []
+        for g in linhas:
+            inicio = float(g["pod_criado_em"] or g["criado"])
+            ativo = g["estado"] in ("subindo", "pronto")
+            fim = g["desligado_em"] or g["encerrado_em"]
+            estimado = not ativo and g["desligado_em"] is None
+            segundos = max(0.0, (agora if ativo or fim is None else float(fim)) - inicio)
+            sem_pod = g["pod_criado_em"] is None and g["pronto_em"] is None  # o RunPod nem criou o pod
+            custo = None if g["usd_h"] is None else round(float(g["usd_h"]) * segundos / 3600, 4)
+            subida = None if g["primeiro_video_em"] is None else round(float(g["primeiro_video_em"]) - inicio, 1)
+            geradores.append(
+                {
+                    "id": g["id"],
+                    "pod": g["worker"],
+                    "gpu": g["gpu"],
+                    "datacentro": g["datacentro"],
+                    "usd_h": None if g["usd_h"] is None else float(g["usd_h"]),
+                    "estado": g["estado"],
+                    "motivo": g["motivo"],
+                    "inicio": inicio,
+                    "pronto_em": g["pronto_em"],
+                    "primeiro_video_em": g["primeiro_video_em"],
+                    "fim_fila": g["encerrado_em"],
+                    "desligado_em": g["desligado_em"],
+                    "ligado_s": 0.0 if sem_pod else round(segundos, 1),
+                    "ligado_estimado": estimado,
+                    "subida_s": subida,
+                    "custo_usd": 0.0 if sem_pod else custo,
+                    "videos_ok": int(g["videos_ok"]),
+                    "videos_erro": int(g["videos_erro"]),
+                    "videos_andamento": int(g["videos_andamento"]),
+                    "traducoes": int(g["traducoes"]),
+                    "lotes": int(g["lotes"]),
+                    "segundos_render": round(float(g["segundos_render"]), 1),
+                }
+            )
+        custos = [x["custo_usd"] for x in geradores if x["custo_usd"] is not None]
+        videos = sum(x["videos_ok"] for x in geradores)
+        custo = round(sum(custos), 4)
+        return {
+            "desde": desde,
+            "geradores": geradores,
+            "totais": {
+                "pods": sum(1 for x in geradores if x["pod"]),
+                "falharam": sum(1 for x in geradores if x["estado"] == "falhou"),
+                "ligados_agora": sum(1 for x in geradores if x["estado"] in ("subindo", "pronto")),
+                "horas": round(sum(x["ligado_s"] for x in geradores) / 3600, 3),
+                "custo_usd": custo,
+                "sem_preco": len(geradores) - len(custos),
+                "videos_ok": videos,
+                "videos_erro": sum(x["videos_erro"] for x in geradores),
+                "custo_por_video_usd": round(custo / videos, 4) if videos else None,
+            },
+        }
+
     def gerador_pronto(self, gid: str, worker: str, gpu: str | None, usd_h: float | None) -> None:
         with self.tx() as c:
             c.run(
@@ -986,9 +1093,11 @@ class Banco:
                 raise BancoError("job não está com este worker")
             repetir = status == "erro" and campos.pop("repetir", False) and job["tentativas"] < MAX_TENTATIVAS
             novo = "pendente" if repetir else status
+            # job devolvido à fila com `seed`: a próxima tentativa sai de outra seed
+            seed = campos.get("seed") if repetir and campos.get("seed") is not None else job["seed"]
             c.run(
                 "UPDATE jobs SET status = ?, segundos = ?, aviso = ?, erro = ?, similaridade = ?, bytes_video = ?,"
-                " atualizado = ?, lease_ate = NULL WHERE id = ?",
+                " deriva_cor = ?, salto_cor = ?, seed = ?, atualizado = ?, lease_ate = NULL WHERE id = ?",
                 (
                     novo,
                     campos.get("segundos"),
@@ -996,6 +1105,9 @@ class Banco:
                     campos.get("erro"),
                     campos.get("similaridade"),
                     campos.get("bytes_video"),
+                    campos.get("deriva_cor"),
+                    campos.get("salto_cor"),
+                    seed,
                     agora,
                     job_id,
                 ),

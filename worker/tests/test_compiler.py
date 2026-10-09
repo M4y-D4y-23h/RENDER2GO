@@ -10,7 +10,7 @@ def test_compile_sends_versioned_system_prompt(fake_ollama):
     assert "REFUSED" in req["system"]  # a salvaguarda continua no prompt
     assert req["options"] == {"temperature": 0.3, "num_ctx": 4096}
     assert req["keep_alive"] == 0 and req["stream"] is False
-    assert r.ref == "i2v@5" and r.word_count > 10
+    assert r.ref == "i2v@6" and r.word_count > 10
     assert r.word_range == (15, 60) and r.word_count_ok
 
 
@@ -94,3 +94,24 @@ def test_compile_with_camera_preset_drops_llm_static_camera(fake_ollama):
     assert r.prompt == "The product turns slowly on the table. Slow orbit."
     sem = c.compile_prompt("ação: gira", ollama_url=fake_ollama.url, suffix="Slow orbit.")
     assert "Static camera." in sem.prompt
+
+
+def test_camera_motion_written_by_the_llm_wins_over_its_own_static_camera(fake_ollama):
+    # rodada da v6 (09/10/2026): "The camera slowly pushes in." e "Static camera." na mesma saída
+    d = c.drop_contradictory_static_camera
+    assert d("The car stays in place. The camera slowly pushes in. Static camera.") == (
+        "The car stays in place. The camera slowly pushes in."
+    )
+    assert d("The camera gently orbits the car. The camera remains still.") == (
+        "The camera gently orbits the car."
+    )
+    # quem se move é a pessoa, não a câmera: o "Static camera." fica
+    texto = "She walks away from the camera, moving slowly along the beach. Static camera."
+    assert d(texto) == texto
+    assert d("Steam rises. The camera stays still. Static camera.") == (
+        "Steam rises. The camera stays still. Static camera."
+    )
+    fake_ollama.response = "The bag rotates. The camera slowly pushes in. Static camera."
+    assert c.compile_prompt("ação: gira", ollama_url=fake_ollama.url).prompt == (
+        "The bag rotates. The camera slowly pushes in."
+    )

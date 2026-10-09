@@ -49,6 +49,7 @@ import tarfile
 import threading
 import time
 from argparse import Namespace
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -617,7 +618,13 @@ class Orquestrador:
         with self.lock:
             self._salvar_estado()
 
-    def _subir_pod(self, i: int, deadman_s: int, cedo: bool = False) -> Pod | None:
+    def _subir_pod(
+        self,
+        i: int,
+        deadman_s: int,
+        cedo: bool = False,
+        ao_criar: Callable[[PodInfo], None] | None = None,
+    ) -> Pod | None:
         token = secrets.token_urlsafe(32)
         env = {
             "AGENT_TOKEN": token,
@@ -647,6 +654,11 @@ class Orquestrador:
                 _log(f"pod {i}: o RunPod recusou a criação ({e})")
             return None
         pod = Pod(info, Agente(info.url, info.token), grava_volume=grava, deadman_s=deadman_s)
+        if ao_criar:  # a partir daqui o pod custa: quem chamou registra id, GPU e preço
+            try:
+                ao_criar(info)
+            except Exception as e:  # noqa: BLE001 (registro não derruba a subida)
+                _log(f"AVISO: registro do pod {pod.nome}: {e}")
         if grava:
             with self.lock:
                 self.gravador, self.gravador_pendente = pod, False
@@ -669,13 +681,21 @@ class Orquestrador:
 
     # -- uso pelo orquestrador da fila (servico/orquestrador.py) ----------------------------
 
-    def subir_pod(self, i: int, deadman_s: int, cedo: bool = False) -> Pod | None:
+    def subir_pod(
+        self,
+        i: int,
+        deadman_s: int,
+        cedo: bool = False,
+        ao_criar: Callable[[PodInfo], None] | None = None,
+    ) -> Pod | None:
         """Cria, testa (CUDA, rede, datacenter) e instala um pod; None se não conseguiu.
 
         `cedo`: sobe os serviços (Ollama e ComfyUI) assim que o ambiente fica pronto (estado
         AMBIENTE), enquanto os modelos ainda baixam, e devolve o pod nesse ponto. Quem usa o pod
-        só renderiza depois do estado PRONTO (o worker da fila, com --modelos-prontos)."""
-        return self._subir_pod(i, deadman_s, cedo)
+        só renderiza depois do estado PRONTO (o worker da fila, com --modelos-prontos).
+        `ao_criar(info)`: chamado assim que o RunPod cria o pod, mesmo que a instalação falhe
+        depois (relatório de custo do orquestrador)."""
+        return self._subir_pod(i, deadman_s, cedo, ao_criar)
 
     def encerrar(self, pod: Pod, motivo: str, esperar_espelho: bool = True) -> None:
         """Encerra; se o pod grava o cache (volume/espelho), espera terminar antes (com prazo).

@@ -1,5 +1,5 @@
 // Página do aprovador (/aprovar, só o dono): revisão dos pedidos (ADR 0004), histórico, uso por IP e
-// por dispositivo, mensagens de suporte e cadastro de clientes.
+// por dispositivo, relatório das GPUs, mensagens de suporte e cadastro de clientes.
 import {
   ESTADOS,
   type ItemLista,
@@ -94,6 +94,42 @@ type MensagemSuporte = {
   quando: number;
   enviado: number;
   erro: string | null;
+};
+
+type Gerador = {
+  id: string;
+  pod: string | null;
+  gpu: string | null;
+  datacentro: string | null;
+  usd_h: number | null;
+  estado: string;
+  motivo: string | null;
+  inicio: number;
+  ligado_s: number;
+  ligado_estimado: boolean;
+  subida_s: number | null;
+  custo_usd: number | null;
+  videos_ok: number;
+  videos_erro: number;
+  videos_andamento: number;
+  traducoes: number;
+  lotes: number;
+  segundos_render: number;
+};
+type RelatorioGpus = {
+  desde: number;
+  geradores: Gerador[];
+  totais: {
+    pods: number;
+    falharam: number;
+    ligados_agora: number;
+    horas: number;
+    custo_usd: number;
+    sem_preco: number;
+    videos_ok: number;
+    videos_erro: number;
+    custo_por_video_usd: number | null;
+  };
 };
 
 type Cliente = { id: string; nome: string; plano: string; ativo: number | boolean; criado: number; saldo: number };
@@ -344,6 +380,79 @@ function listaSuporte(msgs: MensagemSuporte[]): ItemLista[] {
   }));
 }
 
+const DOLAR = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 3 });
+const SITUACAO_GPU: Record<string, string> = { subindo: "subindo", pronto: "ligada", encerrado: "desligada", falhou: "falhou na subida" };
+
+function dolares(v: number | null): string {
+  return v == null ? "—" : DOLAR.format(v);
+}
+
+/** 754 → "12 min 34 s"; 4000 → "1 h 07 min". */
+function duracao(s: number | null): string {
+  if (s == null) return "—";
+  const t = Math.round(s);
+  if (t < 60) return `${t} s`;
+  if (t < 3600) return `${Math.floor(t / 60)} min ${String(t % 60).padStart(2, "0")} s`;
+  return `${Math.floor(t / 3600)} h ${String(Math.floor((t % 3600) / 60)).padStart(2, "0")} min`;
+}
+
+function resumoGpus(r: RelatorioGpus): HTMLElement[] {
+  const t = r.totais;
+  const item = (rotulo: string, valor: string) => criar("div", {}, [criar("dt", { textContent: rotulo }), criar("dd", { textContent: valor })]);
+  return [
+    item("GPUs ligadas", `${t.pods}${t.ligados_agora ? ` (${t.ligados_agora} agora)` : ""}`),
+    item("Tempo ligado", duracao(t.horas * 3600)),
+    item("Custo estimado", dolares(t.custo_usd) + (t.sem_preco ? " *" : "")),
+    item("Vídeos entregues", String(t.videos_ok)),
+    item("Custo por vídeo", dolares(t.custo_por_video_usd)),
+    item("Falhas", `${plural(t.falharam, "subida", "subidas")} · ${plural(t.videos_erro, "vídeo", "vídeos")}`),
+  ];
+}
+
+function tabelaGpus(r: RelatorioGpus): HTMLElement {
+  if (!r.geradores.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhuma GPU ligada neste período." });
+  return tabela(
+    [
+      ["Ligou em", false],
+      ["Pod", false],
+      ["GPU", false],
+      ["Datacenter", false],
+      ["US$/h", true],
+      ["Até o 1º vídeo", true],
+      ["Tempo ligado", true],
+      ["Vídeos", true],
+      ["Falhas", true],
+      ["Pedidos", true],
+      ["Uso da GPU", true],
+      ["Custo", true],
+      ["Situação", false],
+    ],
+    r.geradores.map((g) => {
+      const uso = g.ligado_s > 0 ? `${Math.min(100, Math.round((g.segundos_render / g.ligado_s) * 100))}%` : "—";
+      const situacao = [SITUACAO_GPU[g.estado] ?? g.estado, g.motivo && g.estado !== "pronto" ? g.motivo : ""].filter(Boolean).join(": ");
+      return {
+        classe: g.estado === "falhou" ? "sinal" : "",
+        celulas: [
+          tempo(g.inicio),
+          g.pod ?? "—",
+          g.gpu ?? "—",
+          g.datacentro ?? "—",
+          g.usd_h == null ? "—" : g.usd_h.toFixed(2).replace(".", ","),
+          duracao(g.subida_s),
+          duracao(g.ligado_s) + (g.ligado_estimado ? " *" : ""),
+          g.videos_ok + (g.videos_andamento ? ` (+${g.videos_andamento})` : ""),
+          g.videos_erro,
+          g.lotes,
+          uso,
+          dolares(g.custo_usd),
+          situacao,
+        ],
+      };
+    }),
+    "GPUs ligadas no período",
+  );
+}
+
 function tabelaClientes(r: Clientes, token: string, msg: HTMLElement): HTMLElement {
   if (!r.clientes.length) return criar("p", { className: "fraco vazio-tabela", textContent: "Nenhum cliente cadastrado ainda." });
   return tabela(
@@ -394,7 +503,46 @@ function iniciarAprovador(): void {
       : "E-mail não configurado: as mensagens ficam só aqui (veja docs/09, seção de suporte).";
     reconciliar(el("suporte"), listaSuporte(sup.mensagens), () => vazio("Nenhuma mensagem ainda.", "As mensagens enviadas pelo /suporte aparecem aqui.", "mensagem"));
     await listarClientes();
+    await listarGpus();
   };
+
+  // -- GPUs (pods do orquestrador) ---------------------------------------------------------------
+  let dias = 30;
+  let relatorioGpus: RelatorioGpus | null = null;
+  let assinaturaGpus = "";
+  const listarGpus = async () => {
+    const r = await api<RelatorioGpus>(`/api/admin/geradores?dias=${dias}`, token);
+    relatorioGpus = r;
+    // a cada 30 s só o tempo das GPUs ligadas muda: a tabela é refeita, o foco e a rolagem ficam
+    const assinatura = JSON.stringify([dias, r.geradores.map((g) => [g.id, g.estado, g.videos_ok, g.videos_erro, g.videos_andamento, Math.round(g.ligado_s / 60)])]);
+    if (assinatura === assinaturaGpus) return;
+    assinaturaGpus = assinatura;
+    el("resumo-gpus").replaceChildren(...resumoGpus(r));
+    const nota = r.geradores.some((g) => g.ligado_estimado) || r.totais.sem_preco
+      ? criar("p", { className: "fraco", textContent: "* Estimado: o orquestrador parou sem registrar o desligamento (o desligamento automático do pod encerra no máximo 2 h depois) ou a GPU não informou o preço." })
+      : null;
+    el("gpus").replaceChildren(...[tabelaGpus(r), nota].filter((x): x is HTMLElement => !!x));
+    el("n-gpus").textContent = r.totais.ligados_agora ? String(r.totais.ligados_agora) : "";
+  };
+  for (const b of Array.from(el("filtros-gpus").querySelectorAll<HTMLButtonElement>("button"))) {
+    b.addEventListener("click", () => {
+      dias = Number(b.dataset.dias) || 30;
+      for (const o of Array.from(el("filtros-gpus").querySelectorAll<HTMLButtonElement>("button"))) o.setAttribute("aria-pressed", String(o === b));
+      listarGpus().catch((e) => aviso(msg, `Não foi possível carregar as GPUs: ${textoErro(e)}`, "erro"));
+    });
+  }
+  el("baixar-gpus").addEventListener("click", async () => {
+    const botao = el<HTMLButtonElement>("baixar-gpus");
+    ocupado(botao, true);
+    try {
+      await listarGpus();
+      if (relatorioGpus) baixarJson(relatorioGpus, `gpus-${dias}-dias.json`);
+    } catch (e) {
+      aviso(msg, textoErro(e), "erro");
+    } finally {
+      ocupado(botao, false);
+    }
+  });
 
   // -- clientes e saldo (pré-pago) ---------------------------------------------------------------
   const selCliente = el<HTMLSelectElement>("saldo-cliente");

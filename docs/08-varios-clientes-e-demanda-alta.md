@@ -55,9 +55,10 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
 ## 4. Implementado na fase 3 (07/10/2026)
 
 1. **Clientes intercalados na fila:** `db.reivindicar` dá a vez ao cliente com menos vídeos já iniciados nos pedidos em andamento, e lotes pagos passam na frente de testes gratuitos. Desde 08/10/2026 a vez é por **cliente**, não por pedido: o pedido novo de uma conta espera o anterior da mesma conta (antes ele passava na frente).
-2. **Conferência do 1º quadro:**
+2. **Conferência do 1º quadro e da continuidade:**
    - o worker só envia o vídeo que bate com a foto (`render2go_worker/conferencia.py`);
    - a API recusa "ok" sem a similaridade ou sem o vídeo no armazenamento, apaga o vídeo e repete o job.
+   - **Desde 09/10/2026, o vídeo inteiro:** no teste de 08/10, 2 de 5 vídeos começaram na foto e trocaram de carro no meio (corte e fusão). O worker mede a cor média do centro de cada quadro: deriva para o 1º quadro até 40 e salto entre quadros vizinhos até 12 (calibrado em 39 vídeos: os bons ficaram até 31,5 e 5,8; as trocas deram 54 e 86 de deriva e 16,2 de salto no corte). O vídeo reprovado é refeito com outra seed; a API recusa "ok" sem as medidas. A troca por um produto da mesma cor ainda passa (`docs/09`, seção 5.1.9).
 3. **Pods automáticos pelo tamanho da fila e pod quente:**
    - o orquestrador (`servico/.../orquestrador.py`) usa a mesma regra do `lote_nuvem --pods auto`;
    - o worker sai após 3 min sem jobs, e o pod é encerrado.

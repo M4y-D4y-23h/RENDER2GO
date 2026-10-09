@@ -54,6 +54,11 @@ type Receitas = {
   modelo_padrao?: string;
   receitas: Receita[];
   formatos: string[];
+  // tamanho do vídeo (largura, altura) por formato e qualidade, a regra do formato automático
+  // (largura/altura abaixo da 1ª = vertical, acima da 2ª = horizontal) e a ampliação que vira aviso
+  saida?: Record<string, Record<string, [number, number]>>;
+  proporcao_auto?: [number, number];
+  ampliacao_aviso?: number;
   qualidades: string[];
   limites: { fotos: number; bytes_foto: number; tipos: string[] };
 };
@@ -175,6 +180,22 @@ async function desenharMiniatura(arq: File): Promise<HTMLElement> {
     img.src = url;
     return img;
   }
+}
+
+/** Largura e altura da foto, já com a rotação do celular (EXIF) aplicada; null se não abrir. */
+function medirFoto(arq: File): Promise<[number, number] | null> {
+  return new Promise((ok) => {
+    const url = URL.createObjectURL(arq);
+    const img = new Image();
+    img.decoding = "async";
+    const fim = (v: [number, number] | null) => {
+      URL.revokeObjectURL(url);
+      ok(v);
+    };
+    img.addEventListener("load", () => fim(img.naturalWidth && img.naturalHeight ? [img.naturalWidth, img.naturalHeight] : null), { once: true });
+    img.addEventListener("error", () => fim(null), { once: true });
+    img.src = url;
+  });
 }
 
 // arrastar uma pasta: percorre as subpastas (webkitGetAsEntry), guardando o caminho de cada foto
@@ -320,6 +341,8 @@ function iniciarCliente(): void {
   let geracaoPrevia = 0;
   const estados = new Map<string, string>(); // estado anterior de cada pedido (anúncio de mudanças)
   let primeiraLista = true;
+  const dimensoes = new Map<string, [number, number] | null>(); // caminho → largura e altura da foto
+  let medindo = false;
   const atualizarContador = contador(prompt, el("prompt-contador"));
   const selDuracao = el<HTMLSelectElement>("duracao");
   const selQualidade = el<HTMLSelectElement>("qualidade");
@@ -457,6 +480,72 @@ function iniciarCliente(): void {
     return texto;
   };
 
+  // -- foto pequena: o vídeo amplia a foto e pode sair borrado ou com detalhes diferentes ------------
+  /** Tamanho do vídeo desta foto e quanto ela vai ser ampliada (formato automático, qualidade escolhida). */
+  const ampliacao = (d: [number, number]): { amp: number; w: number; h: number } | null => {
+    const auto = receitas?.proporcao_auto;
+    if (!receitas?.saida || !auto) return null;
+    const prop = d[0] / d[1];
+    const formato = prop < auto[0] ? "vertical" : prop > auto[1] ? "horizontal" : "quadrado";
+    const tam = receitas.saida[formato]?.[selQualidade.value];
+    return tam ? { amp: Math.max(tam[0] / d[0], tam[1] / d[1]), w: tam[0], h: tam[1] } : null;
+  };
+
+  const atualizarAvisoFotos = () => {
+    const limite = receitas?.ampliacao_aviso ?? 1.5;
+    const pequenas: { nome: string; texto: string }[] = [];
+    let video = "";
+    for (const chave of arquivos.keys()) {
+      const d = dimensoes.get(chave);
+      const a = d ? ampliacao(d) : null;
+      const pequena = !!d && !!a && a.amp >= limite;
+      const nome = chave.split("/").pop() ?? chave;
+      if (pequena && d && a) {
+        pequenas.push({ nome, texto: `${nome} (${d[0]}×${d[1]})` });
+        video ||= `${a.w}×${a.h}`;
+      }
+      const li = miniaturas.get(chave);
+      if (!li) continue;
+      li.classList.toggle("pequena", pequena);
+      li.setAttribute("aria-label", pequena ? `${nome}, baixa resolução` : nome);
+      const selo = li.querySelector(".baixa");
+      if (pequena && !selo) li.append(criar("span", { className: "baixa", textContent: "baixa resolução", attrs: { "aria-hidden": "true" } }));
+      else if (!pequena) selo?.remove();
+    }
+    const caixa = el("aviso-fotos");
+    if (!pequenas.length) {
+      aviso(caixa, "");
+      return;
+    }
+    const lista = pequenas.slice(0, 3).map((x) => x.texto).join(", ") + (pequenas.length > 3 ? ` e mais ${pequenas.length - 3}` : "");
+    aviso(
+      caixa,
+      [
+        criar("p", {}, [criar("strong", { textContent: `${plural(pequenas.length, "foto tem", "fotos têm")} baixa resolução para o vídeo de ${video}: ${lista}.` })]),
+        criar("p", {
+          textContent:
+            "Elas vão ser ampliadas, e o vídeo pode sair borrado ou com detalhes diferentes da foto. Se puder, troque pela foto original (do celular ou da câmera). Você pode enviar assim mesmo.",
+        }),
+      ],
+      "alerta",
+    );
+  };
+
+  /** Mede as fotos novas uma por vez, sem travar a página, e atualiza o aviso. */
+  const medirFotos = async () => {
+    if (medindo) return;
+    medindo = true;
+    try {
+      for (let chave = [...arquivos.keys()].find((k) => !dimensoes.has(k)); chave; chave = [...arquivos.keys()].find((k) => !dimensoes.has(k))) {
+        const arq = arquivos.get(chave);
+        dimensoes.set(chave, arq ? await medirFoto(arq) : null);
+        atualizarAvisoFotos();
+      }
+    } finally {
+      medindo = false;
+    }
+  };
+
   const desenharPrevia = async () => {
     const minha = ++geracaoPrevia;
     const chaves = [...arquivos.keys()];
@@ -486,6 +575,7 @@ function iniciarCliente(): void {
     if (resto > 0) itens.push(criar("li", { className: "miniatura mais", textContent: `+${resto}` }));
     previa.replaceChildren(...itens);
     previa.hidden = !chaves.length;
+    atualizarAvisoFotos();
     // desenha uma por vez, sem travar a página; uma seleção nova cancela a anterior
     for (const chave of chaves.slice(0, MAX_PREVIA)) {
       if (minha !== geracaoPrevia) return;
@@ -517,6 +607,7 @@ function iniciarCliente(): void {
     marcarErro(el("fotos"), false);
     anunciar(atualizarContagem(ignorados, excedentes));
     void desenharPrevia();
+    void medirFotos();
   };
   const doInput = (ev: Event) => {
     const entrada = ev.target as HTMLInputElement;
@@ -581,7 +672,10 @@ function iniciarCliente(): void {
   };
   selReceita.addEventListener("change", aplicarReceita);
   selDuracao.addEventListener("change", atualizarCusto);
-  selQualidade.addEventListener("change", atualizarCusto);
+  selQualidade.addEventListener("change", () => {
+    atualizarCusto();
+    atualizarAvisoFotos(); // em 720p a mesma foto pode precisar de mais ampliação
+  });
   el("usar-sugestao").addEventListener("click", () => {
     prompt.value = el("sugestao-texto").textContent ?? "";
     atualizarContador();

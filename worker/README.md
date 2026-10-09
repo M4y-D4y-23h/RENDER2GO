@@ -120,7 +120,7 @@ python tools/submit_workflow.py \
 ```
 
 - `--prompt-en "..."` pula o compilador.
-- `--preset camera=parada-corpo-inteiro-costas --preset luz=por-do-sol` (com `--text-pt` só com a ação): os termos em inglês do preset são anexados ao prompt pelo código, palavra por palavra. A lista está em [`presets/presets.v2.json`](presets/presets.v2.json) (a v2 é a v1 inteira, com os mesmos termos, mais opções para divulgação: órbita e aproximação de produto, avanço pelo ambiente, subida, panorâmica, luz aconchegante, estilo comercial).
+- `--preset camera=parada-corpo-inteiro-costas --preset luz=por-do-sol` (com `--text-pt` só com a ação): os termos em inglês do preset são anexados ao prompt pelo código, palavra por palavra. A lista está em [`presets/presets.v3.json`](presets/presets.v3.json) (a v2 é a v1 inteira, com os mesmos termos, mais opções para divulgação: órbita e aproximação de produto, avanço pelo ambiente, subida, panorâmica, luz aconchegante, estilo comercial; a v3 é a v2 inteira mais a categoria `continuidade`, só no I2V: `cena-unica`, ligada em todas as receitas v3, pede uma cena contínua com o mesmo produto da foto do início ao fim).
 - `--continue-from clipe1.mp4` no lugar de `--image`: o último quadro do clipe vira a imagem de entrada (ver "Continuar vídeo").
 - Templates sem imagem (T2V) usam o perfil `t2v` do compilador automaticamente.
 - Parâmetros fora do contrato (`workflows/*.contract.json`) falham antes de qualquer trabalho: dimensões múltiplas de 16, área até 921.600 px, duração inteira de 3 a 7 s (16·d + 1 frames), seed sorteada se omitida.
@@ -131,7 +131,7 @@ python tools/submit_workflow.py \
 
 ## Compilador e testes de fidelidade
 
-Os system prompts ficam em [`prompts/`](prompts/) com versão no nome (`compiler-i2v.v5.txt`); a versão em produção de cada perfil está em `render2go_worker/compiler.py`. Mudança de prompt = arquivo novo + rodada de fidelidade.
+Os system prompts ficam em [`prompts/`](prompts/) com versão no nome (`compiler-i2v.v6.txt`); a versão em produção de cada perfil está em `render2go_worker/compiler.py`. Mudança de prompt = arquivo novo + rodada de fidelidade. A v6 do I2V (09/10/2026) acrescenta à v5 as regras do serviço: o texto vale para cada foto, ordens ao serviço ("crie um vídeo", "pra cada foto") saem, plural que só quer dizer "as fotos" vira um sujeito no singular, e pedido sem ação vira movimento suave de luz sobre o produto, com a câmera parada.
 
 ```bash
 python tools/eval_compiler.py --ollama http://127.0.0.1:11434 \
@@ -139,7 +139,7 @@ python tools/eval_compiler.py --ollama http://127.0.0.1:11434 \
   --version i2v=3 --version i2v=4 --out saida/fidelidade
 ```
 
-- Casos em [`evals/compiler/cases.v1.json`](evals/compiler/cases.v1.json) (só SFW): termos que precisam aparecer, invenções proibidas, ordem das ações, texto entre aspas, faixa de palavras. Os limites (`thresholds`) foram definidos antes da primeira rodada.
+- Casos em [`evals/compiler/cases.v2.json`](evals/compiler/cases.v2.json) (os 39 da v1, iguais, mais 6 do serviço; só SFW): termos que precisam aparecer, invenções proibidas, ordem das ações, texto entre aspas, faixa de palavras. Os limites (`thresholds`) foram definidos antes da primeira rodada.
 - Os casos com `expect_refused` medem a regra `REFUSED` só como informação: o compilador **não** é camada de segurança.
 - Saída fora do inglês (o Qwen às vezes muda para chinês) é refeita com a seed seguinte; na segunda falha, o job falha.
 - Resultados e decisão: [`evals/compiler/RESULTADOS.md`](evals/compiler/RESULTADOS.md). Medições em GPU (I2V, bake-off, turbo): [`evals/gpu-2026-10-05/LEIAME.md`](evals/gpu-2026-10-05/LEIAME.md).
@@ -160,7 +160,7 @@ python tools/video.py concat saida/clipe1.mp4 saida/clipe2.mp4 -o saida/final.mp
 
 Ferramentas do caminho A ([docs/05](../docs/05-analise-de-negocio.md)): vídeos para pequenos negócios a partir das fotos do cliente. Rodam num pod (modo `pod`, ComfyUI e Ollama em `127.0.0.1`), de dentro dele ou por túnel SSH.
 
-**1. Receitas** ([`presets/receitas.v2.json`](presets/receitas.v2.json); a v2 acrescenta `livre`): cada uma fixa os presets, uma ação padrão, o formato e a duração.
+**1. Receitas** ([`presets/receitas.v3.json`](presets/receitas.v3.json); a v2 acrescenta `livre`, a v3 liga a continuidade `cena-unica` em todas): cada uma fixa os presets, uma ação padrão, o formato e a duração.
 
 | Receita | Nicho | Formato padrão |
 |---|---|---|

@@ -115,7 +115,7 @@ def test_i2v_end_to_end(ctx, storage, fake_comfy, fake_ollama, clip):
     assert all(ct == "image/jpeg" and data[:2] == b"\xff\xd8" for ct, data in frames)
     assert res["frames"] == 3 and res["seed"] == 731942055
     assert res["compiled_prompt"].endswith("Static camera.")  # preset anexado pelo código
-    assert res["versions"]["compiler"] == "i2v@5" and res["versions"]["template"] == "i2v_r1v2@1"
+    assert res["versions"]["compiler"] == "i2v@6" and res["versions"]["template"] == "i2v_r1v2@1"
     assert res["worker"]["safety"] == safety.SFW_TESTS
     wf = next(iter(fake_comfy.prompts.values()))
     assert wf["129:86"]["inputs"]["noise_seed"] == 731942055

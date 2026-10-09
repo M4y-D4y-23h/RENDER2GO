@@ -14,7 +14,7 @@
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0e17" media="(prefers-color-scheme: dark)">
 <meta name="format-detection" content="telephone=no">
-<link rel="stylesheet" href="/estatico/estilo.css?v=6234c297ad0e" integrity="sha384-NK3PGNR5kWSmZBKYAxbriIoPHrJME+FZRqTbbgs5JV4Fpr6pm0Ux8esl/3+E5aKZ">
+<link rel="stylesheet" href="/estatico/estilo.css?v=a9e7fbb7e72d" integrity="sha384-zfc3c0SGF6MvfCgkjsc2ldFRkOZJKkNfdeORVaiWvXNpsNpcpSiBMffpfc62XJhi">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -28,7 +28,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/cliente.js?v=79828b53310b" integrity="sha384-JxmMprUgpBxY7S3w3Zlt3V9tR/GqTjBfogIXyKRUUKCGVHWqN0CxOzCjL+Fwe+7h" defer></script>
+<script src="/estatico/cliente.js?v=3caf777574df" integrity="sha384-CGeS1F5FPTM4u7erOei9jpsiljgQYwHaCuL8KIM/tzVrKQYoQlw3jladW2nAJ1uv" defer></script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
 {"@type":"Organization","@id":"https://app.render2go.com/#organizacao","name":"Render2Go","url":"https://app.render2go.com/","logo":"https://app.render2go.com/estatico/icone-512.png?v=d75fd84aa2d1"},
@@ -82,7 +82,7 @@
 <h2 id="titulo-como">Como funciona</h2>
 <ol>
 <li><span><strong>Envie as fotos.</strong> Dezenas de uma vez, do celular ou do computador.</span></li>
-<li><span><strong>Diga o que deve acontecer.</strong> Em português, do seu jeito, como “a câmera se aproxima devagar do produto”.</span></li>
+<li><span><strong>Diga o que deve acontecer.</strong> Em português, do seu jeito, simples (“deixe bonito”) ou detalhado (“a câmera se aproxima devagar do produto”).</span></li>
 <li><span><strong>Baixe os vídeos.</strong> Um vídeo curto por foto, depois de uma revisão rápida do pedido.</span></li>
 </ol>
 </section>
@@ -119,13 +119,14 @@
 <input id="pasta" type="file" multiple webkitdirectory aria-describedby="fotos-dica">
 <label class="botao" for="pasta" id="rotulo-pasta"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>Escolher uma pasta</label>
 </div>
-<p class="dica" id="fotos-dica">JPG, PNG ou WebP, até 50 MB cada. Cada foto vira um vídeo.</p>
+<p class="dica" id="fotos-dica">JPG, PNG ou WebP, até 50 MB cada. Cada foto vira um vídeo. Use a foto original, nítida e grande (não print nem foto baixada de site ou do WhatsApp).</p>
 </div>
 <div class="barra-fotos" id="barra-fotos" hidden>
 <p id="contagem" class="fraco"></p>
 <button type="button" class="botao pequeno" id="limpar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2M6.5 7l.8 12a1 1 0 0 0 1 1h7.4a1 1 0 0 0 1-1l.8-12"/></svg>Limpar</button>
 </div>
 <ul class="previa" id="previa" aria-label="Fotos escolhidas" hidden></ul>
+<div class="aviso alerta" id="aviso-fotos" hidden></div>
 </fieldset>
 <fieldset class="passo">
 <legend>Estilo e descrição</legend>
@@ -135,11 +136,21 @@
 </div>
 <div class="campo">
 <label for="prompt">O que deve acontecer nos vídeos?</label>
-<textarea id="prompt" required minlength="3" maxlength="600" spellcheck="true" autocapitalize="sentences" placeholder="Ex.: a câmera se aproxima devagar do produto" aria-describedby="prompt-dica prompt-contador"></textarea>
+<textarea id="prompt" required minlength="3" maxlength="600" spellcheck="true" autocapitalize="sentences" placeholder="Ex.: a câmera gira devagar em volta do carro" aria-describedby="prompt-dica prompt-contador"></textarea>
 <div class="linha-campo">
-<p class="dica" id="prompt-dica">Escreva em português. O mesmo pedido vale para todas as fotos.</p>
+<p class="dica" id="prompt-dica">Escreva em português, do seu jeito. O texto vale para cada foto, uma de cada vez: descreva o que acontece numa foto só. Pode ser simples ou detalhado.</p>
 <span class="contador" id="prompt-contador">0/600</span>
 </div>
+<details class="exemplos-pedido">
+<summary>Ver exemplos de pedido</summary>
+<ul>
+<li><strong>Simples:</strong> “deixe bonito, com um movimento suave”</li>
+<li><strong>Simples:</strong> “vídeo de apresentação do carro”</li>
+<li><strong>Detalhado:</strong> “a câmera gira devagar em volta do carro e os faróis acendem”</li>
+<li><strong>Detalhado:</strong> “o vapor sobe do prato e a câmera se aproxima devagar”</li>
+</ul>
+<p class="dica">Cada vídeo mostra só o que está na foto, numa cena contínua. Evite pedir troca de produto, cortes ou texto escrito no vídeo.</p>
+</details>
 <div class="sugestao" id="sugestao" hidden>
 <p>Exemplo para este estilo: <q id="sugestao-texto"></q></p>
 <button type="button" class="botao pequeno" id="usar-sugestao"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/></svg>Usar este exemplo</button>

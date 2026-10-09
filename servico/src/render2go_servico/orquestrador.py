@@ -15,7 +15,10 @@ A cada ciclo (RENDER2GO_CICLO_S, padrão 10 s):
    "pod quente" vencido).
 
 Cada pod fica registrado na tabela `geradores` (subindo, pronto, encerrado): a API usa esse estado
-e as subidas medidas para a previsão mostrada ao cliente.
+e as subidas medidas para a previsão mostrada ao cliente, e o /aprovar mostra o relatório de cada
+pod (id no RunPod, GPU, preço, datacenter, horários, vídeos e custo estimado). O id e o preço são
+gravados assim que o RunPod cria o pod, mesmo que a instalação falhe depois; o desligamento, quando
+o pod é de fato encerrado (o gravador pode levar minutos enviando ao espelho depois do fim da fila).
 
 Testes gratuitos em grupo (docs/08): com só testes na fila e nenhum pod ligado, o pod espera
 juntar RENDER2GO_AGRUPAR_TESTE_VIDEOS vídeos (padrão 20) ou o teste mais antigo esperar
@@ -247,8 +250,15 @@ class Orquestrador:
                 self.n += 1
                 i = self.n
             # serviços já durante o download dos modelos: o pedido é traduzido enquanto ele termina
-            pod = self.pods_ln.subir_pod(i, deadman_s, cedo=True)
-            if pod is None:
+            pod = self.pods_ln.subir_pod(
+                i,
+                deadman_s,
+                cedo=True,
+                ao_criar=lambda info: self._registrar(
+                    "gerador_criado", gerador, f"pod-{info.id}", info.gpu, info.usd_h, info.datacentro
+                ),
+            )
+            if pod is None:  # o lote_nuvem já encerrou o pod que não subiu (se chegou a existir)
                 return
             try:
                 pf = self._iniciar_worker(pod, deadman_s)
@@ -262,10 +272,11 @@ class Orquestrador:
             pronto = True
             self._registrar("gerador_pronto", gerador, f"pod-{pod.info.id}", pod.info.gpu, pod.info.usd_h)
         finally:
+            if not pronto:  # registra antes de liberar a vaga: quem vê subindo == 0 vê o registro
+                self._registrar("gerador_fim", gerador, "não subiu", falhou=True)
+                self._registrar("gerador_desligado", gerador)
             with self.lock:
                 self.subindo -= 1
-            if not pronto:
-                self._registrar("gerador_fim", gerador, "não subiu", falhou=True)
 
     def _registrar(self, acao: str, gerador: str | None, *args, **kw) -> None:
         """Registro do pod na tabela geradores (previsão para o cliente): nunca derruba o fluxo."""
@@ -305,6 +316,7 @@ class Orquestrador:
             with self.lock:
                 self.encerrando.pop(pf.pod.info.id, None)
             self._registrar("gerador_fim", pf.gerador, motivo)
+            self._registrar("gerador_desligado", pf.gerador)  # fim da cobrança do pod
 
     def ciclo(self) -> dict:
         self._revisar()
@@ -366,6 +378,7 @@ class Orquestrador:
         for pf in pods:
             self.pods_ln.encerrar(pf.pod, motivo, esperar_espelho=False)
             self._registrar("gerador_fim", pf.gerador, motivo)
+            self._registrar("gerador_desligado", pf.gerador)
         with self.lock:
             self.ativos.clear()
             self.encerrando.clear()

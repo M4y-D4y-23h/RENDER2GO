@@ -27,11 +27,11 @@ DEFAULT_MODEL = "huihui_ai/qwen2.5-abliterate:7b"
 # Escolha das versões em produção: worker/evals/compiler/RESULTADOS.md.
 PROFILES: dict[str, dict] = {
     "i2v": {
-        "version": 5,
+        "version": 6,
         "options": {"temperature": 0.3, "num_ctx": 4096},
         "words": (40, 90),
         # faixa própria de cada versão do prompt (o padrão é "words")
-        "words_by_version": {5: (15, 60)},
+        "words_by_version": {5: (15, 60), 6: (15, 60)},
     },
     "t2v": {
         "version": 3,
@@ -65,10 +65,29 @@ STATIC_CAMERA = re.compile(
 )
 
 
+# Câmera em movimento descrita pelo LLM. Na rodada da v6 (09/10/2026), o 7B escreveu "The camera
+# slowly pushes in." e, na mesma resposta, "Static camera.": com movimento, a frase parada sai.
+# Só com a câmera como sujeito ("the camera slowly pushes in"): "walks toward the camera, moving
+# slowly" é a pessoa que se move.
+CAMERA_MOVING = re.compile(
+    r"\bcamera\s+(?:\w+ly\s+)?(?:push|pull|dolly|dollies|track|orbit|circl|rotat|pan|tilt|zoom|"
+    r"rise|move|moving|approach|follow|glide|sweep|crane)",
+    re.IGNORECASE,
+)
+
+
 def drop_static_camera(text: str) -> str:
     """Remove as frases que dizem que a câmera fica parada."""
     frases = re.split(r"(?<=[.!?])\s+", text.strip())
     return " ".join(f for f in frases if not STATIC_CAMERA.search(f)).strip()
+
+
+def drop_contradictory_static_camera(text: str) -> str:
+    """Com uma frase de câmera em movimento, remove as de câmera parada (contradição do LLM)."""
+    frases = re.split(r"(?<=[.!?])\s+", text.strip())
+    if not any(CAMERA_MOVING.search(f) and not STATIC_CAMERA.search(f) for f in frases):
+        return text.strip()
+    return drop_static_camera(text)
 
 
 @dataclass(frozen=True)
@@ -182,6 +201,8 @@ def compile_prompt(
         compiled = normalize(raw)
         if camera_preset:  # a câmera vem do preset, palavra por palavra
             compiled = drop_static_camera(compiled)
+        else:  # movimento pedido (ou o padrão do pedido leigo) vence o "Static camera." do fim
+            compiled = drop_contradictory_static_camera(compiled)
         if not compiled:
             problem = "o compilador devolveu texto vazio"
         elif NON_ENGLISH.search(compiled):

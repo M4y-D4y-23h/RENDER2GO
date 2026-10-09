@@ -6,8 +6,9 @@ para o armazenamento (URLs assinadas, uma por arquivo). Por job:
 - `compilar`: o pedido do lote vira prompt uma vez (presets + compilador) e vai para a API,
   que passa o filtro C1 de novo antes de liberar os renders;
 - `render`: baixa a foto (só https e hosts de RENDER2GO_ALLOWED_URL_HOSTS), prepara no tamanho do
-  vídeo, renderiza no ComfyUI, **confere o 1º quadro contra a foto** (render2go_worker.conferencia)
-  e só então envia o vídeo e a folha de conferência. A API recusa "ok" sem essa conferência.
+  vídeo, renderiza no ComfyUI, **confere o 1º quadro contra a foto e a continuidade até o fim**
+  (render2go_worker.conferencia) e só então envia o vídeo e a folha de conferência. A API recusa
+  "ok" sem essas medidas; o vídeo que troca de produto no meio é refeito com outra seed.
 
 Um laço por ComfyUI (uma GPU cada). Sem jobs por `--ocioso` segundos (o "pod quente", docs/08),
 o worker sai e o pod se desliga (desligamento automático do lote_nuvem / orquestrador).
@@ -266,10 +267,16 @@ class WorkerFila:
                     jid, "erro", erro=str(res.get("error", code))[:500], repetir=repetir
                 )
                 return True
-            try:  # o vídeo é dessa foto? só envia se for
+            try:  # o vídeo é dessa foto e continua nela até o fim? só envia se for
                 sim = conferencia.confere(prep.path, video)
+                cont = conferencia.continuidade(video)
             except conferencia.ConferenciaError as e:
                 self.api.concluir(jid, "erro", erro=str(e)[:500], repetir=True)
+                return True
+            problema = conferencia.problema_continuidade(**cont)
+            if problema:  # refeito com outra seed (a API troca a seed ao devolver o job)
+                self.api.concluir(jid, "erro", erro=problema, repetir=True, **cont)
+                _log(f"{job['arquivo']} (lote {job['lote']}): {problema}; refazendo")
                 return True
             aviso = prep.aviso
             try:
@@ -289,6 +296,7 @@ class WorkerFila:
                 similaridade=round(sim, 4),
                 bytes_video=video.stat().st_size,
                 aviso=aviso or None,
+                **cont,
             )
         with self.lock:
             self.feitos += status == "ok"

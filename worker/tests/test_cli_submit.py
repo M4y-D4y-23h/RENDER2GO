@@ -36,7 +36,7 @@ def test_end_to_end_with_compiler(fake_comfy, fake_ollama, sfw_image, tmp_path, 
     assert code == 0, res
     assert out.read_bytes() == FAKE_MP4
     assert res["output"]["sha256"] == hashlib.sha256(FAKE_MP4).hexdigest()
-    assert res["compiler"] == "i2v@5" and res["template"] == "i2v_r1v2@1"
+    assert res["compiler"] == "i2v@6" and res["template"] == "i2v_r1v2@1"
     assert set(res["timings"]) >= {"compile_s", "upload_s", "render_s", "total_s"}
 
     wf = next(iter(fake_comfy.prompts.values()))
@@ -175,7 +175,7 @@ def test_presets_compose_input_and_append_terms(
         "Golden hour sunlight, long soft shadows."
     )
     assert res["presets"] == {
-        "version": 2,
+        "version": 3,
         "camera": "parada-corpo-inteiro-costas",
         "luz": "por-do-sol",
     }

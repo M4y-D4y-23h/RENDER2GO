@@ -61,9 +61,18 @@ def _relatorio(tmp_path):
         return list(csv.DictReader(f))
 
 
-def test_shipped_recipes_are_valid_and_use_v2_presets():
+def test_shipped_recipes_are_valid_and_use_v3_presets():
     data = lote.load_receitas()
-    assert data["presets_version"] == presets.load()["version"] == 2
+    assert data["presets_version"] == presets.load()["version"] == 3
+    # v3: todas as receitas da v2, iguais, mais a continuidade "cena-unica" em todas
+    v2 = json.loads((presets.WORKER_DIR / "presets" / "receitas.v2.json").read_text())
+    assert set(data["receitas"]) == set(v2["receitas"])
+    for nome, r in data["receitas"].items():
+        antes = v2["receitas"][nome]
+        assert r["presets"] == {**antes["presets"], "continuidade": "cena-unica"}
+        assert {k: v for k, v in r.items() if k != "presets"} == {
+            k: v for k, v in antes.items() if k != "presets"
+        }
     assert data["receitas"]["pessoa-apresentacao"]["exige_consentimento"] is True
     for f in data["formatos"].values():
         for q in lote.QUALIDADES:
@@ -171,8 +180,10 @@ def test_end_to_end_compiles_once_and_resumes(pasta, tmp_path, fake_comfy, fake_
     assert fake_ollama.requests[0]["keep_alive"] == 0
     estado = json.loads((saida / "lote.json").read_text())
     (pedido,) = estado["prompts"].values()
-    assert pedido["prompt_en"].endswith(
-        "Clean commercial look, high detail, vibrant natural colors, sharp focus."
+    assert pedido["prompt_en"].endswith(  # estilo e, por último, a continuidade (receitas v3)
+        "Clean commercial look, high detail, vibrant natural colors, sharp focus. "
+        "A single continuous uninterrupted shot, the same subject from the image stays in view "
+        "from the first frame to the last, its shape, colors and details stay exactly the same."
     )
     textos = {wf["129:93"]["inputs"]["text"] for wf in fake_comfy.prompts.values()}
     assert textos == {pedido["prompt_en"]}

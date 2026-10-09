@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0e17" media="(prefers-color-scheme: dark)">
 <meta name="format-detection" content="telephone=no">
-<link rel="stylesheet" href="/estatico/estilo.css?v=6234c297ad0e" integrity="sha384-NK3PGNR5kWSmZBKYAxbriIoPHrJME+FZRqTbbgs5JV4Fpr6pm0Ux8esl/3+E5aKZ">
+<link rel="stylesheet" href="/estatico/estilo.css?v=a9e7fbb7e72d" integrity="sha384-zfc3c0SGF6MvfCgkjsc2ldFRkOZJKkNfdeORVaiWvXNpsNpcpSiBMffpfc62XJhi">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -24,7 +24,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/aprovar.js?v=711251bb3190" integrity="sha384-dS1eY9ZfxYeuECCwO2W01x4hZUN7T2CkGxij7d+a/cOI+Gy6UlwSrop6XB3JGRAa" defer></script>
+<script src="/estatico/aprovar.js?v=7690d74aefd9" integrity="sha384-CiOdl80WRIzT5jvftdShMcOwNcEaiTZH9Rl8yBZgeiXPmisn7IZpt55ZmgS/2gcM" defer></script>
 </head>
 <body data-pagina="aprovar">
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
@@ -70,6 +70,7 @@
 <a href="#sec-historico">Histórico</a>
 <a href="#sec-ips">Uso por IP</a>
 <a href="#sec-dispositivos">Dispositivos</a>
+<a href="#sec-gpus">GPUs <span class="contagem" id="n-gpus"></span></a>
 <a href="#sec-suporte">Suporte <span class="contagem" id="n-suporte"></span></a>
 <a href="#sec-clientes">Clientes e saldo</a>
 <a href="#sec-cliente">Novo cliente</a>
@@ -104,6 +105,21 @@
 <h2 id="t-dispositivos">Dispositivos</h2>
 <p class="fraco">Cada navegador recebe um identificador guardado nele mesmo. Um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes. Uma janela anônima ou limpar os dados do navegador gera um identificador novo, mas o teto por IP continua valendo.</p>
 <div id="dispositivos" class="tabela" role="region" aria-label="Tabela de dispositivos (role para o lado)" tabindex="0"></div>
+</section>
+<section id="sec-gpus" aria-labelledby="t-gpus">
+<h2 id="t-gpus">GPUs</h2>
+<p class="fraco">Cada GPU (pod do RunPod) que o orquestrador ligou: identificação, quanto tempo ficou ligada, os vídeos que gerou e o custo estimado (preço por hora × tempo ligado; o RunPod cobra pelo tempo). A cobrança começa quando o RunPod cria o pod e termina quando ele é encerrado, inclusive no pod que falhou na instalação.</p>
+<div class="barra-gpus">
+<div class="filtros" id="filtros-gpus" role="group" aria-label="Período do relatório de GPUs">
+<button type="button" data-dias="1" aria-pressed="false">24 h</button>
+<button type="button" data-dias="7" aria-pressed="false">7 dias</button>
+<button type="button" data-dias="30" aria-pressed="true">30 dias</button>
+<button type="button" data-dias="90" aria-pressed="false">90 dias</button>
+</div>
+<button type="button" class="botao pequeno" id="baixar-gpus"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>Baixar relatório</button>
+</div>
+<dl class="resumo-gpus" id="resumo-gpus"></dl>
+<div id="gpus" class="tabela" role="region" aria-label="Tabela de GPUs (role para o lado)" tabindex="0"></div>
 </section>
 <section id="sec-suporte" aria-labelledby="t-suporte">
 <h2 id="t-suporte">Mensagens de suporte</h2>

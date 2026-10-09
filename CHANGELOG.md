@@ -2,6 +2,35 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 09/10/2026 (2): qualidade dos vídeos, pedidos leigos e relatório de GPUs
+
+Motivo: no teste gratuito de 08/10 (5 fotos de carros, 480p, 3 s), 2 dos 5 vídeos começaram na foto e depois trocaram de carro: um cortou para um Kwid branco aos 2 s, o outro se fundiu num carro de outra marca. A conferência só olhava o 1º quadro, e o pedido ("crie um vídeo de apresentação desses carros pra cada uma dessas fotos") foi traduzido ao pé da letra, no plural.
+
+### Conferência do vídeo inteiro ([`docs/08`](docs/08-varios-clientes-e-demanda-alta.md), seção 2)
+- **Além do 1º quadro, a continuidade:** o worker mede a cor média do centro de cada quadro e compara com o 1º quadro (deriva) e com o anterior (salto). Corte brusco ou produto que muda de cor reprova o vídeo.
+- **Limites calibrados em 39 vídeos:** os 37 aproveitáveis de 06 a 08/10 ficaram até 31,5 de deriva e 5,8 de salto; os 2 com troca deram 54 e 86 de deriva e 16,2 de salto no corte. Limites: deriva 40, salto 12. Os 2 seriam barrados; nenhum dos 37 bons seria.
+- **Refeito com outra seed:** o vídeo reprovado não é enviado e volta para a fila com outra variação aleatória (até 3 tentativas no total). Se não sair, não chega ao cliente e, no pré-pago, volta para o saldo.
+- **Fail-closed:** a API recusa "ok" sem as medidas. **Limitação:** a troca por um objeto da mesma cor passa.
+
+### Pedido em cena única, para pedidos leigos e detalhados
+- **Tradutor v6** (`worker/prompts/compiler-i2v.v6.txt`): o texto vale para cada foto, uma de cada vez. Ordens ao serviço ("crie um vídeo", "pra cada foto", "para o Instagram") saem; plural que só quer dizer "as fotos" ("desses carros") vira um carro só; pedido leigo sem ação ("deixe bonito", "apresentação do carro") vira movimento suave de luz sobre o produto, com a câmera parada; pedido detalhado continua traduzido inteiro.
+- **Termos de continuidade anexados pelo código** (presets v3 e receitas v3, em todos os estilos): "a single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same". Termos afirmativos: com CFG 1 o prompt negativo não age.
+- **Fidelidade (casos v2: os 39 da v1, iguais, mais 6 do serviço; CPU, 7B):** v6 com 66% dos casos ok contra 42% da v5; 65% contra 49% nos casos antigos e 67% contra 17% nos do serviço; 94% sem invenção contra 83%. Ainda falham: o plural com verbo ("os produtos giram"), "faróis" (sai "Faros") e 1 de 18 saídas que escreveu "She" num pedido leigo. Detalhes em [`worker/evals/compiler/RESULTADOS.md`](worker/evals/compiler/RESULTADOS.md).
+- **Câmera contraditória:** quando o próprio tradutor descreve a câmera se movendo, o código remove o "Static camera." que ele escreveu no fim.
+
+### Página do cliente
+- **Aviso de foto pequena:** a página mede cada foto escolhida e avisa quando ela vai ser ampliada 1,5× ou mais para o tamanho do vídeo (ex.: 300×200 para 832×480). Não bloqueia o envio; a miniatura ganha o selo "baixa resolução".
+  - **Por que não "foto borrada":** a nitidez medida pela imagem não separou as fotos ruins das boas (uma xícara de estúdio, com fundo desfocado, mediu igual à foto borrada do carro vermelho). Fica a dica de usar a foto original.
+- **Ajuda do texto:** o campo explica que o texto vale para cada foto e mostra exemplos simples e detalhados.
+
+### `/aprovar`, seção "GPUs"
+- **Cada GPU que subiu:** pod no RunPod, GPU, datacenter, preço por hora, tempo até o 1º vídeo, tempo ligado, vídeos gerados e com falha, pedidos atendidos, uso da GPU, custo estimado e situação (inclusive "falhou na subida").
+- **Totais do período** (24 h, 7, 30 ou 90 dias): GPUs, tempo ligado, custo, vídeos e custo por vídeo; botão para baixar o relatório (JSON).
+- **Custo = preço por hora × tempo ligado**, da criação do pod ao desligamento. O id e o preço são gravados assim que o RunPod cria o pod, mesmo que a instalação falhe depois.
+
+### Servidor
+- Atualize com o `docker compose up -d --build` de sempre ([`docs/09`](docs/09-implantacao.md), seção 0). Os pods usam o código do servidor, então API e pods mudam juntos.
+
 ## 09/10/2026: pré-pago, preços por segundo e teste com 5 fotos
 
 ### Pré-pago no plano pago ([`docs/11`](docs/11-custos-e-planos.md), seção 4)

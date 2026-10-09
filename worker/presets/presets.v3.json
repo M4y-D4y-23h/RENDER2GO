@@ -1,0 +1,281 @@
+{
+  "_comment": "Presets de cena (doc 04, Etapa 2; especificação, seção 9.3). Cada opção vira uma linha rotulada na entrada do compilador, com os termos em inglês entre aspas (o compilador preserva texto entre aspas). Os ids são estáveis: o frontend e os jobs gravam o id, nunca o texto. v2 (06/10/2026): v1 inteira, sem mudar nenhum termo, mais opções para vídeos de divulgação (produto, imóvel, comida); ver docs/05 e presets/receitas.v1.json. v3 (09/10/2026): v2 inteira, sem mudar nenhum termo, mais a categoria 'continuidade' (só I2V), que as receitas v3 ligam em todos os estilos: no teste de 08/10, 2 de 5 vídeos trocaram de carro no meio (corte e fusão para outro carro). Termos afirmativos (o que deve ficar), sem 'no cuts': com CFG 1 o prompt negativo não age, e negação no texto positivo tende a chamar o que nega.",
+  "version": 3,
+  "categories": {
+    "ritmo": {
+      "label": "Ritmo",
+      "options": {
+        "lento": {
+          "label": "Lento e suave",
+          "en": [
+            "slow, smooth, continuous motion"
+          ]
+        },
+        "natural": {
+          "label": "Natural",
+          "en": [
+            "natural pace, fluid motion"
+          ]
+        },
+        "energico": {
+          "label": "Enérgico",
+          "en": [
+            "energetic, dynamic motion"
+          ]
+        }
+      }
+    },
+    "camera": {
+      "label": "Câmera",
+      "line": "câmera",
+      "options": {
+        "parada": {
+          "label": "Parada",
+          "en": [
+            "static camera"
+          ]
+        },
+        "parada-corpo-inteiro-costas": {
+          "label": "Parada, corpo inteiro, de costas",
+          "en": [
+            "static camera",
+            "full body shot",
+            "rear view, from behind"
+          ]
+        },
+        "parada-corpo-inteiro-frente": {
+          "label": "Parada, corpo inteiro, de frente",
+          "en": [
+            "static camera",
+            "full body shot",
+            "front view, facing the camera"
+          ]
+        },
+        "parada-corpo-inteiro-perfil": {
+          "label": "Parada, corpo inteiro, de perfil",
+          "en": [
+            "static camera",
+            "full body shot",
+            "side view, profile"
+          ]
+        },
+        "parada-close": {
+          "label": "Parada, close",
+          "en": [
+            "static camera",
+            "close-up"
+          ]
+        },
+        "aproximacao-plano-medio-costas": {
+          "label": "Aproximação lenta, plano médio, de costas",
+          "en": [
+            "slow dolly-in",
+            "medium shot",
+            "rear view, from behind"
+          ]
+        },
+        "aproximacao-plano-medio": {
+          "label": "Aproximação lenta, plano médio",
+          "en": [
+            "slow dolly-in",
+            "medium shot"
+          ]
+        },
+        "orbita-corpo-inteiro": {
+          "label": "Órbita lenta, corpo inteiro",
+          "en": [
+            "slow orbit around the subject",
+            "full body shot"
+          ]
+        },
+        "acompanha-recuando": {
+          "label": "Acompanha recuando",
+          "en": [
+            "camera tracks backward",
+            "medium shot"
+          ]
+        },
+        "orbita-produto": {
+          "label": "Órbita lenta em volta do produto",
+          "en": [
+            "slow orbit around the product",
+            "product centered in frame"
+          ]
+        },
+        "aproximacao-produto": {
+          "label": "Aproximação lenta do produto (close)",
+          "en": [
+            "slow dolly-in toward the product",
+            "close-up"
+          ]
+        },
+        "avanco-ambiente": {
+          "label": "Avanço lento pelo ambiente",
+          "en": [
+            "slow forward camera movement through the room",
+            "wide shot"
+          ]
+        },
+        "subida-lenta": {
+          "label": "Subida lenta (pedestal)",
+          "en": [
+            "slow upward camera movement",
+            "wide shot"
+          ]
+        },
+        "panoramica-lenta": {
+          "label": "Panorâmica lenta",
+          "en": [
+            "slow horizontal pan",
+            "wide shot"
+          ]
+        }
+      }
+    },
+    "enquadramento": {
+      "label": "Enquadramento",
+      "options": {
+        "centralizado": {
+          "label": "Centralizado, altura dos olhos",
+          "en": [
+            "subject centered in frame",
+            "eye level"
+          ]
+        },
+        "de-cima": {
+          "label": "De cima",
+          "en": [
+            "subject centered in frame",
+            "high angle"
+          ]
+        },
+        "de-baixo": {
+          "label": "De baixo",
+          "en": [
+            "subject centered in frame",
+            "low angle"
+          ]
+        }
+      }
+    },
+    "luz": {
+      "label": "Luz",
+      "options": {
+        "quente-cinematografica": {
+          "label": "Quente, cinematográfica",
+          "en": [
+            "soft warm cinematic lighting",
+            "gentle rim light outlining the body"
+          ]
+        },
+        "luz-do-dia": {
+          "label": "Luz do dia",
+          "en": [
+            "soft natural daylight"
+          ]
+        },
+        "por-do-sol": {
+          "label": "Pôr do sol",
+          "en": [
+            "golden hour sunlight",
+            "long soft shadows"
+          ]
+        },
+        "neon": {
+          "label": "Neon",
+          "en": [
+            "neon lighting",
+            "colorful reflections"
+          ]
+        },
+        "estudio": {
+          "label": "Estúdio",
+          "en": [
+            "even studio lighting",
+            "soft shadows"
+          ]
+        },
+        "aconchegante": {
+          "label": "Aconchegante (interior)",
+          "en": [
+            "warm cozy interior lighting",
+            "soft shadows"
+          ]
+        }
+      }
+    },
+    "estilo": {
+      "label": "Estilo",
+      "options": {
+        "cinematografico": {
+          "label": "Cinematográfico",
+          "en": [
+            "cinematic",
+            "realistic skin texture",
+            "shallow depth of field",
+            "35mm film grain"
+          ]
+        },
+        "natural": {
+          "label": "Natural",
+          "en": [
+            "realistic",
+            "natural colors"
+          ]
+        },
+        "documental": {
+          "label": "Documental",
+          "en": [
+            "documentary look",
+            "natural colors"
+          ]
+        },
+        "comercial": {
+          "label": "Comercial (anúncio)",
+          "en": [
+            "clean commercial look",
+            "high detail",
+            "vibrant natural colors",
+            "sharp focus"
+          ]
+        }
+      }
+    },
+    "continuidade": {
+      "label": "Continuidade",
+      "options": {
+        "cena-unica": {
+          "label": "Uma cena só, o mesmo produto do início ao fim",
+          "en": [
+            "a single continuous uninterrupted shot",
+            "the same subject from the image stays in view from the first frame to the last",
+            "its shape, colors and details stay exactly the same"
+          ]
+        }
+      }
+    }
+  },
+  "modes": {
+    "i2v": {
+      "text_label": "ação",
+      "categories": [
+        "ritmo",
+        "camera",
+        "enquadramento",
+        "luz",
+        "estilo",
+        "continuidade"
+      ]
+    },
+    "t2v": {
+      "text_label": "cena",
+      "categories": [
+        "ritmo",
+        "camera",
+        "enquadramento",
+        "luz",
+        "estilo"
+      ]
+    }
+  }
+}

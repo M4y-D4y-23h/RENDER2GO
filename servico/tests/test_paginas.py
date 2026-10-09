@@ -290,19 +290,27 @@ def test_pages_have_no_accessibility_violations(ambiente, navegador, tmp_path, t
     pg = cli.new_page()
     pg.goto(ambiente.url)
     pg.wait_for_selector(".videos button.assistir")
-    pg.set_input_files("#fotos", [str(_salvar(tmp_path, "a.png", fotos["bolo.png"]))])
-    pw.expect(pg.locator("#previa .miniatura :is(canvas, img)")).to_have_count(1)
+    pg.set_input_files(
+        "#fotos",
+        [str(_salvar(tmp_path, "a.png", fotos["bolo.png"])), str(_salvar(tmp_path, "p.png", _png_de(300, 200)))],
+    )
+    pw.expect(pg.locator("#previa .miniatura :is(canvas, img)")).to_have_count(2)
+    pg.wait_for_selector("#aviso-fotos:not([hidden])")  # foto pequena: aviso na lista e na miniatura
+    pg.click(".exemplos-pedido summary")
     conferir(pg, "painel")
     pg.locator(".videos button.assistir").first.click()
     pg.wait_for_selector("dialog[open]")
     conferir(pg, "player")
     cli.close()
+    g = ambiente.banco.gerador_subindo("NVIDIA L40S")  # relatório de GPUs com uma GPU ligada
+    ambiente.banco.gerador_criado(g, "pod-abc123", "NVIDIA L40S", 1.09, "EU-RO-1")
     adm = navegador.new_context(color_scheme=tema, reduced_motion="reduce", bypass_csp=True)
     _com_codigo(adm, "render2go-token-admin", ADMIN)
     pg = adm.new_page()
     pg.goto(f"{ambiente.url}/aprovar")
     pg.wait_for_selector("#pendentes .selo.pessoas")
     pg.wait_for_selector("#ips table")
+    pg.wait_for_selector("#gpus table")
     conferir(pg, "aprovar-painel")
     adm.close()
     assert violacoes == {}
@@ -552,3 +560,76 @@ def test_prepaid_balance_price_and_top_up_by_the_reviewer(ambiente, navegador, t
     ctx.close()
     adm_ctx.close()
     assert [e for e in erros if "status of 422" not in e] == []  # só a recusa do Pix repetido
+
+
+def _png_de(largura, altura, cor=(40, 90, 160)):
+    from io import BytesIO
+
+    from PIL import Image
+
+    b = BytesIO()
+    Image.new("RGB", (largura, altura), cor).save(b, "PNG")
+    return b.getvalue()
+
+
+def test_small_photo_warning_order_help_and_gpu_report(ambiente, navegador, tmp_path):  # noqa: F811 (fixture)
+    erros: list[str] = []
+    tok = _cliente(ambiente)
+    ctx = navegador.new_context()
+    _com_codigo(ctx, "render2go-token-cliente", tok)
+    pg = _pagina(ctx, erros)
+    pg.goto(ambiente.url)
+    pg.wait_for_selector("#campos-lote:not([disabled])")
+    # ajuda do texto: pedidos simples e detalhados, e o texto vale para cada foto
+    assert "uma de cada vez" in pg.locator("#prompt-dica").inner_text()
+    pg.click(".exemplos-pedido summary")
+    pw.expect(pg.locator(".exemplos-pedido li")).to_have_count(4)
+    # foto de 300×200 para um vídeo horizontal de 832×480 (2,8× de ampliação): aviso, sem bloquear
+    pequena = _salvar(tmp_path, "vitrine.png", _png_de(300, 200))
+    grande = _salvar(tmp_path, "loja.png", _png_de(1600, 900, (200, 120, 60)))
+    pg.set_input_files("#fotos", [str(pequena), str(grande)])
+    aviso = pw.expect(pg.locator("#aviso-fotos"))
+    aviso.to_be_visible()
+    aviso.to_contain_text("1 foto tem baixa resolução para o vídeo de 832×480: vitrine.png (300×200)")
+    pw.expect(pg.locator("#previa .miniatura.pequena")).to_have_count(1)
+    pw.expect(pg.locator("#previa .miniatura.pequena")).to_have_attribute("aria-label", "vitrine.png, baixa resolução")
+    # em 720p a mesma conta usa o vídeo de 1280×720
+    pg.select_option("#qualidade", "alta")
+    aviso.to_contain_text("vídeo de 1280×720")
+    pg.click("#previa .miniatura.pequena .remover")
+    aviso.to_be_hidden()
+    pw.expect(pg.locator("#previa .miniatura")).to_have_count(1)
+    ctx.close()
+
+    # relatório de GPUs no /aprovar: um pod que gerou e um que falhou na instalação
+    b = ambiente.banco
+    g = b.gerador_subindo("NVIDIA L40S")
+    b.gerador_criado(g, "pod-abc123", "NVIDIA L40S", 1.09, "EU-RO-1")
+    b.gerador_pronto(g, "pod-abc123", "NVIDIA L40S", 1.09)
+    with b.tx() as c:
+        c.run("UPDATE geradores SET pod_criado_em = pod_criado_em - 600, criado = criado - 600 WHERE id = ?", (g,))
+    b.gerador_fim(g, "fila vazia")
+    b.gerador_desligado(g)
+    f = b.gerador_subindo("NVIDIA L40S")
+    b.gerador_criado(f, "pod-xyz789", "NVIDIA L40S", 1.09, None)
+    b.gerador_fim(f, "não subiu", falhou=True)
+    b.gerador_desligado(f)
+    adm_ctx = navegador.new_context()
+    _com_codigo(adm_ctx, "render2go-token-admin", ADMIN)
+    adm = _pagina(adm_ctx, erros)
+    adm.goto(f"{ambiente.url}/aprovar")
+    adm.wait_for_selector("#gpus table")
+    tabela = _texto(adm, "#gpus table")
+    assert "pod-abc123" in tabela and "EU-RO-1" in tabela and "1,09" in tabela and "10 min" in tabela
+    assert "falhou na subida: não subiu" in tabela
+    resumo = _texto(adm, "#resumo-gpus")
+    assert "GPUs ligadas\n2" in resumo and "Custo estimado\nUS$ 0,18" in resumo
+    adm.click("#filtros-gpus button[data-dias='7']")
+    pw.expect(adm.locator("#filtros-gpus button[data-dias='7']")).to_have_attribute("aria-pressed", "true")
+    with adm.expect_download() as baixado:
+        adm.click("#baixar-gpus")
+    rel = json.loads(Path(baixado.value.path()).read_text())
+    assert {x["pod"] for x in rel["geradores"]} == {"pod-abc123", "pod-xyz789"}
+    _capturar(adm, "aprovar-gpus")
+    adm_ctx.close()
+    assert erros == []

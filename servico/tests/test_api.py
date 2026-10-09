@@ -12,6 +12,7 @@ from render2go_servico.api import Config, criar_app
 
 ADMIN = "a" * 40
 WORKER = "w" * 40
+CONTINUO = {"deriva_cor": 6.5, "salto_cor": 1.2}  # vídeo que fica na foto até o fim
 
 
 class Armazem:
@@ -182,6 +183,7 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
                 "bytes_video": 7000,
                 "similaridade": 0.999,
                 "segundos": 12.0,
+                **CONTINUO,
             },
         )
         assert r.json()["status"] == "ok"
@@ -192,6 +194,53 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
     api.app.state.cfg.esperar_fundo()
     assert not [k for k in api.armazem.objetos if k.startswith("entrada/")]
     assert len([k for k in api.armazem.objetos if k.startswith("saida/")]) == 2
+
+
+def test_gpu_report_is_admin_only(api):
+    g = api.banco.gerador_subindo("NVIDIA L40S")
+    api.banco.gerador_criado(g, "pod-abc", "NVIDIA L40S", 1.09, "EU-RO-1")
+    assert api.get("/api/admin/geradores").status_code == 401
+    assert api.get("/api/admin/geradores", headers=h(WORKER)).status_code == 401
+    assert api.get("/api/admin/geradores?dias=0", headers=h(ADMIN)).status_code == 422
+    r = api.get("/api/admin/geradores?dias=7", headers=h(ADMIN)).json()
+    (x,) = r["geradores"]
+    assert (x["pod"], x["estado"], x["usd_h"]) == ("pod-abc", "subindo", 1.09)
+    assert r["totais"]["ligados_agora"] == 1
+
+
+def test_video_that_swaps_the_product_midway_is_redone_with_another_seed_then_refunded(api):
+    tok = _cliente(api, "Revenda", saldo="10")
+    r = _lote(api, tok, n=1, duracao=4)
+    lid = r.json()["lote"]
+    assert _enviar_tudo(api, tok, lid, r.json()["envios"]).status_code == 200
+    api.post(f"/api/admin/lotes/{lid}/aprovar", headers=h(ADMIN))
+    comp = _job(api)
+    api.post(
+        f"/api/worker/jobs/{comp['job_id']}/prompt",
+        headers=h(WORKER),
+        json={"worker": "pod-1", "prompt_en": "The camera slowly orbits the car.", "compilador": "i2v@6"},
+    )
+    _concluir(api, comp, status="ok")
+    seeds = []
+    medidas = [
+        {"deriva_cor": 54.2, "salto_cor": 16.2},  # corte seco para outro carro (teste de 08/10)
+        {"deriva_cor": 85.8, "salto_cor": 6.3},  # fusão para outro modelo
+        {"deriva_cor": 6.5},  # sem a medida do salto: fail-closed
+    ]
+    for i, m in enumerate(medidas):
+        render = _job(api)
+        seeds.append(render["seed"])
+        chave = render["video_url"].split("armazem.teste/")[1].split("?")[0]
+        api.armazem.objetos[chave] = 7000
+        r = _concluir(api, render, status="ok", bytes_video=7000, similaridade=0.99, **m)
+        # nada que trocou de produto chega ao cliente; o job volta com outra seed até as tentativas acabarem
+        assert r.json()["status"] == ("pendente" if i < 2 else "erro")
+        assert chave in api.armazem.apagados
+    assert len(set(seeds)) == 3
+    (job,) = [j for j in api.banco.jobs(lid) if j["tipo"] == "render"]
+    assert job["erro"] == "conferência da continuidade ausente" and job["deriva_cor"] == pytest.approx(6.5)
+    lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
+    assert lote["status"] == "concluido_com_falhas" and lote["cobranca"] == {"cobrado": 100, "devolvido": 100}
 
 
 D1, D2, D3 = (f"{n}{n}{n}{n}{n}{n}{n}{n}-0000-4000-8000-000000000000" for n in "123")
@@ -373,7 +422,8 @@ def test_client_sees_a_time_estimate_and_open_or_download_links(api):
     api.post(
         f"/api/worker/jobs/{render['job_id']}/concluir",
         headers=h(WORKER),
-        json={"worker": "pod-1", "status": "ok", "bytes_video": 7000, "similaridade": 0.99, "segundos": 40.0},
+        json={"worker": "pod-1", "status": "ok", "bytes_video": 7000, "similaridade": 0.99, "segundos": 40.0}
+        | CONTINUO,
     )
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
     assert lote["previsao"] == {"fase": "gerando", "fim_s": 40}  # 1 vídeo restante × 40 s medidos
@@ -606,7 +656,7 @@ def test_prepaid_balance_prices_charges_refunds_and_minimum_duration(api):
     _concluir(api, comp, status="ok")
     ok = _job(api)
     api.armazem.objetos[ok["video_url"].split("armazem.teste/")[1].split("?")[0]] = 7000
-    assert _concluir(api, ok, status="ok", bytes_video=7000, similaridade=0.99).json()["status"] == "ok"
+    assert _concluir(api, ok, status="ok", bytes_video=7000, similaridade=0.99, **CONTINUO).json()["status"] == "ok"
     assert _concluir(api, _job(api), status="erro", erro="sem memória na GPU").json()["status"] == "erro"
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
     assert lote["status"] == "concluido_com_falhas" and lote["cobranca"] == {"cobrado": 400, "devolvido": 200}

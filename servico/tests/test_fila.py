@@ -203,6 +203,7 @@ def test_queue_worker_renders_checks_and_delivers(ambiente, monkeypatch):
     assert lote["status"] == "concluido" and lote["prontos"] == 2
     jobs = [j for j in ambiente.banco.jobs(lid) if j["tipo"] == "render"]
     assert all(j["similaridade"] > 0.9 and j["bytes_video"] > 0 for j in jobs)
+    assert all(j["deriva_cor"] is not None and j["salto_cor"] is not None for j in jobs)
     # cada vídeo está no endereço do próprio cliente e lote, com a folha de conferência
     chaves = sorted(ambiente.objetos)
     assert sum(k.startswith("saida/") and k.endswith(".mp4") and f"/{lid}/" in k for k in chaves) == 2
@@ -225,6 +226,42 @@ def test_a_video_of_the_wrong_photo_never_reaches_the_client(ambiente, monkeypat
     assert "não corresponde" in job["erro"] and job["tentativas"] == 3
     assert not any(k.endswith(".mp4") for k in ambiente.objetos)  # nunca foi enviado
     assert "url" not in lote["videos"][0]
+
+
+@com_ffmpeg
+def test_a_video_that_swaps_the_product_midway_is_redone_with_another_seed(ambiente, monkeypatch):
+    import requests
+
+    monkeypatch.setattr(fila, "ESPERA_S", 0.2)
+    lid, hc = _lote_aprovado(ambiente, {"bolo.png": _png((40, 90, 160), "circulo")})
+    certo = _submit_de()
+    seeds = []
+
+    def troca_na_primeira(a):  # 1ª tentativa: começa na foto e corta para outro produto no meio
+        seeds.append(a.seed)
+        if len(seeds) > 1:
+            return certo(a)
+        outra = a.out.with_name("outra.png")
+        outra.write_bytes(_png((235, 235, 235), "barras"))
+        subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-y",
+                "-loop", "1", "-t", "1", "-r", "16", "-i", str(a.image),
+                "-loop", "1", "-t", "1", "-r", "16", "-i", str(outra),
+                "-filter_complex", f"[0]scale={a.width}:{a.height}[a];[1]scale={a.width}:{a.height}[b];"
+                "[a][b]concat=n=2:v=1,format=yuv420p",
+                str(a.out),
+            ],
+            check=True,
+        )  # fmt: skip
+        return cli_submit.EXIT_OK, {}
+
+    assert _worker(ambiente, troca_na_primeira).rodar() == 0
+    lote = requests.get(f"{ambiente.url}/api/lotes/{lid}", headers=hc).json()
+    assert lote["status"] == "concluido" and lote["prontos"] == 1
+    assert len(seeds) == 2 and seeds[0] != seeds[1]  # refeito com outra seed
+    (job,) = [j for j in ambiente.banco.jobs(lid) if j["tipo"] == "render"]
+    assert job["tentativas"] == 2 and job["seed"] == seeds[1] and job["salto_cor"] < 12
 
 
 @com_ffmpeg

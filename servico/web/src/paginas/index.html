@@ -52,7 +52,7 @@
       <h2 id="titulo-como">Como funciona</h2>
       <ol>
         <li><span><strong>Envie as fotos.</strong> Dezenas de uma vez, do celular ou do computador.</span></li>
-        <li><span><strong>Diga o que deve acontecer.</strong> Em português, do seu jeito, como “a câmera se aproxima devagar do produto”.</span></li>
+        <li><span><strong>Diga o que deve acontecer.</strong> Em português, do seu jeito, simples (“deixe bonito”) ou detalhado (“a câmera se aproxima devagar do produto”).</span></li>
         <li><span><strong>Baixe os vídeos.</strong> Um vídeo curto por foto, depois de uma revisão rápida do pedido.</span></li>
       </ol>
     </section>
@@ -93,13 +93,14 @@
                   <input id="pasta" type="file" multiple webkitdirectory aria-describedby="fotos-dica">
                   <label class="botao" for="pasta" id="rotulo-pasta"><!--@icone pasta-->Escolher uma pasta</label>
                 </div>
-                <p class="dica" id="fotos-dica">JPG, PNG ou WebP, até 50 MB cada. Cada foto vira um vídeo.</p>
+                <p class="dica" id="fotos-dica">JPG, PNG ou WebP, até 50 MB cada. Cada foto vira um vídeo. Use a foto original, nítida e grande (não print nem foto baixada de site ou do WhatsApp).</p>
               </div>
               <div class="barra-fotos" id="barra-fotos" hidden>
                 <p id="contagem" class="fraco"></p>
                 <button type="button" class="botao pequeno" id="limpar"><!--@icone lixo-->Limpar</button>
               </div>
               <ul class="previa" id="previa" aria-label="Fotos escolhidas" hidden></ul>
+              <div class="aviso alerta" id="aviso-fotos" hidden></div>
             </fieldset>
 
             <fieldset class="passo">
@@ -110,11 +111,21 @@
               </div>
               <div class="campo">
                 <label for="prompt">O que deve acontecer nos vídeos?</label>
-                <textarea id="prompt" required minlength="3" maxlength="600" spellcheck="true" autocapitalize="sentences" placeholder="Ex.: a câmera se aproxima devagar do produto" aria-describedby="prompt-dica prompt-contador"></textarea>
+                <textarea id="prompt" required minlength="3" maxlength="600" spellcheck="true" autocapitalize="sentences" placeholder="Ex.: a câmera gira devagar em volta do carro" aria-describedby="prompt-dica prompt-contador"></textarea>
                 <div class="linha-campo">
-                  <p class="dica" id="prompt-dica">Escreva em português. O mesmo pedido vale para todas as fotos.</p>
+                  <p class="dica" id="prompt-dica">Escreva em português, do seu jeito. O texto vale para cada foto, uma de cada vez: descreva o que acontece numa foto só. Pode ser simples ou detalhado.</p>
                   <span class="contador" id="prompt-contador">0/600</span>
                 </div>
+                <details class="exemplos-pedido">
+                  <summary>Ver exemplos de pedido</summary>
+                  <ul>
+                    <li><strong>Simples:</strong> “deixe bonito, com um movimento suave”</li>
+                    <li><strong>Simples:</strong> “vídeo de apresentação do carro”</li>
+                    <li><strong>Detalhado:</strong> “a câmera gira devagar em volta do carro e os faróis acendem”</li>
+                    <li><strong>Detalhado:</strong> “o vapor sobe do prato e a câmera se aproxima devagar”</li>
+                  </ul>
+                  <p class="dica">Cada vídeo mostra só o que está na foto, numa cena contínua. Evite pedir troca de produto, cortes ou texto escrito no vídeo.</p>
+                </details>
                 <div class="sugestao" id="sugestao" hidden>
                   <p>Exemplo para este estilo: <q id="sugestao-texto"></q></p>
                   <button type="button" class="botao pequeno" id="usar-sugestao"><!--@icone brilho-->Usar este exemplo</button>

@@ -236,6 +236,54 @@ def test_generators_state_for_the_estimate(banco):
     banco.gerador_fim(g2, "de novo")  # já encerrado: nada muda
 
 
+def test_gpu_report_identifies_each_pod_with_time_videos_and_cost(banco):
+    # pod que subiu e gerou: 2 vídeos ok e 1 que falhou de vez, 1 tradução
+    g = banco.gerador_subindo("NVIDIA L40S")
+    banco.gerador_criado(g, "pod-abc", "NVIDIA L40S", 1.09, "EU-RO-1")
+    banco.gerador_pronto(g, "pod-abc", "NVIDIA L40S", 1.09)
+    _, _, lid = _lote(banco, n_fotos=3)
+    _aprovar(banco, lid)
+    c = banco.reivindicar("pod-abc")
+    banco.definir_prompt(lid, "p", "i2v@6")
+    banco.concluir(c["id"], "pod-abc", "ok")
+    for status in ("ok", "ok", "erro"):
+        j = banco.reivindicar("pod-abc")
+        banco.concluir(j["id"], "pod-abc", status, segundos=60.0)
+    # pod que o RunPod criou mas a instalação falhou; e uma subida em que o RunPod nem criou o pod
+    f = banco.gerador_subindo("NVIDIA L40S")
+    banco.gerador_criado(f, "pod-xyz", "NVIDIA L40S", 1.09, None)
+    banco.gerador_fim(f, "não subiu", falhou=True)
+    banco.gerador_desligado(f)
+    n = banco.gerador_subindo("NVIDIA L40S")
+    banco.gerador_fim(n, "não subiu", falhou=True)
+    with banco.tx() as cur:  # 1 h ligado para o 1º (a cobrança vai da criação ao desligamento)
+        cur.run("UPDATE geradores SET pod_criado_em = pod_criado_em - 3600 WHERE id = ?", (g,))
+    banco.gerador_fim(g, "fila vazia")
+    banco.gerador_desligado(g)
+    banco.gerador_desligado(g)  # o 2º registro não muda o horário
+
+    r = banco.relatorio_geradores(time.time() - 86400)
+    por_id = {x["id"]: x for x in r["geradores"]}
+    a = por_id[g]
+    assert (a["pod"], a["gpu"], a["datacentro"], a["estado"], a["motivo"]) == (
+        "pod-abc",
+        "NVIDIA L40S",
+        "EU-RO-1",
+        "encerrado",
+        "fila vazia",
+    )
+    assert (a["videos_ok"], a["videos_erro"], a["traducoes"], a["lotes"]) == (2, 1, 1, 1)
+    assert a["segundos_render"] == 120.0 and not a["ligado_estimado"]
+    assert a["ligado_s"] == pytest.approx(3600, abs=5) and a["custo_usd"] == pytest.approx(1.09, abs=0.01)
+    assert por_id[f]["estado"] == "falhou" and por_id[f]["custo_usd"] is not None
+    assert por_id[n]["pod"] is None and por_id[n]["custo_usd"] == 0.0 and por_id[n]["ligado_s"] == 0.0
+    t = r["totais"]
+    assert (t["pods"], t["falharam"], t["videos_ok"], t["ligados_agora"]) == (2, 2, 2, 0)
+    assert t["custo_por_video_usd"] == pytest.approx(t["custo_usd"] / 2, abs=1e-4)
+    # fora do período: nada
+    assert banco.relatorio_geradores(time.time() + 10)["geradores"] == []
+
+
 def test_history_cleanup_keeps_clients_and_refuses_while_generating(banco):
     cid, token, lid = _lote(banco, n_fotos=2)
     banco.registrar_suporte(cid, {"ip": "1.2.3.4"}, "a@b.co", "dúvida", "mensagem de teste")

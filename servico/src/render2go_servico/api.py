@@ -16,6 +16,7 @@ Aprovação (Bearer <token de administração>), ADR 0004:
     GET  /api/admin/historico          pedidos feitos, aprovados e recusados; uso por IP e por dispositivo
     GET  /api/admin/lotes/{id}/auditoria  registro completo de um lote (origem, autorização, fotos, eventos)
     GET  /api/admin/suporte            últimas mensagens de suporte
+    GET  /api/admin/geradores?dias=30  relatório das GPUs (pods): id, GPU, horários, vídeos e custo estimado
     GET  /api/admin/clientes           clientes com plano e saldo
     POST /api/admin/clientes           cadastra um cliente (plano pago ou teste); o token aparece uma vez
     POST /api/admin/clientes/{id}/saldo     recarga (valor positivo) ou ajuste (negativo) do saldo
@@ -66,7 +67,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
-from render2go_worker import conferencia, filtros, lote, presets
+from render2go_worker import conferencia, filtros, lote, preparo, presets
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from render2go_servico import SERVICO_DIR, modelos, pessoas, precos, suporte
@@ -476,6 +477,8 @@ class ConcluirIn(BaseModel):
     repetir: bool = False
     similaridade: float | None = None  # 1º quadro × foto (render2go_worker.conferencia)
     bytes_video: int | None = None
+    deriva_cor: float | None = None  # continuidade até o fim do vídeo (render2go_worker.conferencia)
+    salto_cor: float | None = None
 
 
 class RecusaIn(BaseModel):
@@ -628,6 +631,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 for k, v in r["receitas"].items()
             ],
             "formatos": ["auto", *r["formatos"]],
+            # aviso de foto pequena na página: o tamanho do vídeo de cada formato e qualidade, a regra do
+            # formato automático (largura/altura) e a ampliação que o preparo já marca como aviso
+            "saida": {
+                f: {q: [v[q]["width"], v[q]["height"]] for q in lote.QUALIDADES} for f, v in r["formatos"].items()
+            },
+            "proporcao_auto": [lote.VERTICAL, lote.HORIZONTAL],
+            "ampliacao_aviso": preparo.AMPLIACAO_AVISO,
             "qualidades": list(lote.QUALIDADES),
             "limites": {
                 "fotos": MAX_FOTOS_LOTE,
@@ -1050,6 +1060,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "dispositivos": c.banco.uso_por_dispositivo(),
         }
 
+    @app.get("/api/admin/geradores")
+    def relatorio_geradores(dias: int = 30, _: str = Depends(admin), c: Config = Depends(config)):
+        """Relatório das GPUs (pods) que subiram: identificação, tempo ligado, vídeos e custo estimado."""
+        if not 1 <= dias <= 366:
+            raise HTTPException(422, "dias: de 1 a 366")
+        return c.banco.relatorio_geradores(time.time() - dias * 86400)
+
     @app.get("/api/admin/suporte")
     def ver_suporte(_: str = Depends(admin), c: Config = Depends(config)):
         return {"email_configurado": c.email is not None, "mensagens": c.banco.suporte_recente()}
@@ -1145,14 +1162,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         job = _do_worker(job_id, body.worker, c)
         status, erro, repetir = body.status, body.erro, body.repetir
         if job["tipo"] == "render" and status == "ok":
-            # fail-closed: o vídeo precisa estar no armazenamento, com o tamanho informado, e a
-            # conferência do 1º quadro precisa dizer que ele é dessa foto
+            # fail-closed: o vídeo precisa estar no armazenamento, com o tamanho informado, a
+            # conferência do 1º quadro precisa dizer que ele é dessa foto e a da continuidade, que
+            # ele não troca de produto no meio
             lt = c.banco.lote(job["lote_id"])
             chave = chave_saida(lt["cliente_id"], lt["id"], job["arquivo"])
             tamanho = c.armazenamento.tamanho(chave)
             problema = None
             if body.similaridade is None or body.similaridade < conferencia.LIMIAR:
                 problema = f"conferência do 1º quadro reprovada ({body.similaridade})"
+            elif p := conferencia.problema_continuidade(body.deriva_cor, body.salto_cor):
+                problema = p
             elif not body.bytes_video or tamanho != body.bytes_video:
                 problema = f"vídeo ausente ou incompleto ({tamanho} de {body.bytes_video} bytes)"
             if problema:
@@ -1169,6 +1189,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 repetir=repetir,
                 similaridade=body.similaridade,
                 bytes_video=body.bytes_video,
+                deriva_cor=body.deriva_cor,
+                salto_cor=body.salto_cor,
+                # vídeo refeito sai de outra seed: a mesma seed repetiria o mesmo defeito
+                seed=lote.seed_de(job["seed"], job["id"], job["tentativas"]) if job["tipo"] == "render" else None,
             )
         except BancoError as e:
             raise HTTPException(409, str(e)) from e

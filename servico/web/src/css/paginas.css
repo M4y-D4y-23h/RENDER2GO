@@ -210,6 +210,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+.exemplos-pedido summary {
+  min-height: var(--alvo);
+  padding-block: var(--esp-3);
+  color: var(--cor-marca-texto);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.exemplos-pedido ul {
+  margin: 0 0 var(--esp-2);
+  padding-left: var(--esp-5);
+  font-size: var(--texto-sm);
+}
+
 .extrato summary {
   min-height: var(--alvo);
   padding-block: var(--esp-3);
@@ -523,4 +538,40 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
+}
+
+/* relatório de GPUs no /aprovar: período, totais e tabela por pod */
+.barra-gpus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-3);
+  margin-block: var(--esp-4);
+}
+
+.resumo-gpus {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--esp-3);
+  margin: 0 0 var(--esp-4);
+}
+
+.resumo-gpus div {
+  padding: var(--esp-3) var(--esp-4);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie);
+}
+
+.resumo-gpus dt {
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+}
+
+.resumo-gpus dd {
+  margin: 0;
+  font-size: var(--texto-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }

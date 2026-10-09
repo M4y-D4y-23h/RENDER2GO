@@ -1,6 +1,6 @@
 """Testes de fidelidade do compilador: pedido em pt → propriedades esperadas na saída.
 
-Cada caso (worker/evals/compiler/cases.v1.json) declara:
+Cada caso (worker/evals/compiler/cases.v2.json: os da v1, iguais, mais os do serviço) declara:
 - `must`: grupos de termos; cada grupo precisa aparecer (basta um termo do grupo);
 - `forbid`: termos que indicam invenção ou tradução errada (nenhum pode aparecer);
 - `order`: grupos que precisam aparecer nessa ordem (ordem das ações);
@@ -27,7 +27,7 @@ from typing import Any
 
 from render2go_worker import WORKER_DIR, compiler, presets
 
-CASES_FILE = WORKER_DIR / "evals" / "compiler" / "cases.v1.json"
+CASES_FILE = WORKER_DIR / "evals" / "compiler" / "cases.v2.json"
 QUOTED = re.compile(r'"([^"\n]+)"')
 
 
