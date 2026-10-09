@@ -1,4 +1,4 @@
-"""Aviso "contém pessoas" nas fotos dos lotes (ADR 0004, item 5), para o revisor do /aprovar.
+"""Aviso "contém pessoas" nas fotos dos lotes (ADR 0004, item 5), para o revisor, no painel do dono.
 
 Roda no servidor, em CPU, em segundo plano depois do envio:
     - YOLOX-tiny (COCO, classe pessoa; Apache-2.0): acha pessoas inteiras, inclusive de costas;

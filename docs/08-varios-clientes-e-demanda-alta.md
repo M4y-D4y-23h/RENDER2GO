@@ -64,7 +64,7 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
    - o worker sai após 3 min sem jobs, e o pod é encerrado.
 4. **Worker da fila, orquestrador, páginas e implantação:**
    - worker da fila: `render2go_worker/fila.py`;
-   - páginas: `/` e `/aprovar`;
+   - páginas: `/` e o painel do dono (endereço secreto desde 09/10/2026, ADR 0007);
    - Dockerfile, CI e `docs/09-implantacao.md`.
 
 5. **Teste gratuito barato e sem abuso** (08/10/2026):
@@ -81,5 +81,7 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
 
 7. **Previsão com o estado real dos pods** (08/10/2026, noite): o orquestrador registra cada pod na tabela `geradores`, e a previsão do cliente usa a subida medida e os vídeos à frente na mesma ordem da fila (`docs/09`, seção 5.1.3).
 8. **Subida mais rápida** (08/10/2026, noite): modelos só do espelho no R2 quando ele passa no teste de rede, serviços e tradução do pedido durante o download, ciclo de 10 s e consultas de 3 s. Medido em pods reais: 4,2–5,1 min do pedido do pod ao 1º vídeo, contra 6,8 min (`docs/07`, seção 9).
+
+9. **Contas, limites e escala do servidor** (09/10/2026): cadastro pelo e-mail com um teste por caixa, limites no banco (valem entre processos), API com vários processos e medições de carga (~475 a 810 pedidos/s com 2 a 3 processos em 4 vCPU); fases de crescimento e GPUs com 30+ pods no `docs/13`, seções 4 e 5.
 
 **Ainda por fazer:** medir em pods reais a fila com vários clientes ao mesmo tempo.

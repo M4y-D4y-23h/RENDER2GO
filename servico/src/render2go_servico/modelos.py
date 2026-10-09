@@ -4,7 +4,7 @@ Finalidade = o que o cliente quer criar (ex.: "Foto vira vídeo"); cada uma tem 
 (imagem para vídeo, texto para imagem...) e os modelos que a atendem. A página do cliente mostra as
 finalidades em blocos antes do pedido: as de `destaque` na tela, todas na janela "Ver todas".
 Hoje só "Foto vira vídeo" (Wan 2.2) está disponível; as outras aparecem como "Em breve", com o
-botão "Tenho interesse", que fica registrado (tabela `interesses`) e contado no /aprovar.
+botão "Tenho interesse", que fica registrado (tabela `interesses`) e contado no painel do dono.
 
 Modelos `previstos` de uma finalidade só entram aqui com a licença comercial conferida
 (docs/12-modelos-e-licencas.md). Para ativar um modelo:

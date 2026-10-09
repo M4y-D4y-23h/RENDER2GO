@@ -218,7 +218,7 @@ HISTORICO = (
 )
 # colunas que entraram depois da primeira implantação: (tabela, coluna, tipo)
 COLUNAS_NOVAS = [
-    ("fotos", "analise", "TEXT"),  # aviso de pessoas no /aprovar (render2go_servico.pessoas)
+    ("fotos", "analise", "TEXT"),  # aviso de pessoas no painel (render2go_servico.pessoas)
     ("lotes", "ip", "TEXT"),  # IP de quem criou o pedido (limite do teste gratuito por IP)
     ("lotes", "fotos_apagadas", "DOUBLE PRECISION"),  # fotos de entrada apagadas ao fechar o lote
     ("lotes", "dispositivo", "TEXT"),  # identificador do navegador (limite do teste por dispositivo)
@@ -230,7 +230,7 @@ COLUNAS_NOVAS = [
     ("lotes", "preco_video", "BIGINT"),  # centavos por vídeo do pré-pago (NULL: teste ou interno)
     ("jobs", "deriva_cor", "DOUBLE PRECISION"),  # continuidade do vídeo (render2go_worker.conferencia)
     ("jobs", "salto_cor", "DOUBLE PRECISION"),
-    ("geradores", "datacentro", "TEXT"),  # relatório de GPUs no /aprovar
+    ("geradores", "datacentro", "TEXT"),  # relatório de GPUs no painel
     ("geradores", "pod_criado_em", "DOUBLE PRECISION"),  # o RunPod criou o pod (começa a cobrança)
     ("geradores", "desligado_em", "DOUBLE PRECISION"),  # o pod foi encerrado (fim da cobrança)
     ("clientes", "email", "TEXT"),  # conta por e-mail (ADR 0007): o endereço para os códigos
@@ -1011,7 +1011,7 @@ class Banco:
         return bool(n)
 
     def historico(self, grupo: str = "todos", limite: int = 100) -> list[dict]:
-        """Lotes mais recentes com o cliente e o andamento, para o /aprovar."""
+        """Lotes mais recentes com o cliente e o andamento, para o painel."""
         filtros = {
             "todos": ("1 = 1", ()),
             "revisao": ("l.status = 'aguardando_aprovacao'", ()),
@@ -1600,7 +1600,7 @@ class Banco:
             )
 
     def relatorio_geradores(self, desde: float, limite: int = 200) -> dict[str, Any]:
-        """Relatório de cada pod para o /aprovar: identificação, horários, vídeos e custo estimado.
+        """Relatório de cada pod para o painel: identificação, horários, vídeos e custo estimado.
 
         Tempo ligado: da criação do pod (ou da decisão de subir, nos registros antigos) até o
         desligamento; sem o desligamento registrado (orquestrador que caiu), até o fim da fila,

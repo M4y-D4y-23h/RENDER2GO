@@ -15,7 +15,7 @@ A cada ciclo (RENDER2GO_CICLO_S, padrão 10 s):
    "pod quente" vencido).
 
 Cada pod fica registrado na tabela `geradores` (subindo, pronto, encerrado): a API usa esse estado
-e as subidas medidas para a previsão mostrada ao cliente, e o /aprovar mostra o relatório de cada
+e as subidas medidas para a previsão mostrada ao cliente, e o painel do dono mostra o relatório de cada
 pod (id no RunPod, GPU, preço, datacenter, horários, vídeos e custo estimado). O id e o preço são
 gravados assim que o RunPod cria o pod, mesmo que a instalação falhe depois; o desligamento, quando
 o pod é de fato encerrado (o gravador pode levar minutos enviando ao espelho depois do fim da fila).

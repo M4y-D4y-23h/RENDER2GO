@@ -93,8 +93,8 @@ Uma alternativa mais barata é deixar o pod quente esperar mais entre pedidos: `
 - **Duração:** de 4 a 7 s. Vídeos de 3 s existem só no teste gratuito.
 - **Cobrança:** o pedido inteiro, quando as fotos terminam de chegar. Sem saldo, a página avisa antes do envio, com o preço.
 - **Devolução automática:** pedido recusado na revisão volta inteiro; cada vídeo que não sai volta sozinho para o saldo.
-- **Recarga:** por fora (ex.: Pix), lançada pelo dono em `/aprovar` ou pelo terminal (`docs/09`, seção 5.1.7). O extrato fica guardado e o cliente vê os últimos movimentos na página.
-- **Teste gratuito:** um pedido, vídeos de 3 s em 480p, até 5 fotos (eram 10). Custa ~US$ 0,055 de GPU por pessoa (~R$ 0,31), mais a parte da subida do pod, que é dividida entre os testes agrupados.
+- **Recarga:** pelo próprio cliente, por Pix, creditada sozinha quando o Mercado Pago confirma (ADR 0008); ou à mão, pelo dono, no painel ou pelo terminal (`docs/09`, seção 5.1.7). O extrato fica guardado e o cliente vê os últimos movimentos na página.
+- **Teste gratuito:** um por caixa de e-mail (conta criada pelo e-mail, ADR 0007): um pedido, vídeos de 3 s em 480p, até 5 fotos (eram 10). Custa ~US$ 0,055 de GPU por pessoa (~R$ 0,31), mais a parte da subida do pod, que é dividida entre os testes agrupados.
 - **Plano interno** (o dono): não paga.
 
 ### 4.2 Custo e margem por vídeo (L40S)
@@ -112,10 +112,10 @@ GPU em reais a ~R$ 5,70 por dólar. "Sobra" é o preço menos imposto e taxa de 
 
 - **Medidos:** 5 s em 480p, 5 s e 7 s em 720p (seção 2). Os de 4 s e 7 s em 480p e 4 s em 720p são proporcionais ao tempo medido.
 - **Subida do pod:** ~R$ 0,63 por vez na L40S (seção 2). Num pedido de um vídeo só de 4 s, ela come quase toda a sobra; a partir de 3 ou 4 vídeos por subida, pesa pouco. Pedidos seguidos aproveitam o pod quente.
-- **Ainda não descontados:** o seu tempo de revisão, os custos fixos (~R$ 43/mês) e os vídeos refeitos por qualidade (no teste das receitas, 2 de 8 não ficaram bons).
+- **Ainda não descontados:** o seu tempo de revisão, os custos fixos (~R$ 43/mês), os vídeos refeitos por qualidade (no teste das receitas, 2 de 8 não ficaram bons), a taxa do Mercado Pago em cada recarga por Pix (depende da conta; confira em "Seu negócio → Custos", ADR 0008) e o provedor de e-mail dos códigos de entrada.
 - **O custo medido pelo dono** (~US$ 0,03 por vídeo de 3 s, já com as subidas, na RTX PRO 6000) dá ~R$ 0,17: ainda bem abaixo do menor preço (R$ 1,00).
 - **Vídeo refeito pela conferência** (desde 09/10, o vídeo que troca de produto no meio volta com outra seed, até 3 tentativas) custa GPU de novo e não é cobrado outra vez; se não sair, volta para o saldo do cliente.
-- **Para conferir com os números reais:** `/aprovar`, seção "GPUs" (`docs/09`, seção 5.1.8), mostra o custo estimado de cada pod e o custo por vídeo do período, já com subidas, pod quente, refações e falhas na instalação.
+- **Para conferir com os números reais:** o painel, seção "GPUs" (`docs/09`, seção 5.1.8), mostra o custo estimado de cada pod e o custo por vídeo do período, já com subidas, pod quente, refações e falhas na instalação.
 
 ### 4.3 Receita nos cenários da seção 3
 

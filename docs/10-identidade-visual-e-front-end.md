@@ -1,6 +1,6 @@
 # 10 — Identidade visual e front-end
 
-Como as páginas do serviço são desenhadas, montadas e entregues: `/` (cliente), `/suporte`, `/aprovar` (revisão, só o dono) e a página de erro 404. As decisões de arquitetura (build, cache, cabeçalhos de segurança e CDN) estão no [ADR 0006](adr/0006-front-end-build-entrega-e-seguranca.md).
+Como as páginas do serviço são desenhadas, montadas e entregues: `/` (entrada pelo e-mail e painel do cliente), `/suporte`, `/termos`, `/privacidade`, `/cookies`, `/verificacao` (o "não sou um robô", dentro de um quadro), o painel do dono (no endereço secreto, só o dono) e a página de erro 404. As decisões de arquitetura (build, cache, cabeçalhos de segurança e CDN) estão no [ADR 0006](adr/0006-front-end-build-entrega-e-seguranca.md); contas, sessão em cookie, "não sou um robô" e painel, no [ADR 0007](adr/0007-contas-sessoes-e-painel.md).
 
 - **Código:** `servico/web/src/` (TypeScript, CSS, HTML e ícones). O build (`npm run build`) gera `servico/web/publico/`, que a API entrega. As duas pastas são versionadas e o CI confere se `publico/` está em dia.
 - **Marca:** `tools/marca.py` gera a fonte dos títulos, o logo, os ícones e a imagem de compartilhamento (seção 1).
@@ -115,7 +115,7 @@ Todos em `servico/web/src/css/componentes.css`, usados pelas três páginas:
 | Previsão e progresso | `.previsao`, `.pulso`, `progress`, `.progresso-texto` | Barra anil → urucum |
 | Fotos | `.soltar`, `.previa`, `.miniatura` (+ `.pequena`, `.baixa`) | Remover por foto; ✓ quando a foto termina de subir; selo "baixa resolução" e aviso `#aviso-fotos` quando a foto vai ser ampliada 1,5× ou mais |
 | Sugestão e exemplos | `.sugestao`, `.exemplos-pedido` | Exemplo do estilo escolhido; exemplos simples e detalhados num `<details>` |
-| Totais do relatório | `.resumo-gpus` (`<dl>`) | Números do período na seção "GPUs" do `/aprovar` |
+| Totais do relatório | `.resumo-gpus` (`<dl>`) | Números do período na seção "GPUs" do painel |
 | Finalidades | `.finalidades`, `.blocos`, `.bloco` (+ `.em-breve`, `.ver-todas`), `.escolhida`, `.modelo-uso`, `.interesse-ok` | Bloco disponível é um `<button>`; o "Em breve" não é clicável e tem o botão "Tenho interesse" (com `aria-label` citando a opção), que vira a confirmação e recebe o foco |
 | Lista completa | `dialog.todas-finalidades`, `.grupo-opcoes`, `.opcao` | Agrupada pelo que o cliente envia; "Usar" fecha a janela e escolhe; o foco volta a quem abriu |
 | Vídeos e player | `.videos`, `.video`, `<dialog>` | Assistir na página, abrir em outra aba, baixar |
@@ -131,7 +131,7 @@ Todos em `servico/web/src/css/componentes.css`, usados pelas três páginas:
 |---|---|---|
 | **Core Web Vitals** | LCP: só o CSS e um script de 0,7 KB bloqueiam a pintura; quem tem código vê o painel no 1º quadro; o script do `<head>` já pede à API os dados do painel, em paralelo com o resto. CLS: tamanhos declarados, fonte sem troca, sessão marcada antes de desenhar. INP: a lista se atualiza trocando só o cartão que mudou; miniaturas desenhadas uma por vez, fora da thread principal | Medição da seção 5 |
 | **Minificação de recursos** | esbuild 0.28.2 (versão fixada) minifica JS e CSS; um script por página (o código da revisão não vai mais para o cliente); HTML sem recuo nem comentários; o Caddy comprime com zstd ou gzip | CI: `npm run build` e `publico/` em dia |
-| **Otimização de mídias** | Logo e ícones em SVG; `og.jpg` de 64 KB; fonte woff2 de 13 KB; miniaturas das fotos reduzidas no próprio navegador (até 60 na tela); no `/aprovar`, a mesma foto não é baixada de novo a cada atualização, com `loading="lazy"` e `decoding="async"`; o vídeo só carrega quando o cliente abre o player | `test_paginas.py` (prévia) |
+| **Otimização de mídias** | Logo e ícones em SVG; `og.jpg` de 64 KB; fonte woff2 de 13 KB; miniaturas das fotos reduzidas no próprio navegador (até 60 na tela); no painel, a mesma foto não é baixada de novo a cada atualização, com `loading="lazy"` e `decoding="async"`; o vídeo só carrega quando o cliente abre o player | `test_paginas.py` (prévia) |
 | **Carregamento de scripts** | Scripts da página com `defer`; o único bloqueante (`inicio.js`, 0,7 KB, em cache por 1 ano) marca a sessão e antecipa as chamadas da API; nenhum script de terceiros | `test_paginas.py` (uma chamada só por recurso) |
 | **Uso de CDN** | Não ligado agora (seção 7): o IP real do cliente sustenta o teste gratuito e a auditoria, e a CDN da Cloudflare trocaria esse IP. Fotos e vídeos já vão e vêm do R2, que é rede da Cloudflare. Os arquivos estão prontos para CDN: versão no endereço, cache de 1 ano e `immutable` | `test_web.py` (cache) |
 | **Responsividade (celular primeiro)** | CSS base para celular, `min-width` em em, colunas só em telas largas | Testes em 320 e 390 px |
@@ -141,13 +141,13 @@ Todos em `servico/web/src/css/componentes.css`, usados pelas três páginas:
 | **Leitores de tela** | Regiões vivas com anúncios curtos (envio, progresso a cada 25 %, mudança de estado, erros); a atualização automática não repete nada; `aria-describedby`, `aria-invalid`, `aria-busy`, `aria-pressed` e `aria-current`; nome em todo botão só de ícone | axe-core (claro e escuro) |
 | **Contraste e legibilidade** | Paleta AA nos dois temas; texto de 16 px (mínimo de 13 px nos selos); entrelinha 1,55; até 68 caracteres por linha | `test_web.py` (28 pares) e axe-core |
 | **Navegação por teclado** | "Pular para o conteúdo"; foco visível em tudo (anel anil de 3 px); Esc fecha diálogos; o foco volta para quem abriu; a atualização da lista não tira o foco de quem está nela; tabelas roláveis focáveis | `test_paginas.py` (teclado) |
-| **URLs amigáveis** | `/`, `/suporte` e `/aprovar` sem extensão; `/suporte/` redireciona para `/suporte`; arquivos em `/estatico/`; endereço inexistente abre uma página 404 com caminhos de volta (a API continua em JSON) | `test_web.py` (404) |
-| **Tags meta** | Título e descrição por página; canonical; Open Graph e cartão do Twitter (com a imagem 1200 × 630 e texto alternativo); `theme-color` claro e escuro; `color-scheme`; manifesto; ícones; `noindex` no `/aprovar` e no 404; JSON-LD (Organization e WebSite) | `test_web.py` (meta) |
-| **Velocidade de indexação** | `robots.txt` (bloqueia só `/api/`), `sitemap.xml` (`/` e `/suporte`), canonical, página inicial legível sem JavaScript (título, descrição e "Como funciona"), páginas servidas da memória com ETag | `test_web.py` (indexação) |
+| **URLs amigáveis** | `/`, `/suporte`, `/termos`, `/privacidade` e `/cookies` sem extensão; o painel no endereço secreto (com a barra no fim); `/suporte/` redireciona para `/suporte`; arquivos em `/estatico/`; endereço inexistente abre uma página 404 com caminhos de volta (a API continua em JSON) | `test_web.py` (404) |
+| **Tags meta** | Título e descrição por página; canonical; Open Graph e cartão do Twitter (com a imagem 1200 × 630 e texto alternativo); `theme-color` claro e escuro; `color-scheme`; manifesto; ícones; `noindex` no painel, na verificação e no 404; JSON-LD (Organization e WebSite) | `test_web.py` (meta) |
+| **Velocidade de indexação** | Sem `robots.txt`, por decisão do dono (não listar caminhos para quem ataca); páginas privadas com `noindex` no cabeçalho; `sitemap.xml` (`/`, `/suporte`, `/termos`, `/privacidade` e `/cookies`), canonical, página inicial legível sem JavaScript (título, descrição e "Como funciona"), páginas servidas da memória com ETag | `test_web.py` (indexação) |
 | **Navegação intuitiva** | Cabeçalho igual em todas as páginas (logo, Pedidos, Suporte, Sair) com a página atual marcada; passos numerados; exemplo de texto por estilo; na revisão, menu de seções com o número de pendentes, também no título da aba; 404 com saídas | Capturas |
 | **Feedback visual** | Estados de passar o mouse, toque, foco, desativado e ocupado; prévia das fotos com ✓ por foto enviada; progresso em bytes e %; aviso ao tentar sair durante o envio; contador de caracteres; selos de estado; esqueleto ao carregar; erros no próprio campo | `test_paginas.py` |
 | **Consistência visual** | Um conjunto de tokens (cores, espaço, raios, sombras, tipos), componentes e ícones compartilhados, uma folha de estilo, partes de HTML comuns (cabeça, topo, rodapé) montadas no build | Revisão das capturas |
-| **Proteção contra XSS e CSRF** | XSS: CSP sem `unsafe-inline` nem `unsafe-eval`, `object-src 'none'`, `base-uri 'none'` e Trusted Types obrigatório; nenhum `innerHTML` (todo texto por `textContent`); URL vinda da API só vira link ou vídeo se for https; SRI no CSS e nos scripts. CSRF: a API usa o token no cabeçalho `Authorization` (o navegador não manda sozinho), e todo POST na API vindo de outro site é recusado (Fetch Metadata: `Sec-Fetch-Site` ou `Origin`). Clickjacking: `frame-ancestors 'none'` e `X-Frame-Options` | `test_web.py` e navegador sem erro de CSP |
+| **Proteção contra XSS e CSRF** | XSS: CSP sem `unsafe-inline` nem `unsafe-eval`, `object-src 'none'`, `base-uri 'none'` e Trusted Types obrigatório; nenhum `innerHTML` (todo texto por `textContent`); URL vinda da API só vira link ou vídeo se for https; SRI no CSS e nos scripts. CSRF: a sessão vai num cookie HttpOnly e SameSite, todo pedido que muda algo exige o cabeçalho `X-Render2Go` (outro site não consegue mandá-lo sem CORS, que a API não libera), e todo POST na API vindo de outro site é recusado (Fetch Metadata: `Sec-Fetch-Site` ou `Origin`). O "não sou um robô" da Cloudflare roda só na página `/verificacao`, num quadro, com CSP própria; as outras páginas não carregam script de terceiros. Clickjacking: `frame-ancestors 'none'` e `X-Frame-Options` | `test_web.py` e navegador sem erro de CSP |
 | **Integração segura** | URLs assinadas do R2 conferidas antes do uso; a CSP só libera a própria API e o R2; `Referrer-Policy: no-referrer` (as URLs assinadas não vazam); COOP e CORP; `Permissions-Policy` desliga câmera, microfone, localização, pagamento, USB e sensores; respostas da API com `no-store`; HSTS no Caddy; nenhuma fonte ou script de terceiros; links externos com `noopener noreferrer` | `test_web.py` |
 
 ## 5. Medições (antes × depois)
@@ -183,6 +183,8 @@ Todos em `servico/web/src/css/componentes.css`, usados pelas três páginas:
   1. `src/paginas/<nome>.html`, com as partes `<!--@cabeca-->`, `<!--@topo-->`, `<!--@rodape-->` e `<!--@anuncios-->`;
   2. script em `src/ts/<nome>.ts`, acrescentado em `PAGINAS_JS` no `construir.mjs`;
   3. rota na API (`servir`, em `render2go_servico/api.py`) e, se for pública, no `sitemap.xml` (`construir.mjs`).
+- **Painel do dono:** `src/paginas/painel.html` e `src/ts/painel.ts`. O build põe o script em `publico/privado/painel.js`, que a API só entrega no endereço secreto (`RENDER2GO_ADMIN_CAMINHO`); nenhuma página pública cita esse endereço (o teste de invasão confere).
+- **Páginas legais:** `termos.html`, `privacidade.html` e `cookies.html`. Os dados da empresa entram pelo `.env` (`[[EMPRESA_NOME]]` e os outros marcadores viram o valor de `RENDER2GO_EMPRESA_*` quando a API carrega as páginas). Mudança de texto que muda direitos ou dados tratados = versão nova (`contas.DOCUMENTOS`), aceita de novo na próxima entrada.
 - **Ícone novo:** em `src/icones.json`, no mesmo desenho (24 × 24, traço 2).
 - **Cor nova:** token em `src/css/tokens.css`, nos dois temas, e o par em `PARES` no `test_web.py`.
 - **Marca (logo, ícones, `og.jpg`, fonte):** `tools/marca.py` (precisa de rede e do Chromium; comando no cabeçalho do arquivo). `--check` confere a fonte e os SVGs versionados.
@@ -198,13 +200,13 @@ Todos em `servico/web/src/css/componentes.css`, usados pelas três páginas:
 
 - **CDN (proxy da Cloudflare, "nuvem laranja"):** não foi ligada porque muda o IP que a API enxerga, e o teste gratuito (teto por IP) e o registro de auditoria dependem dele. Para ligar com segurança:
   1. no Caddy, confiar só nas faixas de IP da Cloudflare (`trusted_proxies`) e ler o `CF-Connecting-IP` (`client_ip_headers`);
-  2. repassar à API o IP já resolvido (`header_up X-Forwarded-For {client_ip}`);
+  2. o `Caddyfile` já repassa à API o IP resolvido (`header_up X-Render2Go-IP {client_ip}`): basta descomentar as duas linhas do bloco `servers` e fechar o firewall para aceitar só a Cloudflare (`docs/13`, seção 6.4);
   3. na Cloudflare: SSL "Full (strict)", sem Rocket Loader e sem nada que reescreva HTML, CSS ou JS (o SRI bloquearia);
   4. testar o teto do teste gratuito com dois IPs diferentes antes de abrir para clientes.
 
   Ganho esperado: a conexão TLS fecha em São Paulo em vez de Nuremberg (centenas de ms na primeira visita de quem está no Brasil).
-- **Miniaturas no servidor para o `/aprovar`:** hoje a revisão baixa a foto original (com `lazy` e sem repetir). Uma versão reduzida, gerada na análise de pessoas, pouparia banda do revisor. Mexe no armazenamento e no apagamento das fotos, por isso ficou de fora.
-- **Política de privacidade e termos de uso (LGPD):** precisam de texto aprovado (docs/09, seção 5.1.4). Quando existirem, entram como páginas e no rodapé.
+- **Miniaturas no servidor para o painel:** hoje a revisão baixa a foto original (com `lazy` e sem repetir). Uma versão reduzida, gerada na análise de pessoas, pouparia banda do revisor. Mexe no armazenamento e no apagamento das fotos, por isso ficou de fora.
+- **Política de privacidade e termos de uso (LGPD):** publicadas em 09/10/2026 (`/termos`, `/privacidade`, `/cookies`), com links no rodapé. Falta a revisão de um advogado (`docs/13`, seção 6.7).
 - **Escolha do formato** (vertical, quadrado, horizontal): a API aceita, a página não mostra. É decisão de produto.
 - **Baixar todos os vídeos de um pedido (.zip):** depende do servidor (docs/09, seção 8).
 - **Search Console:** cadastrar `app.render2go.com` e enviar o `sitemap.xml`.

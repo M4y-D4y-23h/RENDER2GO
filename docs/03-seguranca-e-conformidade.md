@@ -111,7 +111,7 @@ Entregue ─► C9 canal de denúncia ─► remoção em até 48 h + hash bloqu
 ## 8. Dados pessoais, registros e retenção
 
 - **Dados sensíveis (LGPD):** biometria (verificação de idade) e dados sobre vida sexual (pedidos e vídeos). Exigem base legal específica (consentimento destacado), relatório de impacto (RIPD), encarregado (DPO) nomeado, criptografia em repouso, controle e registro de acesso.
-- **Registros de acesso:** guardar por 6 meses (Marco Civil, art. 15).
+- **Registros de acesso:** guardar por 6 meses (Marco Civil, art. 15). No serviço de marketing, desde 09/10/2026: tabela `acessos` (conta, IP, porta, data e hora), apagada sozinha depois de 6 meses (ADR 0007).
 - **Retenção proposta** (validar com o advogado):
 
 | Dado | Retenção |
@@ -132,7 +132,8 @@ Entregue ─► C9 canal de denúncia ─► remoção em até 48 h + hash bloqu
 - **Webhooks** assinados (HMAC), com conferência do `job_id` e processamento idempotente.
 - **Cadeia de suprimentos:** versões fixadas (tag do ComfyUI, commits dos custom nodes, lock das dependências Python com hashes, SHA-256 dos modelos); build no CI; ComfyUI-Manager fora da produção.
 - **Contas:** senha + segundo fator ou passkeys; cookies `HttpOnly`; limite de requisições; pontuação de abuso (recusas repetidas bloqueiam a conta).
-- **Páginas do serviço de marketing (fase 3, 08/10/2026):** CSP estrita com Trusted Types, SRI, COOP, CORP, `Permissions-Policy` e proteção contra CSRF por Fetch Metadata. O código de acesso fica guardado no navegador e vai no cabeçalho `Authorization`, não em cookie; por que, e o que muda quando houver contas com senha, está no [ADR 0006](adr/0006-front-end-build-entrega-e-seguranca.md).
+- **Páginas do serviço de marketing (fase 3, 08/10/2026):** CSP estrita com Trusted Types, SRI, COOP, CORP, `Permissions-Policy` e proteção contra CSRF por Fetch Metadata ([ADR 0006](adr/0006-front-end-build-entrega-e-seguranca.md)).
+- **Contas do serviço de marketing (09/10/2026, [ADR 0007](adr/0007-contas-sessoes-e-painel.md)):** sem senha, por código de uso único no e-mail (provedores confiáveis, "não sou um robô", limites por rede, e-mail e aparelho); sessão em cookie HttpOnly; painel do dono num endereço secreto, com token e aplicativo autenticador; token por pod. Revisão completa e teste de invasão: `docs/13`.
 - **Isolamento entre clientes:** prefixos por usuário no storage; testes contra acesso a recurso de outro usuário (IDOR).
 - Criptografia em repouso (banco e storage) e TLS em tudo.
 
@@ -146,6 +147,7 @@ Entregue ─► C9 canal de denúncia ─► remoção em até 48 h + hash bloqu
 - Processador ou adquirente especializado no setor adulto (Stripe e PayPal não aceitam; doc 01, item 16).
 - Cumprir as regras das bandeiras para conteúdo adulto: verificação de idade e identidade, controle de conteúdo, atendimento a reclamações, remoção.
 - Modelo de **créditos pré-pagos**: reduz chargeback e deixa o custo previsível para o cliente.
+- **Serviço de marketing (SFW), desde 09/10/2026:** recarga do pré-pago por Pix no Mercado Pago, creditada só com a confirmação da API ([ADR 0008](adr/0008-recarga-pix-mercado-pago.md)). Não vale para o uso adulto, que continua exigindo processador especializado (D1).
 
 ## 12. Licenças
 

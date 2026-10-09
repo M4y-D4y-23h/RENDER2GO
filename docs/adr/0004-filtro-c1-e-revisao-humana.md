@@ -1,6 +1,7 @@
 # ADR 0004: filtro C1 e revisão humana no serviço SFW (fase 3)
 
 - **Status:** proposto (07/10/2026). Aceitar é decisão do dono do projeto.
+- **Atualização (09/10/2026):** a revisão saiu do `/aprovar` para o painel do dono, num endereço secreto e com dois fatores (ADR 0007). Onde este ADR diz `/aprovar`, leia "painel"; o registro de auditoria do lote sai em `<painel>/api/lotes/{id}/auditoria`.
 - **Contexto:** ADR 0003, fase 3 (API, fila, orquestrador e páginas: `servico/`). O doc 03 prevê o filtro C2, um classificador de texto não abliterado, que ainda não existe. A regra do projeto é fail-closed: worker sem filtros não processa jobs.
 
 ## Decisão

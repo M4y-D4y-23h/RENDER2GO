@@ -2,6 +2,41 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 09/10/2026 (4): contas por e-mail, painel secreto, Pix e segurança para o lançamento
+
+Motivo: antes do lançamento oficial e da divulgação em massa, o dono pediu o cadastro aberto (sem código entregue à mão) sem contas falsas em massa, o painel num endereço mais seguro, desligar pods em emergência, cada "Tenho interesse" no painel, pagamento automático, documentos legais, uma revisão completa de segurança com teste de invasão e uma resposta sobre tráfego alto. Decisões: [ADR 0007](docs/adr/0007-contas-sessoes-e-painel.md) e [ADR 0008](docs/adr/0008-recarga-pix-mercado-pago.md); revisão, medições e a lista do dono: [`docs/13`](docs/13-seguranca-escala-e-lancamento.md). **A atualização do servidor tem passos antes** ([`docs/09`](docs/09-implantacao.md), seção 0).
+
+### Contas pelo e-mail
+- **Cadastro e entrada sem senha:** o cliente informa o e-mail e recebe um código de 8 dígitos (uso único, 10 min, 5 tentativas; o banco guarda só um HMAC dele). No 1º acesso, a conta nasce no **teste gratuito** (um pedido, até 5 fotos, 480p, 3 s).
+- **Só provedores confiáveis:** Gmail, Outlook/Hotmail, Yahoo, iCloud, UOL, BOL e Terra (pedem verificação para abrir uma caixa). Descartáveis e domínios próprios ficam de fora; o painel cria a conta de um e-mail de empresa.
+- **Um teste por caixa:** apelidos do Gmail (pontos e "+"), "+" nos outros e "-palavra" no Yahoo contam como a mesma caixa; o e-mail de uma conta excluída volta sem teste.
+- **"Não sou um robô"** (Cloudflare Turnstile) numa página isolada, `/verificacao`, conferido no servidor e fechado na dúvida; vale também no suporte sem conta.
+- **Limites no banco**, válidos entre processos: códigos por rede (IPv6 por /64), e-mail e aparelho; credenciais erradas bloqueiam a rede por um tempo.
+- **Sessão em cookie** `__Host-` HttpOnly (30 dias); "Sua conta": baixar os dados, sair de todos os aparelhos e excluir a conta (LGPD). Os clientes antigos entram com o código de acesso de sempre.
+
+### Painel do dono
+- **Sai do `/aprovar`** (agora 404) para um endereço secreto (`RENDER2GO_ADMIN_CAMINHO`), com token e código do aplicativo autenticador (TOTP), bloqueio de 15 min depois de 5 erros, lista opcional de IPs e auditoria de cada ação.
+- **Pods:** "Desligar" em cada pod e "Parada de emergência" (encerra todos e não sobe outro até "Retomar"); o orquestrador executa em até ~10 s e dá sinal de vida.
+- **Interesse:** além da contagem, cada clique em "Tenho interesse", com a conta, o e-mail, o plano e a hora.
+- **Contas e saldo** (busca, plano, e-mail, desativar), **Recargas por Pix** e **Segurança** (o que falta configurar e as ações do painel).
+
+### Recarga por Pix (Mercado Pago)
+- O cliente escolhe o valor e paga o QR na própria página; o saldo entra quando a API do Mercado Pago confirma, uma vez só. O aviso (webhook) precisa da assinatura e só serve de gatilho; valor divergente não credita; estorno retira o saldo. A 1ª recarga tira a conta do teste gratuito.
+
+### Documentos legais
+- **`/termos`, `/privacidade` e `/cookies`**, com as bases legais, os prazos de guarda, os direitos (LGPD, art. 18), o Marco Civil, o CDC e a identificação do vendedor (Decreto 7.962/2013) no rodapé de todas as páginas. Falta a revisão de um advogado.
+
+### Segurança do servidor e teste de invasão
+- **Fechado:** o mapa da API (`/openapi.json`, `/docs`, `/redoc`), os cabeçalhos que revelavam o servidor (`Server`, `Via`), o `robots.txt` (decisão do dono), o envio ao R2 sem limite de tamanho (agora o tamanho vai na assinatura) e o token de worker igual para todos os pods (agora um por pod, revogado no fim).
+- **Contêineres:** disco só de leitura, sem as capacidades do Linux, `no-new-privileges`, logs com tamanho limitado e cada processo só com os segredos que usa; análise das fotos no contêiner próprio `analisador`. Caddy com tempos limite, HTTP/3 e log de acesso com rotação.
+- **Teste de invasão** (`servico/tests/teste_invasao.py`): 73 verificações (descoberta, travessia, cabeçalhos, autenticação, IDOR, CSRF, injeção, webhook, sessões e limites), todas OK depois de 4 correções: NUL num texto dava erro 500; credenciais com caracteres fora do ASCII davam erro 500; dígitos de outros alfabetos passavam; e a resposta para um e-mail de empresa dizia se havia conta antes da verificação anti-robô. Mais um teste no navegador: HTML e JavaScript de clientes aparecem como texto no painel.
+- **A API avisa ao subir** o que falta configurar (`docker compose logs api | grep AVISO`) e não sobe com variável obrigatória faltando.
+
+### Escala
+- **Pool de conexões** do Postgres, **vários processos** da API (`RENDER2GO_API_WORKERS`), cache curto da previsão, consultas da fila em lote, índices novos e trava de líder no orquestrador.
+- **Achado na medição:** com vários processos, cada resposta numa conexão reaproveitada esperava ~40 ms (TCP sem `TCP_NODELAY`); corrigido. Medido em 4 vCPU: ~475–810 pedidos/s com 2–3 processos, 95% abaixo de 10 ms (`servico/tests/medir_carga.py`; `docs/13`, seção 4).
+- **GPUs:** limites do RunPod (US$ 80/h por padrão), 30+ pods e um modelo por pod, em `docs/13`, seção 5.
+
 ## 09/10/2026 (3): tela de finalidades e licenças dos modelos
 
 ### "O que você quer criar?" antes do pedido

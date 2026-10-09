@@ -6,6 +6,45 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há.
 
+### 09/10/2026 (4): contas por e-mail, painel secreto com 2 fatores, Pix e segurança
+
+**Esta atualização tem passos antes.** Sem eles, ninguém novo consegue entrar e o painel fica fora do ar. Prepare primeiro o que está no `docs/13`, seção 6.1: o e-mail transacional (SMTP com SPF, DKIM e DMARC), o "não sou um robô" (Turnstile), os dados da empresa e, se quiser já no 1º dia, o Mercado Pago. Depois, no servidor, **sem pedido gerando**:
+
+```bash
+cd ~/GPU2GO && git pull
+cd servico/implantacao
+# 1) backup do banco antes de mudar
+docker compose exec -T postgres pg_dump -U gpu2go gpu2go | gzip > ~/backup-antes-contas-$(date +%F).sql.gz
+# 2) imagem nova, sem trocar ainda os contêineres
+docker compose build
+# 3) segredos novos
+python3 -c "import secrets; print('/painel-' + secrets.token_urlsafe(18))"   # RENDER2GO_ADMIN_CAMINHO
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"                # rode 2 vezes: RENDER2GO_ADMIN_TOKENS (novo) e RENDER2GO_SEGREDO_CONTAS
+docker compose run --rm --no-deps api render2go-servico totp-novo            # RENDER2GO_ADMIN_TOTP; cadastre no aplicativo autenticador
+# 4) .env: as variáveis novas estão no exemplo.env (painel, contas, SMTP e remetente, Turnstile, empresa, Pix, escala)
+nano .env
+# 5) sobe tudo, com o contêiner novo "analisador", e confere
+docker compose up -d
+docker compose ps --format "table {{.Service}}\t{{.Status}}"
+docker compose logs api | grep AVISO      # o que ainda falta configurar (aparece também no painel, em "Segurança")
+```
+
+- **Painel:** sai do `/aprovar`, que passa a dar 404, para `https://app.render2go.com<RENDER2GO_ADMIN_CAMINHO>/`. A entrada pede o token e o código do aplicativo autenticador. Guarde o endereço num gerenciador de senhas.
+- **O que muda para os clientes:**
+  - quem chega entra com o e-mail (Gmail, Outlook/Hotmail, Yahoo, iCloud, UOL, BOL ou Terra) e um código de 8 dígitos; a conta nova nasce no teste gratuito;
+  - os clientes antigos entram com o código de acesso de sempre ("Entrar com código de acesso") ou pelo e-mail, depois que você ligar o e-mail à conta (painel, "Contas e saldo", ou `docker compose exec api render2go-servico email cli_xxx fulano@gmail.com`);
+  - "Sua conta": baixar os dados, sair de todos os aparelhos e excluir a conta;
+  - com o Mercado Pago configurado, o cliente recarrega por Pix, e o saldo entra sozinho (seção 5.1.7).
+- **O que muda no painel:** seções novas "Pods" (desligar um pod, parada de emergência, retomar), "Interesse" (cada clique em "Tenho interesse", com a conta), "Recargas por Pix", "Contas e saldo" (busca, plano, e-mail, desativar) e "Segurança" (o que falta configurar e as ações do painel).
+- **Servidor:**
+  - contêineres com disco só de leitura e sem privilégios;
+  - a análise das fotos roda no contêiner "analisador";
+  - a API roda em `RENDER2GO_API_WORKERS` processos;
+  - o Caddy grava o log de acesso no volume dele (`/data/logs`) e ganha HTTP/3. O Compose recria o Caddy sozinho, porque a configuração dele mudou;
+  - libere 443/udp no firewall, para o HTTP/3 (opcional).
+- **Páginas novas:** `/termos`, `/privacidade` e `/cookies`, com a identificação da empresa no rodapé (`RENDER2GO_EMPRESA_*`). Peça a revisão de um advogado antes da divulgação (`docs/13`, seção 6.7).
+- **Se algo der errado:** volte para o commit anterior (`git log --oneline -5` mostra; ex.: `git checkout 1943f11`) e rode `docker compose up -d --build`. O banco aceita a versão anterior, porque as tabelas e colunas novas só se somam; o `/aprovar` volta com o token de antes. Para voltar à versão nova: `git checkout main && git pull`. O backup do passo 1 é só para o pior caso.
+
 ### 09/10/2026 (3): tela de finalidades e licenças dos modelos
 
 Sem passo extra: a tabela `interesses` é criada sozinha na partida da API.
@@ -128,9 +167,10 @@ Navegador do cliente ──fotos (URL assinada)──►  R2 (Cloudflare)  ◄�
 
 | Peça | Onde | O que faz |
 |---|---|---|
-| API e páginas | contêiner `api` (`render2go-servico api`) | Cadastra lotes, assina URLs, recebe aprovações e conclusões |
-| Orquestrador | contêiner `orquestrador` (mesma imagem) | Lê a fila, sobe e encerra pods; só um rodando por vez |
-| Banco | Postgres 16 (contêiner ou gerenciado) | Clientes, lotes, jobs, eventos |
+| API e páginas | contêiner `api` (`render2go-servico api`, `RENDER2GO_API_WORKERS` processos) | Contas e sessões, lotes, URLs assinadas, Pix, painel do dono no endereço secreto (ADR 0007) |
+| Análise das fotos | contêiner `analisador` (mesma imagem) | Aviso de pessoas nas fotos, fora da API |
+| Orquestrador | contêiner `orquestrador` (mesma imagem) | Lê a fila, sobe e encerra pods, executa os comandos do painel; só um manda por vez |
+| Banco | Postgres 16 (contêiner ou gerenciado) | Contas, sessões, lotes, jobs, saldo, pagamentos, limites, registros |
 | Arquivos | R2 (bucket `gpu2go`, já criado) | Fotos, vídeos, folhas de conferência e espelho dos modelos |
 | GPUs | Pods RunPod secure | Worker da fila (`render2go_worker.fila`), sem porta de entrada |
 | HTTPS | Caddy | Certificado automático (Let's Encrypt) |
@@ -141,6 +181,10 @@ Navegador do cliente ──fotos (URL assinada)──►  R2 (Cloudflare)  ◄�
 2. **Um domínio ou subdomínio** (ex.: `videos.suaempresa.com.br`) com um registro DNS A apontando para o IP do servidor.
 3. **A chave de API do RunPod.** Fica só no servidor, no `.env`.
 4. **O bucket R2**, que já existe, com as duas configurações da seção 3.
+5. **Um provedor de e-mail transacional** (SMTP), para os códigos de entrada, com SPF, DKIM e DMARC no domínio do remetente (`docs/13`, seção 6.1).
+6. **O "não sou um robô" da Cloudflare (Turnstile)**: um widget para o domínio, com a chave pública e a secreta.
+7. **Os dados da empresa** para o rodapé e as páginas legais (razão social, CNPJ, endereço e e-mails).
+8. **Opcional: uma conta no Mercado Pago** com chave Pix, para a recarga automática (ADR 0008).
 
 ## 3. Configuração do R2 (painel da Cloudflare, bucket `gpu2go` → Settings)
 
@@ -183,7 +227,7 @@ nano .env    # DOMINIO, POSTGRES_PASSWORD, RENDER2GO_R2_*, segredos, RENDER2GO_A
 docker compose up -d --build
 docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 
-# 4) firewall: só 22 (SSH), 80 e 443
+# 4) firewall: só 22 (SSH), 80, 443 e 443/udp (HTTP/3); veja docs/13, seção 6.5
 ```
 
 **Variáveis do `.env`:**
@@ -193,9 +237,19 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 | `DOMINIO` | Domínio do serviço (Caddy pede o certificado) |
 | `POSTGRES_PASSWORD` | Senha do Postgres local |
 | `RENDER2GO_R2_ENDPOINT`, `_BUCKET`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY` | R2; os mesmos valores do ambiente do Claude |
-| `RENDER2GO_SEGREDO_APROVACAO` | Assina o carimbo de aprovação (HMAC) |
-| `RENDER2GO_ADMIN_TOKENS` | Token(s) do aprovador, separados por vírgula |
-| `RENDER2GO_WORKER_TOKENS` | Token dos pods; o orquestrador usa o primeiro |
+| `RENDER2GO_SEGREDO_APROVACAO` | Assina o carimbo de aprovação (HMAC); vai também para os pods |
+| `RENDER2GO_SEGREDO_CONTAS` | Chave dos códigos de entrada e do resumo dos e-mails excluídos (só a API). Defina na 1ª subida e não troque |
+| `RENDER2GO_ADMIN_CAMINHO` | Endereço secreto do painel: `/` + 12 a 64 letras, números, `_` ou `-`. Sem ele, o painel fica desligado |
+| `RENDER2GO_ADMIN_TOKENS` | Token(s) de entrada no painel, separados por vírgula (32+ caracteres) |
+| `RENDER2GO_ADMIN_TOTP` | Segredo do aplicativo autenticador do painel (`render2go-servico totp-novo`) |
+| `RENDER2GO_ADMIN_IPS` | Opcional: só estes IPs ou redes abrem o painel, separados por vírgula |
+| `RENDER2GO_WORKER_TOKENS` | Só para testes manuais: cada pod recebe um token próprio. Deixe vazio |
+| `RENDER2GO_SMTP_*`, `RENDER2GO_EMAIL_DE` | E-mail transacional: servidor, porta 587, usuário, senha e o remetente dos códigos |
+| `RENDER2GO_TURNSTILE_SITE`, `_SEGREDO` | "Não sou um robô" (Cloudflare Turnstile). Sem eles, ninguém novo entra |
+| `RENDER2GO_MP_ACCESS_TOKEN`, `RENDER2GO_MP_WEBHOOK_SEGREDO` | Opcional: recarga por Pix (Mercado Pago). `RENDER2GO_RECARGA_MIN`/`_MAX`: valores em reais (padrões 10 e 2000) |
+| `RENDER2GO_EMPRESA_NOME`, `_DOCUMENTO`, `_ENDERECO`, `RENDER2GO_EMAIL_CONTATO`, `RENDER2GO_EMAIL_PRIVACIDADE` | Identificação do vendedor no rodapé e nas páginas legais |
+| `RENDER2GO_API_WORKERS`, `RENDER2GO_DB_POOL` | Processos da API (padrão 1; recomendado 2) e conexões do banco por processo (padrão 10) |
+| `RENDER2GO_EMAIL_DOMINIOS_EXTRA` | Opcional: domínios de e-mail aceitos além da lista padrão |
 | `RENDER2GO_API_URL` | `https://` + domínio; é por ela que os pods falam com a API |
 | `RUNPOD_API_KEY` | O orquestrador cria e encerra pods |
 | `RENDER2GO_MAX_PODS`, `RENDER2GO_MAX_USD_H` | Teto de pods e de gasto por hora (o gasto de um pod novo conta pelo preço da GPU mais cara da lista que tiver vaga) |
@@ -210,17 +264,18 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 
 ## 5. Operação do dia a dia
 
-- **Cadastrar um cliente:** em `https://<domínio>/aprovar`, na seção "Novo cliente". O código aparece uma vez; envie ao cliente por um canal seguro. Pelo terminal:
+- **Painel do dono:** `https://<domínio><RENDER2GO_ADMIN_CAMINHO>/`, com o token e o código do aplicativo autenticador (ADR 0007). Cinco erros bloqueiam a rede por 15 min.
+- **Contas:** os clientes se cadastram sozinhos, pelo e-mail. Para criar a conta de um e-mail de empresa (fora da lista de provedores) ou já no plano pago: painel, seção "Nova conta". Pelo terminal:
   ```bash
-  docker compose exec api render2go-servico cliente "Padaria do Bairro" --plano teste
+  docker compose exec api render2go-servico cliente "Padaria do Bairro" --email dono@padariadobairro.com.br --plano pago
   ```
-- **Recarregar o saldo de um cliente pago:** em `/aprovar`, seção "Clientes e saldo" (seção 5.1.7).
-- **Histórico:** em `/aprovar`, abaixo dos pendentes. Mostra todos os pedidos (filtros: em revisão, aprovados, recusados), com cliente, IP, fotos, quem aprovou, motivo da recusa e andamento. A tabela "Uso por IP" soma as fotos por IP.
-- **Código de cliente vazou:** no histórico, "Desativar o código deste cliente". O código deixa de valer na hora.
-- **Aprovar pedidos:** em `/aprovar`. Nada vai para a GPU sem aprovação (ADR 0004). O cliente acompanha em `/`.
+- **Recarregar o saldo de um cliente pago:** sozinho, por Pix, quando o Mercado Pago está configurado; à mão, no painel, seção "Contas e saldo" (seção 5.1.7).
+- **Histórico:** no painel, abaixo dos pendentes. Mostra todos os pedidos (filtros: em revisão, aprovados, recusados), com cliente, IP, fotos, quem aprovou, motivo da recusa e andamento. A tabela "Uso por IP" soma as fotos por IP.
+- **Conta comprometida:** no painel, "Desativar" (seção "Contas e saldo" ou no histórico). As sessões e o código antigo deixam de valer na hora.
+- **Aprovar pedidos:** no painel. Nada vai para a GPU sem aprovação (ADR 0004). O cliente acompanha em `/`.
   - Cada foto ganha um selo "contém pessoas" ou "sem pessoas detectadas" segundos depois do envio (detector no próprio servidor, sem custo de GPU). Com pessoas e sem a caixa de autorização marcada, o lote mostra um aviso em vermelho.
   - O selo é uma ajuda: confira sempre as miniaturas.
-- **Parar tudo e encerrar os pods:**
+- **Parar tudo e encerrar os pods:** no painel, seção "Pods", "Parada de emergência": encerra todos os pods em até ~10 s e não sobe outro até "Retomar". Cada pod também tem "Desligar". Pelo terminal (se o painel estiver fora do ar):
   ```bash
   docker compose stop orquestrador
   docker compose run --rm orquestrador render2go-servico limpar
@@ -243,20 +298,21 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 
 ## 5.1 Teste gratuito e custo
 
+- **Quem tem:** cada conta nova, criada pelo e-mail (ADR 0007). Um teste por caixa de e-mail: os apelidos do Gmail (pontos e "+") e de outros provedores contam como a mesma caixa, e o e-mail de uma conta excluída volta já sem o teste.
 - **Regras** (a API impõe; a página só mostra):
   - um pedido só, com até 5 fotos (eram 10 até 09/10/2026);
   - vídeos de 3 s em 480p (3 s existe só no teste; nos outros planos, de 4 a 7 s);
   - no máximo 5 fotos de teste **por dispositivo** (navegador);
   - no máximo 50 fotos de teste **por IP** (`RENDER2GO_TESTE_FOTOS_IP`). Assim cinco pessoas da mesma empresa, na mesma rede, conseguem fazer o teste cada uma, e quem troca de navegador para juntar testes esbarra no teto da rede.
 - **Dispositivo:** a página cria um identificador aleatório e guarda no próprio navegador. Janela anônima ou dados apagados geram outro; por isso existe o teto por IP.
-- **Sinais no `/aprovar`, tabela "Dispositivos":** um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes; fusos horários diferentes também são sinal de VPN.
+- **Sinais no painel, tabela "Dispositivos":** um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes; fusos horários diferentes também são sinal de VPN.
 - **Pedido recusado libera o teste** do cliente, para ele corrigir e mandar de novo.
 - **Autorização das pessoas das fotos:** marcar a caixa não pede nome. O registro de auditoria liga a declaração à conta do cliente, ao IP, ao dispositivo e aos sinais do navegador, inclusive a hora do clique (ADR 0004, item 5). Ele sai em JSON pelo botão "Baixar registro de auditoria" no histórico.
 - **Dados pessoais** guardados (IP, identificador do dispositivo, navegador, fuso, nome de quem declara) precisam constar da política de privacidade (LGPD).
 
 ## 5.1.1 Acesso interno (só o dono)
 
-Para testar sem os limites do teste gratuito e sem esperar revisão, cadastre um cliente com o plano **Interno** em `/aprovar` ("Novo cliente").
+Para testar sem os limites do teste gratuito e sem esperar revisão, crie uma conta com o plano **Interno** no painel ("Nova conta"), com um e-mail seu.
 - Os pedidos desse código são aprovados automaticamente no envio e sobem pods na hora, sem a janela de agrupamento.
 - O filtro de conteúdo (C1), o aviso de pessoas e o registro de autorização continuam valendo.
 - Não entregue esse código a clientes; se vazar, desative no histórico.
@@ -264,18 +320,18 @@ Para testar sem os limites do teste gratuito e sem esperar revisão, cadastre um
   - Cada subida de pod custa ~US$ 0,11 na L40S (subida + 3 min de pod quente), e um vídeo de teste ~US$ 0,011.
   - Dez pedidos de 1 foto em horários diferentes custariam ~US$ 1,24; juntos, ~US$ 0,23.
   - Pedidos pagos sobem na hora (e levam os testes da fila junto).
-- **O IP vem do Caddy:** ele troca o `X-Forwarded-For` recebido de fora pelo IP real da conexão.
+- **O IP vem do Caddy:** ele sempre reescreve o `X-Render2Go-IP` (e a porta, `X-Render2Go-Porta`) com o IP real da conexão; o valor mandado de fora não passa. A API não lê o `X-Forwarded-For`.
   - Se um dia o proxy da Cloudflare (nuvem laranja) for ligado, o IP passa a ser o da Cloudflare, e é preciso ler o `CF-Connecting-IP`.
   - Vários clientes podem dividir um IP (escritórios, redes de celular), e uma VPN troca o IP: é um sinal, não uma prova.
 
 ## 5.1.2 Suporte por e-mail
 
 A página do cliente tem um link para **https://app.render2go.com/suporte**. A página de suporte funciona de dois jeitos:
-- **com o código de acesso** (o navegador já conectado): a mensagem vai ligada à conta;
-- **sem código** (quem perdeu o código ou não consegue entrar): o e-mail é obrigatório, e os limites são menores (2 por hora por dispositivo; 3 por hora e 10 por dia por IP).
-- **Toda mensagem fica no banco** e aparece no `/aprovar`, em "Mensagens de suporte". Isso vale mesmo sem e-mail configurado.
+- **conectado** (entrou pelo e-mail ou com o código de acesso): a mensagem vai ligada à conta;
+- **sem entrar** (quem não consegue entrar): o e-mail e o "não sou um robô" são obrigatórios, e os limites são menores (2 por hora por dispositivo; 3 por hora e 10 por dia por IP).
+- **Toda mensagem fica no banco** e aparece no painel, em "Mensagens de suporte". Isso vale mesmo sem e-mail configurado.
 - **Limite contra spam:** 3 mensagens por hora e 10 por dia por dispositivo; 5 por hora e 20 por dia por IP; 5 por hora e 15 por dia por cliente.
-- **Para receber no seu e-mail**, configure no `.env`:
+- **Para receber no seu e-mail**, configure no `.env` (o mesmo SMTP manda os códigos de entrada, com o remetente `RENDER2GO_EMAIL_DE`):
 
   ```
   RENDER2GO_SMTP_HOST=smtp.gmail.com        # ou o SMTP de um serviço de envio (Brevo, Resend, Mailgun...)
@@ -304,7 +360,7 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **Sempre:** um ponto pulsando e "Atualizado às HH:MM:SS". A página se atualiza sozinha a cada 10 s. Nenhuma etapa interna aparece.
 - **Vídeos prontos:** "Assistir" abre o vídeo na própria página (com "Abrir em outra aba" e "Baixar" ao lado); "Baixar" também aparece em cada vídeo da lista.
 - **Antes de enviar:** o cliente vê as miniaturas das fotos escolhidas (pode tirar uma por uma), um exemplo de texto para o estilo escolhido e o envio em bytes e porcentagem, com um ✓ em cada foto que terminou de subir. Fechar a página no meio do envio pede confirmação.
-- **Estilo "Livre (descreva o que quiser)":** o primeiro da lista, para pedidos que não se encaixam nos outros. Ele usa só ritmo e estilo naturais, e o texto do cliente decide o movimento (`worker/presets/receitas.v3.json`). Foto com pessoa continua exigindo a autorização, e o `/aprovar` avisa.
+- **Estilo "Livre (descreva o que quiser)":** o primeiro da lista, para pedidos que não se encaixam nos outros. Ele usa só ritmo e estilo naturais, e o texto do cliente decide o movimento (`worker/presets/receitas.v3.json`). Foto com pessoa continua exigindo a autorização, e o painel avisa.
 - **Modelo de geração:** a página mostra os modelos oferecidos (hoje só o Wan 2.2) e o pedido guarda qual foi usado. Para acrescentar um modelo, veja `servico/src/render2go_servico/modelos.py`. O worker recusa modelo que não conhece.
 
 ## 5.1.4 Aviso de cookies
@@ -312,11 +368,11 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **Quando aparece:** em todo navegador novo, na página do cliente e no `/suporte`.
 - **Opções:** "Aceitar todos", "Só os necessários" ou "Gerenciar".
 - **Categorias:**
-  - **Necessários**, sempre ativos: manter o cliente conectado com o código, segurança e prevenção de abuso (identificador do dispositivo, limite do teste) e lembrar a escolha;
+  - **Necessários**, sempre ativos: manter o cliente conectado (cookie da sessão), segurança e prevenção de abuso (identificador do dispositivo, limite do teste, "não sou um robô") e lembrar a escolha;
   - **Estatísticas e marketing:** desligados, e nada disso carrega hoje. Se um dia você puser Google Analytics, Plausible ou pixel de anúncio, ele só pode carregar quando a escolha guardada permitir (`render2go-cookies` no navegador).
 - **Registro:** cada escolha fica gravada no servidor (tabela `cookies`: dispositivo, IP, navegador, versão e escolha), como prova do consentimento.
 - **Mudar a escolha:** pelo link "Preferências de cookies", no rodapé. O aviso é o primeiro item no teclado (logo depois de "Pular para o conteúdo"); aberto pelo rodapé, Esc fecha sem salvar.
-- **Falta:** a política de privacidade e os termos de uso, que devem explicar esses dados (LGPD).
+- **Documentos:** a Política de Cookies (`/cookies`), a Política de Privacidade (`/privacidade`) e os Termos de Uso (`/termos`) explicam esses dados (LGPD), com links no rodapé de todas as páginas.
 
 ## 5.1.5 Ordem da fila
 
@@ -349,7 +405,8 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **O que o cliente vê** no cartão "Novo pedido": o saldo, os preços, o extrato (ao abrir "Ver extrato") e, junto do botão de envio, o custo do pedido e o saldo depois dele. Cada pedido mostra quanto custou e quanto voltou para o saldo.
 - **Cobrança:** quando as fotos terminam de chegar, o pedido inteiro (fotos × preço do vídeo). Se outro pedido gastou o saldo enquanto as fotos subiam, o pedido é recusado sem cobrança e as fotos são apagadas.
 - **Devolução automática:** pedido recusado na revisão volta inteiro; cada vídeo que termina em erro ou cancelado volta sozinho. Nada é cobrado ou devolvido duas vezes.
-- **Recarga:** o cliente paga por fora (ex.: Pix). Você lança em `/aprovar`, seção "Clientes e saldo": cliente, valor em reais, descrição (o cliente vê no extrato) e, de preferência, o código do Pix, para o mesmo pagamento nunca entrar duas vezes. Valor negativo desconta (ajuste); o saldo nunca fica negativo. Pelo terminal:
+- **Recarga por Pix, sozinha** (ADR 0008), com o Mercado Pago configurado: o cliente clica em "Adicionar saldo", escolhe o valor (R$ 10 a R$ 2.000), informa o CPF ou CNPJ de quem paga e paga o QR (vale 1 hora). O saldo entra quando o Mercado Pago confirma, uma vez só, e a 1ª recarga tira a conta do teste gratuito. O painel lista as recargas em "Recargas por Pix"; "Conferir" pergunta de novo ao Mercado Pago.
+- **Recarga à mão** (pagamento por fora, ajustes): no painel, seção "Contas e saldo": cliente, valor em reais, descrição (o cliente vê no extrato) e, de preferência, o código do Pix, para o mesmo pagamento nunca entrar duas vezes. Valor negativo desconta (ajuste); o saldo nunca fica negativo. Pelo terminal:
   ```bash
   docker compose exec api render2go-servico clientes                                   # id, plano e saldo
   docker compose exec api render2go-servico saldo cli_xxxxxxxxxxxxxxxx 19,90 --descricao "Pix de 09/10" --referencia E2026100912345
@@ -357,7 +414,7 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **Extrato:** botão "Baixar" na tabela "Clientes e saldo" (JSON com todos os movimentos). O extrato é registro financeiro: o `apagar-historico` não o apaga.
 - **Teste gratuito e plano interno** não usam saldo.
 
-## 5.1.8 Relatório de GPUs (`/aprovar`, seção "GPUs")
+## 5.1.8 Relatório de GPUs (painel, seção "GPUs")
 
 - **Uma linha por GPU (pod) que o orquestrador ligou:** quando ligou, id do pod no RunPod (`pod-…`), GPU, datacenter, preço por hora, tempo até o 1º vídeo, tempo ligado, vídeos entregues (entre parênteses, os que estão gerando), vídeos que falharam, pedidos atendidos, uso da GPU (tempo gerando ÷ tempo ligado), custo estimado e situação ("ligada", "desligada: fila vazia", "falhou na subida: não subiu").
 - **Totais do período** (24 h, 7, 30 ou 90 dias): GPUs ligadas, tempo ligado, custo estimado, vídeos entregues, custo por vídeo e falhas. "Baixar relatório" salva tudo em JSON.
@@ -381,43 +438,46 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 - **Onde:** no cartão "Novo pedido", logo depois de entrar, antes do formulário. O saldo (pré-pago) e o aviso do teste gratuito ficam acima.
 - **Blocos:** as 6 finalidades mais usadas e "Ver todas as opções", que abre a lista completa (12), agrupada pelo que o cliente envia. Cada uma tem título pelo resultado ("Foto vira vídeo"), o tipo técnico embaixo ("Imagem para vídeo") e uma frase.
 - **Disponível:** hoje só "Foto vira vídeo", com o Wan 2.2. Ao escolher, aparecem o modelo e para que ele é melhor, e o formulário; "Trocar" volta aos blocos.
-- **Em breve:** não deixa escolher. "Tenho interesse" registra o pedido do cliente (uma vez por opção; não promete aviso, porque o serviço não tem o e-mail dos clientes). Na janela, cada opção mostra os modelos previstos, todos com licença comercial conferida (`docs/12`, seção 4).
-- **`/aprovar`, seção "Interesse":** quantos clientes marcaram cada opção, quantos deles estão no teste grátis e o pedido mais recente. A limpeza do histórico não apaga esses registros (ficam com os clientes).
+- **Em breve:** não deixa escolher. "Tenho interesse" registra o pedido do cliente (uma vez por opção; não promete aviso, mas o painel guarda o e-mail de cada clique, para avisar quando a opção sair). Na janela, cada opção mostra os modelos previstos, todos com licença comercial conferida (`docs/12`, seção 4).
+- **Painel, seção "Interesse":** quantos clientes marcaram cada opção, quantos deles estão no teste grátis e o pedido mais recente; abaixo, cada clique, com a conta, o e-mail, o plano e a hora. A limpeza do histórico não apaga esses registros (ficam com os clientes).
 - **Para ativar uma opção:** o modelo entra em `servico/src/render2go_servico/modelos.py` com `disponivel: True` depois do ADR, do perfil do tradutor e dos testes (`docs/12`, seção 5). A tela muda sozinha.
 
 ## 5.2 O que fica guardado
 
 - **Fotos de entrada:** apagadas pela API assim que o lote fecha (pronto, com falhas ou recusado). A regra `fotos-7-dias` do bucket fica como rede de segurança, para lotes que nunca fecham ou que esperam revisão por dias. Não use menos de 7 dias: um lote parado na revisão perderia as fotos antes de chegar à GPU.
 - **Vídeos e folhas de conferência:** pela regra `videos-30-dias` do bucket. Pode ser reduzida (ex.: 7 dias) se os termos de uso disserem que o cliente deve baixar os vídeos nesse prazo.
-- **No banco:** pedido, IP, quantidade de fotos, eventos e o resultado da análise de pessoas. Nenhuma imagem.
+- **No banco:** contas (e-mail, plano, saldo), sessões (só o resumo SHA-256), pedido, IP, quantidade de fotos, eventos e o resultado da análise de pessoas. Nenhuma imagem.
+- **Registros que ficam mesmo depois do `apagar-historico`:** aceites dos termos (versão, data, IP), registros de acesso (Marco Civil: IP, porta, data e hora; apagados sozinhos depois de 6 meses), pagamentos e a auditoria do painel. Prazos completos na Política de Privacidade (`/privacidade`, seção 4).
 - **Extrato do saldo** (tabela `movimentos`): recargas, cobranças e devoluções, com data e descrição. Fica mesmo depois do `apagar-historico`.
 
 ## 6. Primeiro teste depois de subir
 
-1. Cadastre um cliente de teste (plano `teste`) e entre em `/` com o código.
+1. Em `/`, entre com um Gmail seu: chega um código de 8 dígitos, e a conta nasce no teste gratuito.
 2. Envie 2–3 fotos com vídeos de 3 s.
-3. Aprove em `/aprovar`.
+3. Aprove no painel (endereço secreto).
 4. Acompanhe com `docker compose logs -f orquestrador`: um pod sobe (~3 min), renderiza, confere e envia os vídeos, e é encerrado ~3 min depois de a fila esvaziar.
 5. Custo esperado: ~US$ 0,10–0,20 na L40S (`docs/11`).
 
 ## 7. Segurança (resumo)
 
-- **Chaves só no servidor (`.env`, chmod 600):**
-  - o pod recebe só o token de worker, a URL da API e os hosts permitidos;
-  - o navegador recebe só URLs assinadas, uma por arquivo, que expiram.
-- **Tokens:** os dos clientes ficam no banco só como SHA-256. Os tokens de admin e de worker vêm do `.env`; para trocar um, edite e reinicie.
+Revisão completa, teste de invasão e a lista do dono: `docs/13`. Decisões: ADR 0006 (páginas), ADR 0007 (contas, sessões, painel e pods) e ADR 0008 (Pix).
+- **Chaves só no servidor (`.env`, chmod 600)**, e cada contêiner só com as que usa (o compose esvazia as outras):
+  - o pod recebe só o token dele (válido até o desligamento automático e revogado no fim), a URL da API e os hosts permitidos;
+  - o navegador recebe só URLs assinadas, uma por arquivo, que expiram; a de envio só aceita o tamanho declarado.
+- **Contas e painel:** sessões em cookie HttpOnly guardadas só como SHA-256; códigos de entrada de uso único; painel no endereço secreto com 2 fatores, bloqueio por tentativas e auditoria. Para trocar o token ou o autenticador do painel, edite o `.env` e rode `docker compose up -d api`.
 - **Páginas (ADR 0006, docs/10):**
   - CSP estrita: scripts e estilos só do próprio domínio, nada embutido, Trusted Types obrigatório; a página fala só com a própria API e com o R2;
   - SRI nos scripts e no CSS; COOP, CORP e `Permissions-Policy` (câmera, microfone, localização e pagamento desligados);
-  - pedido que muda algo na API vindo de outro site é recusado (403), pela checagem de `Sec-Fetch-Site`/`Origin`;
-  - respostas da API com `Cache-Control: no-store`; `/aprovar` e a API com `noindex`.
+  - pedido que muda algo na API vindo de outro site é recusado (403), pela checagem de `Sec-Fetch-Site`/`Origin` e do cabeçalho `X-Render2Go`;
+  - respostas da API com `Cache-Control: no-store`; o painel, a verificação e a API com `noindex`; sem `robots.txt` (decisão do dono).
+- **Servidor:** contêineres com disco só de leitura, sem as capacidades do Linux e com `no-new-privileges`; logs com tamanho limitado; Caddy com tempos limite e sem os cabeçalhos que revelam o servidor (`docs/13`, seção 2).
 - **Token do R2:** com permissão só no bucket `gpu2go`.
 - **RunPod:** pods só secure, com desligamento automático.
 - **Arquivos dos clientes:** fotos apagadas em 7 dias, vídeos em 30 (seção 3).
 
 ## 8. O que ainda não existe
 
-- **Pagamento automático:** o cliente paga por fora (ex.: Pix) e você lança o saldo em `/aprovar`. O próximo passo é um intermediador brasileiro (Pix e cartão) com um aviso (webhook) que lança a recarga sozinho; o identificador do pagamento já impede que o mesmo pagamento entre duas vezes.
-- **Recuperação do código de acesso pelo cliente:** é preciso cadastrar de novo.
+- **Cartão de crédito:** a recarga automática é só por Pix (ADR 0008); cartão fica para depois, com 3-D Secure e limites por conta.
+- **Grupo de pods por modelo:** só quando entrar o 2º modelo (`docs/13`, seção 5).
 - **Download do lote inteiro em um .zip:** hoje são links por vídeo.
 - **Medição da fila com vários clientes em pods reais:** depende desta implantação.

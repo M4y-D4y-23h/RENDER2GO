@@ -1,6 +1,7 @@
 # ADR 0006: front-end com build próprio, entrega com cache por versão e cabeçalhos de segurança
 
 - **Status:** aceito (08/10/2026), a pedido do dono do projeto: definir a identidade visual e as regras de layout e aplicar desempenho, acessibilidade e segurança no front-end.
+- **Revisto em parte pelo ADR 0007 (09/10/2026):** o código do cliente e o token do painel saíram do navegador para sessões em cookie HttpOnly, com o cabeçalho `X-Render2Go` exigido além do Fetch Metadata (item 4 e a alternativa "token em cookie HttpOnly"); o `aprovar.js` virou `painel.js`, entregue só no endereço secreto do painel; o `robots.txt` saiu, a pedido do dono (o `noindex` vai no cabeçalho das páginas privadas); e a página `/verificacao` tem uma CSP própria para o "não sou um robô".
 - **Contexto:** as páginas da fase 3 (ADR 0003) eram um `app.js` único, gerado pelo `tsc` e servido igual para o cliente e para o aprovador, uma folha de estilo simples e três HTMLs servidos com `FileResponse`, sem regra de cache. O doc 02 previa um PWA em Next.js; o serviço seguiu sem framework e não há motivo para mudar: são três páginas, e a imagem do serviço não roda Node.
 
 ## Decisão
