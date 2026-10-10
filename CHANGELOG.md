@@ -4,7 +4,7 @@ Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técni
 
 ## 10/10/2026 (2): revisão do front-end (estética, navegação e Core Web Vitals)
 
-Motivo: o dono pediu uma nova passada em todas as páginas, só no front-end e na segurança do front-end, com UX, UI e os atributos de desempenho, acessibilidade e indexação. Detalhes em [`docs/10`](docs/10-identidade-visual-e-front-end.md), seções 4.1 e 5.1. Não muda a API nem o banco: basta publicar a imagem nova (as páginas vêm dentro dela).
+Motivo: o dono pediu uma nova passada em todas as páginas, só no front-end e na segurança do front-end, com UX, UI e os atributos de desempenho, acessibilidade e indexação. Detalhes em [`docs/10`](docs/10-identidade-visual-e-front-end.md), seções 4.1 e 5.1. Não muda a API nem o banco: no servidor, `git pull` e `docker compose up -d --build api`, que não reinicia o orquestrador ([`docs/09`](docs/09-implantacao.md), seção 0, "10/10/2026 (2)").
 
 - **Topo conforme a sessão:** quem não entrou vê "Entrar" (leva ao cartão de entrada, com o foco nele) e "Suporte"; quem entrou vê "Pedidos", "Suporte" e "Sair" em todas as páginas, também no suporte, nas páginas de texto e na 404. O script do `<head>` (parte nova `sessao`) marca a sessão antes de desenhar: nada pisca nem empurra. A 404 e o "Voltar" do suporte mudam o texto conforme a sessão.
 - **Entrada:** brilho anil e urucum no fundo e uma ilustração "fotos → vídeo" em SVG dentro do HTML (0,7 KB comprimido, decorativa, cores do tema; só a partir de 640 px).

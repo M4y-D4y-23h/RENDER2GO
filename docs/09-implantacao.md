@@ -6,6 +6,21 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há.
 
+### 10/10/2026 (2): revisão do front-end
+
+Só as páginas mudam (HTML, CSS e JavaScript, que vão dentro da imagem): sem passo extra e sem mudança no banco. Basta reconstruir e recriar a API; o orquestrador não reinicia, então os pods ligados seguem:
+
+```bash
+cd ~/GPU2GO && git pull
+cd servico/implantacao
+docker compose up -d --build api
+docker compose ps --format "table {{.Service}}\t{{.Status}}"
+```
+
+- **O que muda:** topo conforme a sessão ("Entrar" para quem não entrou; "Pedidos" e "Sair" para quem entrou, em todas as páginas), rodapé igual em todas as páginas (também na 404), ilustração na entrada, índice nas páginas de texto, janelas que sobem de baixo no celular, aviso de cookies com os dois botões iguais e nenhum deslocamento de layout ao carregar (`docs/10`, seções 4.1 e 5.1).
+- **Conferir depois:** numa janela anônima, `https://app.render2go.com` mostra "Entrar" no topo; depois de entrar, "Pedidos" e "Sair"; um endereço inexistente (`/nada`) mostra a 404 com o rodapé completo. Quem estava com a página aberta recebe a versão nova ao recarregar (o HTML é conferido a cada visita e os arquivos têm a versão no endereço).
+- **Os outros contêineres** (`analisador` e `orquestrador`) usam a mesma imagem, mas não mudaram: seguem como estão e pegam a imagem nova na próxima atualização completa (`docker compose up -d --build`, sem pedido gerando).
+
 ### 09/10/2026 (4): contas por e-mail, painel secreto com 2 fatores, Pix e segurança
 
 **No servidor desde 10/10/2026**, com o SES em Ohio (sandbox até a AWS aprovar a produção), o Turnstile e o painel novo; faltam os dados da empresa (bloco 3) e o Mercado Pago.
