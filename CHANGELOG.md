@@ -9,7 +9,7 @@ Motivo: o dono configurou o e-mail e atualizou o servidor, com os blocos do [`do
 - **No ar desde 10/10/2026:** entrada pelo e-mail com o "não sou um robô", painel no endereço secreto com token e autenticador, `/termos`, `/privacidade` e `/cookies`; `/aprovar`, `/openapi.json` e `/docs` fechados (404); cabeçalhos de segurança e HTTP/3 conferidos por fora.
 - **E-mail:** Amazon SES em Ohio (`us-east-2`), domínio verificado (Easy DKIM de 2048 bits, MAIL FROM `envio.render2go.com`, DMARC `p=none` com relatórios no DMARC Management da Cloudflare), e-mail de teste entregue; saída do sandbox pedida. Até a aprovação, o código só chega a e-mails verificados no SES.
 - **Falta:** aprovação do SES, dados da empresa (o rodapé mostra "[preencher]"), Mercado Pago, revisão do advogado e o DMARC em `p=quarantine` depois de 2 semanas.
-- **Documentação:** primeiro acesso ao painel, o que fazer se perder o endereço, o token ou o autenticador, e a conta do dono no plano interno (`docs/09`, seção 0, passo 7); situação do lançamento no `docs/13`, seção 6.
+- **Documentação:** primeiro acesso ao painel, o que conferir quando o código do autenticador não entra (com o comando que mostra os códigos que o servidor aceita), o que fazer se perder o endereço, o token ou o autenticador, e a conta do dono no plano interno (`docs/09`, seção 0, passo 7); situação do lançamento no `docs/13`, seção 6.
 
 ## 09/10/2026 (4): contas por e-mail, painel secreto, Pix e segurança para o lançamento
 
