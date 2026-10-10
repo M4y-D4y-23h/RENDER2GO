@@ -27,7 +27,9 @@ import os
 import re
 import secrets
 import struct
+import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -316,6 +318,94 @@ def documentos_pendentes(conta: dict) -> list[str]:
     """Documentos (termos, privacidade) cuja versão atual a conta ainda não aceitou."""
     aceitos = {"termos": conta.get("termos_versao"), "privacidade": conta.get("privacidade_versao")}
     return [doc for doc, versao in DOCUMENTOS.items() if aceitos.get(doc) != versao]
+
+
+# -- acessos do painel por pessoa (ADR 0009) --------------------------------------------------------
+
+PAPEIS = ("dono", "operador")
+USUARIO_ADMIN = re.compile(r"^[a-z][a-z0-9._-]{2,31}$")  # "admin-<8 hex>" é a chave do servidor (emergência)
+CONVITE_VALIDADE_S = 24 * 3600
+SENHA_MIN, SENHA_MAX = 12, 128
+# scrypt (RFC 7914): 32 MiB e ~0,1 s por conferência. No máximo 4 ao mesmo tempo no processo: tentativas em
+# massa esperam a vez em vez de somar memória (o painel ainda fica atrás do endereço secreto e dos limites)
+SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**15, 8, 1
+_SCRYPT_VEZ = threading.BoundedSemaphore(4)
+# senhas e pedaços que aparecem primeiro nas listas de vazamentos (a regra principal é o tamanho)
+SENHAS_COMUNS = (
+    "123456",
+    "654321",
+    "password",
+    "senha",
+    "qwerty",
+    "asdfgh",
+    "abc123",
+    "admin",
+    "render2go",
+    "gpu2go",
+    "painel",
+    "iloveyou",
+    "brasil",
+    "102030",
+    "111111",
+    "000000",
+)
+
+
+def normalizar_usuario(texto: str | None) -> str:
+    """O nome de acesso como fica guardado (minúsculas); ValueError se não serve."""
+    u = (texto or "").strip().lower()
+    if not USUARIO_ADMIN.match(u) or u.startswith("admin-"):
+        raise ValueError("use de 3 a 32 letras minúsculas, números, ponto, hífen ou _, começando por uma letra")
+    return u
+
+
+def senha_fraca(senha: str, usuario: str) -> str | None:
+    """Motivo para recusar a senha, ou None. Tamanho acima de tudo (NIST SP 800-63B): 12 ou mais caracteres,
+    sem o nome de acesso e sem os pedaços mais comuns das listas de vazamentos."""
+    senha = unicodedata.normalize("NFC", senha)
+    if not SENHA_MIN <= len(senha) <= SENHA_MAX:
+        return (
+            f"use de {SENHA_MIN} a {SENHA_MAX} caracteres (uma frase curta é fácil de lembrar e difícil de adivinhar)"
+        )
+    baixa = senha.lower()
+    if usuario and usuario.lower() in baixa:
+        return "a senha não pode conter o nome de acesso"
+    if len(set(baixa)) < 5:
+        return "use mais caracteres diferentes"
+    if any(comum in baixa for comum in SENHAS_COMUNS):
+        return "a senha tem uma sequência muito comum; escolha outra"
+    return None
+
+
+def _scrypt(senha: str, sal: bytes, n: int, r: int, p: int) -> bytes:
+    # NFC: a mesma senha com acento digitada no celular e no computador vira os mesmos bytes
+    dados = unicodedata.normalize("NFC", senha).encode()
+    with _SCRYPT_VEZ:
+        return hashlib.scrypt(dados, salt=sal, n=n, r=r, p=p, maxmem=128 * r * n * 2, dklen=32)
+
+
+def hash_senha(senha: str) -> str:
+    """ "scrypt$n$r$p$sal$resumo" (base64): o banco nunca vê a senha."""
+    sal = secrets.token_bytes(16)
+    resumo = _scrypt(senha, sal, SCRYPT_N, SCRYPT_R, SCRYPT_P)
+    b64 = base64.b64encode
+    return f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}${b64(sal).decode()}${b64(resumo).decode()}"
+
+
+# conferência com um resumo de mentira quando o nome de acesso não existe: o tempo da resposta é o mesmo
+_SENHA_FALSA = "scrypt$32768$8$1$AAAAAAAAAAAAAAAAAAAAAA==$" + "A" * 43 + "="
+
+
+def senha_confere(senha: str, guardado: str | None) -> bool:
+    """Compara em tempo constante; sem resumo guardado (nome inexistente), gasta o mesmo tempo e recusa."""
+    try:
+        nome, n, r, p, sal, resumo = (guardado or _SENHA_FALSA).split("$")
+        if nome != "scrypt":
+            return False
+        calculado = _scrypt(senha, base64.b64decode(sal), int(n), int(r), int(p))
+        return hmac.compare_digest(calculado, base64.b64decode(resumo)) and guardado is not None
+    except (ValueError, TypeError):
+        return False
 
 
 # -- "não sou um robô" (Cloudflare Turnstile) ----------------------------------------------------

@@ -4,7 +4,10 @@
     render2go-servico orquestrar                  sobe e encerra pods conforme a fila
     render2go-servico analisar                    aviso de pessoas nas fotos, fora da API (RENDER2GO_ANALISE=separada)
     render2go-servico limpar                      encerra pods registrados pelo orquestrador
-    render2go-servico totp-novo                   segredo do autenticador do painel (RENDER2GO_ADMIN_TOTP)
+    render2go-servico totp-novo                   segredo do autenticador da chave do painel (RENDER2GO_ADMIN_TOTP)
+    render2go-servico admin-convite --usuario NOME [--papel dono|operador]
+        convite de uso único (24 h) para um acesso ao painel: o 1º acesso do dono, pelo terminal do servidor
+        (docker compose exec api render2go-servico admin-convite --usuario dono --papel dono)
     render2go-servico cliente NOME [--plano teste] [--cota 500] [--email E]   cadastra (sem e-mail: mostra o código)
     render2go-servico email CLIENTE EMAIL         liga um e-mail a um cliente antigo (entra pelo e-mail)
     render2go-servico clientes                    lista os clientes com plano e saldo
@@ -112,6 +115,38 @@ def saldo(banco, cliente_id: str, valor: str, descricao: str, referencia: str | 
     return 0
 
 
+def admin_convite(banco, usuario: str, papel: str) -> int:
+    """Convite de uso único para o painel (ADR 0009), criado pelo terminal: o caminho do 1º dono."""
+    from render2go_servico.api import caminho_admin_do_ambiente
+    from render2go_servico.contas import CONVITE_VALIDADE_S, normalizar_usuario
+    from render2go_servico.db import BancoError
+
+    try:
+        usuario = normalizar_usuario(usuario)
+    except ValueError as e:
+        print(f"nome de acesso: {e}")
+        return 2
+    caminho = caminho_admin_do_ambiente()
+    if not caminho:
+        print("falta RENDER2GO_ADMIN_CAMINHO no .env: sem ele, não há painel (rode no contêiner da API)")
+        return 2
+    try:
+        cid, token = banco.criar_convite(usuario, papel, "terminal", CONVITE_VALIDADE_S)
+    except BancoError as e:
+        print(e)
+        return 1
+    banco.auditar("terminal", "convite_criado", usuario, {"convite": cid, "depois": {"papel": papel, "ativo": True}})
+    dominio = os.environ.get("DOMINIO", "").strip()
+    print(
+        f'Convite de uso único para "{usuario}" ({papel}), válido por 24 h:\n'
+        f"  {'https://' + dominio if dominio else ''}{caminho}/#convite={token}\n"
+        "Mande por um canal seguro (gerenciador de senhas ou mensagem que some), nunca por e-mail aberto nem print.\n"
+        "A pessoa abre o endereço, lê o QR Code no aplicativo autenticador, confirma um código e só então cria a\n"
+        "senha. Um convite novo para o mesmo nome cancela este (e, para quem já existe, refaz senha e autenticador)."
+    )
+    return 0
+
+
 def socket_da_api(host: str, porta: int):
     """Socket de escuta da API, criado aqui e não pelo uvicorn: com IPPROTO_TCP e TCP_NODELAY. O do
     uvicorn (protocolo 0) faz o asyncio não desligar o algoritmo de Nagle nas conexões aceitas, e com
@@ -171,7 +206,10 @@ def main(argv: list[str] | None = None) -> int:
         help="processos da API (cada um com o seu pool de conexões; padrão RENDER2GO_API_WORKERS ou 1)",
     )
     sub.add_parser("analisar", help="aviso de pessoas nas fotos, fora da API")
-    sub.add_parser("totp-novo", help="gera o segredo do aplicativo autenticador do painel")
+    sub.add_parser("totp-novo", help="gera o segredo do aplicativo autenticador da chave do painel")
+    s_conv = sub.add_parser("admin-convite", help="convite de uso único para um acesso ao painel (ADR 0009)")
+    s_conv.add_argument("--usuario", required=True, help="nome de acesso (3 a 32 letras minúsculas, números, . _ -)")
+    s_conv.add_argument("--papel", choices=["dono", "operador"], default="dono")
     s_email = sub.add_parser("email", help="liga um e-mail a um cliente antigo (código de acesso)")
     s_email.add_argument("cliente", help="id do cliente (cli_...)")
     s_email.add_argument("email")
@@ -199,6 +237,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cmd == "api":
         return api(a.host, a.porta, a.workers)
+    if a.cmd == "admin-convite":
+        return admin_convite(_banco(), a.usuario, a.papel)
     if a.cmd == "totp-novo":
         from render2go_servico.contas import novo_segredo_totp, uri_totp
 

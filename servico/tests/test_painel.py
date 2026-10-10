@@ -28,7 +28,13 @@ def test_panel_lives_only_at_the_secret_address_and_needs_both_factors(banco):
     assert cookie.startswith("__Secure-render2go-painel=")
     for atributo in ("HttpOnly", "Secure", f"Path={PAINEL}", "SameSite=strict", "Max-Age=43200"):
         assert atributo in cookie, atributo
-    assert api.get(f"{PAINEL}/api/sessao").json() == {"admin": r.json()["admin"], "totp": True}
+    sessao = api.get(f"{PAINEL}/api/sessao").json()
+    assert (sessao["admin"], sessao["totp"], sessao["papel"], sessao["emergencia"]) == (
+        r.json()["admin"],
+        True,
+        "dono",
+        True,
+    )
     # o mesmo código do autenticador não vale duas vezes (alguém que viu a tela não entra com ele)
     outro = anonimo(api)
     assert outro.post(entrar, json={"token": ADMIN, "totp": _codigo()}, headers=ADM).status_code == 401
@@ -51,7 +57,7 @@ def test_wrong_attempts_lock_the_panel_for_the_network(banco):
     outra = {**ADM, "X-Render2Go-IP": "203.0.113.50"}
     assert api.post(f"{PAINEL}/api/entrar", json={"token": ADMIN, "totp": _codigo()}, headers=outra).status_code == 200
     acoes = [a["acao"] for a in api.get(f"{PAINEL}/api/seguranca", headers=outra).json()["auditoria"]]
-    assert acoes.count("entrada_recusada") == 5 and "entrada" in acoes
+    assert acoes.count("entrada_recusada") == 5 and "entrada_emergencia" in acoes  # a chave do servidor
 
 
 def test_allowed_networks_and_a_panel_that_is_not_configured(banco):
@@ -130,7 +136,7 @@ def test_security_overview_accounts_and_audit(banco):
     (k,) = api.get(f"{PAINEL}/api/clientes?busca=antiga@gmail").json()["clientes"]
     assert (k["email"], k["plano"], k["ativo"]) == ("antiga@gmail.com", "pago", 1)
     acoes = [a["acao"] for a in api.get(f"{PAINEL}/api/seguranca").json()["auditoria"]]
-    assert {"entrada", "email", "plano", "desativar", "reativar"} <= set(acoes)
+    assert {"entrada_emergencia", "email", "plano", "desativar", "reativar"} <= set(acoes)
     entrar_admin(anonimo(api))  # outra sessão do painel ao mesmo tempo
 
 

@@ -177,6 +177,19 @@ ESQUEMA = [
     # excluída, só serve para o endereço antigo não ganhar outro teste grátis numa conta nova
     """CREATE TABLE IF NOT EXISTS emails_antigos (
         resumo TEXT PRIMARY KEY, cliente_id TEXT, quando DOUBLE PRECISION NOT NULL)""",
+    # acessos do painel por pessoa (ADR 0009): nome de acesso, senha (scrypt), aplicativo autenticador da própria
+    # pessoa (segredo cifrado) e papel. A pessoa nasce de um convite de uso único (admin_convites)
+    """CREATE TABLE IF NOT EXISTS admins (
+        id TEXT PRIMARY KEY, usuario TEXT NOT NULL UNIQUE, senha_hash TEXT NOT NULL, totp_segredo TEXT NOT NULL,
+        totp_ultimo BIGINT, papel TEXT NOT NULL, ativo INTEGER NOT NULL DEFAULT 1, criado DOUBLE PRECISION NOT NULL,
+        criado_por TEXT, desativado_em DOUBLE PRECISION, ultimo_acesso DOUBLE PRECISION)""",
+    # convite: o token (só o SHA-256) vale 24 h, uma vez, e só cria (ou refaz) aquele nome de acesso. O segredo do
+    # aplicativo nasce no 1º passo e a senha só vem depois de um código dele conferir (totp_confirmado_em)
+    """CREATE TABLE IF NOT EXISTS admin_convites (
+        id TEXT PRIMARY KEY, token_sha TEXT NOT NULL UNIQUE, usuario TEXT NOT NULL, papel TEXT NOT NULL,
+        criado DOUBLE PRECISION NOT NULL, criado_por TEXT, expira DOUBLE PRECISION NOT NULL,
+        usado_em DOUBLE PRECISION, cancelado_em DOUBLE PRECISION, totp_pendente TEXT,
+        totp_confirmado_em DOUBLE PRECISION, totp_contador BIGINT, ip TEXT)""",
 ]
 # índices: depois das colunas novas (um banco antigo ganha a coluna antes do índice que a usa)
 INDICES = [
@@ -208,6 +221,10 @@ INDICES = [
     "CREATE INDEX IF NOT EXISTS auditoria_admin_quando ON auditoria_admin (quando)",
     "CREATE INDEX IF NOT EXISTS fotos_lote ON fotos (lote_id)",
     "CREATE INDEX IF NOT EXISTS codigos_recuperacao_cliente ON codigos_recuperacao (cliente_id, resumo)",
+    "CREATE INDEX IF NOT EXISTS auditoria_admin_pessoa ON auditoria_admin (admin, quando)",
+    "CREATE INDEX IF NOT EXISTS auditoria_admin_alvo ON auditoria_admin (alvo, quando)",
+    "CREATE INDEX IF NOT EXISTS admin_convites_usuario ON admin_convites (usuario, criado)",
+    "CREATE INDEX IF NOT EXISTS sessoes_admin ON sessoes (admin)",
 ]
 # vídeos já iniciados (ou prontos) de cada cliente nos pedidos em andamento: a vez na fila é por cliente
 INICIADOS_POR_CLIENTE = (
@@ -283,6 +300,7 @@ COLUNAS_NOVAS = [
     ("clientes", "privacidade_versao", "TEXT"),  # versão da política de privacidade aceita por último
     ("sessoes", "confirmada_ate", "DOUBLE PRECISION"),  # confirmação recente ("é você mesmo?") até
     ("sessoes", "contexto", "TEXT"),  # desafio da verificação em duas etapas: o que a entrada guardou (JSON)
+    ("auditoria_admin", "agente", "TEXT"),  # navegador de quem fez (acessos do painel por pessoa, ADR 0009)
 ]
 MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
@@ -1075,12 +1093,27 @@ class Banco:
     # -- painel: auditoria, comandos para o orquestrador e estado ---------------------------------
 
     def auditar(
-        self, admin: str, acao: str, alvo: str | None = None, detalhe: Any = None, ip: str | None = None
+        self,
+        admin: str,
+        acao: str,
+        alvo: str | None = None,
+        detalhe: Any = None,
+        ip: str | None = None,
+        agente: str | None = None,
     ) -> None:
         with self.tx() as c:
             c.run(
-                "INSERT INTO auditoria_admin (quando, admin, acao, alvo, detalhe, ip) VALUES (?, ?, ?, ?, ?, ?)",
-                (time.time(), admin, acao, alvo, json.dumps(detalhe, ensure_ascii=False) if detalhe else None, ip),
+                "INSERT INTO auditoria_admin (quando, admin, acao, alvo, detalhe, ip, agente)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    time.time(),
+                    admin,
+                    acao,
+                    alvo,
+                    json.dumps(detalhe, ensure_ascii=False) if detalhe else None,
+                    ip,
+                    (agente or "")[:300] or None,
+                ),
             )
 
     def auditoria_admin(self, limite: int = 100) -> list[dict]:
@@ -1089,6 +1122,311 @@ class Banco:
                 "SELECT quando, admin, acao, alvo, detalhe, ip FROM auditoria_admin ORDER BY quando DESC LIMIT ?",
                 (limite,),
             )
+
+    def auditoria_filtrada(
+        self,
+        admin: str | None = None,
+        acao: str | None = None,
+        alvo: str | None = None,
+        desde: float | None = None,
+        ate: float | None = None,
+        limite: int = 100,
+    ) -> list[dict]:
+        """A auditoria do painel com filtros (pessoa, ação, alvo e período, com `ate` exclusivo: a página seguinte
+        pede `ate` = o `quando` do último item recebido), da mais recente para a mais antiga."""
+        onde, args = ["1 = 1"], []
+        for campo, valor in (("admin", admin), ("acao", acao), ("alvo", alvo)):
+            if valor:
+                onde.append(f"{campo} = ?")
+                args.append(valor)
+        if desde is not None:
+            onde.append("quando >= ?")
+            args.append(desde)
+        if ate is not None:
+            onde.append("quando < ?")
+            args.append(ate)
+        with self.tx() as c:
+            return c.all(
+                "SELECT quando, admin, acao, alvo, detalhe, ip, agente FROM auditoria_admin"
+                f" WHERE {' AND '.join(onde)} ORDER BY quando DESC LIMIT ?",
+                (*args, limite),
+            )
+
+    def opcoes_auditoria(self) -> dict[str, list[str]]:
+        """Pessoas e ações que já aparecem na auditoria (os filtros da página)."""
+        with self.tx() as c:
+            return {
+                "pessoas": [r["admin"] for r in c.all("SELECT DISTINCT admin FROM auditoria_admin ORDER BY admin")],
+                "acoes": [r["acao"] for r in c.all("SELECT DISTINCT acao FROM auditoria_admin ORDER BY acao")],
+            }
+
+    # -- acessos do painel por pessoa (ADR 0009) ---------------------------------------------------
+
+    def admin_por_usuario(self, usuario: str) -> dict | None:
+        with self.tx() as c:
+            return c.one("SELECT * FROM admins WHERE usuario = ?", (usuario,))
+
+    def admin(self, aid: str) -> dict | None:
+        with self.tx() as c:
+            return c.one("SELECT * FROM admins WHERE id = ?", (aid,))
+
+    def admins(self) -> list[dict]:
+        """As pessoas com acesso ao painel (sem senha nem segredo), com as sessões abertas de cada uma."""
+        agora = time.time()
+        with self.tx() as c:
+            return c.all(
+                "SELECT a.id, a.usuario, a.papel, a.ativo, a.criado, a.criado_por, a.desativado_em, a.ultimo_acesso,"
+                " (SELECT COUNT(*) FROM sessoes s WHERE s.tipo = 'admin' AND s.admin = a.usuario"
+                "  AND s.revogada_em IS NULL AND s.expira > ?) AS sessoes"
+                " FROM admins a ORDER BY a.ativo DESC, a.usuario",
+                (agora,),
+            )
+
+    def contar_donos(self, exceto: str | None = None) -> int:
+        with self.tx() as c:
+            return self._donos(c, exceto)
+
+    def _donos(self, c, exceto: str | None = None) -> int:
+        r = c.one("SELECT COUNT(*) AS n FROM admins WHERE papel = 'dono' AND ativo = 1 AND id <> ?", (exceto or "",))
+        return int(r["n"])
+
+    def convites_pendentes(self) -> list[dict]:
+        with self.tx() as c:
+            return c.all(
+                "SELECT id, usuario, papel, criado, criado_por, expira, totp_confirmado_em FROM admin_convites"
+                " WHERE usado_em IS NULL AND cancelado_em IS NULL AND expira > ? ORDER BY criado DESC",
+                (time.time(),),
+            )
+
+    def criar_convite(self, usuario: str, papel: str, por: str, validade_s: float) -> tuple[str, str]:
+        """Convite de uso único para `usuario` (nome novo, ou um que já existe: refaz a senha e o autenticador).
+        Os convites anteriores do mesmo nome deixam de valer. Devolve (id, token); o banco guarda o SHA-256."""
+        if papel not in ("dono", "operador"):
+            raise BancoError(f"papel desconhecido: {papel}")
+        agora, token, cid = time.time(), secrets.token_urlsafe(32), novo_id("conv")
+        with self.tx() as c:
+            atual = c.one("SELECT id, papel, ativo FROM admins WHERE usuario = ?", (usuario,))
+            if (
+                atual
+                and atual["ativo"]
+                and atual["papel"] == "dono"
+                and papel != "dono"
+                and not self._donos(c, atual["id"])
+            ):
+                raise BancoError("é o único dono ativo: crie outro dono antes de mudar o papel")
+            c.run(
+                "UPDATE admin_convites SET cancelado_em = ? WHERE usuario = ? AND usado_em IS NULL"
+                " AND cancelado_em IS NULL",
+                (agora, usuario),
+            )
+            c.run(
+                "INSERT INTO admin_convites (id, token_sha, usuario, papel, criado, criado_por, expira)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (cid, sha(token), usuario, papel, agora, por, agora + validade_s),
+            )
+        return cid, token
+
+    def cancelar_convite(self, cid: str) -> dict | None:
+        with self.tx() as c:
+            conv = c.one(
+                "SELECT id, usuario, papel FROM admin_convites WHERE id = ? AND usado_em IS NULL"
+                " AND cancelado_em IS NULL",
+                (cid,),
+            )
+            if conv:
+                c.run("UPDATE admin_convites SET cancelado_em = ? WHERE id = ?", (time.time(), cid))
+            return conv
+
+    def convite(self, token: str) -> dict | None:
+        """O convite deste token, se ainda vale (nem usado, nem cancelado, nem vencido)."""
+        with self.tx() as c:
+            return c.one(
+                "SELECT * FROM admin_convites WHERE token_sha = ? AND usado_em IS NULL AND cancelado_em IS NULL"
+                " AND expira > ?",
+                (sha(token), time.time()),
+            )
+
+    def convite_segredo(self, cid: str, cifrado: str, ip: str | None) -> bool:
+        """1º passo do convite: o segredo novo do aplicativo (gerar de novo desfaz um código já conferido)."""
+        with self.tx() as c:
+            return bool(
+                c.run(
+                    "UPDATE admin_convites SET totp_pendente = ?, totp_confirmado_em = NULL, totp_contador = NULL,"
+                    " ip = ? WHERE id = ? AND usado_em IS NULL AND cancelado_em IS NULL AND expira > ?",
+                    (cifrado, ip, cid, time.time()),
+                )
+            )
+
+    def convite_confirmado(self, cid: str, cifrado: str, contador: int) -> bool:
+        """2º passo: um código do aplicativo conferiu com o segredo `cifrado` (o lido e conferido)."""
+        with self.tx() as c:
+            return bool(
+                c.run(
+                    "UPDATE admin_convites SET totp_confirmado_em = ?, totp_contador = ? WHERE id = ?"
+                    " AND totp_pendente = ? AND usado_em IS NULL AND cancelado_em IS NULL AND expira > ?",
+                    (time.time(), contador, cid, cifrado, time.time()),
+                )
+            )
+
+    def usar_convite(
+        self, cid: str, aid: str, senha_hash: str, totp_cifrado: str, contador: int, janela_s: float
+    ) -> dict:
+        """3º passo: a senha. Gasta o convite (uma vez só, mesmo com dois pedidos ao mesmo tempo) e cria a pessoa
+        `aid`, ou refaz a senha e o autenticador de quem já existe (as sessões dela caem). Devolve a pessoa."""
+        agora = time.time()
+        with self.tx() as c:
+            conv = c.one("SELECT * FROM admin_convites WHERE id = ?", (cid,))
+            if not conv or not c.run(
+                "UPDATE admin_convites SET usado_em = ? WHERE id = ? AND usado_em IS NULL AND cancelado_em IS NULL"
+                " AND expira > ? AND totp_confirmado_em > ?",
+                (agora, cid, agora, agora - janela_s),
+            ):
+                raise BancoError("convite já usado, cancelado ou vencido")
+            atual = c.one("SELECT id, papel, ativo FROM admins WHERE usuario = ?", (conv["usuario"],))
+            if atual and atual["id"] != aid:
+                raise BancoError("o acesso mudou no meio; peça um convite novo")
+            if (atual and atual["ativo"] and atual["papel"] == "dono" and conv["papel"] != "dono"
+                    and not self._donos(c, aid)):  # fmt: skip
+                raise BancoError("é o único dono ativo: crie outro dono antes de mudar o papel")
+            if atual:
+                c.run(
+                    "UPDATE admins SET senha_hash = ?, totp_segredo = ?, totp_ultimo = ?, papel = ?, ativo = 1,"
+                    " desativado_em = NULL WHERE id = ?",
+                    (senha_hash, totp_cifrado, contador, conv["papel"], aid),
+                )
+                c.run(
+                    "UPDATE sessoes SET revogada_em = ? WHERE tipo = 'admin' AND admin = ? AND revogada_em IS NULL",
+                    (agora, conv["usuario"]),
+                )
+            else:
+                c.run(
+                    "INSERT INTO admins (id, usuario, senha_hash, totp_segredo, totp_ultimo, papel, ativo, criado,"
+                    " criado_por) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                    (
+                        aid,
+                        conv["usuario"],
+                        senha_hash,
+                        totp_cifrado,
+                        contador,
+                        conv["papel"],
+                        agora,
+                        conv["criado_por"],
+                    ),
+                )
+            return {"id": aid, "usuario": conv["usuario"], "papel": conv["papel"], "novo": atual is None}
+
+    def admin_codigo_usado(self, aid: str, contador: int) -> bool:
+        """O código do aplicativo desta pessoa vale uma vez (atômico, como o do cliente); marca o último acesso."""
+        with self.tx() as c:
+            return bool(
+                c.run(
+                    "UPDATE admins SET totp_ultimo = ?, ultimo_acesso = ? WHERE id = ? AND ativo = 1"
+                    " AND (totp_ultimo IS NULL OR totp_ultimo < ?)",
+                    (contador, time.time(), aid, contador),
+                )
+            )
+
+    def desativar_admin(self, aid: str) -> dict:
+        """Tira o acesso (as sessões caem na hora). O último dono ativo não sai (ninguém mais administraria)."""
+        agora = time.time()
+        with self.tx() as c:
+            a = c.one("SELECT id, usuario, papel, ativo FROM admins WHERE id = ?", (aid,))
+            if a is None or not a["ativo"]:
+                raise BancoError("acesso não encontrado ou já desativado")
+            if a["papel"] == "dono" and not self._donos(c, aid):
+                raise BancoError("é o único dono ativo: crie outro dono antes")
+            c.run("UPDATE admins SET ativo = 0, desativado_em = ? WHERE id = ?", (agora, aid))
+            c.run(
+                "UPDATE sessoes SET revogada_em = ? WHERE tipo = 'admin' AND admin = ? AND revogada_em IS NULL",
+                (agora, a["usuario"]),
+            )
+        return a
+
+    def mudar_papel_admin(self, aid: str, papel: str) -> dict:
+        """Troca o papel; devolve como era antes. O último dono ativo não vira operador."""
+        if papel not in ("dono", "operador"):
+            raise BancoError(f"papel desconhecido: {papel}")
+        with self.tx() as c:
+            a = c.one("SELECT id, usuario, papel, ativo FROM admins WHERE id = ?", (aid,))
+            if a is None or not a["ativo"]:
+                raise BancoError("acesso não encontrado ou desativado")
+            if a["papel"] == "dono" and papel != "dono" and not self._donos(c, aid):
+                raise BancoError("é o único dono ativo: crie outro dono antes")
+            c.run("UPDATE admins SET papel = ? WHERE id = ?", (papel, aid))
+        return a
+
+    def sessao_painel(self, token: str) -> dict | None:
+        """Sessão do painel válida, com quem é: a pessoa (ativa, com o papel de agora: trocar o papel ou desativar
+        vale na hora) ou a chave do servidor (contexto "emergencia")."""
+        agora = time.time()
+        with self.tx() as c:
+            s = c.one(
+                "SELECT * FROM sessoes WHERE id = ? AND tipo = 'admin' AND revogada_em IS NULL AND expira > ?",
+                (sha(token), agora),
+            )
+            if s is None:
+                return None
+            s["contexto"] = json.loads(s["contexto"]) if s["contexto"] else {}
+            s["pessoa"] = None
+            if not s["contexto"].get("emergencia"):
+                s["pessoa"] = c.one(
+                    "SELECT id, usuario, papel FROM admins WHERE usuario = ? AND ativo = 1", (s["admin"],)
+                )
+                if s["pessoa"] is None:
+                    return None
+            if agora - float(s["ultimo_uso"] or 0) > 300:
+                c.run("UPDATE sessoes SET ultimo_uso = ? WHERE id = ?", (agora, s["id"]))
+            return s
+
+    def resumo_painel(self, inicio_dia: float) -> dict[str, Any]:
+        """Números da visão geral do painel, numa transação: revisão, pedidos em andamento, fila, pods, cobrado e
+        devolvido hoje, contas novas, interesses, suporte e Pix pendentes."""
+        agora = time.time()
+        with self.tx() as c:
+
+            def n(sql: str, args: tuple = ()) -> int:
+                return int((c.one(sql, args) or {}).get("n") or 0)
+
+            fila = c.one(
+                "SELECT SUM(CASE WHEN j.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,"
+                " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS andamento"
+                " FROM jobs j JOIN lotes l ON l.id = j.lote_id WHERE l.status IN ('aprovado', 'processando')"
+            )
+            dinheiro = c.one(
+                "SELECT COALESCE(SUM(CASE WHEN tipo = 'pedido' THEN -valor ELSE 0 END), 0) AS cobrado,"
+                " COALESCE(SUM(CASE WHEN tipo = 'estorno' THEN valor ELSE 0 END), 0) AS devolvido,"
+                " COALESCE(SUM(CASE WHEN tipo = 'recarga' THEN valor ELSE 0 END), 0) AS recargas"
+                " FROM movimentos WHERE quando >= ?",
+                (inicio_dia,),
+            )
+            return {
+                "revisao": n("SELECT COUNT(*) AS n FROM lotes WHERE status = 'aguardando_aprovacao'"),
+                "revisao_mais_antiga": (
+                    c.one("SELECT MIN(criado) AS m FROM lotes WHERE status = 'aguardando_aprovacao'") or {}
+                ).get("m"),
+                "em_andamento": n("SELECT COUNT(*) AS n FROM lotes WHERE status IN ('aprovado', 'processando')"),
+                "videos_na_fila": int(fila["pendentes"] or 0),
+                "videos_gerando": int(fila["andamento"] or 0),
+                "pods": n("SELECT COUNT(*) AS n FROM geradores WHERE estado IN ('subindo', 'pronto')"),
+                "videos_hoje": n(
+                    "SELECT COUNT(*) AS n FROM jobs WHERE tipo = 'render' AND status = 'ok' AND atualizado >= ?",
+                    (inicio_dia,),
+                ),
+                "pedidos_hoje": n(f"SELECT COUNT(*) AS n FROM lotes WHERE criado >= ? AND {ATIVO}", (inicio_dia,)),
+                "cobrado_hoje": int(dinheiro["cobrado"]),
+                "devolvido_hoje": int(dinheiro["devolvido"]),
+                "recargas_hoje": int(dinheiro["recargas"]),
+                "contas_novas_24h": n(
+                    "SELECT COUNT(*) AS n FROM clientes WHERE criado > ? AND excluido_em IS NULL", (agora - 86400,)
+                ),
+                "interesses_24h": n("SELECT COUNT(*) AS n FROM interesses WHERE quando > ?", (agora - 86400,)),
+                "suporte_24h": n("SELECT COUNT(*) AS n FROM suporte WHERE quando > ?", (agora - 86400,)),
+                "pix_pendentes": n(
+                    "SELECT COUNT(*) AS n FROM pagamentos WHERE status IN ('criando', 'pendente')"
+                    " AND (expira IS NULL OR expira > ?)",
+                    (agora,),
+                ),
+            }
 
     def definir_estado(self, chave: str, valor: str | None) -> None:
         with self.tx() as c:
@@ -1101,6 +1439,22 @@ class Banco:
     def ler_estado(self, chave: str) -> dict | None:
         with self.tx() as c:
             return c.one("SELECT valor, atualizado FROM estado WHERE chave = ?", (chave,))
+
+    def usar_contador_estado(self, chave: str, contador: int) -> bool:
+        """O código do autenticador da chave do servidor vale uma vez: aceita só um passo posterior ao último
+        guardado, de forma atômica (dois pedidos ao mesmo tempo com o mesmo código: um entra)."""
+        agora = time.time()
+        with self.tx() as c:
+            c.run(
+                "INSERT INTO estado (chave, valor, atualizado) VALUES (?, '-1', ?) ON CONFLICT (chave) DO NOTHING",
+                (chave, agora),
+            )
+            return bool(
+                c.run(
+                    "UPDATE estado SET valor = ?, atualizado = ? WHERE chave = ? AND CAST(valor AS BIGINT) < ?",
+                    (str(contador), agora, chave, contador),
+                )
+            )
 
     def comando(self, tipo: str, por: str, alvo: str | None = None) -> str:
         """Pedido do painel ao orquestrador (ele executa no próximo ciclo, em até ~10 s)."""

@@ -40,10 +40,17 @@ Cliente (sessão; ou Authorization: Bearer <código de acesso antigo>):
 Mercado Pago (sem sessão; assinatura x-signature e conferência na API dele):
     POST /api/pagamentos/mercadopago   aviso de pagamento (webhook)
 
-Painel (RENDER2GO_ADMIN_CAMINHO, ex.: /painel-<aleatório>): página e API só nesse endereço. Entrada com
-o token de administração e o código do aplicativo autenticador (RENDER2GO_ADMIN_TOTP); sessão num cookie
-restrito ao caminho do painel (12 h); RENDER2GO_ADMIN_IPS limita de onde. Sem o caminho, não há painel.
-    POST <painel>/api/entrar | /sair   GET <painel>/api/sessao
+Painel (RENDER2GO_ADMIN_CAMINHO, ex.: /painel-<aleatório>): página e API só nesse endereço. Acessos por pessoa
+(ADR 0009): nome de acesso + senha + código do aplicativo autenticador da própria pessoa, que nasce de um convite
+de uso único; papéis dono e operador, com o mapa de permissões por rota (PERMISSOES_PAINEL). A chave do servidor
+(RENDER2GO_ADMIN_TOKENS + RENDER2GO_ADMIN_TOTP) fica como acesso de emergência. Sessão num cookie restrito ao
+caminho do painel (12 h); RENDER2GO_ADMIN_IPS limita de onde. Sem o caminho, não há painel.
+    POST <painel>/api/entrar | /sair   GET <painel>/api/sessao (quem, o papel e as rotas que ele abre)
+    POST <painel>/api/convite/iniciar | /confirmar | /senha   primeiro acesso: QR Code → código → senha
+    GET  <painel>/api/acessos          pessoas e convites; POST .../convites, .../convites/{id}/cancelar,
+                                       .../{id}/desativar e .../{id}/papel (só o dono)
+    GET  <painel>/api/auditoria | /auditoria.csv   quem fez o quê, em quem, quando, de onde (filtros, página
+                                       seguinte, antes e depois); GET <painel>/api/resumo: a visão geral
     GET  <painel>/api/lotes            lotes aguardando aprovação, com miniaturas e aviso de pessoas
     POST <painel>/api/lotes/{id}/aprovar | /recusar
     GET  <painel>/api/historico        pedidos feitos, aprovados e recusados; uso por IP e por dispositivo
@@ -115,7 +122,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from render2go_servico import SERVICO_DIR, contas, modelos, pagamentos, perfil, pessoas, precos, suporte
 from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_saida
-from render2go_servico.db import Banco, BancoError, SaldoInsuficiente
+from render2go_servico.db import Banco, BancoError, SaldoInsuficiente, novo_id
 
 TIPOS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 MAX_FOTOS_LOTE = 1000
@@ -214,6 +221,50 @@ EMPRESA = {
     "EMAIL_CONTATO": "RENDER2GO_EMAIL_CONTATO",
     "EMAIL_PRIVACIDADE": "RENDER2GO_EMAIL_PRIVACIDADE",
 }
+# acessos do painel por pessoa (ADR 0009): o que cada papel faz. A chave do servidor (emergência) é "dono".
+PAPEIS_PAINEL = {
+    "dono": "tudo: revisão, contas e saldo, pods e parada de emergência, pagamentos, segurança, acessos e auditoria",
+    "operador": "revisão dos pedidos e consultas (histórico, contas, suporte, interesses e pods, sem mexer neles)",
+}
+_TODOS, _DONO = frozenset(PAPEIS_PAINEL), frozenset({"dono"})
+# mapa de permissões por rota do painel (caminho depois do endereço secreto). Rota com sessão que não está aqui é
+# recusada para todos (fail-closed): a rota nova só funciona depois de dizer quem pode usá-la
+PERMISSOES_PAINEL: dict[tuple[str, str], frozenset[str]] = {
+    ("GET", "/api/resumo"): _TODOS,
+    ("GET", "/api/lotes"): _TODOS,
+    ("POST", "/api/lotes/{lote_id}/aprovar"): _TODOS,
+    ("POST", "/api/lotes/{lote_id}/recusar"): _TODOS,
+    ("GET", "/api/lotes/{lote_id}/auditoria"): _TODOS,
+    ("GET", "/api/historico"): _TODOS,
+    ("GET", "/api/suporte"): _TODOS,
+    ("GET", "/api/interesses"): _TODOS,
+    ("GET", "/api/pods"): _TODOS,
+    ("GET", "/api/clientes"): _TODOS,
+    ("GET", "/api/clientes/{cliente_id}/extrato"): _TODOS,
+    ("POST", "/api/clientes"): _DONO,
+    ("POST", "/api/clientes/{cliente_id}/saldo"): _DONO,
+    ("POST", "/api/clientes/{cliente_id}/plano"): _DONO,
+    ("POST", "/api/clientes/{cliente_id}/email"): _DONO,
+    ("POST", "/api/clientes/{cliente_id}/desativar"): _DONO,
+    ("POST", "/api/clientes/{cliente_id}/reativar"): _DONO,
+    ("POST", "/api/clientes/{cliente_id}/mfa/desligar"): _DONO,
+    ("GET", "/api/geradores"): _DONO,
+    ("POST", "/api/pods/{gerador}/desligar"): _DONO,
+    ("POST", "/api/pods/emergencia"): _DONO,
+    ("POST", "/api/pods/retomar"): _DONO,
+    ("GET", "/api/pagamentos"): _DONO,
+    ("POST", "/api/pagamentos/{pid}/conferir"): _DONO,
+    ("GET", "/api/seguranca"): _DONO,
+    ("GET", "/api/acessos"): _DONO,
+    ("POST", "/api/acessos/convites"): _DONO,
+    ("POST", "/api/acessos/convites/{cid}/cancelar"): _DONO,
+    ("POST", "/api/acessos/{aid}/desativar"): _DONO,
+    ("POST", "/api/acessos/{aid}/papel"): _DONO,
+    ("GET", "/api/auditoria"): _DONO,
+    ("GET", "/api/auditoria.csv"): _DONO,
+}
+CONVITE_SENHA_S = 15 * 60  # entre o código do aplicativo conferido e a senha criada, no primeiro acesso
+
 # a página anterior ao front-end de 08/10/2026, se ficou no cache de algum navegador, pede /app.js:
 # este script recarrega uma vez, e a página nova (sempre revalidada) chega
 RECARREGAR_JS = (
@@ -993,8 +1044,29 @@ class AceitarIn(BaseModel):
 
 
 class AdminEntrarIn(BaseModel):
-    token: str = Field(min_length=1, max_length=300)
+    """Pessoa: `usuario` + `senha` + `totp`. Emergência: `token` (a chave do servidor) + `totp`."""
+
+    token: str | None = Field(None, min_length=1, max_length=300)
+    usuario: str | None = Field(None, max_length=64)
+    senha: str | None = Field(None, max_length=200)
     totp: str | None = Field(None, max_length=12)
+
+
+class ConviteIn(BaseModel):
+    """Primeiro acesso por convite: o token do endereço; depois o código do aplicativo; por fim a senha."""
+
+    convite: str = Field(min_length=20, max_length=200)
+    codigo: str | None = Field(None, max_length=12)
+    senha: str | None = Field(None, max_length=200)
+
+
+class NovoConviteIn(BaseModel):
+    usuario: str = Field(min_length=3, max_length=64)
+    papel: Literal["dono", "operador"]
+
+
+class PapelIn(BaseModel):
+    papel: Literal["dono", "operador"]
 
 
 class PixIn(BaseModel):
@@ -1022,10 +1094,13 @@ def avisos_de_configuracao(c: Config) -> list[str]:
     avisos = []
     if c.admin_caminho is None:
         avisos.append("painel desligado: falta RENDER2GO_ADMIN_CAMINHO (ninguém revisa os pedidos)")
-    elif not c.admin_tokens:
-        avisos.append("painel sem RENDER2GO_ADMIN_TOKENS: ninguém consegue entrar")
-    elif c.admin_totp is None:
-        avisos.append("painel SEM o código do autenticador: configure RENDER2GO_ADMIN_TOTP (totp-novo)")
+    elif not c.admin_tokens and not c.banco.contar_donos():
+        avisos.append(
+            "ninguém consegue entrar no painel: crie o 1º acesso com"
+            " `render2go-servico admin-convite --usuario <nome> --papel dono` (ou a chave RENDER2GO_ADMIN_TOKENS)"
+        )
+    elif c.admin_tokens and c.admin_totp is None:
+        avisos.append("chave do painel SEM o código do autenticador: configure RENDER2GO_ADMIN_TOTP (totp-novo)")
     if c.email is None:
         avisos.append("SMTP não configurado: os códigos de entrada não saem e ninguém entra pelo e-mail")
     if c.turnstile is None:
@@ -2413,20 +2488,36 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if not contas.ip_permitido(ip_de(request), c.admin_ips):
             raise HTTPException(404, "Not Found")
 
-    def admin(request: Request, c: Config = Depends(config)) -> str:
-        _admin_rede(request, c)
+    def _sessao_painel(request: Request, c: Config) -> dict | None:
+        """A sessão do painel deste cookie, com quem é; a da chave do servidor cai se a chave saiu do .env."""
         tok = request.cookies.get(nome_cookie(c, "admin"))
-        s = c.banco.sessao(tok, "admin") if tok and len(tok) <= 200 else None
+        s = c.banco.sessao_painel(tok) if tok and len(tok) <= 200 else None
+        if s is not None and s["contexto"].get("emergencia") and not c.admin_tokens:
+            return None
+        return s
+
+    def admin(request: Request, c: Config = Depends(config)) -> str:
+        """Sessão do painel + o papel da pessoa no mapa de permissões (PERMISSOES_PAINEL). Rota fora do mapa é
+        recusada (fail-closed): rota nova só funciona depois de dizer quem pode usá-la."""
+        _admin_rede(request, c)
+        s = _sessao_painel(request, c)
         if s is None:
-            if tok:
+            if request.cookies.get(nome_cookie(c, "admin")):
                 _contar_falha(c, origem_de(request), "painel-sessao", 600, 30)
             raise HTTPException(401, "sessão do painel ausente ou vencida")
         if request.method not in ("GET", "HEAD") and request.headers.get(CABECALHO_PAGINA) != "1":
             raise HTTPException(403, "pedido sem o cabeçalho da página")
+        papel = s["pessoa"]["papel"] if s["pessoa"] else "dono"  # a chave do servidor é o acesso de emergência
+        rota = request.scope.get("route")
+        caminho = getattr(rota, "path", "")
+        caminho = caminho[len(painel) :] if painel and caminho.startswith(painel) else ""
+        if papel not in PERMISSOES_PAINEL.get((request.method, caminho), ()):
+            raise HTTPException(403, "o seu papel no painel não permite isto")
+        request.state.painel = {"quem": s["admin"], "papel": papel, "emergencia": s["pessoa"] is None}
         return s["admin"]
 
     def _auditar(c: Config, request: Request, quem: str, acao: str, alvo: str | None = None, detalhe: Any = None):
-        c.banco.auditar(quem, acao, alvo, detalhe, ip_de(request))
+        c.banco.auditar(quem, acao, alvo, detalhe, ip_de(request), request.headers.get("user-agent"))
 
     @rotas.get("", include_in_schema=False)
     def painel_sem_barra(request: Request, c: Config = Depends(config)):
@@ -2444,32 +2535,139 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         arq = web["privado/painel.js"]
         return servir(request, arq, "private, max-age=31536000, immutable" if v == arq.versao else "no-store")
 
-    @rotas.post("/api/entrar")
-    def admin_entrar(body: AdminEntrarIn, request: Request, c: Config = Depends(config)):
-        _admin_rede(request, c)
-        origem = origem_de(request)
-        recusadas = c.banco.contar(f"falha:painel:{origem['rede']}", 900, somar=False)
-        if recusadas >= 5 or c.banco.contar(f"painel:{origem['rede']}", 900) > 10:
-            raise HTTPException(429, "muitas tentativas; espere 15 minutos")
-        ok_token = _um_de(body.token.strip(), c.admin_tokens)
-        contador = None
-        if c.admin_totp:
-            contador = contas.totp_confere(c.admin_totp, (body.totp or "").strip())
-            ultimo = c.banco.ler_estado("totp_ultimo")
-            if contador is not None and ultimo and contador <= int(ultimo["valor"] or -1):
-                contador = None  # código já usado (alguém viu e repetiu)
-        if not ok_token or (c.admin_totp and contador is None):
-            c.banco.contar(f"falha:painel:{origem['rede']}", 900)
-            c.banco.auditar("?", "entrada_recusada", None, {"totp": bool(c.admin_totp)}, origem["ip"])
-            raise HTTPException(401, "token ou código do autenticador inválido")
-        if contador is not None:
-            c.banco.definir_estado("totp_ultimo", str(contador))
-        quem = "admin-" + hashlib.sha256(body.token.strip().encode()).hexdigest()[:8]
-        token = c.banco.criar_sessao("admin", contas.SESSAO_ADMIN_S, origem, admin=quem)
-        c.banco.auditar(quem, "entrada", None, {"totp": bool(c.admin_totp)}, origem["ip"])
-        resp = JSONResponse({"ok": True, "admin": quem})
+    def _abrir_painel(c: Config, origem: dict, quem: str, papel: str, contexto: dict | None = None) -> JSONResponse:
+        token = c.banco.criar_sessao("admin", contas.SESSAO_ADMIN_S, origem, admin=quem, contexto=contexto)
+        resp = JSONResponse({"ok": True, "admin": quem, "papel": papel})
         definir_cookie(resp, c, "admin", token, contas.SESSAO_ADMIN_S)
         return resp
+
+    def _recusar_entrada(c: Config, origem: dict, chaves: list[str], detalhe: dict) -> None:
+        for chave in chaves:
+            c.banco.contar(chave, 900)
+        c.banco.auditar("?", "entrada_recusada", None, detalhe, origem["ip"], origem["agente"])
+        raise HTTPException(401, "usuário, senha ou código do autenticador inválidos")
+
+    @rotas.post("/api/entrar")
+    def admin_entrar(body: AdminEntrarIn, request: Request, c: Config = Depends(config)):
+        """Pessoa: nome de acesso + senha + código do aplicativo dela (cada código vale uma vez). Emergência: a chave
+        do servidor (RENDER2GO_ADMIN_TOKENS) + o código do RENDER2GO_ADMIN_TOTP. A mesma mensagem para qualquer erro;
+        5 erros bloqueiam a rede e o nome de acesso por 15 min, mesmo com tudo certo depois."""
+        _admin_rede(request, c)
+        origem = origem_de(request)
+        rede = f"falha:painel:{origem['rede']}"
+        if c.banco.contar(rede, 900, somar=False) >= 5 or c.banco.contar(f"painel:{origem['rede']}", 900) > 10:
+            raise HTTPException(429, "muitas tentativas; espere 15 minutos")
+        codigo = re.sub(r"\s", "", body.totp or "")
+        if body.token is None:  # pessoa
+            usuario = (body.usuario or "").strip().lower()[:64]
+            por_nome = f"falha:painel-usuario:{hashlib.sha256(usuario.encode()).hexdigest()[:24]}"
+            if c.banco.contar(por_nome, 900, somar=False) >= 5:
+                raise HTTPException(429, "muitas tentativas; espere 15 minutos")
+            a = c.banco.admin_por_usuario(usuario) if contas.USUARIO_ADMIN.match(usuario) else None
+            a = a if a and a["ativo"] else None
+            # a senha é conferida sempre (sem a pessoa, contra um resumo de mentira): o tempo não diz quem existe
+            ok = contas.senha_confere(body.senha or "", a["senha_hash"] if a else None)
+            if ok and a:
+                try:
+                    segredo = contas.decifrar(c.chave_segredos, a["totp_segredo"], f"admin:{a['id']}")
+                except ValueError:
+                    print(f"[painel] ALERTA: o segredo do autenticador de {usuario} não abre", flush=True)
+                    segredo = None
+                contador = contas.totp_confere(segredo, codigo) if segredo else None
+                ok = contador is not None and c.banco.admin_codigo_usado(a["id"], contador)
+            if not ok or not a:
+                _recusar_entrada(c, origem, [rede, por_nome], {"modo": "pessoa", "usuario": usuario[:32]})
+            c.banco.auditar(a["usuario"], "entrada", None, {"modo": "pessoa", "papel": a["papel"]}, origem["ip"],
+                            origem["agente"])  # fmt: skip
+            return _abrir_painel(c, origem, a["usuario"], a["papel"])
+        # chave do servidor (emergência)
+        ok = _um_de(body.token.strip(), c.admin_tokens)
+        if ok and c.admin_totp:
+            contador = contas.totp_confere(c.admin_totp, codigo)
+            ok = contador is not None and c.banco.usar_contador_estado("totp_ultimo", contador)
+        if not ok:
+            _recusar_entrada(c, origem, [rede], {"modo": "chave", "totp": bool(c.admin_totp)})
+        quem = "admin-" + hashlib.sha256(body.token.strip().encode()).hexdigest()[:8]
+        c.banco.auditar(quem, "entrada_emergencia", None, {"modo": "chave", "totp": bool(c.admin_totp)}, origem["ip"],
+                        origem["agente"])  # fmt: skip
+        return _abrir_painel(c, origem, quem, "dono", {"emergencia": True})
+
+    # -- primeiro acesso por convite: QR Code do aplicativo → um código dele → a senha --------------------
+
+    def _convite_valido(c: Config, request: Request, token: str) -> tuple[dict, dict]:
+        _admin_rede(request, c)
+        origem = origem_de(request)
+        rede = f"falha:convite:{origem['rede']}"
+        if c.banco.contar(rede, 900, somar=False) >= 10 or c.banco.contar(f"convite:{origem['rede']}", 900) > 40:
+            raise HTTPException(429, "muitas tentativas; espere 15 minutos")
+        conv = c.banco.convite(token) if len(token) <= 200 else None
+        if conv is None:
+            c.banco.contar(rede, 900)
+            raise HTTPException(401, "convite inválido, já usado ou vencido; peça outro a quem convidou você")
+        return conv, origem
+
+    @rotas.post("/api/convite/iniciar")
+    def convite_iniciar(body: ConviteIn, request: Request, c: Config = Depends(config)):
+        """1º passo: o segredo novo do aplicativo autenticador (só desta pessoa), com o QR Code."""
+        conv, origem = _convite_valido(c, request, body.convite)
+        segredo = contas.novo_segredo_totp()
+        cifrado = contas.cifrar(c.chave_segredos, segredo, f"convite:{conv['id']}")
+        if not c.banco.convite_segredo(conv["id"], cifrado, origem["ip"]):
+            raise HTTPException(401, "convite inválido, já usado ou vencido; peça outro a quem convidou você")
+        c.banco.auditar(conv["usuario"], "convite_aberto", conv["id"], {"papel": conv["papel"]}, origem["ip"],
+                        origem["agente"])  # fmt: skip
+        uri = contas.uri_totp(segredo, f"painel:{conv['usuario']}")
+        return {"usuario": conv["usuario"], "papel": conv["papel"], "expira": conv["expira"], "segredo": segredo,
+                "uri": uri, "qr_svg": contas.qr_svg(uri)}  # fmt: skip
+
+    @rotas.post("/api/convite/confirmar")
+    def convite_confirmar(body: ConviteIn, request: Request, c: Config = Depends(config)):
+        """2º passo: um código do aplicativo confere com o segredo novo. Só então a senha pode ser criada."""
+        conv, _ = _convite_valido(c, request, body.convite)
+        erros = f"convite:erro:{conv['id']}"
+        _limite_erros(c, erros, "muitos códigos errados; espere 15 minutos")
+        if not conv["totp_pendente"]:
+            raise HTTPException(409, "leia o QR Code primeiro")
+        try:
+            segredo = contas.decifrar(c.chave_segredos, conv["totp_pendente"], f"convite:{conv['id']}")
+        except ValueError as e:
+            raise HTTPException(409, "leia o QR Code de novo") from e
+        contador = contas.totp_confere(segredo, re.sub(r"\s", "", body.codigo or ""))
+        if contador is None:
+            _errou(c, erros)
+            raise HTTPException(401, "o código não confere: confira se o aplicativo leu o QR Code desta tela")
+        if not c.banco.convite_confirmado(conv["id"], conv["totp_pendente"], contador):
+            raise HTTPException(409, "o QR Code mudou em outra aba; leia de novo")
+        return {"ok": True, "usuario": conv["usuario"]}
+
+    @rotas.post("/api/convite/senha")
+    def convite_senha(body: ConviteIn, request: Request, c: Config = Depends(config)):
+        """3º passo: a senha (só depois do código do aplicativo). O convite é gasto e a sessão abre."""
+        conv, origem = _convite_valido(c, request, body.convite)
+        if not conv["totp_confirmado_em"] or float(conv["totp_confirmado_em"]) < time.time() - CONVITE_SENHA_S:
+            raise HTTPException(409, "confirme antes um código do aplicativo autenticador")
+        senha = body.senha or ""
+        if motivo := contas.senha_fraca(senha, conv["usuario"]):
+            raise HTTPException(422, motivo)
+        existente = c.banco.admin_por_usuario(conv["usuario"])
+        aid = existente["id"] if existente else novo_id("adm")
+        try:
+            segredo = contas.decifrar(c.chave_segredos, conv["totp_pendente"], f"convite:{conv['id']}")
+            pessoa = c.banco.usar_convite(
+                conv["id"],
+                aid,
+                contas.hash_senha(senha),
+                contas.cifrar(c.chave_segredos, segredo, f"admin:{aid}"),
+                int(conv["totp_contador"]),
+                CONVITE_SENHA_S,
+            )
+        except (ValueError, BancoError) as e:
+            raise HTTPException(409, "convite já usado, cancelado ou vencido; peça outro") from e
+        detalhe = {"papel": pessoa["papel"], "novo": pessoa["novo"]}
+        c.banco.auditar(pessoa["usuario"], "convite_usado", conv["id"], detalhe, origem["ip"], origem["agente"])
+        c.banco.auditar(pessoa["usuario"], "entrada", None, {"modo": "convite", "papel": pessoa["papel"]},
+                        origem["ip"], origem["agente"])  # fmt: skip
+        return _abrir_painel(c, origem, pessoa["usuario"], pessoa["papel"])
 
     @rotas.post("/api/sair")
     def admin_sair(request: Request, c: Config = Depends(config)):
@@ -2482,13 +2680,169 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @rotas.get("/api/sessao")
     def admin_sessao(request: Request, c: Config = Depends(config)):
-        """A página consulta ao abrir; sem sessão a resposta é `admin: null` (não é erro)."""
+        """A página consulta ao abrir; sem sessão a resposta é `admin: null` (não é erro). Com sessão: quem, o papel
+        e o que o papel abre (a página mostra só essas seções; o servidor confere de novo em cada rota)."""
         _admin_rede(request, c)
-        tok = request.cookies.get(nome_cookie(c, "admin"))
-        s = c.banco.sessao(tok, "admin") if tok and len(tok) <= 200 else None
+        s = _sessao_painel(request, c)
         if s is None:
             return {"admin": None}
-        return {"admin": s["admin"], "totp": c.admin_totp is not None}
+        papel = s["pessoa"]["papel"] if s["pessoa"] else "dono"
+        return {
+            "admin": s["admin"],
+            "papel": papel,
+            "emergencia": s["pessoa"] is None,
+            "totp": c.admin_totp is not None,
+            "rotas": sorted(f"{m} {p}" for (m, p), papeis in PERMISSOES_PAINEL.items() if papel in papeis),
+        }
+
+    # -- acessos do painel por pessoa (ADR 0009) e auditoria -------------------------------------------
+
+    @rotas.get("/api/acessos")
+    def acessos(_: str = Depends(admin), c: Config = Depends(config)):
+        """Quem tem acesso (sem senha nem segredo), os convites que ainda valem e se a chave de emergência existe."""
+        return {
+            "pessoas": c.banco.admins(),
+            "convites": c.banco.convites_pendentes(),
+            "chave_emergencia": bool(c.admin_tokens),
+            "papeis": PAPEIS_PAINEL,
+        }
+
+    @rotas.post("/api/acessos/convites")
+    def novo_convite(body: NovoConviteIn, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        """Convite de uso único (24 h) para um nome de acesso. Nome que já existe: refaz a senha e o autenticador
+        dessa pessoa quando ela usar (e reativa, se estava desativada)."""
+        try:
+            usuario = contas.normalizar_usuario(body.usuario)
+        except ValueError as e:
+            raise HTTPException(422, f"nome de acesso: {e}") from e
+        existente = c.banco.admin_por_usuario(usuario)
+        try:
+            cid, token = c.banco.criar_convite(usuario, body.papel, quem, contas.CONVITE_VALIDADE_S)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        antes = {"papel": existente["papel"], "ativo": bool(existente["ativo"])} if existente else None
+        _auditar(c, request, quem, "convite_criado", usuario, {"convite": cid, "antes": antes,
+                 "depois": {"papel": body.papel, "ativo": True}})  # fmt: skip
+        expira = time.time() + contas.CONVITE_VALIDADE_S
+        return {"convite": cid, "usuario": usuario, "papel": body.papel, "refaz": existente is not None,
+                "expira": expira, "endereco": f"{painel}/#convite={token}"}  # fmt: skip
+
+    @rotas.post("/api/acessos/convites/{cid}/cancelar")
+    def cancelar_convite(cid: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        conv = c.banco.cancelar_convite(cid[:80])
+        if conv is None:
+            raise HTTPException(404, "convite não encontrado, já usado ou cancelado")
+        _auditar(c, request, quem, "convite_cancelado", conv["usuario"], {"convite": cid})
+        return {"ok": True}
+
+    def _pessoa(c: Config, aid: str) -> dict:
+        a = c.banco.admin(aid[:80])
+        if a is None:
+            raise HTTPException(404, "acesso não encontrado")
+        return a
+
+    @rotas.post("/api/acessos/{aid}/desativar")
+    def desativar_acesso(aid: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        """Tira o acesso de uma pessoa (as sessões dela caem na hora); para voltar, um convite novo."""
+        a = _pessoa(c, aid)
+        if a["usuario"] == quem:
+            raise HTTPException(409, "você não pode tirar o próprio acesso")
+        try:
+            c.banco.desativar_admin(a["id"])
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        _auditar(c, request, quem, "acesso_desativado", a["usuario"], {"antes": {"ativo": True},
+                 "depois": {"ativo": False}})  # fmt: skip
+        return {"ok": True}
+
+    @rotas.post("/api/acessos/{aid}/papel")
+    def mudar_papel(aid: str, body: PapelIn, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        a = _pessoa(c, aid)
+        try:
+            antes = c.banco.mudar_papel_admin(a["id"], body.papel)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        _auditar(c, request, quem, "papel", a["usuario"], {"antes": {"papel": antes["papel"]},
+                 "depois": {"papel": body.papel}})  # fmt: skip
+        return {"ok": True, "papel": body.papel}
+
+    def _filtros_auditoria(pessoa, acao, alvo, desde, ate) -> dict:
+        return {"admin": (pessoa or "")[:120] or None, "acao": (acao or "")[:60] or None,
+                "alvo": (alvo or "")[:120] or None, "desde": desde, "ate": ate}  # fmt: skip
+
+    @rotas.get("/api/auditoria")
+    def ver_auditoria(
+        pessoa: str | None = None,
+        acao: str | None = None,
+        alvo: str | None = None,
+        desde: float | None = None,
+        ate: float | None = None,
+        _: str = Depends(admin),
+        c: Config = Depends(config),
+    ):
+        """O que foi feito no painel (quem, o quê, em quem, quando, de onde e de qual navegador), com filtros e a
+        página seguinte por `ate` (o `proximo` da resposta). Cada mudança traz "antes" e "depois"."""
+        itens = c.banco.auditoria_filtrada(**_filtros_auditoria(pessoa, acao, alvo, desde, ate), limite=101)
+        proximo = itens[99]["quando"] if len(itens) > 100 else None
+        for i in itens:
+            with contextlib.suppress(ValueError, TypeError):
+                i["detalhe"] = json.loads(i["detalhe"]) if i["detalhe"] else None
+        return {"itens": itens[:100], "proximo": proximo, **c.banco.opcoes_auditoria()}
+
+    @rotas.get("/api/auditoria.csv")
+    def auditoria_csv(
+        request: Request,
+        pessoa: str | None = None,
+        acao: str | None = None,
+        alvo: str | None = None,
+        desde: float | None = None,
+        ate: float | None = None,
+        fuso_min: int = 0,
+        quem: str = Depends(admin),
+        c: Config = Depends(config),
+    ):
+        """A auditoria filtrada numa planilha (até 10 mil linhas; CSV com ; como o Excel em português abre)."""
+        if not -14 * 60 <= fuso_min <= 14 * 60:
+            raise HTTPException(422, "fuso inválido")
+        filtros = _filtros_auditoria(pessoa, acao, alvo, desde, ate)
+        itens = c.banco.auditoria_filtrada(**filtros, limite=10_000)
+        linhas = ["Data;Pessoa;Ação;Alvo;Antes;Depois;Detalhe;IP;Navegador"]
+        for i in itens:
+            detalhe = {}
+            with contextlib.suppress(ValueError, TypeError):
+                detalhe = json.loads(i["detalhe"]) if i["detalhe"] else {}
+            antes, depois = detalhe.pop("antes", None), detalhe.pop("depois", None)
+
+            def js(v):
+                return "" if v in (None, {}) else json.dumps(v, ensure_ascii=False)
+
+            quando = time.strftime("%d/%m/%Y %H:%M:%S", time.gmtime(i["quando"] + fuso_min * 60))
+            campos = [quando, i["admin"], i["acao"], i["alvo"] or "", js(antes), js(depois), js(detalhe),
+                      i["ip"] or "", i.get("agente") or ""]  # fmt: skip
+            linhas.append(";".join(_celula_csv(v) for v in campos))
+        _auditar(c, request, quem, "auditoria_exportada", None, {k: v for k, v in filtros.items() if v is not None})
+        corpo = "﻿" + "\r\n".join(linhas) + "\r\n"
+        nome = f"render2go-auditoria-{time.strftime('%Y-%m-%d')}.csv"
+        return Response(corpo.encode(), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{nome}"'})  # fmt: skip
+
+    @rotas.get("/api/resumo")
+    def resumo_painel(request: Request, fuso_min: int = -180, _: str = Depends(admin), c: Config = Depends(config)):
+        """Visão geral: o que pede atenção agora (revisões, fila, pods, suporte) e os números de hoje (no fuso da
+        página; padrão: Brasília). Valores em dinheiro só para o dono."""
+        if not -14 * 60 <= fuso_min <= 14 * 60:
+            raise HTTPException(422, "fuso inválido")
+        local = time.time() + fuso_min * 60
+        r = c.banco.resumo_painel(local - local % 86400 - fuso_min * 60)
+        vivo, pausa = c.banco.ler_estado("orquestrador_vivo"), c.banco.ler_estado("pausado")
+        r["orquestrador_visto_s"] = round(time.time() - float(vivo["atualizado"]), 1) if vivo else None
+        r["pausado"] = bool(pausa and pausa["valor"] == "1")
+        if request.state.painel["papel"] == "dono":
+            r["avisos"] = avisos_de_configuracao(c)
+        else:
+            for k in ("cobrado_hoje", "devolvido_hoje", "recargas_hoje", "pix_pendentes"):
+                r.pop(k, None)
+        return r
 
     @rotas.get("/api/lotes")
     def pendentes(status: str = "aguardando_aprovacao", _: str = Depends(admin), c: Config = Depends(config)):
@@ -2587,7 +2941,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             cid, _ = c.banco.criar_cliente(email, cota, body.plano, email=email, email_norm=norm)
         except BancoError as e:
             raise HTTPException(422, str(e)) from e
-        _auditar(c, request, quem, "criar_conta", cid, {"email": email, "plano": body.plano})
+        _auditar(c, request, quem, "criar_conta", cid, {"depois": {"email": email, "plano": body.plano}})
         return {"cliente": cid, "email": email, "plano": body.plano}
 
     @rotas.post("/api/clientes/{cliente_id}/saldo")
@@ -2610,7 +2964,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             saldo = c.banco.movimentar(cliente_id, valor, body.descricao.strip(), quem, ref)
         except BancoError as e:
             raise HTTPException(422, str(e)) from e
-        _auditar(c, request, quem, "saldo", cliente_id, {"valor": valor, "descricao": body.descricao, "ref": ref})
+        _auditar(c, request, quem, "saldo", cliente_id, {"valor": valor, "descricao": body.descricao, "ref": ref,
+                 "antes": {"saldo": saldo - valor}, "depois": {"saldo": saldo}})  # fmt: skip
         return {"cliente": cliente_id, "saldo": saldo}
 
     @rotas.get("/api/clientes/{cliente_id}/extrato")
@@ -2624,11 +2979,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     def mudar_plano(
         cliente_id: str, body: PlanoIn, request: Request, quem: str = Depends(admin), c: Config = Depends(config)
     ):
+        antes = c.banco.cliente(cliente_id)
         try:
             c.banco.mudar_plano(cliente_id, body.plano)
         except BancoError as e:
             raise HTTPException(422, str(e)) from e
-        _auditar(c, request, quem, "plano", cliente_id, {"plano": body.plano})
+        _auditar(c, request, quem, "plano", cliente_id, {"antes": {"plano": antes["plano"] if antes else None},
+                 "depois": {"plano": body.plano}})  # fmt: skip
         return {"cliente": cliente_id, "plano": body.plano}
 
     @rotas.post("/api/clientes/{cliente_id}/email")
@@ -2636,12 +2993,14 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         cliente_id: str, body: EmailIn, request: Request, quem: str = Depends(admin), c: Config = Depends(config)
     ):
         """Cliente antigo (código de acesso): liga um e-mail para ele entrar pelo e-mail."""
+        antes = c.banco.cliente(cliente_id)
         try:
             email, norm = contas.normalizar(body.email, exigir_dominio=False)
             c.banco.definir_email(cliente_id, email, norm)
         except (contas.EmailRecusado, BancoError) as e:
             raise HTTPException(422, str(e)) from e
-        _auditar(c, request, quem, "email", cliente_id, {"email": email})
+        _auditar(c, request, quem, "email", cliente_id, {"antes": {"email": antes["email"] if antes else None},
+                 "depois": {"email": email}})  # fmt: skip
         return {"cliente": cliente_id, "email": email}
 
     @rotas.post("/api/clientes/{cliente_id}/desativar")
@@ -2649,14 +3008,14 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if not c.banco.desativar_cliente(cliente_id, quem):
             raise HTTPException(404, "cliente não encontrado ou já desativado")
         c.banco.revogar_sessoes(cliente_id)  # quem estava conectado cai na hora
-        _auditar(c, request, quem, "desativar", cliente_id)
+        _auditar(c, request, quem, "desativar", cliente_id, {"antes": {"ativo": True}, "depois": {"ativo": False}})
         return {"cliente": cliente_id, "ativo": False}
 
     @rotas.post("/api/clientes/{cliente_id}/reativar")
     def reativar(cliente_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
         if not c.banco.reativar_cliente(cliente_id):
             raise HTTPException(404, "cliente não encontrado, já ativo ou excluído")
-        _auditar(c, request, quem, "reativar", cliente_id)
+        _auditar(c, request, quem, "reativar", cliente_id, {"antes": {"ativo": False}, "depois": {"ativo": True}})
         return {"cliente": cliente_id, "ativo": True}
 
     @rotas.post("/api/clientes/{cliente_id}/mfa/desligar")
@@ -2670,7 +3029,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(404, "cliente não encontrado ou sem a verificação em duas etapas")
         # no registro da conta, sem IP (não foi um acesso dela); quem fez e de onde ficam na auditoria do painel
         c.banco.registrar_acesso(cliente_id, "mfa_desligado", {}, {"por": "suporte"})
-        _auditar(c, request, quem, "mfa_desligado", cliente_id)
+        _auditar(c, request, quem, "mfa_desligado", cliente_id, {"antes": {"mfa": True}, "depois": {"mfa": False}})
         _avisar(c, cli.get("email"), "mfa_suporte")
         return {"cliente": cliente_id, "mfa": False}
 
@@ -2747,14 +3106,14 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         c.banco.definir_estado("pausado", "1")
         c.banco.revogar_tokens_worker()  # nenhum pod pega job novo, mesmo antes do orquestrador agir
         cid = c.banco.comando("emergencia", quem)
-        _auditar(c, request, quem, "emergencia")
+        _auditar(c, request, quem, "emergencia", None, {"depois": {"pausado": True}})
         return {"ok": True, "comando": cid, "pausado": True}
 
     @rotas.post("/api/pods/retomar")
     def retomar(request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
         c.banco.definir_estado("pausado", "0")
         cid = c.banco.comando("retomar", quem)
-        _auditar(c, request, quem, "retomar")
+        _auditar(c, request, quem, "retomar", None, {"depois": {"pausado": False}})
         return {"ok": True, "comando": cid, "pausado": False}
 
     @rotas.get("/api/interesses")
@@ -2827,6 +3186,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "orquestrador_visto_s": round(time.time() - float(vivo["atualizado"]), 1) if vivo else None,
             "analisador_visto_s": round(time.time() - float(analisador["atualizado"]), 1) if analisador else None,
             "contas": c.banco.contar_clientes(),
+            "acessos": {
+                "pessoas": sum(1 for a in c.banco.admins() if a["ativo"]),
+                "donos": c.banco.contar_donos(),
+                "chave_emergencia": bool(c.admin_tokens),
+            },
+            "avisos": avisos_de_configuracao(c),
             "auditoria": c.banco.auditoria_admin(50),
         }
 

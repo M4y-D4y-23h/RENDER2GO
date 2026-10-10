@@ -53,6 +53,8 @@ WORKER = secrets.token_urlsafe(32)
 SEGREDO_MP = "segredo-webhook-" + secrets.token_hex(8)
 TABELAS = [
     "codigos_recuperacao",
+    "admin_convites",
+    "admins",
     "emails_antigos",
     "auditoria_admin",
     "pagamentos",
@@ -207,6 +209,32 @@ def entrar_admin() -> requests.Session:
     assert r.status_code == 200, r.text
     adm.set_cookie = r.headers.get("set-cookie", "")
     return adm
+
+
+_ULTIMOS: dict[str, int] = {}
+
+
+def codigo_de(segredo: str) -> str:
+    """Um código do aplicativo ainda não usado: o servidor só aceita passos de 30 s crescentes (o mesmo código não
+    vale duas vezes), dentro de ±1 passo em torno de agora. Sem passo livre, espera o próximo."""
+    while True:
+        agora = int(time.time() // 30)
+        c = max(_ULTIMOS.get(segredo, agora - 1) + 1, agora)
+        if c <= agora + 1:
+            _ULTIMOS[segredo] = c
+            return contas.totp(segredo, c)
+        time.sleep(3)
+
+
+def codigo_por_email(enviados, email: str, depois: int) -> str:
+    """O código de 8 dígitos do e-mail mais novo para `email` (enviado depois dos `depois` primeiros)."""
+    for _ in range(100):
+        novos = [m for m in enviados[depois:] if m["To"] == email]
+        if novos:
+            m = re.search(r"\b(\d{4}) ?(\d{4})\b", novos[-1].get_content())
+            return m.group(1) + m.group(2)
+        time.sleep(0.05)
+    raise AssertionError(f"nenhum código para {email}")
 
 
 # -- verificações ---------------------------------------------------------------------------------
@@ -649,6 +677,148 @@ def sessoes(enviados):
     conferir(conta["plano"] == "pago", "apelido do Gmail (ponto e +) cai na mesma caixa: sem teste extra", str(conta))
 
 
+SENHA_OP = "frase longa do operador 42"
+
+
+def acessos_painel(adm):
+    """Acessos do painel por pessoa (ADR 0009): convite de uso único, código do aplicativo de uso único, força
+    bruta na entrada por pessoa (rede e nome), papel de operador e mensagens iguais para qualquer erro."""
+    entrar = f"{BASE}{PAINEL}/api/entrar"
+    r = adm.post(
+        f"{BASE}{PAINEL}/api/acessos/convites", json={"usuario": "op.pentest", "papel": "operador"}, headers=PAGINA
+    )
+    token = r.json()["endereco"].split("#convite=")[1]
+    conv = navegador("127.0.0.8")
+    segredo = conv.post(f"{BASE}{PAINEL}/api/convite/iniciar", json={"convite": token}, headers=PAGINA).json()[
+        "segredo"
+    ]
+    r = conv.post(f"{BASE}{PAINEL}/api/convite/senha", json={"convite": token, "senha": SENHA_OP}, headers=PAGINA)
+    conferir(
+        r.status_code == 409, "convite: a senha só vem depois de um código do aplicativo conferir", str(r.status_code)
+    )
+    corpo = {"convite": token, "codigo": codigo_de(segredo)}
+    assert conv.post(f"{BASE}{PAINEL}/api/convite/confirmar", json=corpo, headers=PAGINA).status_code == 200
+    r = conv.post(f"{BASE}{PAINEL}/api/convite/senha", json={"convite": token, "senha": SENHA_OP}, headers=PAGINA)
+    assert r.status_code == 200, r.text
+    outro = navegador("127.0.0.9")
+    reuso = [
+        outro.post(
+            f"{BASE}{PAINEL}/api/convite/{passo}",
+            json={"convite": token, "codigo": "123456", "senha": SENHA_OP},
+            headers=PAGINA,
+        ).status_code
+        for passo in ("iniciar", "confirmar", "senha")
+    ]
+    conferir(reuso == [401, 401, 401], "convite reaproveitado (o mesmo endereço, de outra rede): recusado", str(reuso))
+    chutes = {
+        outro.post(f"{BASE}{PAINEL}/api/convite/iniciar", json={"convite": c}, headers=PAGINA).status_code
+        for c in (secrets.token_urlsafe(32), "' OR 1=1 --" + "x" * 20, "é" * 30)
+    }
+    conferir(chutes == {401}, "convite chutado, com injeção ou Unicode: 401", str(chutes))
+    codigo = codigo_de(segredo)
+    op = navegador("127.0.0.10")
+    r1 = op.post(entrar, json={"usuario": "op.pentest", "senha": SENHA_OP, "totp": codigo}, headers=PAGINA)
+    r2 = navegador("127.0.0.11").post(
+        entrar, json={"usuario": "op.pentest", "senha": SENHA_OP, "totp": codigo}, headers=PAGINA
+    )
+    conferir(
+        r1.status_code == 200 and r2.status_code == 401,
+        "o mesmo código do aplicativo não entra duas vezes (pessoa do painel)",
+        f"{r1.status_code} {r2.status_code}",
+    )
+    donos = [("POST", "/api/pods/emergencia"), ("GET", "/api/acessos"), ("GET", "/api/auditoria"),
+             ("POST", "/api/acessos/convites"), ("GET", "/api/pagamentos"), ("GET", "/api/seguranca"),
+             ("GET", "/api/geradores"), ("GET", "/api/auditoria.csv")]  # fmt: skip
+    ruins = [f"{m} {c}={s}" for m, c in donos if (s := op.request(m, f"{BASE}{PAINEL}{c}", json={},
+             headers=PAGINA).status_code) != 403]  # fmt: skip
+    conferir(not ruins, "operador do painel não chega a pods, dinheiro, acessos nem auditoria (403)", ", ".join(ruins))
+    erros = {
+        navegador(ip).post(entrar, json=corpo, headers=PAGINA).text
+        for ip, corpo in (
+            ("127.0.0.15", {"usuario": "op.pentest", "senha": "senha errada demais", "totp": "123456"}),
+            ("127.0.0.16", {"usuario": "nao.existe", "senha": SENHA_OP, "totp": "123456"}),
+            ("127.0.0.17", {"usuario": "op.pentest", "senha": SENHA_OP, "totp": "000000"}),
+        )
+    }
+    conferir(len(erros) == 1, "entrada por pessoa: a mesma resposta para nome inexistente, senha e código errados")
+    rede = navegador("127.0.0.12")
+    for i in range(5):
+        rede.post(entrar, json={"usuario": f"chute{i}", "senha": "chute chute chute", "totp": "000000"}, headers=PAGINA)
+    r = rede.post(entrar, json={"usuario": "op.pentest", "senha": SENHA_OP, "totp": "123456"}, headers=PAGINA)
+    conferir(r.status_code == 429, "força bruta por pessoa: 5 erros bloqueiam a rede por 15 min", str(r.status_code))
+    for i in range(2):  # com os 3 erros da verificação anterior, o nome soma 5
+        navegador(f"127.0.0.{18 + i}").post(
+            entrar, json={"usuario": "op.pentest", "senha": "outra senha errada", "totp": "1"}, headers=PAGINA
+        )
+    r = navegador("127.0.0.20").post(
+        entrar, json={"usuario": "op.pentest", "senha": SENHA_OP, "totp": "123456"}, headers=PAGINA
+    )
+    conferir(r.status_code == 429, "força bruta por pessoa: o nome fica bloqueado também vindo de outra rede")
+
+
+def configuracoes(cfg, enviados, a, b):
+    """Configurações da conta (10/10/2026): só a sessão do navegador, confirmação recente, aparelhos de outra conta e
+    o desafio da verificação em duas etapas (não vale como sessão; força bruta e reuso de código barrados)."""
+    _, tok = cfg.banco.criar_cliente("Integração do pentest", 500, "pago")
+    rotas = [("POST", "/api/conta/confirmar/codigo"), ("POST", "/api/conta/mfa/iniciar"),
+             ("POST", "/api/conta/email/codigo"), ("GET", "/api/conta/sessoes"), ("POST", "/api/conta/desativar"),
+             ("POST", "/api/conta/excluir"), ("POST", "/api/conta/perfil"), ("POST", "/api/conta/aceitar")]  # fmt: skip
+    anon = navegador("127.0.0.21")
+    ruins = []
+    for m, c in rotas:
+        sem = anon.request(m, f"{BASE}{c}", json={}, headers=PAGINA).status_code
+        com_token = anon.request(m, f"{BASE}{c}", json={}, headers={**PAGINA, "Authorization": f"Bearer {tok}"})
+        if sem != 401 or com_token.status_code != 403:
+            ruins.append(f"{m} {c}={sem}/{com_token.status_code}")
+    conferir(
+        not ruins, "configurações da conta: sem sessão 401; com o código de acesso no cabeçalho, 403", ", ".join(ruins)
+    )
+    ref_a = a.get(f"{BASE}/api/conta/sessoes").json()["sessoes"][0]["ref"]
+    r = b.post(f"{BASE}/api/conta/sessoes/{ref_a}/encerrar", headers=PAGINA)
+    conferir(r.status_code == 404 and a.get(f"{BASE}/api/conta").status_code == 200,
+             "outra conta não encerra a sessão de ninguém pela referência (IDOR)", str(r.status_code))  # fmt: skip
+    with cfg.banco.tx() as c:  # a sessão de A passa a ser de 20 min atrás: sem a confirmação recente
+        c.run("UPDATE sessoes SET criado = criado - 1200 WHERE cliente_id = (SELECT id FROM clientes WHERE email = ?)",
+              ("cliente.a@gmail.com",))  # fmt: skip
+    r = a.post(f"{BASE}/api/conta/excluir", json={"confirmacao": "EXCLUIR"}, headers=PAGINA)
+    conferir(
+        r.status_code == 403 and r.headers.get("x-render2go-motivo") == "confirmar",
+        "excluir a conta pede a confirmação recente (só a sessão roubada não basta)",
+        str(r.status_code),
+    )
+    # verificação em duas etapas
+    email, ip = "mfa.pentest@gmail.com", "127.0.0.14"
+    nav = entrar_cliente(enviados, email, ip)
+    segredo = nav.post(f"{BASE}/api/conta/mfa/iniciar", headers=PAGINA).json()["segredo"]
+    r = nav.post(f"{BASE}/api/conta/mfa/ativar", json={"codigo": codigo_de(segredo)}, headers=PAGINA)
+    recuperacao = r.json()["codigos"]
+
+    def desafio() -> tuple[requests.Session, str]:
+        novo = navegador(ip)
+        n = len(enviados)
+        novo.post(f"{BASE}/api/conta/codigo", json={"email": email, "aceite": True}, headers=PAGINA)
+        corpo = {"email": email, "codigo": codigo_por_email(enviados, email, n), "aceite": True}
+        r = novo.post(f"{BASE}/api/conta/entrar", json=corpo, headers=PAGINA)
+        assert r.json().get("mfa") is True and "set-cookie" not in r.headers, r.text
+        return novo, r.json()["desafio"]
+
+    novo, d = desafio()
+    r = navegador().get(f"{BASE}/api/conta", headers={"Cookie": f"__Host-render2go={d}"})
+    conferir(r.status_code == 401, "o desafio da verificação em duas etapas não vale como sessão", str(r.status_code))
+    r = novo.post(f"{BASE}/api/conta/entrar-mfa", json={"desafio": d, "codigo": recuperacao[0]}, headers=PAGINA)
+    r2 = novo.post(f"{BASE}/api/conta/entrar-mfa", json={"desafio": d, "codigo": recuperacao[1]}, headers=PAGINA)
+    conferir(r.status_code == 200 and r2.status_code == 401, "o desafio vale uma vez só",
+             f"{r.status_code} {r2.status_code}")  # fmt: skip
+    novo, d = desafio()
+    r = novo.post(f"{BASE}/api/conta/entrar-mfa", json={"desafio": d, "codigo": recuperacao[0]}, headers=PAGINA)
+    conferir(r.status_code == 401, "código de recuperação já usado: recusado", str(r.status_code))
+    for _ in range(4):  # com o código já usado, 5 erros
+        novo.post(f"{BASE}/api/conta/entrar-mfa", json={"desafio": d, "codigo": "000000"}, headers=PAGINA)
+    r = novo.post(f"{BASE}/api/conta/entrar-mfa", json={"desafio": d, "codigo": recuperacao[2]}, headers=PAGINA)
+    conferir(r.status_code == 429, "força bruta no código do aplicativo: 5 erros bloqueiam a conta por 15 min",
+             str(r.status_code))  # fmt: skip
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--caddy", default="caddy", help="binário do Caddy 2.10 (o mesmo da imagem do compose)")
@@ -687,6 +857,8 @@ def main() -> int:
         csrf(a, adm)
         injecao(a, adm)
         webhook(anon, mp, pid_mp)
+        acessos_painel(adm)
+        configuracoes(cfg, enviados, a, b)
         sessoes(enviados)
         limites(enviados)
     finally:
