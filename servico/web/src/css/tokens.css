@@ -51,6 +51,10 @@
   --cor-alerta-borda: #ebc56a;
   --cor-sobre-estado: #ffffff;
 
+  /* brilho decorativo (fundo da apresentação e da ilustração); nunca atrás de texto pequeno sem contraste */
+  --cor-brilho-marca: rgb(67 56 202 / 0.11);
+  --cor-brilho-acento: rgb(229 83 46 / 0.08);
+
   /* tipografia */
   --fonte-titulos: "Render2Go Titulos", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
@@ -76,7 +80,8 @@
   --esp-6: 2rem;
   --esp-7: 3rem;
   --esp-8: 4rem;
-  --margem: clamp(1rem, 0.6rem + 2vw, 2rem);
+  /* margem lateral fluida; em paisagem, no iPhone com recorte, nunca menor que a área segura */
+  --margem: max(clamp(1rem, 0.6rem + 2vw, 2rem), env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
   --largura-pagina: 72rem;
   --largura-estreita: 46rem;
   --largura-texto: 68ch;
@@ -133,6 +138,9 @@
     --cor-alerta-borda: #6e5419;
     --cor-sobre-estado: #16133a;
 
+    --cor-brilho-marca: rgb(164 158 255 / 0.12);
+    --cor-brilho-acento: rgb(255 125 87 / 0.07);
+
     --sombra-1: 0 1px 2px rgb(0 0 0 / 0.4);
     --sombra-2: 0 1px 2px rgb(0 0 0 / 0.35), 0 10px 28px -8px rgb(0 0 0 / 0.55);
     --sombra-3: 0 24px 64px -12px rgb(0 0 0 / 0.7);
@@ -143,5 +151,33 @@
   :root {
     --rapido: 0ms;
     --medio: 0ms;
+  }
+}
+
+/* "mais contraste" ligado no aparelho: texto de apoio e bordas mais fortes (os dois temas) */
+@media (prefers-contrast: more) {
+  :root {
+    --cor-texto-3: var(--cor-texto-2);
+    --cor-borda: var(--cor-borda-campo);
+  }
+}
+
+/* impressão (termos e política em papel ou PDF): sempre as cores claras, mesmo no tema escuro */
+@media print {
+  :root {
+    color-scheme: light;
+    --cor-fundo: #ffffff;
+    --cor-superficie: #ffffff;
+    --cor-superficie-2: #ffffff;
+    --cor-borda: #c9c7d6;
+    --cor-texto: #000000;
+    --cor-texto-2: #1a1830;
+    --cor-texto-3: #45425c;
+    --cor-marca: #3730a3;
+    --cor-marca-texto: #3730a3;
+    --cor-marca-suave: #ffffff;
+    --sombra-1: none;
+    --sombra-2: none;
+    --sombra-3: none;
   }
 }

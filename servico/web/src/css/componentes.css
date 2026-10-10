@@ -72,6 +72,12 @@
   color: var(--cor-texto);
 }
 
+.navegacao a:active,
+.navegacao button:active {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto);
+}
+
 .navegacao a[aria-current="page"] {
   color: var(--cor-marca-texto);
   background: var(--cor-marca-suave);
@@ -103,28 +109,83 @@
 .rodape {
   margin-top: var(--esp-8);
   border-top: 1px solid var(--cor-borda);
-  padding-block: var(--esp-5) calc(var(--esp-6) + env(safe-area-inset-bottom, 0px));
+  background: var(--cor-superficie-2);
+  padding-block: var(--esp-6) calc(var(--esp-6) + env(safe-area-inset-bottom, 0px));
   color: var(--cor-texto-3);
   font-size: var(--texto-sm);
 }
 
 .rodape-interno {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--esp-4);
+}
+
+.rodape-marca {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--esp-2) var(--esp-5);
   align-items: center;
-  justify-content: space-between;
+  gap: var(--esp-3);
+}
+
+.rodape-marca img {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+}
+
+.rodape-marca strong {
+  color: var(--cor-texto);
+  font-weight: 700;
 }
 
 .rodape nav {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--esp-1) var(--esp-4);
+  gap: 0 var(--esp-5);
 }
 
 .rodape a,
 .rodape .link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
   color: var(--cor-texto-2);
+}
+
+.rodape a:hover,
+.rodape .link:hover {
+  color: var(--cor-marca);
+}
+
+/* no dedo, cada link do rodapé com 44 px de altura (WCAG 2.5.8 pede pelo menos 24) */
+@media (pointer: coarse) {
+  .rodape a,
+  .rodape .link {
+    min-height: var(--alvo);
+  }
+}
+
+.identificacao {
+  padding-top: var(--esp-4);
+  border-top: 1px solid var(--cor-borda);
+  color: var(--cor-texto-3);
+  font-size: var(--texto-xs);
+  max-width: none;
+}
+
+@media (min-width: 64em) {
+  .rodape-interno {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .rodape nav {
+    justify-content: flex-end;
+  }
+
+  .identificacao {
+    grid-column: 1 / -1;
+  }
 }
 
 /* -- botões --------------------------------------------------------------------------------- */
@@ -1029,12 +1090,17 @@ progress::-moz-progress-bar {
   font-size: var(--texto-sm);
 }
 
+/* celular: a janela sobe de baixo, na largura toda (perto do polegar), com o respiro da área segura;
+   a partir de 40em, fica no centro (fim desta seção) */
 dialog {
-  width: min(100% - 2rem, 56rem);
-  max-height: calc(100% - 2rem);
-  padding: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: calc(100% - var(--esp-6));
+  margin: auto 0 0;
+  padding: 0 0 env(safe-area-inset-bottom, 0px);
   border: 1px solid var(--cor-borda);
-  border-radius: var(--raio-xl);
+  border-width: 1px 0 0;
+  border-radius: var(--raio-xl) var(--raio-xl) 0 0;
   background: var(--cor-superficie);
   color: var(--cor-texto);
   box-shadow: var(--sombra-3);
@@ -1047,7 +1113,7 @@ dialog::backdrop {
 }
 
 dialog[open] {
-  animation: aparecer var(--medio) var(--curva);
+  animation: subir var(--medio) var(--curva);
 }
 
 .dialogo-cab {
@@ -1065,7 +1131,7 @@ dialog[open] {
 }
 
 .dialogo-corpo {
-  padding: var(--esp-5);
+  padding: var(--esp-4);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
@@ -1085,8 +1151,42 @@ dialog[open] {
   gap: var(--esp-2);
 }
 
-dialog.confirmacao {
-  width: min(100% - 2rem, 28rem);
+.dialogo-acoes .botao {
+  flex: 1 1 auto;
+}
+
+@media (min-width: 40em) {
+  dialog {
+    width: min(100% - 2rem, 56rem);
+    max-height: calc(100% - 2rem);
+    margin: auto;
+    padding: 0;
+    border-width: 1px;
+    border-radius: var(--raio-xl);
+  }
+
+  dialog.confirmacao {
+    width: min(100% - 2rem, 28rem);
+  }
+
+  dialog[open] {
+    animation-name: aparecer;
+  }
+
+  .dialogo-corpo {
+    padding: var(--esp-5);
+  }
+
+  .dialogo-acoes .botao {
+    flex: 0 1 auto;
+  }
+}
+
+@keyframes subir {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
 }
 
 @keyframes aparecer {
@@ -1253,25 +1353,32 @@ dialog.confirmacao {
   flex: 1 1 auto;
 }
 
-@media (min-width: 40em) {
-  .cookies {
-    padding: var(--esp-5);
-  }
-
-  .cookies .acoes .botao {
-    flex: 0 0 auto;
-  }
+/* "Gerenciar" (ou "Salvar escolhas") embaixo, na largura toda */
+.cookies .acoes .botao.fantasma {
+  flex-basis: 100%;
 }
 
-/* celular: os dois botões principais lado a lado quando cabem; "Gerenciar" fica como link */
 @media (max-width: 39.99em) {
   .cookies p {
     margin-bottom: var(--esp-3);
   }
+}
 
-  .cookies .acoes .botao.fantasma {
-    flex-basis: 100%;
-    min-height: 2.75rem;
+@media (min-width: 40em) {
+  .cookies {
+    padding: var(--esp-5);
+  }
+}
+
+/* computador: o aviso fica no canto de baixo à esquerda, sem cobrir o formulário de entrada */
+@media (min-width: 64em) {
+  .cookies {
+    left: var(--esp-5);
+    right: auto;
+    bottom: var(--esp-5);
+    width: 27rem;
+    max-width: calc(100% - 2 * var(--esp-5));
+    margin: 0;
   }
 }
 
@@ -1320,5 +1427,35 @@ dialog.confirmacao {
   .botao.pequeno,
   .filtros button {
     min-height: var(--alvo);
+  }
+}
+
+/* cores forçadas (alto contraste do Windows): o sistema troca as cores; aqui, as bordas e marcas que somem */
+@media (forced-colors: active) {
+  .selo,
+  .previsao,
+  .sugestao,
+  .filtros button[aria-pressed="true"],
+  .navegacao a[aria-current="page"],
+  .miniatura .remover {
+    border: 1px solid CanvasText;
+  }
+
+  .botao.primario,
+  .botao.sucesso {
+    border: 2px solid ButtonText;
+  }
+
+  progress {
+    border: 1px solid CanvasText;
+  }
+
+  .pulso,
+  .pulso::after {
+    background: CanvasText;
+  }
+
+  .indice a[aria-current] {
+    text-decoration: underline;
   }
 }

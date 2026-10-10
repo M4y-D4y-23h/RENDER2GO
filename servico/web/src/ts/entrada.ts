@@ -1,10 +1,10 @@
 // Entrada na página do cliente (ADR 0007): e-mail → código de 8 dígitos no e-mail → sessão (cookie HttpOnly).
 // No 1º acesso a conta nasce com o teste gratuito. Quem tinha um código de acesso antigo também entra por
 // aqui ("Tenho um código de acesso antigo"). O navegador guarda só a marca "entrou" (inicio.ts), nunca a sessão.
-import { ErroApi, anunciar, api, aviso, avisoComRecarga, conectado, el, marcarConectado, marcarErro, mostrarSenha, ocupado, textoErro } from "./comum";
+import { CHAVE_CONECTADO, ErroApi, anunciar, api, aviso, avisoComRecarga, conectado, el, marcarConectado, marcarErro, mostrarSenha, ocupado, textoErro } from "./comum";
 import { type Verificacao, verificacao } from "./turnstile";
 
-export const CHAVE_CONECTADO = "render2go-conectado";
+export { CHAVE_CONECTADO };
 
 export type Publico = { turnstile: string | null; entrada_email: boolean; dominios: string[]; documentos: Record<string, string>; pagamento: boolean };
 

@@ -192,8 +192,11 @@ select {
   font-size: var(--texto-sm);
 }
 
-.pilha > * + * {
-  margin-top: var(--esp-4);
+/* pilha de blocos com o mesmo espaço entre eles; um filho escondido ([hidden]) não deixa espaço sobrando */
+.pilha {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--esp-4);
 }
 
 .icone {
@@ -210,4 +213,55 @@ select {
 .icone.cheio {
   fill: currentColor;
   stroke: none;
+}
+
+/* cores forçadas (alto contraste do Windows): o sistema escolhe as cores; aqui só o que deixaria de aparecer */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline-color: Highlight;
+  }
+
+  .pular {
+    border: 2px solid ButtonText;
+  }
+}
+
+/* impressão: só o conteúdo (sem cabeçalho, navegação, aviso de cookies nem botões) */
+@media print {
+  .pular,
+  .topo,
+  .rodape nav,
+  .cookies,
+  .indice,
+  button,
+  .botao,
+  dialog {
+    display: none !important;
+  }
+
+  body {
+    display: block;
+    min-height: 0;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  /* endereço dos links externos impresso ao lado do texto */
+  main a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    word-break: break-all;
+  }
+
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  tr,
+  li {
+    break-inside: avoid;
+  }
 }

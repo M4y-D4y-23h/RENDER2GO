@@ -2,6 +2,21 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 10/10/2026 (2): revisão do front-end (estética, navegação e Core Web Vitals)
+
+Motivo: o dono pediu uma nova passada em todas as páginas, só no front-end e na segurança do front-end, com UX, UI e os atributos de desempenho, acessibilidade e indexação. Detalhes em [`docs/10`](docs/10-identidade-visual-e-front-end.md), seções 4.1 e 5.1. Não muda a API nem o banco: basta publicar a imagem nova (as páginas vêm dentro dela).
+
+- **Topo conforme a sessão:** quem não entrou vê "Entrar" (leva ao cartão de entrada, com o foco nele) e "Suporte"; quem entrou vê "Pedidos", "Suporte" e "Sair" em todas as páginas, também no suporte, nas páginas de texto e na 404. O script do `<head>` (parte nova `sessao`) marca a sessão antes de desenhar: nada pisca nem empurra. A 404 e o "Voltar" do suporte mudam o texto conforme a sessão.
+- **Entrada:** brilho anil e urucum no fundo e uma ilustração "fotos → vídeo" em SVG dentro do HTML (0,7 KB comprimido, decorativa, cores do tema; só a partir de 640 px).
+- **"O que você quer criar?":** a opção disponível ocupa a linha inteira, com borda anil, seta e título maior; as "Em breve" ficaram compactas, com o selo e o "Tenho interesse" na mesma linha.
+- **Rodapé único** (símbolo, frase da marca, links e identificação da empresa) em todas as páginas; a 404 ganhou "Cookies", "Preferências de cookies" e a identificação.
+- **Páginas de texto:** ritmo de leitura e, nos termos e na privacidade, índice "Nesta página" fixo ao lado no computador, com a seção atual marcada; impressão só com o texto.
+- **Celular:** janelas que sobem de baixo, na largura toda; margens que respeitam a área segura do iPhone.
+- **Aviso de cookies:** "Aceitar todos" e "Só os necessários" com o mesmo destaque (guia da ANPD); no computador, fica no canto inferior esquerdo.
+- **Core Web Vitals:** desde a tela de finalidades, as opções e o saldo chegam da API depois da 1ª pintura: na visita de volta (CSS e JS em cache), o painel empurrava os pedidos e o rodapé, com **CLS de 0,59 no celular e 0,24 no computador** ("ruim"); na 1ª visita, a linha "Conectado como … · saldo" quebrava depois da pintura (0,076); com o "não sou um robô" ligado, a entrada e o suporte também se mexiam (até 0,061 no suporte de quem entrou, no celular). Agora tudo o que chega depois tem o lugar reservado: linha da conta com altura fixa, conta pedida no `<head>` junto com as receitas (saldo, aviso do plano e opções no mesmo quadro), esqueleto no "Novo pedido", "Sair", o quadro da verificação e o aviso de conta do suporte já no HTML. **CLS zero em todas as telas**, também com a API 1,5 s mais lenta que a página (320 a 1440 px). Custo: o LCP do painel fica uma ida e volta à API mais tarde (o maior texto aparece junto com os dados), ainda na faixa "bom" ([`docs/10`](docs/10-identidade-visual-e-front-end.md), seção 5.1).
+- **Acessibilidade:** "mais contraste", cores forçadas e impressão; contraste do texto sobre o brilho conferido no teste; `aria-current="location"` no índice. Tags `application-name` e `apple-mobile-web-app-title`.
+- **Testes:** verificações novas para o topo e o "Sair" (com a marca antiga sem sessão), o que já vem reservado no HTML, o índice das páginas de texto, o CLS com a API lenta (e o esqueleto saindo quando a API falha), a janela no celular, os botões do aviso de cookies, topo/rodapé/script de sessão em cada página e o contraste sobre o brilho. Suíte do serviço inteira (SQLite e Postgres), axe-core sem violações nos dois temas e teste de invasão com 73 de 73.
+
 ## 10/10/2026: a versão de contas por e-mail no servidor
 
 Motivo: o dono configurou o e-mail e atualizou o servidor, com os blocos do [`docs/09`](docs/09-implantacao.md), seção 0, "09/10/2026 (4)".

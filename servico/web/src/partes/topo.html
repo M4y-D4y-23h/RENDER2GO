@@ -4,10 +4,13 @@
     <a class="marca" href="/">
       <!--@logo-->
     </a>
+    <!-- quem não entrou vê "Entrar"; quem entrou, "Pedidos" e "Sair" (o inicio.js marca a sessão antes do 1º quadro:
+         nada aparece depois nem empurra os outros itens) -->
     <nav class="navegacao" aria-label="Principal">
-      <a href="/" data-nav="cliente"><!--@icone video--><span class="rotulo-nav">Pedidos</span></a>
+      <a class="so-sem-sessao" href="/#entrar" data-nav="cliente"><!--@icone chave--><span class="rotulo-nav">Entrar</span></a>
+      <a class="so-com-sessao" href="/" data-nav="cliente"><!--@icone video--><span class="rotulo-nav">Pedidos</span></a>
       <a href="/suporte" data-nav="suporte"><!--@icone ajuda--><span class="rotulo-nav">Suporte</span></a>
-      <button type="button" id="sair" hidden><!--@icone sair--><span class="rotulo-nav">Sair</span></button>
+      <button type="button" class="so-com-sessao" id="sair"><!--@icone sair--><span class="rotulo-nav">Sair</span></button>
     </nav>
   </div>
 </header>

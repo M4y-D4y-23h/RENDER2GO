@@ -36,17 +36,11 @@
   color: var(--cor-texto-2);
 }
 
-/* sessão: quem tem código guardado vê o painel desde o primeiro quadro (inicio.js marca o <html>) */
-.so-com-sessao {
-  display: none;
-}
-
-.com-sessao .so-com-sessao {
-  display: block;
-}
-
+/* sessão: quem entrou vê o painel (e "Pedidos" e "Sair" no topo) desde o primeiro quadro: o inicio.js marca o
+   <html> com .com-sessao antes de desenhar. O elemento visível mantém o próprio display (bloco, grade, link). */
+html:not(.com-sessao) .so-com-sessao,
 .com-sessao .so-sem-sessao {
-  display: none;
+  display: none !important;
 }
 
 .voltar a {
@@ -57,6 +51,13 @@
 }
 
 /* -- cliente: entrada ----------------------------------------------------------------------- */
+
+/* brilho suave de anil e urucum no alto da apresentação (só no fundo da página: nada transborda para o lado) */
+html:not(.com-sessao) body[data-pagina="cliente"] {
+  background-image: radial-gradient(ellipse 60rem 26rem at 18% 0%, var(--cor-brilho-marca), transparent 70%),
+    radial-gradient(ellipse 40rem 22rem at 92% 6%, var(--cor-brilho-acento), transparent 70%);
+  background-repeat: no-repeat;
+}
 
 .entrada {
   display: grid;
@@ -79,6 +80,85 @@
   grid-template-columns: minmax(0, 1fr);
   gap: var(--esp-4);
   align-self: start;
+}
+
+/* "Entrar" no topo leva o foco até aqui (/#entrar): sem anel em volta do cartão inteiro */
+.entrar:focus {
+  outline: none;
+}
+
+/* ilustração da apresentação (foto que vira vídeo): decorativa, só onde sobra espaço ao lado */
+.ilustracao {
+  display: none;
+}
+
+@media (min-width: 40em) {
+  .ilustracao {
+    display: block;
+    width: min(100%, 30rem);
+    height: auto;
+    margin-top: var(--esp-3);
+  }
+}
+
+.il-cartao {
+  fill: var(--cor-superficie);
+  stroke: var(--cor-borda);
+  stroke-width: 2;
+}
+
+.il-sombra {
+  fill: var(--cor-borda);
+  opacity: 0.55;
+}
+
+.il-ceu {
+  fill: var(--cor-marca-suave);
+}
+
+.il-monte {
+  fill: var(--cor-marca);
+  opacity: 0.85;
+}
+
+.il-monte-2 {
+  fill: var(--cor-marca);
+  opacity: 0.45;
+}
+
+.il-sol {
+  fill: var(--cor-acento);
+}
+
+.il-traco {
+  fill: none;
+  stroke: var(--cor-acento);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.il-play {
+  fill: var(--cor-marca);
+}
+
+.il-play-seta {
+  fill: var(--cor-sobre-marca);
+}
+
+.il-barra-fundo {
+  fill: var(--cor-superficie-2);
+}
+
+.il-barra {
+  fill: url(#ilustracao-gradiente);
+}
+
+.il-g1 {
+  stop-color: var(--cor-marca);
+}
+
+.il-g2 {
+  stop-color: var(--cor-acento);
 }
 
 .como {
@@ -312,6 +392,44 @@
   margin-top: var(--esp-5);
 }
 
+/* enquanto os pedidos carregam, o link fica invisível (mas no lugar): aparece já na posição final, em vez de
+   ser empurrado para baixo quando a lista chega (CLS) */
+.lotes[aria-busy="true"] ~ .suporte-link {
+  visibility: hidden;
+}
+
+/* "Conectado como …" chega da API depois do 1º quadro: a linha já tem a altura final (sem deslocamento, CLS),
+   com até 2 linhas no celular e 1 no computador; o texto inteiro fica no título e no leitor de tela */
+.conta-linha {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-3);
+}
+
+.conta-resumo {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: calc(2 * var(--entrelinha) * 1em);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.conta-linha .botao {
+  flex: none;
+}
+
+@media (min-width: 40em) {
+  .conta-resumo {
+    min-height: calc(var(--entrelinha) * 1em);
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+  }
+}
+
 /* -- suporte e erro ------------------------------------------------------------------------- */
 
 .pagina-erro {
@@ -329,6 +447,14 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+/* em cores forçadas o fundo some, e o texto transparente sumiria junto */
+@media (forced-colors: active) {
+  .codigo-erro {
+    color: CanvasText;
+    background: none;
+  }
 }
 
 .voltar {
@@ -600,6 +726,34 @@
   display: grid;
 }
 
+/* esqueleto do "Novo pedido" enquanto a API responde: a mesma grade dos blocos e pelo menos uma tela de
+   altura, para os pedidos e o rodapé já começarem fora da tela e não se mexerem quando tudo chegar (CLS) */
+.esqueleto-pedido {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+  align-content: start;
+  gap: var(--esp-3);
+  min-height: 100vh;
+}
+
+.esqueleto-pedido .esqueleto {
+  align-content: start;
+  min-height: 12rem;
+  padding: var(--esp-4);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+}
+
+.esqueleto-pedido .largo {
+  grid-column: 1 / -1;
+  min-height: 11rem;
+}
+
+/* a opção disponível ocupa a linha inteira: é o caminho principal; as "em breve" ficam abaixo, menores */
+.blocos li.disponivel {
+  grid-column: 1 / -1;
+}
+
 .bloco {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -624,6 +778,42 @@ button.bloco {
 button.bloco:hover {
   border-color: var(--cor-marca);
   box-shadow: var(--sombra-2);
+}
+
+button.bloco:active {
+  transform: translateY(1px);
+}
+
+.disponivel .bloco {
+  position: relative;
+  padding: var(--esp-5) calc(var(--esp-5) + 1.5rem) var(--esp-5) var(--esp-5);
+  border: 2px solid var(--cor-marca);
+  background: linear-gradient(135deg, var(--cor-marca-suave), var(--cor-superficie) 70%);
+  box-shadow: var(--sombra-1);
+}
+
+/* seta de "começar" (sem texto: o nome do botão continua o da opção) */
+.disponivel .bloco::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: var(--esp-5);
+  width: 0.7rem;
+  height: 0.7rem;
+  border-top: 3px solid var(--cor-marca);
+  border-right: 3px solid var(--cor-marca);
+  transform: translateY(-50%) rotate(45deg);
+  transition: transform var(--rapido) var(--curva);
+}
+
+.disponivel .bloco:hover::after {
+  transform: translate(3px, -50%) rotate(45deg);
+}
+
+.disponivel .bloco-titulo {
+  font-family: var(--fonte-titulos);
+  font-size: var(--titulo-3);
+  letter-spacing: -0.01em;
 }
 
 .bloco > .icone {
@@ -653,11 +843,26 @@ button.bloco:hover {
   margin-top: var(--esp-2);
 }
 
+/* "em breve": mais compacta, com o selo e o "Tenho interesse" na mesma linha */
 .bloco.em-breve {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: start;
+  gap: var(--esp-1) var(--esp-2);
+  padding: var(--esp-3) var(--esp-4);
   background: var(--cor-superficie-2);
 }
 
+/* título, tipo e descrição ocupam a linha toda; o ícone fica sozinho na 1ª linha, à esquerda */
+.bloco.em-breve > :not(.icone):not(.selo):not(.botao):not(.interesse-ok) {
+  flex-basis: 100%;
+}
+
 .bloco.em-breve > .icone {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
   color: var(--cor-texto-2);
 }
 
@@ -706,14 +911,18 @@ button.bloco:hover {
   flex: 1 1 12rem;
 }
 
-.escolhida-texto p,
-.escolhida .modelo-uso {
+.escolhida-texto p {
   margin: 0;
 }
 
 .modelo-uso {
   margin: var(--esp-2) 0 0;
   font-size: var(--texto-sm);
+}
+
+/* no celular o "Trocar" desce para a 2ª linha: a descrição não pode encostar nele */
+.escolhida .modelo-uso {
+  margin-top: var(--esp-3);
 }
 
 /* janela "Ver todas" */
@@ -801,11 +1010,16 @@ button.bloco:hover {
   margin-top: var(--esp-3);
 }
 
-.conta-linha {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--esp-2) var(--esp-4);
-  align-items: center;
+
+/* aviso de quem entrou no suporte: uma linha de altura fixa para o e-mail (cortada com reticências) */
+.aviso-texto {
+  min-width: 0;
+}
+
+.uma-linha {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* "não sou um robô": quadro do próprio site com o desafio da Cloudflare (turnstile.ts) */
@@ -896,11 +1110,25 @@ button.bloco:hover {
 /* -- páginas legais ---------------------------------------------------------------------------------- */
 
 .texto-legal section {
+  margin-top: var(--esp-7);
+  scroll-margin-top: calc(var(--altura-topo) + var(--esp-4));
+}
+
+.texto-legal .corpo-legal > section:first-child {
   margin-top: var(--esp-6);
 }
 
 .texto-legal h2 {
   margin-bottom: var(--esp-3);
+}
+
+/* parágrafos, listas e tabelas seguidos sempre com o mesmo respiro */
+.texto-legal section > :is(p, ul, ol, .tabela) + :is(p, ul, ol, .tabela) {
+  margin-top: var(--esp-3);
+}
+
+.texto-legal li::marker {
+  color: var(--cor-marca);
 }
 
 .texto-legal p,
@@ -920,18 +1148,78 @@ button.bloco:hover {
 }
 
 .indice {
-  padding: var(--esp-4);
+  padding: var(--esp-4) var(--esp-5);
   border: 1px solid var(--cor-borda);
-  border-radius: var(--raio-sm);
+  border-radius: var(--raio-lg);
   background: var(--cor-superficie);
 }
 
 .indice h2 {
-  font-size: var(--titulo-3);
+  margin-bottom: var(--esp-2);
+  font-size: var(--texto-md);
 }
 
-.identificacao {
-  flex-basis: 100%;
-  color: var(--cor-texto-3);
-  font-size: var(--texto-xs);
+.indice ol {
+  display: grid;
+  gap: 0;
+  padding-left: var(--esp-5);
+  font-size: var(--texto-sm);
 }
+
+.indice a {
+  display: block;
+  padding-block: 0.3rem;
+  color: var(--cor-texto-2);
+  text-decoration: none;
+}
+
+.indice a:hover {
+  color: var(--cor-marca);
+  text-decoration: underline;
+}
+
+/* a seção sendo lida (legal.ts) */
+.indice a[aria-current] {
+  color: var(--cor-marca-texto);
+  font-weight: 650;
+}
+
+@media (pointer: coarse) {
+  .indice a {
+    padding-block: 0.6rem;
+  }
+}
+
+/* computador: o índice fica fixo ao lado do texto */
+@media (min-width: 64em) {
+  .texto-legal.com-indice {
+    width: min(100% - 2 * var(--margem), var(--largura-pagina));
+    display: grid;
+    grid-template-columns: 15rem minmax(0, 46rem);
+    justify-content: center;
+    column-gap: var(--esp-7);
+    align-items: start;
+  }
+
+  .texto-legal.com-indice > .cab-pagina {
+    grid-column: 2;
+  }
+
+  .texto-legal.com-indice > .indice {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    position: sticky;
+    top: calc(var(--altura-topo) + var(--esp-5));
+    max-height: calc(100dvh - var(--altura-topo) - 2 * var(--esp-5));
+    overflow-y: auto;
+  }
+
+  .texto-legal.com-indice > .corpo-legal {
+    grid-column: 2;
+  }
+
+  .texto-legal.com-indice .corpo-legal > section:first-child {
+    margin-top: 0;
+  }
+}
+

@@ -46,7 +46,8 @@ function avisoCookies(forcar = false, origem: HTMLElement | null = null): void {
     opcao(est, "Estatísticas:", "medir visitas para melhorar o site. Não usamos hoje."),
     opcao(mkt, "Marketing:", "anúncios e campanhas. Não usamos hoje."),
   ]);
-  const aceitar = criar("button", { type: "button", className: "botao primario", textContent: "Aceitar todos" });
+  // aceitar e recusar com o mesmo destaque (guia de cookies da ANPD): nenhum dos dois "puxa" o clique
+  const aceitar = criar("button", { type: "button", className: "botao", textContent: "Aceitar todos" });
   const necessarios = criar("button", { type: "button", className: "botao", textContent: "Só os necessários" });
   const gerenciar = criar("button", { type: "button", className: "botao fantasma", textContent: forcar ? "Salvar escolhas" : "Gerenciar" });
   gerenciar.setAttribute("aria-expanded", String(forcar));

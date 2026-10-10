@@ -8,6 +8,7 @@
 <meta property="og:title" content="Suporte · Render2Go">
 <meta property="og:description" content="Dúvidas, pedidos de vídeo, entrada e pagamentos: fale com o suporte do Render2Go.">
 <meta property="og:url" content="{{ORIGEM}}/suporte">
+<!--@sessao-->
 <!--@cabeca-->
 <script src="/estatico/suporte.js" defer></script>
 </head>
@@ -18,11 +19,19 @@
     <noscript><p class="aviso erro">Esta página precisa de JavaScript para enviar a mensagem. Ative o JavaScript no navegador e recarregue a página.</p></noscript>
     <div class="cab-pagina">
       <h1>Fale com o suporte</h1>
-      <p class="lead">Dúvida, problema com um pedido, com a entrada ou com um pagamento? Escreva aqui. Respondemos pelo e-mail que você informar. Para denunciar um uso indevido do serviço, comece o assunto com “Denúncia”.</p>
+      <p class="lead">Dúvida, problema com um pedido, com a entrada ou com um pagamento? Escreva aqui. Respondemos em até 5 dias úteis, pelo e-mail que você informar. Para denunciar um uso indevido do serviço, comece o assunto com “Denúncia”.</p>
     </div>
 
     <form id="form-suporte" class="cartao elevado pilha" novalidate aria-label="Mensagem para o suporte">
-      <p id="suporte-conta" class="aviso info" hidden></p>
+      <!-- quem entrou: o aviso já vem no HTML (a marca de sessão decide antes do 1º quadro); o e-mail da conta
+           entra depois numa linha de altura fixa, sem empurrar o formulário -->
+      <div id="suporte-conta" class="aviso info so-com-sessao">
+        <!--@icone info-->
+        <div class="aviso-texto">
+          <p class="uma-linha" id="suporte-conta-linha"><strong>Você está conectado</strong><span id="suporte-conta-email"></span></p>
+          <p>A mensagem vai junto com os seus pedidos.</p>
+        </div>
+      </div>
       <div class="campo">
         <label for="suporte-assunto">Assunto <span class="opcional">(opcional)</span></label>
         <input id="suporte-assunto" maxlength="120" autocomplete="off" enterkeyhint="next">
@@ -36,15 +45,16 @@
         </div>
       </div>
       <div class="campo">
-        <label for="suporte-email">Seu e-mail para resposta <span class="opcional" id="email-opcional" hidden>(opcional)</span></label>
+        <label for="suporte-email">Seu e-mail para resposta <span class="opcional so-com-sessao" id="email-opcional">(opcional)</span></label>
         <input id="suporte-email" type="email" maxlength="200" autocomplete="email" inputmode="email" spellcheck="false" autocapitalize="off" enterkeyhint="send">
       </div>
-      <div id="verificacao-suporte" class="verificacao" hidden></div>
+      <!-- o quadro do "não sou um robô" tem o lugar reservado para quem não entrou (em produção ele sempre aparece) -->
+      <div id="verificacao-suporte" class="verificacao so-sem-sessao"></div>
       <button type="submit" id="suporte-enviar" class="botao primario largo"><!--@icone mensagem-->Enviar mensagem</button>
       <p id="suporte-msg" class="aviso" hidden></p>
     </form>
 
-    <p class="voltar"><a href="/"><!--@icone voltar-->Voltar para os pedidos</a></p>
+    <p class="voltar"><a href="/"><!--@icone voltar--><span class="so-com-sessao">Voltar para os pedidos</span><span class="so-sem-sessao">Voltar para o início</span></a></p>
   </div>
 </main>
 <!--@rodape-->

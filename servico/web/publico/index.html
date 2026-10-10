@@ -8,13 +8,15 @@
 <meta property="og:title" content="Render2Go · Vídeos curtos com IA a partir das suas fotos">
 <meta property="og:description" content="Envie as fotos do seu negócio, diga em português o que deve acontecer e receba um vídeo curto por foto.">
 <meta property="og:url" content="https://app.render2go.com/">
-<script src="/estatico/inicio.js?v=12c9aa774e80" integrity="sha384-59TmH8lB7iYlICVLL0oTKNwQS0+bjCqWme0lHvbE2LEmZMpucHegzIVlhb++SnZZ" data-chave="render2go-conectado" data-antecipar="/api/receitas /api/lotes"></script>
+<script src="/estatico/inicio.js?v=12c9aa774e80" integrity="sha384-59TmH8lB7iYlICVLL0oTKNwQS0+bjCqWme0lHvbE2LEmZMpucHegzIVlhb++SnZZ" data-chave="render2go-conectado" data-antecipar="/api/receitas /api/lotes /api/conta"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0e17" media="(prefers-color-scheme: dark)">
 <meta name="format-detection" content="telephone=no">
-<link rel="stylesheet" href="/estatico/estilo.css?v=a32022f842ee" integrity="sha384-V29S9xo2qnlRzddWxG1q8ClQEtCcKDUJi9La44Mc52RKD37ZMb39ODCoBAh/IMx0">
+<meta name="application-name" content="Render2Go">
+<meta name="apple-mobile-web-app-title" content="Render2Go">
+<link rel="stylesheet" href="/estatico/estilo.css?v=d482f639f8e7" integrity="sha384-f1xp1Tg3/rbb71MiPYHtxom1Y/VHbpDtEYg5wQSjVf7QxDpRsHyp+fgDa6ffoG6v">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -28,7 +30,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/cliente.js?v=702224c11d52" integrity="sha384-P3EAjatiN5sViScihj+pjpj1Z3V+Yl4aOYutef1Apwul3bJpC1qeW54ABqXzfB5X" defer></script>
+<script src="/estatico/cliente.js?v=c305b181ff8e" integrity="sha384-KmLvn4mrD+D/x8AAsxLZRhhgBl/a9sHBBTfh7Fix43s8r4xJ3WJcSgEGbMOHwEl+" defer></script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
 {"@type":"Organization","@id":"https://app.render2go.com/#organizacao","name":"Render2Go","url":"https://app.render2go.com/","logo":"https://app.render2go.com/estatico/icone-512.png?v=d75fd84aa2d1"},
@@ -48,9 +50,10 @@
 </picture>
 </a>
 <nav class="navegacao" aria-label="Principal">
-<a href="/" data-nav="cliente" aria-current="page"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM10 9.2v5.6l4.6-2.8z"/></svg><span class="rotulo-nav">Pedidos</span></a>
+<a class="so-sem-sessao" href="/#entrar" data-nav="cliente" aria-current="page"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3a6 6 0 0 1-2.2 11.6L11 16.5H9v2H7v2H3v-3.6l6.2-6.2A6 6 0 0 1 15 3zM16.5 7.5h.01"/></svg><span class="rotulo-nav">Entrar</span></a>
+<a class="so-com-sessao" href="/" data-nav="cliente" aria-current="page"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM10 9.2v5.6l4.6-2.8z"/></svg><span class="rotulo-nav">Pedidos</span></a>
 <a href="/suporte" data-nav="suporte"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01"/></svg><span class="rotulo-nav">Suporte</span></a>
-<button type="button" id="sair" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16.5 14.5 12 10 7.5M14.5 12H4"/></svg><span class="rotulo-nav">Sair</span></button>
+<button type="button" class="so-com-sessao" id="sair"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16.5 14.5 12 10 7.5M14.5 12H4"/></svg><span class="rotulo-nav">Sair</span></button>
 </nav>
 </div>
 </header>
@@ -63,8 +66,40 @@
 <p class="sobretitulo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/></svg>Vídeos com IA para pequenos negócios</p>
 <h1 id="titulo-hero">Suas fotos viram vídeos curtos, prontos para postar</h1>
 <p class="lead">Envie dezenas de fotos de uma vez, diga em português o que deve acontecer e receba um vídeo por foto.</p>
+<svg class="ilustracao" viewBox="0 0 480 200" width="480" height="200" aria-hidden="true" focusable="false">
+<defs>
+<linearGradient id="ilustracao-gradiente" x1="0" x2="1" y1="0" y2="0">
+<stop offset="0" class="il-g1"/>
+<stop offset="1" class="il-g2"/>
+</linearGradient>
+</defs>
+<g transform="translate(22 30) rotate(-9 66 78)"><rect class="il-cartao" width="132" height="156" rx="14"/></g>
+<g transform="translate(40 26) rotate(-3 66 78)"><rect class="il-cartao" width="132" height="156" rx="14"/></g>
+<g transform="translate(58 22)">
+<rect class="il-sombra" y="6" width="132" height="156" rx="14"/>
+<rect class="il-cartao" width="132" height="156" rx="14"/>
+<rect class="il-ceu" x="10" y="10" width="112" height="104" rx="8"/>
+<circle class="il-sol" cx="92" cy="36" r="11"/>
+<path class="il-monte-2" d="M10 114 L52 66 L80 98 Z"/>
+<path class="il-monte" d="M34 114 L74 58 L122 114 Z"/>
+<rect class="il-barra-fundo" x="10" y="126" width="78" height="8" rx="4"/>
+<rect class="il-barra-fundo" x="10" y="140" width="52" height="8" rx="4"/>
+</g>
+<path class="il-traco" d="M206 82 H238 M198 100 H244 M206 118 H238"/>
+<g transform="translate(262 18)">
+<rect class="il-sombra" y="6" width="196" height="164" rx="18"/>
+<rect class="il-cartao" width="196" height="164" rx="18"/>
+<rect class="il-ceu" x="12" y="12" width="172" height="108" rx="10"/>
+<path class="il-monte-2" d="M12 120 L64 70 L100 104 Z"/>
+<path class="il-monte" d="M44 120 L104 60 L184 120 Z"/>
+<circle class="il-play" cx="98" cy="66" r="24"/>
+<path class="il-play-seta" d="M90 53 L112 66 L90 79 Z"/>
+<rect class="il-barra-fundo" x="12" y="136" width="172" height="10" rx="5"/>
+<rect class="il-barra" x="12" y="136" width="112" height="10" rx="5"/>
+</g>
+</svg>
 </section>
-<section class="cartao elevado entrar" aria-labelledby="titulo-entrar">
+<section class="cartao elevado entrar" id="entrar" tabindex="-1" aria-labelledby="titulo-entrar">
 <h2 id="titulo-entrar">Entrar ou criar conta</h2>
 <form id="form-email" novalidate>
 <div class="campo">
@@ -77,7 +112,7 @@
 <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Uso</a> e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</span>
 </label>
 <p class="dica" id="aceite-dica">O aceite fica registrado com a sua conta, a data e o endereço de internet.</p>
-<div id="verificacao-entrar" class="verificacao" hidden></div>
+<div id="verificacao-entrar" class="verificacao"></div>
 <button type="submit" class="botao primario largo" id="enviar-email"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM3.5 7l8.5 6 8.5-6"/></svg>Receber o código</button>
 </form>
 <form id="form-codigo" novalidate hidden>
@@ -125,7 +160,7 @@
 <h1 id="titulo-painel" tabindex="-1">Seus vídeos</h1>
 <p class="fraco">Escolha as fotos, diga o que deve acontecer e acompanhe os pedidos aqui.</p>
 <div class="conta-linha">
-<p class="fraco" id="conta-resumo"></p>
+<p class="fraco conta-resumo" id="conta-resumo"></p>
 <button type="button" class="botao pequeno" id="abrir-conta"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0"/></svg>Sua conta</button>
 </div>
 </div>
@@ -146,7 +181,14 @@
 </div>
 <p class="dica" id="saldo-recarga">Vídeo que não sai volta para o saldo.</p>
 </div>
-<div class="finalidades" id="finalidades">
+<div class="esqueleto-pedido" id="esqueleto-pedido" aria-hidden="true">
+<div class="esqueleto largo"><span></span><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span><span></span></div>
+</div>
+<div class="finalidades" id="finalidades" hidden>
 <h3 id="titulo-finalidades" tabindex="-1">O que você quer criar?</h3>
 <p class="dica" id="finalidades-dica">Escolha uma opção para começar. As marcadas com “Em breve” ainda não estão disponíveis: clique em “Tenho interesse” para nos dizer o que você quer usar.</p>
 <ul class="blocos" id="blocos" aria-labelledby="titulo-finalidades" aria-describedby="finalidades-dica" aria-busy="true"></ul>
@@ -276,7 +318,10 @@
 </main>
 <footer class="rodape">
 <div class="recipiente rodape-interno">
-<p>Render2Go · vídeos curtos com IA para pequenos negócios</p>
+<div class="rodape-marca">
+<img src="/estatico/icone.svg?v=5320513ad899" alt="" width="28" height="28" loading="lazy" decoding="async">
+<p><strong>Render2Go</strong> · vídeos curtos com IA para pequenos negócios</p>
+</div>
 <nav aria-label="Rodapé">
 <a href="/termos" data-nav="termos">Termos de Uso</a>
 <a href="/privacidade" data-nav="privacidade">Privacidade</a>

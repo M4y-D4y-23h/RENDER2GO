@@ -734,7 +734,7 @@ function iniciarCliente(): void {
         criar("span", { className: "selo ok", textContent: f.modelos.length ? `Disponível · ${f.modelos.map((m) => m.nome).join(", ")}` : "Disponível" }),
       ]);
       b.addEventListener("click", () => escolherFinalidade(f.id));
-      return criar("li", { dados: { finalidade: f.id } }, [b]);
+      return criar("li", { className: "disponivel", dados: { finalidade: f.id } }, [b]);
     }
     return criar("li", { dados: { finalidade: f.id } }, [
       criar("div", { className: "bloco em-breve" }, [...textos, criar("span", { className: "selo", textContent: "Em breve" }), interesse(f)]),
@@ -915,21 +915,29 @@ function iniciarCliente(): void {
       else void carregarSaldo().then(carregarConta);
     });
   };
-  const carregarConta = async () => {
-    conta = await api<Conta>("/api/conta");
-    el("conta-resumo").textContent = resumoConta(conta);
+  const mostrarConta = (dados: Conta) => {
+    conta = dados;
+    const resumo = el("conta-resumo");
+    resumo.textContent = resumoConta(conta);
+    resumo.title = resumo.textContent; // no celular a linha pode ser cortada (…): o texto inteiro fica no título
     const botao = el<HTMLButtonElement>("adicionar-saldo");
     botao.hidden = !conta.pagamento?.ativo || conta.plano === "interno";
     el("saldo-recarga").textContent = conta.pagamento?.ativo
       ? "O saldo entra assim que o Pix é confirmado. Vídeo que não sai volta para o saldo."
       : "Para recarregar, fale com a gente pelo suporte. Vídeo que não sai volta para o saldo.";
   };
+  const carregarConta = async () => mostrarConta(await api<Conta>("/api/conta"));
   el("abrir-conta").addEventListener("click", () => conta && abrirConta(conta, pix));
   el("adicionar-saldo").addEventListener("click", pix);
 
   // -- entrada -----------------------------------------------------------------------------------
   iniciarEntrada(async () => {
-    receitas = await api<Receitas>("/api/receitas");
+    // receitas e conta juntas (as duas já pedidas no <head>): as opções, o saldo e o aviso de recarga
+    // aparecem no mesmo quadro, sem empurrar depois o que já estava na tela (CLS)
+    const [dados, dadosConta] = await Promise.all([api<Receitas>("/api/receitas"), api<Conta>("/api/conta")]).finally(
+      () => (el("esqueleto-pedido").hidden = true), // com erro, fica a mensagem acima, não um esqueleto sem fim
+    );
+    receitas = dados;
     // estilos agrupados por nicho; o "Livre" (geral) vem primeiro, como a API manda
     const grupos = new Map<string, HTMLOptGroupElement>();
     const opcoes: HTMLElement[] = [];
@@ -948,16 +956,17 @@ function iniciarCliente(): void {
     if (receitas.autorizacao) el("texto-autorizacao").textContent = receitas.autorizacao.texto;
     for (const f of receitas.interesses ?? []) interessadas.add(f);
     desenharBlocos(); // o pedido começa pela escolha do que criar (o modelo vem da finalidade)
+    el("finalidades").hidden = escolhida !== null; // no mesmo quadro em que o esqueleto sai
     campos.disabled = false;
     aplicarPlano(receitas.plano);
     if (receitas.plano?.nome === "pago" && receitas.plano.precos) {
       saldo = { pre_pago: true, saldo: receitas.plano.saldo ?? 0, precos: receitas.plano.precos };
       mostrarSaldo();
     }
+    mostrarConta(dadosConta);
     aplicarReceita();
     atualizarContagem();
     atualizacao.agora();
-    await carregarConta();
   });
   el("link-suporte").textContent = `${location.host}/suporte`;
 

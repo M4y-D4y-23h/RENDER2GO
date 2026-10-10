@@ -1,7 +1,6 @@
 // "Sua conta" na página do cliente: e-mail, plano e saldo; recarga por Pix; cópia dos dados (LGPD); sair
 // deste aparelho ou de todos; excluir a conta (com saldo, o reembolso vem antes, pelo suporte).
-import { anunciar, api, aviso, baixarJson, confirmar, criar, dialogo, el, icone, marcarConectado, ocupado, reais, textoErro } from "./comum";
-import { CHAVE_CONECTADO } from "./entrada";
+import { CHAVE_CONECTADO, anunciar, api, aviso, baixarJson, confirmar, criar, dialogo, el, icone, marcarConectado, ocupado, reais, textoErro } from "./comum";
 
 export type Conta = {
   id: string;

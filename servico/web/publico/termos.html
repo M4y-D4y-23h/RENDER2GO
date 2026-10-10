@@ -8,12 +8,15 @@
 <meta property="og:title" content="Termos de Uso · Render2Go">
 <meta property="og:description" content="Regras de uso do Render2Go: conta, teste gratuito, saldo pré-pago, conteúdo permitido e reembolso.">
 <meta property="og:url" content="https://app.render2go.com/termos">
+<script src="/estatico/inicio.js?v=12c9aa774e80" integrity="sha384-59TmH8lB7iYlICVLL0oTKNwQS0+bjCqWme0lHvbE2LEmZMpucHegzIVlhb++SnZZ" data-chave="render2go-conectado"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0e17" media="(prefers-color-scheme: dark)">
 <meta name="format-detection" content="telephone=no">
-<link rel="stylesheet" href="/estatico/estilo.css?v=a32022f842ee" integrity="sha384-V29S9xo2qnlRzddWxG1q8ClQEtCcKDUJi9La44Mc52RKD37ZMb39ODCoBAh/IMx0">
+<meta name="application-name" content="Render2Go">
+<meta name="apple-mobile-web-app-title" content="Render2Go">
+<link rel="stylesheet" href="/estatico/estilo.css?v=d482f639f8e7" integrity="sha384-f1xp1Tg3/rbb71MiPYHtxom1Y/VHbpDtEYg5wQSjVf7QxDpRsHyp+fgDa6ffoG6v">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -27,7 +30,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/legal.js?v=ca4cf4a0ce38" integrity="sha384-v1w2+21Di0u5FDujP8C6dL1yt67ioow9U3kfzsCAJKd7uiuIfx6Hjv2T7abibxpK" defer></script>
+<script src="/estatico/legal.js?v=84a1d25439b8" integrity="sha384-5sUIMW9JzUJoYRxVr4BVHQSRocHXLXA4/veTuyVXZvCrkaebKjcE4Twl4jjiXyT5" defer></script>
 </head>
 <body data-pagina="termos">
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
@@ -41,14 +44,15 @@
 </picture>
 </a>
 <nav class="navegacao" aria-label="Principal">
-<a href="/" data-nav="cliente"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM10 9.2v5.6l4.6-2.8z"/></svg><span class="rotulo-nav">Pedidos</span></a>
+<a class="so-sem-sessao" href="/#entrar" data-nav="cliente"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3a6 6 0 0 1-2.2 11.6L11 16.5H9v2H7v2H3v-3.6l6.2-6.2A6 6 0 0 1 15 3zM16.5 7.5h.01"/></svg><span class="rotulo-nav">Entrar</span></a>
+<a class="so-com-sessao" href="/" data-nav="cliente"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM10 9.2v5.6l4.6-2.8z"/></svg><span class="rotulo-nav">Pedidos</span></a>
 <a href="/suporte" data-nav="suporte"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01"/></svg><span class="rotulo-nav">Suporte</span></a>
-<button type="button" id="sair" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16.5 14.5 12 10 7.5M14.5 12H4"/></svg><span class="rotulo-nav">Sair</span></button>
+<button type="button" class="so-com-sessao" id="sair"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16.5 14.5 12 10 7.5M14.5 12H4"/></svg><span class="rotulo-nav">Sair</span></button>
 </nav>
 </div>
 </header>
 <main id="conteudo" class="conteudo" tabindex="-1">
-<article class="recipiente estreito texto-legal">
+<article class="recipiente estreito texto-legal com-indice">
 <div class="cab-pagina">
 <h1>Termos de Uso</h1>
 <p class="lead">Versão termos-v1, em vigor desde 9 de outubro de 2026. Ao criar a conta ou entrar, você aceita estes termos e a <a href="/privacidade">Política de Privacidade</a>.</p>
@@ -71,6 +75,7 @@
 <li><a href="#lei">Lei aplicável, foro e contato</a></li>
 </ol>
 </nav>
+<div class="corpo-legal">
 <section id="quem" aria-labelledby="t-quem">
 <h2 id="t-quem">1. Quem somos</h2>
 <p>O Render2Go é operado por <strong>[[EMPRESA_NOME]]</strong>, inscrição <strong>[[EMPRESA_DOCUMENTO]]</strong>, com endereço em [[EMPRESA_ENDERECO]]. Contato: <strong>[[EMAIL_CONTATO]]</strong> ou a página <a href="/suporte">/suporte</a>.</p>
@@ -154,11 +159,15 @@
 <h2 id="t-lei">13. Lei aplicável, foro e contato</h2>
 <p>Valem as leis do Brasil. Para consumidores, o foro é o do domicílio do consumidor. Atendimento: <strong>[[EMAIL_CONTATO]]</strong> ou <a href="/suporte">/suporte</a>; respondemos em até 5 dias úteis.</p>
 </section>
+</div>
 </article>
 </main>
 <footer class="rodape">
 <div class="recipiente rodape-interno">
-<p>Render2Go · vídeos curtos com IA para pequenos negócios</p>
+<div class="rodape-marca">
+<img src="/estatico/icone.svg?v=5320513ad899" alt="" width="28" height="28" loading="lazy" decoding="async">
+<p><strong>Render2Go</strong> · vídeos curtos com IA para pequenos negócios</p>
+</div>
 <nav aria-label="Rodapé">
 <a href="/termos" data-nav="termos" aria-current="page">Termos de Uso</a>
 <a href="/privacidade" data-nav="privacidade">Privacidade</a>

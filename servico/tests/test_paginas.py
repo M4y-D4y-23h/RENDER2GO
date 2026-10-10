@@ -328,8 +328,9 @@ def _escolher_finalidade(pg):
     pg.wait_for_selector("#form-lote:not([hidden])")
 
 
-def _com_sessao(contexto, amb, token=None, admin=False):
-    """Navegador que já entrou (cookie da sessão, a marca de conectado e a escolha de cookies feita)."""
+def _com_sessao(contexto, amb, token=None, admin=False, fixa=True):
+    """Navegador que já entrou (cookie da sessão, a marca de conectado e a escolha de cookies feita).
+    fixa=False: a marca vai só na 1ª página da aba (a saída tira a marca, e ela não volta na seguinte)."""
     import requests
 
     host = amb.url.split("//")[1].split(":")[0]
@@ -347,9 +348,11 @@ def _com_sessao(contexto, amb, token=None, admin=False):
         )
         marca = "render2go-conectado"
     escolha = json.dumps(ESCOLHA_COOKIES)
-    contexto.add_init_script(
-        f"localStorage.setItem({json.dumps(marca)}, '1');localStorage.setItem('render2go-cookies', {escolha});"
-    )
+    script = f"localStorage.setItem({json.dumps(marca)}, '1');localStorage.setItem('render2go-cookies', {escolha});"
+    if not fixa:
+        uma_vez = "if (!sessionStorage.getItem('teste-marcado')) { sessionStorage.setItem('teste-marcado', '1'); "
+        script = f"{uma_vez}{script} }}"
+    contexto.add_init_script(script)
 
 
 def _axe(pg) -> list[dict]:
@@ -498,6 +501,17 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
         if estado == "painel":
             pg.wait_for_selector("#blocos [data-foco='finalidade:imagem-video']")
             assert pg.evaluate("document.documentElement.scrollWidth") <= largura, "finalidades"
+            # no celular, as janelas sobem de baixo, na largura toda (perto do polegar)
+            pg.click("#abrir-conta")
+            pg.wait_for_function(  # a janela sobe com uma animação curta: mede depois que ela termina
+                "() => document.querySelector('dialog.conta[open]')?.getAnimations()"
+                ".every((a) => a.playState === 'finished')"
+            )
+            caixa = pg.locator("dialog.conta[open]").bounding_box()
+            assert caixa["x"] == 0 and round(caixa["width"]) == largura, caixa
+            assert abs(caixa["y"] + caixa["height"] - 740) <= 1, caixa
+            pg.keyboard.press("Escape")
+            pg.wait_for_selector("dialog.conta[open]", state="detached")
             _escolher_finalidade(pg)
             pg.set_input_files("#fotos", [str(_salvar(tmp_path, "c.png", _png((90, 160, 40), "circulo")))])
             pw.expect(pg.locator("#previa .miniatura :is(canvas, img)")).to_have_count(1)
@@ -531,6 +545,11 @@ def test_keyboard_skip_link_and_cookie_banner(ambiente, navegador):  # noqa: F81
     pg = navegador.new_page()
     pg.goto(ambiente.url)
     pg.wait_for_selector("#aviso-cookies")
+    # "Aceitar todos" e "Só os necessários" com o mesmo destaque (recusar tão fácil quanto aceitar; guia da ANPD)
+    aceitar = pg.locator("#aviso-cookies button", has_text="Aceitar todos")
+    recusar = pg.locator("#aviso-cookies button", has_text="Só os necessários")
+    assert aceitar.get_attribute("class") == recusar.get_attribute("class") == "botao"
+    assert round(aceitar.bounding_box()["height"]) == round(recusar.bounding_box()["height"])  # (aviso ainda subindo)
     pg.keyboard.press("Tab")
     assert pg.evaluate("document.activeElement.textContent") == "Pular para o conteúdo"
     pg.keyboard.press("Tab")  # o aviso de cookies vem logo depois, embora apareça no rodapé da tela
@@ -635,7 +654,7 @@ def test_session_fetches_the_panel_data_early_and_only_once(ambiente, navegador)
     pg.wait_for_selector("#receita option", state="attached")
     pg.wait_for_selector("#lotes .vazio")
     pw.expect(pg.locator("#conta-resumo")).to_contain_text("Conectado")
-    # o <script> do <head> já pediu receitas e lotes; a página usou essas respostas, sem pedir de novo
+    # o <script> do <head> já pediu receitas, lotes e conta; a página usou essas respostas, sem pedir de novo
     assert sorted(pedidos) == [("conta", disp), ("lotes", disp), ("receitas", disp)]
     ctx.close()
     assert erros == [], erros
@@ -1012,3 +1031,145 @@ def test_stored_xss_payloads_show_as_text_in_the_owner_panel(ambiente, navegador
     assert adm.evaluate("window.__xss === undefined") and dialogos == []
     ctx.close()
     assert erros == [], erros  # nem um aviso da CSP: o texto nunca virou HTML
+
+
+# -- topo por sessão, índice das páginas de texto e estabilidade do layout (docs/10, rodada de 10/10) ----
+
+
+VISIVEIS_NO_HTML = (  # o que já está na tela antes de qualquer resposta da API (lugar reservado, sem CLS)
+    "document.addEventListener('DOMContentLoaded', () => { const v = (id) => document.getElementById(id)"
+    "?.checkVisibility() ?? null; window.__html = {sair: v('sair'), conta: v('suporte-conta'),"
+    " robo: v('verificacao-suporte') ?? v('verificacao-entrar')}; });"
+)
+
+
+def test_top_navigation_follows_the_session_and_logout_returns_home(ambiente, navegador):  # noqa: F811 (fixture)
+    erros: list[str] = []
+    nav = ".navegacao a"
+    # quem não entrou: "Entrar" (leva ao formulário) e "Suporte"; nada de "Pedidos" nem "Sair"
+    ctx = navegador.new_context()
+    ctx.add_init_script(f"localStorage.setItem('render2go-cookies', {json.dumps(ESCOLHA_COOKIES)});")
+    ctx.add_init_script(VISIVEIS_NO_HTML)
+    pg = _pagina(ctx, erros)
+    pg.goto(f"{ambiente.url}/termos")
+    pw.expect(pg.locator(nav, has_text="Entrar")).to_be_visible()
+    pw.expect(pg.locator(nav, has_text="Pedidos")).to_be_hidden()
+    pw.expect(pg.locator("#sair")).to_be_hidden()
+    pg.click(f"{nav}:has-text('Entrar')")
+    pg.wait_for_url(f"{ambiente.url}/#entrar")
+    pw.expect(pg.locator("#form-email")).to_be_visible()
+    # o quadro do "não sou um robô" já tem o lugar no HTML (aqui ele está desligado e some depois da API)
+    assert pg.evaluate("window.__html") == {"sair": False, "conta": None, "robo": True}
+    pw.expect(pg.locator("#verificacao-entrar")).to_be_hidden()
+    pg.click(f"{nav}:has-text('Entrar')")  # na própria entrada: o foco vai para o cartão, e o Tab, para o e-mail
+    pw.expect(pg.locator("#entrar")).to_be_focused()
+    pg.keyboard.press("Tab")
+    pw.expect(pg.locator("#email")).to_be_focused()
+    ctx.close()
+    # quem entrou: "Pedidos" e "Sair" desde o 1º quadro, em qualquer página; "Sair" encerra a sessão e volta
+    tok = _cliente(ambiente)
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, tok, fixa=False)
+    ctx.add_init_script(VISIVEIS_NO_HTML)
+    pg = _pagina(ctx, erros)
+    pg.goto(f"{ambiente.url}/privacidade")
+    assert pg.evaluate("window.__html")["sair"]  # já no HTML, sem esperar o script da página (nada empurra o topo)
+    pw.expect(pg.locator(nav, has_text="Pedidos")).to_be_visible()
+    pw.expect(pg.locator(nav, has_text="Entrar")).to_be_hidden()
+    # suporte de quem entrou: o aviso da conta já vem no HTML (o e-mail entra depois, na mesma linha), sem o quadro
+    pg.goto(f"{ambiente.url}/suporte")
+    assert pg.evaluate("window.__html") == {"sair": True, "conta": True, "robo": False}
+    pw.expect(pg.locator("#suporte-conta")).to_contain_text("Você está conectado")  # (esta conta não tem e-mail)
+    assert pg.locator("#suporte-email").get_attribute("required") is None
+    with pg.expect_request(lambda r: r.url.endswith("/api/conta/sair") and r.method == "POST"):
+        pg.click("#sair")
+    pg.wait_for_url(f"{ambiente.url}/")
+    pw.expect(pg.locator("#form-email")).to_be_visible()
+    pw.expect(pg.locator("#sair")).to_be_hidden()
+    assert pg.evaluate("localStorage.getItem('render2go-conectado')") is None
+    assert ctx.request.get(f"{ambiente.url}/api/conta", headers=PAGINA).status == 401  # a sessão acabou no servidor
+    ctx.close()
+    assert erros == [], erros
+    # marca antiga sem sessão (venceu ou saiu em outro aparelho): o suporte confere e volta ao topo de visitante
+    ctx = navegador.new_context()
+    ctx.add_init_script("localStorage.setItem('render2go-conectado', '1');")
+    pg = ctx.new_page()
+    pg.goto(f"{ambiente.url}/suporte")
+    pw.expect(pg.locator(nav, has_text="Entrar")).to_be_visible()
+    pw.expect(pg.locator("#sair")).to_be_hidden()
+    assert pg.evaluate("localStorage.getItem('render2go-conectado')") is None
+    assert pg.locator("#suporte-email").get_attribute("required") is not None
+    ctx.close()
+
+
+def test_privacy_index_links_every_section_and_marks_the_current_one(ambiente, navegador):  # noqa: F811 (fixture)
+    erros: list[str] = []
+    ctx = navegador.new_context(viewport={"width": 1280, "height": 800}, reduced_motion="reduce")
+    ctx.add_init_script(f"localStorage.setItem('render2go-cookies', {json.dumps(ESCOLHA_COOKIES)});")
+    pg = _pagina(ctx, erros)
+    pg.goto(f"{ambiente.url}/privacidade")
+    alvos = pg.locator(".indice a").evaluate_all("(as) => as.map((a) => a.hash.slice(1))")
+    assert len(alvos) == 10 and len(set(alvos)) == 10
+    for alvo in alvos:  # cada item do índice leva a uma seção com título
+        assert pg.locator(f"section#{alvo} > h2").count() == 1, alvo
+    # computador: o índice fica fixo ao lado do texto e marca a seção que está na tela
+    assert pg.locator(".indice").evaluate("(e) => getComputedStyle(e).position") == "sticky"
+    pg.click(".indice a[href='#direitos']")
+    pw.expect(pg.locator(".indice a[aria-current='location']")).to_have_attribute("href", "#direitos")
+    pw.expect(pg.locator(".indice a[aria-current]")).to_have_count(1)
+    pw.expect(pg.locator(".indice a[href='#direitos']")).to_be_visible()  # continua na tela depois da rolagem
+    pg.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")  # no fim, a última seção
+    pw.expect(pg.locator(".indice a[aria-current='location']")).to_have_attribute("href", "#mudancas")
+    # impressão: só o texto (sem topo, índice, botões nem aviso de cookies)
+    pg.emulate_media(media="print")
+    assert pg.locator(".topo").is_hidden() and pg.locator(".indice").is_hidden()
+    assert pg.locator("#preferencias-cookies").is_hidden() and pg.locator("h1").is_visible()
+    pg.emulate_media(media="screen")
+    # celular: o índice vem no começo do texto, sem ficar fixo
+    pg.set_viewport_size({"width": 390, "height": 800})
+    assert pg.locator(".indice").evaluate("(e) => getComputedStyle(e).position") == "static"
+    ctx.close()
+    assert erros == [], erros
+
+
+CLS = """() => { window.__cls = 0; window.__deslocados = [];
+  new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) { window.__cls += e.value;
+    for (const s of e.sources || []) if (s.node) window.__deslocados.push(s.node.id || s.node.className); } })
+  .observe({type: 'layout-shift', buffered: true}); }"""
+
+
+def test_panel_does_not_shift_when_the_api_answers_after_the_first_paint(ambiente, navegador):  # noqa: F811
+    """Core Web Vitals (CLS): com a API lenta, a página pinta o esqueleto e depois troca tudo de uma vez; nada
+    do que já estava na tela (topo, título, "Sua conta", pedidos, rodapé) é empurrado."""
+    tok = _cliente(ambiente)
+    _lote(ambiente, tok, {"bolo.png": _png((40, 90, 160), "circulo")}, pronto=True)
+    _lote(ambiente, tok, {"loja.png": _png((200, 120, 60), "barras")})
+
+    def atrasar(rota):
+        time.sleep(0.8)  # a 1ª pintura sai antes da resposta (o navegador continua enquanto o teste espera)
+        rota.continue_()
+
+    for largura, altura, movel in ((390, 844, True), (1280, 820, False)):
+        ctx = navegador.new_context(viewport={"width": largura, "height": altura}, is_mobile=movel, has_touch=movel)
+        _com_sessao(ctx, ambiente, tok)
+        ctx.add_init_script(f"document.addEventListener('DOMContentLoaded', () => ({CLS})());")
+        pg = ctx.new_page()
+        pg.route("**/api/receitas", atrasar)
+        pg.goto(ambiente.url)
+        pg.wait_for_selector("#blocos [data-foco='finalidade:imagem-video']")
+        pg.wait_for_selector("#lotes .lote")
+        pg.unroute("**/api/receitas")
+        assert pg.locator("#esqueleto-pedido").is_hidden() and pg.locator(".suporte-link").is_visible()
+        pg.wait_for_timeout(300)
+        cls = pg.evaluate("window.__cls")
+        assert cls < 0.001, (largura, cls, pg.evaluate("window.__deslocados"))
+        ctx.close()
+    # com erro na API, o esqueleto sai e fica a mensagem (nada de carregamento sem fim)
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, tok)
+    pg = ctx.new_page()
+    pg.route("**/api/receitas", lambda rota: rota.fulfill(status=503, json={"detail": "manutenção"}))
+    pg.goto(ambiente.url)
+    pg.wait_for_selector("#msg-painel:not([hidden])")
+    assert pg.locator("#esqueleto-pedido").is_hidden() and pg.locator("#finalidades").is_hidden()
+    ctx.close()

@@ -1,8 +1,9 @@
 // Página de suporte (/suporte): funciona com ou sem conta. Conectado, a mensagem vai ligada à conta; sem
 // conta (quem não consegue entrar), o e-mail é obrigatório, há o "não sou um robô" e os limites são menores.
-import { anunciar, api, aviso, conectado, contador, el, marcarErro, ocupado, textoErro } from "./comum";
+import { CHAVE_CONECTADO, ErroApi, anunciar, api, aviso, conectado, contador, el, marcarErro, ocupado, textoErro } from "./comum";
 import { iniciarCookies } from "./cookies";
-import { CHAVE_CONECTADO, type Publico } from "./entrada";
+import type { Publico } from "./entrada";
+import { iniciarTopo, semSessao } from "./topo";
 import { type Verificacao, verificacao } from "./turnstile";
 
 // a mesma regra do servidor (render2go_servico/suporte.py), só para avisar antes de enviar
@@ -15,23 +16,30 @@ async function iniciarSuporte(): Promise<void> {
   const saida = el("suporte-msg");
   const botao = el<HTMLButtonElement>("suporte-enviar");
   const atualizarContador = contador(mensagem, el("suporte-contador"));
-  // conectado (a sessão é conferida pela API): a mensagem vai ligada à conta
+  // conectado (a sessão é conferida pela API): a mensagem vai ligada à conta. O aviso e o "(opcional)" já
+  // aparecem desde o 1º quadro, pela marca de sessão (CSS); aqui só entra o e-mail, numa linha de altura fixa
   let comConta = false;
   if (conectado(CHAVE_CONECTADO)) {
     try {
       const c = await api<{ email: string | null }>("/api/conta");
       comConta = true;
-      aviso(el("suporte-conta"), `Você está conectado${c.email ? ` como ${c.email}` : ""}: a mensagem vai junto com os seus pedidos.`);
-      el("email-opcional").hidden = false;
-    } catch {
-      /* sessão vencida: segue como quem não entrou */
+      if (c.email) {
+        el("suporte-conta-email").textContent = ` como ${c.email}`;
+        el("suporte-conta-linha").title = `Você está conectado como ${c.email}`; // a linha pode ser cortada (…)
+      }
+    } catch (e) {
+      if (e instanceof ErroApi && e.status === 401) semSessao(); // sessão vencida: segue como quem não entrou
+      else el("suporte-conta").hidden = true; // sem confirmar a conta, o formulário segue como o de quem não entrou
     }
   }
   let anti: Verificacao | null = null;
   if (!comConta) {
     email.required = true;
+    el("email-opcional").hidden = true;
+    const caixa = el("verificacao-suporte");
+    caixa.classList.remove("so-sem-sessao"); // sem conta confirmada, o quadro aparece mesmo com a marca de sessão
     try {
-      anti = verificacao(el("verificacao-suporte"), (await api<Publico>("/api/publico")).turnstile, "suporte");
+      anti = verificacao(caixa, (await api<Publico>("/api/publico")).turnstile, "suporte");
     } catch {
       /* sem a configuração: o envio mostra o erro da API */
     }
@@ -94,5 +102,6 @@ async function iniciarSuporte(): Promise<void> {
 
 document.addEventListener("DOMContentLoaded", () => {
   iniciarCookies();
+  iniciarTopo();
   void iniciarSuporte();
 });

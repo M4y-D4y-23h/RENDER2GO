@@ -208,6 +208,15 @@ def test_pages_have_semantic_structure_and_meta_tags():
             assert link in html, (publica, link)
     for privada in ("painel.html", "404.html", "verificacao.html"):
         assert re.search(r'<meta name="robots" content="noindex', (PUBLICO / privada).read_text())
+    # o mesmo topo e o mesmo rodapé em todas as páginas do cliente (também na 404), e o topo já sabe se a pessoa
+    # entrou antes de desenhar (o script do <head> marca a sessão: "Pedidos" e "Sair" sem piscar nem empurrar)
+    for arquivo in ("index.html", "suporte.html", "termos.html", "privacidade.html", "cookies.html", "404.html"):
+        html = (PUBLICO / arquivo).read_text()
+        for marca in ('<nav class="navegacao" aria-label="Principal">', 'id="preferencias-cookies"', 'href="/cookies"'):
+            assert marca in html, (arquivo, marca)
+        sessao = r'<script src="/estatico/inicio\.js\?v=[0-9a-f]+" integrity="[^"]+" data-chave="render2go-conectado"'
+        assert re.search(sessao, html), arquivo
+        assert html.index("inicio.js") < html.index("estilo.css"), arquivo  # antes do CSS: marca antes de desenhar
 
 
 def test_old_cached_page_reloads_once_into_the_new_one(web):
@@ -275,6 +284,46 @@ def test_identity_colors_meet_wcag_aa_contrast(tema):
         (t, f, round(_contraste(cores[t], cores[f]), 2))
         for t, f, minimo in PARES
         if _contraste(cores[t], cores[f]) < minimo
+    ]
+    assert not falhas, falhas
+
+
+RGBA = r"--(cor-brilho-[a-z]+):\s*rgb\((\d+) (\d+) (\d+) / ([\d.]+)\)"
+
+
+def _brilhos(css: str) -> tuple[dict, dict]:
+    """Os brilhos decorativos (cor com transparência) do tema claro e do escuro."""
+
+    def ler(trecho: str) -> dict:
+        return {n: (int(r), int(g), int(b), float(a)) for n, r, g, b, a in re.findall(RGBA, trecho)}
+
+    claro_css, resto = css.split("@media (prefers-color-scheme: dark)", 1)
+    claro = ler(claro_css)
+    return claro, {**claro, **ler(resto.split("@media")[0])}
+
+
+@pytest.mark.parametrize("tema", ["claro", "escuro"])
+def test_decorative_glow_keeps_text_contrast(tema):
+    """O brilho do fundo da entrada fica atrás do título e do texto: mesmo no pior caso (os dois brilhos no
+    ponto mais forte, um sobre o outro), o texto continua com contraste AA. Campos ficam em cartões opacos."""
+    css = TOKENS.read_text()
+    cores = dict(zip(("claro", "escuro"), _cores(css), strict=True))[tema]
+    brilhos = dict(zip(("claro", "escuro"), _brilhos(css), strict=True))[tema]
+    assert set(brilhos) == {"cor-brilho-marca", "cor-brilho-acento"}
+
+    def sobre(fundo: str, brilho: tuple) -> str:
+        r, g, b, a = brilho
+        canais = [round(int(fundo[i : i + 2], 16) * (1 - a) + c * a) for i, c in zip((1, 3, 5), (r, g, b), strict=True)]
+        return "#" + "".join(f"{c:02x}" for c in canais)
+
+    marca, acento = brilhos["cor-brilho-marca"], brilhos["cor-brilho-acento"]
+    fundos = [sobre(cores["cor-fundo"], marca), sobre(cores["cor-fundo"], acento)]
+    fundos.append(sobre(fundos[0], acento))  # os dois juntos
+    falhas = [
+        (t, f, round(_contraste(cores[t], f), 2))
+        for t in ("cor-texto", "cor-texto-2", "cor-texto-3", "cor-marca-texto")
+        for f in fundos
+        if _contraste(cores[t], f) < 4.5
     ]
     assert not falhas, falhas
 

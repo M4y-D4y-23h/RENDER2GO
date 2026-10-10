@@ -8,7 +8,7 @@
 <meta property="og:title" content="Render2Go · Vídeos curtos com IA a partir das suas fotos">
 <meta property="og:description" content="Envie as fotos do seu negócio, diga em português o que deve acontecer e receba um vídeo curto por foto.">
 <meta property="og:url" content="{{ORIGEM}}/">
-<script src="/estatico/inicio.js" data-chave="render2go-conectado" data-antecipar="/api/receitas /api/lotes"></script>
+<script src="/estatico/inicio.js" data-chave="render2go-conectado" data-antecipar="/api/receitas /api/lotes /api/conta"></script>
 <!--@cabeca-->
 <script src="/estatico/cliente.js" defer></script>
 <script type="application/ld+json">
@@ -31,9 +31,10 @@
       <p class="sobretitulo"><!--@icone brilho-->Vídeos com IA para pequenos negócios</p>
       <h1 id="titulo-hero">Suas fotos viram vídeos curtos, prontos para postar</h1>
       <p class="lead">Envie dezenas de fotos de uma vez, diga em português o que deve acontecer e receba um vídeo por foto.</p>
+      <!--@ilustracao-->
     </section>
 
-    <section class="cartao elevado entrar" aria-labelledby="titulo-entrar">
+    <section class="cartao elevado entrar" id="entrar" tabindex="-1" aria-labelledby="titulo-entrar">
       <h2 id="titulo-entrar">Entrar ou criar conta</h2>
       <!-- passo 1: e-mail, aceite e "não sou um robô"; passo 2: o código que chega no e-mail -->
       <form id="form-email" novalidate>
@@ -47,7 +48,8 @@
           <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Uso</a> e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</span>
         </label>
         <p class="dica" id="aceite-dica">O aceite fica registrado com a sua conta, a data e o endereço de internet.</p>
-        <div id="verificacao-entrar" class="verificacao" hidden></div>
+        <!-- lugar reservado desde o HTML: em produção o quadro sempre aparece, e o botão não desce quando ele chega -->
+        <div id="verificacao-entrar" class="verificacao"></div>
         <button type="submit" class="botao primario largo" id="enviar-email"><!--@icone mensagem-->Receber o código</button>
       </form>
       <form id="form-codigo" novalidate hidden>
@@ -98,7 +100,7 @@
       <h1 id="titulo-painel" tabindex="-1">Seus vídeos</h1>
       <p class="fraco">Escolha as fotos, diga o que deve acontecer e acompanhe os pedidos aqui.</p>
       <div class="conta-linha">
-        <p class="fraco" id="conta-resumo"></p>
+        <p class="fraco conta-resumo" id="conta-resumo"></p>
         <button type="button" class="botao pequeno" id="abrir-conta"><!--@icone pessoa-->Sua conta</button>
       </div>
     </div>
@@ -121,8 +123,17 @@
           </div>
           <p class="dica" id="saldo-recarga">Vídeo que não sai volta para o saldo.</p>
         </div>
+        <!-- até a API responder: esqueleto no lugar das opções, com altura reservada (o que vem abaixo começa fora
+             da tela e não se mexe quando o saldo, o aviso do plano e as opções chegarem juntos: CLS zero) -->
+        <div class="esqueleto-pedido" id="esqueleto-pedido" aria-hidden="true">
+          <div class="esqueleto largo"><span></span><span></span><span></span></div>
+          <div class="esqueleto"><span></span><span></span><span></span></div>
+          <div class="esqueleto"><span></span><span></span><span></span></div>
+          <div class="esqueleto"><span></span><span></span><span></span></div>
+          <div class="esqueleto"><span></span><span></span><span></span></div>
+        </div>
         <!-- antes do pedido: o que o cliente quer criar (finalidades de render2go_servico/modelos.py) -->
-        <div class="finalidades" id="finalidades">
+        <div class="finalidades" id="finalidades" hidden>
           <h3 id="titulo-finalidades" tabindex="-1">O que você quer criar?</h3>
           <p class="dica" id="finalidades-dica">Escolha uma opção para começar. As marcadas com “Em breve” ainda não estão disponíveis: clique em “Tenho interesse” para nos dizer o que você quer usar.</p>
           <ul class="blocos" id="blocos" aria-labelledby="titulo-finalidades" aria-describedby="finalidades-dica" aria-busy="true"></ul>

@@ -190,6 +190,9 @@ export function urlSegura(url: string | null | undefined): string | null {
 
 // -- armazenamento no navegador --------------------------------------------------------------------
 
+/** Marca "entrou neste navegador" do cliente (inicio.ts, entrada.ts e o topo de todas as páginas). */
+export const CHAVE_CONECTADO = "render2go-conectado";
+
 // a sessão fica num cookie HttpOnly (o JavaScript não lê nem guarda credencial nenhuma); aqui fica só a
 // marca "entrou neste navegador", para o painel aparecer desde o 1º quadro (inicio.ts)
 export function conectado(chave: string): boolean {
