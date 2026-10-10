@@ -138,6 +138,8 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
 
 ## 6. A sua parte (dono), em ordem
 
+**Situação em 10/10/2026:** servidor atualizado (`docs/09`, seção 0); Amazon SES em Ohio com o domínio verificado (DKIM, MAIL FROM `envio`, DMARC com relatórios na Cloudflare) e a saída do sandbox pedida; Turnstile e painel novo funcionando. Faltam: aprovação do SES, dados da empresa (CNPJ e endereço fiscal), Mercado Pago, revisão do advogado e, depois de 2 semanas de relatórios limpos, o DMARC em `p=quarantine`.
+
 ### 6.1 Antes de atualizar o servidor
 
 1. **E-mail transacional** (obrigatório: sem ele, ninguém entra). **Escolhido: Amazon SES**, na região de Ohio (`us-east-2`), com o preço à la carte (seção 6.1.1).
@@ -296,6 +298,7 @@ Siga o `docs/09`, seção 0, "09/10/2026 (4)". A atualização leva poucos minut
 
 - Painel → seção "Segurança": tudo em verde, salvo o que você decidiu deixar para depois (ex.: Pix).
 - Crie uma conta de teste com um Gmail seu, peça um teste gratuito e aprove-o.
+- **A sua conta no plano interno** e o acesso ao painel: `docs/09`, seção 0, "09/10/2026 (4)", passo 7.
 - **Clientes antigos:** no painel → "Contas e saldo", ligue o e-mail de cada um à conta (ou `render2go-servico email cli_x email`) e avise-os de que agora se entra pelo e-mail. O código antigo continua valendo.
 
 ### 6.4 DNS e Cloudflare

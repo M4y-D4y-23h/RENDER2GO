@@ -8,6 +8,8 @@ Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem p
 
 ### 09/10/2026 (4): contas por e-mail, painel secreto com 2 fatores, Pix e segurança
 
+**No servidor desde 10/10/2026**, com o SES em Ohio (sandbox até a AWS aprovar a produção), o Turnstile e o painel novo; faltam os dados da empresa (bloco 3) e o Mercado Pago.
+
 **Esta atualização tem passos antes.** Sem eles, ninguém novo consegue entrar e o painel fica fora do ar. Prepare primeiro o que está no `docs/13`, seção 6.1: o e-mail transacional (SMTP com SPF, DKIM e DMARC), o "não sou um robô" (Turnstile), os dados da empresa e, se quiser já no 1º dia, o Mercado Pago. Tenha à mão o aplicativo autenticador no celular (Google Authenticator, Authy ou 1Password) e o gerenciador de senhas. Depois, no servidor, **sem pedido gerando**, cole um bloco de cada vez:
 
 **1) Backup do banco e imagem nova** (os contêineres ainda não mudam):
@@ -108,6 +110,16 @@ docker compose logs api | grep AVISO      # o que ainda falta configurar (aparec
   docker compose up -d api
 }
 ```
+
+**7) Primeiro acesso: painel e a sua conta.**
+- **Painel:** abra o endereço que o bloco 2 mostrou, `https://app.render2go.com<RENDER2GO_ADMIN_CAMINHO>/` (com a barra no fim), cole o token e digite o código de 6 dígitos do autenticador. A sessão dura 12 horas; 5 erros seguidos bloqueiam a sua rede por 15 minutos, mesmo com o código certo. Guarde o endereço no gerenciador de senhas, não nos favoritos sincronizados.
+- **Perdeu o endereço, o token ou o autenticador?** No servidor, `grep -E '^RENDER2GO_ADMIN_(CAMINHO|TOKENS|TOTP)=' ~/GPU2GO/servico/implantacao/.env` mostra os três (o `TOTP` é a chave do autenticador). Para trocar todos (celular perdido, suspeita de vazamento): `sed -i '/^RENDER2GO_ADMIN_CAMINHO=/d' ~/GPU2GO/servico/implantacao/.env`, o bloco 2 de novo (o segredo das contas fica) e `docker compose up -d api`.
+- **A sua conta no plano interno** (sem saldo, sem limite de fotos e sem revisão: os seus pedidos já saem aprovados):
+  - ainda não entrou no site com o seu e-mail: painel → **Nova conta** → o seu e-mail, plano **Interno** → criar; depois entre no site pelo e-mail;
+  - já entrou (a conta nasceu no teste gratuito): painel → **Contas e saldo** → busque o e-mail → plano **interno** → **Mudar plano**;
+  - tinha um código de acesso no plano interno e quer manter o histórico: em **Contas e saldo**, ligue o e-mail a essa conta antes de entrar no site com ele (o mesmo e-mail não fica em duas contas);
+  - pelo terminal, a conta nova sai com `docker compose exec api render2go-servico cliente dono --plano interno --email <seu e-mail>`.
+- **Sandbox do SES:** até a aprovação, o código de entrada só chega a e-mails verificados no SES.
 
 - **Painel:** sai do `/aprovar`, que passa a dar 404, para `https://app.render2go.com<RENDER2GO_ADMIN_CAMINHO>/`. A entrada pede o token e o código do aplicativo autenticador. Guarde o endereço num gerenciador de senhas.
 - **O que muda para os clientes:**
