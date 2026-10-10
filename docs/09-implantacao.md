@@ -95,6 +95,20 @@ docker compose ps --format "table {{.Service}}\t{{.Status}}"
 docker compose logs api | grep AVISO      # o que ainda falta configurar (aparece também no painel, em "Segurança")
 ```
 
+**6) Se a lista do bloco 5 mostrou `RENDER2GO_SUPORTE_PARA` ou `RENDER2GO_API_WORKERS`:** sem o primeiro, as mensagens do suporte ficam só no painel; sem o segundo, a API roda com 1 processo. O bloco pergunta o e-mail que recebe o suporte (no sandbox do SES, um endereço verificado), põe 2 processos (servidor de 2 vCPU) e reinicia só a API. `RENDER2GO_PRECO_*` ausentes valem 0,25 e 0,50, os mesmos do exemplo.
+```bash
+{
+  cd ~/GPU2GO/servico/implantacao && cp -p .env .env.antes-ajustes
+  PARA=; until [[ "$PARA" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; do read -rp "E-mail que recebe as mensagens do suporte: " PARA; PARA=${PARA//[$'\t\r ']}; done
+  sed -i -E '/^RENDER2GO_(SUPORTE_PARA|API_WORKERS)=/d' .env
+  [ -n "$(tail -c1 .env)" ] && echo >> .env
+  printf '%s\n' "RENDER2GO_SUPORTE_PARA=$PARA" 'RENDER2GO_API_WORKERS=2' >> .env
+  unset PARA
+  grep -E '^RENDER2GO_(SUPORTE_PARA|API_WORKERS)=' .env
+  docker compose up -d api
+}
+```
+
 - **Painel:** sai do `/aprovar`, que passa a dar 404, para `https://app.render2go.com<RENDER2GO_ADMIN_CAMINHO>/`. A entrada pede o token e o código do aplicativo autenticador. Guarde o endereço num gerenciador de senhas.
 - **O que muda para os clientes:**
   - quem chega entra com o e-mail (Gmail, Outlook/Hotmail, Yahoo, iCloud, UOL, BOL ou Terra) e um código de 8 dígitos; a conta nova nasce no teste gratuito;
