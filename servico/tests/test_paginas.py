@@ -122,7 +122,14 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     cli.fill("#codigo", _codigo_do_email(ambiente))
     cli.click("#enviar-codigo")
     cli.wait_for_selector("#receita option", state="attached")
-    assert "padaria.bairro@gmail.com · plano teste gratuito" in cli.locator("#conta-resumo").inner_text()
+    # a conta no alto do menu lateral: o e-mail (sem nome no perfil) e o plano; o resumo inteiro no título
+    pw.expect(cli.locator("#quem-nome")).to_have_text("padaria.bairro@gmail.com")
+    assert cli.locator("#conta-resumo").inner_text() == "Teste gratuito"
+    assert (
+        cli.locator("#quem").get_attribute("title") == "Conectado como padaria.bairro@gmail.com · plano teste gratuito"
+    )
+    assert cli.locator("#avatar").inner_text() == "P"  # sem foto: a inicial do e-mail
+    assert cli.title() == "Pedidos · Render2Go"
     assert cli.evaluate("document.cookie") == ""  # a sessão é HttpOnly: o JavaScript não a vê
     assert cli.evaluate("localStorage.getItem('render2go-conectado')") == "1"
     assert cli.locator("#form-lote").is_hidden()  # antes do pedido, a escolha do que criar
@@ -435,13 +442,10 @@ def test_pages_have_no_accessibility_violations(ambiente, navegador, tmp_path, t
     pg.wait_for_selector("#blocos [data-foco='finalidade:imagem-video']")
     conferir(pg, "finalidades")
     pg.click("#blocos [data-foco='finalidade:todas']")
-    pg.wait_for_selector("dialog.todas-finalidades[open] .opcao")
-    conferir(pg, "ver-todas")
-    pg.keyboard.press("Escape")
-    pg.click("#abrir-conta")
-    pg.wait_for_selector("dialog.conta[open]")
-    conferir(pg, "conta")
-    pg.keyboard.press("Escape")
+    pg.wait_for_selector("#vista-modelos .cartao.modelo")
+    conferir(pg, "modelos")
+    pg.go_back()
+    pg.wait_for_selector("#vista-pedidos #blocos [data-foco='finalidade:imagem-video']")
     _escolher_finalidade(pg)
     pg.set_input_files(
         "#fotos",
@@ -501,17 +505,20 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
         if estado == "painel":
             pg.wait_for_selector("#blocos [data-foco='finalidade:imagem-video']")
             assert pg.evaluate("document.documentElement.scrollWidth") <= largura, "finalidades"
-            # no celular, as janelas sobem de baixo, na largura toda (perto do polegar)
-            pg.click("#abrir-conta")
+            # no celular, o menu da conta (e as outras janelas) sobe de baixo, na largura toda (perto do polegar)
+            assert pg.locator("#lateral").is_hidden() and pg.locator("#abrir-menu").is_visible()
+            pg.click("#abrir-menu")
             pg.wait_for_function(  # a janela sobe com uma animação curta: mede depois que ela termina
-                "() => document.querySelector('dialog.conta[open]')?.getAnimations()"
+                "() => document.querySelector('dialog.menu-celular[open]')?.getAnimations()"
                 ".every((a) => a.playState === 'finished')"
             )
-            caixa = pg.locator("dialog.conta[open]").bounding_box()
+            caixa = pg.locator("dialog.menu-celular[open]").bounding_box()
             assert caixa["x"] == 0 and round(caixa["width"]) == largura, caixa
             assert abs(caixa["y"] + caixa["height"] - 740) <= 1, caixa
+            assert pg.evaluate("document.activeElement.getAttribute('aria-current')") == "page"  # o foco na tela atual
             pg.keyboard.press("Escape")
-            pg.wait_for_selector("dialog.conta[open]", state="detached")
+            pg.wait_for_selector("dialog.menu-celular[open]", state="detached")
+            assert pg.evaluate("document.activeElement.id") == "abrir-menu"  # o foco volta para o botão
             _escolher_finalidade(pg)
             pg.set_input_files("#fotos", [str(_salvar(tmp_path, "c.png", _png((90, 160, 40), "circulo")))])
             pw.expect(pg.locator("#previa .miniatura :is(canvas, img)")).to_have_count(1)
@@ -527,7 +534,8 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
         largura_pagina = pg.evaluate("document.documentElement.scrollWidth")
         assert largura_pagina <= largura, (estado, "fonte larga", largura_pagina, _transbordando(pg, largura))
         # alvos de toque: botões, campos e a navegação com pelo menos 44 px de altura (WCAG 2.5.5)
-        alvos = ".navegacao :is(a, button), .botao, .filtros button, .secoes a, select, textarea, input"
+        alvos = ".navegacao :is(a, button), .botao, .filtros button, .secoes a, .menu-conta a, [role=tab]"
+        alvos += ", select, textarea, input"
         pequenos = pg.evaluate(
             """(alvos) => [...document.querySelectorAll(alvos)]
                 .filter((e) => e.offsetParent !== null && !['file', 'checkbox'].includes(e.type))
@@ -653,9 +661,18 @@ def test_session_fetches_the_panel_data_early_and_only_once(ambiente, navegador)
     pg.goto(ambiente.url)
     pg.wait_for_selector("#receita option", state="attached")
     pg.wait_for_selector("#lotes .vazio")
-    pw.expect(pg.locator("#conta-resumo")).to_contain_text("Conectado")
+    pw.expect(pg.locator("#quem-nome")).to_have_text("Café da Esquina")
     # o <script> do <head> já pediu receitas, lotes e conta; a página usou essas respostas, sem pedir de novo
     assert sorted(pedidos) == [("conta", disp), ("lotes", disp), ("receitas", disp)]
+    # cada tela pede só o que mostra, quando abre (a conta já está na página: não vem de novo)
+    pedidos.clear()
+    pg.click(".menu-conta a[data-vista=extratos]")
+    pg.wait_for_selector("#extratos-dados .numeros")
+    pg.click(".menu-conta a[data-vista=modelos]")
+    pg.wait_for_selector("#modelos-lista .cartao.modelo")  # o catálogo já veio com a tela de pedidos
+    pg.click(".menu-conta a[data-vista=perfil]")
+    pw.expect(pg.locator("#perfil-nome")).to_have_text("Sem nome no perfil")
+    assert [p for p, _ in pedidos] == ["extrato?dias=30"]
     ctx.close()
     assert erros == [], erros
 
@@ -789,8 +806,9 @@ def test_pix_top_up_dialog_shows_the_qr_and_the_trial_becomes_prepaid(ambiente, 
     pg = _pagina(ctx, erros)
     pg.goto(ambiente.url)
     pg.wait_for_selector("#receita option", state="attached")
-    pg.click("#abrir-conta")
-    pg.click("dialog.conta[open] button:has-text('Adicionar saldo por Pix')")
+    pg.click(".menu-conta a[data-vista=extratos]")
+    pw.expect(pg.locator("#extratos-dados")).to_contain_text("No teste gratuito não há cobrança")
+    pg.click("#extrato-pix")
     dialogo = pg.locator("dialog.pix[open]")
     pw.expect(dialogo.locator("button[aria-pressed=true]")).to_have_text("R$ 50,00")
     dialogo.locator("#pix-documento").fill("111.111.111-11")
@@ -816,8 +834,12 @@ def test_pix_top_up_dialog_shows_the_qr_and_the_trial_becomes_prepaid(ambiente, 
     )
     assert r.status_code == 200
     pw.expect(dialogo.locator(".aviso.ok")).to_contain_text("R$ 20,00 entraram no seu saldo", timeout=15000)
-    # a 1ª recarga tira a conta do teste: a página recarrega já no pré-pago, com o saldo
-    pg.wait_for_selector("#saldo:not([hidden])", timeout=15000)
+    # a 1ª recarga tira a conta do teste: a página recarrega (na mesma tela) já no pré-pago, com o saldo
+    pw.expect(pg.locator("#conta-resumo")).to_have_text("Pré-pago · R$ 20,00", timeout=15000)
+    assert pg.url.endswith("/extratos")
+    pw.expect(pg.locator("#extratos-dados .numeros")).to_contain_text("R$ 20,00")
+    pg.click(".menu-conta a[data-vista=pedidos]")
+    pg.wait_for_selector("#saldo:not([hidden])")
     assert _texto(pg, "#saldo-valor") == "R$ 20,00"
     ctx.close()
     assert erros == [], erros
@@ -960,21 +982,29 @@ def test_purpose_screen_blocks_full_list_interest_and_choice(ambiente, navegador
     texto_video.get_by_role("button", name="Tenho interesse em Vídeo a partir de um texto").click()
     pw.expect(texto_video.locator(".interesse-ok")).to_have_text("Interesse registrado")
     pw.expect(texto_video.locator(".interesse-ok")).to_be_focused()
-    # "Ver todas": todas as opções, agrupadas pelo que o cliente envia
+    # "Ver todos": a tela "Modelos de IA" (/modelos), com todas as opções, agrupadas pelo que o cliente envia
     pg.click("#blocos [data-foco='finalidade:todas']")
-    dialogo = pg.locator("dialog.todas-finalidades[open]")
-    pw.expect(dialogo.locator(".opcao")).to_have_count(12)
-    pw.expect(dialogo.locator(".grupo-opcoes h3")).to_have_text(
+    pg.wait_for_url("**/modelos")
+    modelos = pg.locator("#vista-modelos")
+    pw.expect(modelos.locator(".cartao.modelo")).to_have_count(12)
+    pw.expect(modelos.locator(".grupo-modelos h2")).to_have_text(
         ["A partir de uma foto", "A partir de um texto", "A partir de um vídeo", "A partir de um áudio"]
     )
-    pw.expect(dialogo.locator("[data-finalidade='texto-video'] .interesse-ok")).to_be_visible()
-    pw.expect(dialogo.locator("[data-finalidade='imagem-video']")).to_contain_text("Wan 2.2: melhor para")
-    pw.expect(dialogo.locator("[data-finalidade='texto-video']")).to_contain_text(
-        "Modelos previstos: Wan 2.2 (texto para vídeo)."
+    pw.expect(modelos.locator(".resumo-modelos")).to_have_text("1 disponível agora · 11 em breve")
+    pw.expect(modelos.locator("[data-finalidade='texto-video'] .interesse-ok")).to_be_visible()  # marcado antes
+    pw.expect(modelos.locator("[data-finalidade='imagem-video']")).to_contain_text("Melhor para: produto parado")
+    pw.expect(modelos.locator("[data-finalidade='imagem-video']")).to_contain_text("Licença: Apache 2.0")
+    pw.expect(modelos.locator("[data-finalidade='texto-video']")).to_contain_text(
+        "Wan 2.2 (texto para vídeo) (previsto)"
     )
-    dialogo.get_by_role("button", name="Tenho interesse em Trilha sonora a partir de um texto").click()
-    pw.expect(dialogo.locator("[data-finalidade='texto-musica'] .interesse-ok")).to_be_visible()
-    dialogo.get_by_role("button", name="Usar Foto vira vídeo").click()
+    modelos.get_by_role("button", name="Tenho interesse em Trilha sonora a partir de um texto").click()
+    pw.expect(modelos.locator("[data-finalidade='texto-musica'] .interesse-ok")).to_be_focused()
+    # o interesse marcado aqui também aparece na tela de pedidos (o mesmo botão, nas duas telas)
+    modelos.get_by_role("button", name="Tenho interesse em Editar ou melhorar uma foto").click()
+    pw.expect(pg.locator("#blocos [data-finalidade='imagem-imagem'] .interesse-ok")).to_have_count(1)
+    # "Usar este modelo": volta para os pedidos com a opção escolhida
+    modelos.locator("[data-finalidade='imagem-video'] button:has-text('Usar este modelo')").click()
+    pg.wait_for_url(f"{ambiente.url}/")
     # escolhida: o modelo e para que ele é melhor, e o formulário do pedido
     pw.expect(pg.locator("#form-lote")).to_be_visible()
     pw.expect(pg.locator("#escolhida-titulo")).to_have_text("Foto vira vídeo")
@@ -991,6 +1021,7 @@ def test_purpose_screen_blocks_full_list_interest_and_choice(ambiente, navegador
     pw.expect(pg.locator("#blocos [data-finalidade='texto-video'] .interesse-ok")).to_be_visible()
     with ambiente.banco.tx() as c:
         assert sorted(r["finalidade"] for r in c.all("SELECT finalidade FROM interesses")) == [
+            "imagem-imagem",
             "texto-musica",
             "texto-video",
         ]
@@ -1004,7 +1035,7 @@ def test_purpose_screen_blocks_full_list_interest_and_choice(ambiente, navegador
     adm.wait_for_selector("#interesses table")
     tabela = _texto(adm, "#interesses table")
     assert "Vídeo a partir de um texto" in tabela and "Trilha sonora a partir de um texto" in tabela
-    pw.expect(adm.locator("#cliques tbody tr")).to_have_count(2)
+    pw.expect(adm.locator("#cliques tbody tr")).to_have_count(3)
     adm_ctx.close()
     assert erros == [], erros
 

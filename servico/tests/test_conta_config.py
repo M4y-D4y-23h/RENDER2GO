@@ -407,7 +407,11 @@ def test_profile_names_gravatar_photo_and_theme(api):
     assert nav.get(foto, headers={"If-None-Match": f.headers["etag"]}).status_code == 304
     sem = entrar(api, "sem.foto@gmail.com")
     sem.post("/api/conta/perfil", json={"gravatar": True}, headers=PAGINA)
-    assert sem.get("/api/conta/foto").status_code == 404  # sem foto no Gravatar: a página mostra a inicial
+    # sem foto no Gravatar: 204 (a página mostra a inicial, sem erro no console do navegador)
+    vazia = sem.get("/api/conta/foto")
+    assert (
+        vazia.status_code == 204 and vazia.content == b"" and vazia.headers["cache-control"] == "private, max-age=3600"
+    )
     r = nav.post("/api/conta/perfil", json={"gravatar": False, "ultimo_nome": ""}, headers=PAGINA)
     assert r.json()["perfil"]["foto"] is None and r.json()["perfil"]["ultimo_nome"] is None
     assert nav.get("/api/conta/foto").status_code == 404

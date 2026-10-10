@@ -104,8 +104,10 @@
   --curva: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* tema escuro: o do aparelho (automático) ou o escolhido na conta (data-tema no <html>, posto pelo inicio.js
+   antes de desenhar). Os dois blocos têm as mesmas cores: o test_web.py confere. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-tema="claro"]) {
     color-scheme: dark;
 
     --cor-fundo: #0f0e17;
@@ -147,6 +149,47 @@
   }
 }
 
+:root[data-tema="escuro"] {
+  color-scheme: dark;
+
+  --cor-fundo: #0f0e17;
+  --cor-superficie: #181722;
+  --cor-superficie-2: #21202d;
+  --cor-borda: #2e2c3d;
+  --cor-borda-campo: #6f6b88;
+  --cor-texto: #eeedf6;
+  --cor-texto-2: #cbc8db;
+  --cor-texto-3: #a6a3ba;
+
+  --cor-marca: #a49eff;
+  --cor-marca-forte: #beb9ff;
+  --cor-sobre-marca: #16133a;
+  --cor-marca-suave: #26234d;
+  --cor-marca-texto: #c9c5ff;
+  --cor-acento: #ff7d57;
+  --cor-acento-texto: #ff9a7c;
+  --cor-acento-suave: #3a1d14;
+  --cor-foco: #a49eff;
+
+  --cor-ok: #72d8a2;
+  --cor-ok-fundo: #10291d;
+  --cor-ok-borda: #2c6b4b;
+  --cor-erro: #ff9f94;
+  --cor-erro-fundo: #3a1614;
+  --cor-erro-borda: #7a2e28;
+  --cor-alerta: #f7c65a;
+  --cor-alerta-fundo: #33270c;
+  --cor-alerta-borda: #6e5419;
+  --cor-sobre-estado: #16133a;
+
+  --cor-brilho-marca: rgb(164 158 255 / 0.12);
+  --cor-brilho-acento: rgb(255 125 87 / 0.07);
+
+  --sombra-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --sombra-2: 0 1px 2px rgb(0 0 0 / 0.35), 0 10px 28px -8px rgb(0 0 0 / 0.55);
+  --sombra-3: 0 24px 64px -12px rgb(0 0 0 / 0.7);
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --rapido: 0ms;
@@ -154,9 +197,10 @@
   }
 }
 
-/* "mais contraste" ligado no aparelho: texto de apoio e bordas mais fortes (os dois temas) */
+/* "mais contraste" ligado no aparelho: texto de apoio e bordas mais fortes (os dois temas). :root:root tem a
+   mesma força dos blocos do tema escuro e vem depois deles: vale também no escuro (a impressão, abaixo, idem) */
 @media (prefers-contrast: more) {
-  :root {
+  :root:root {
     --cor-texto-3: var(--cor-texto-2);
     --cor-borda: var(--cor-borda-campo);
   }
@@ -164,7 +208,7 @@
 
 /* impressão (termos e política em papel ou PDF): sempre as cores claras, mesmo no tema escuro */
 @media print {
-  :root {
+  :root:root {
     color-scheme: light;
     --cor-fundo: #ffffff;
     --cor-superficie: #ffffff;

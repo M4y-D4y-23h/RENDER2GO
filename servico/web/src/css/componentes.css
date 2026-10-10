@@ -33,6 +33,29 @@
   height: 1.75rem;
 }
 
+/* um logo por tema (src/partes/logo.html): o do tema em uso, que pode ser o do aparelho ou o escolhido na conta */
+.logo-escuro {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) .logo-claro {
+    display: none;
+  }
+
+  :root:not([data-tema="claro"]) .logo-escuro {
+    display: inline;
+  }
+}
+
+:root[data-tema="escuro"] .logo-claro {
+  display: none;
+}
+
+:root[data-tema="escuro"] .logo-escuro {
+  display: inline;
+}
+
 .marca-area {
   font: 650 var(--texto-xs) / 1 var(--fonte-texto);
   color: var(--cor-marca-texto);
@@ -359,6 +382,13 @@ textarea {
   transition: border-color var(--rapido) var(--curva), box-shadow var(--rapido) var(--curva);
 }
 
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--cor-superficie-2);
+  cursor: not-allowed;
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--cor-texto-3);
@@ -403,7 +433,8 @@ textarea {
   line-height: 1.5;
 }
 
-input[type="checkbox"] {
+input[type="checkbox"],
+input[type="radio"] {
   width: 1.25rem;
   height: 1.25rem;
   margin: 0.125rem 0 0;
@@ -463,6 +494,11 @@ input[type="checkbox"] {
 .marcacao:has(input:checked) {
   border-color: var(--cor-marca);
   background: var(--cor-marca-suave);
+}
+
+.marcacao:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .marcacao.exigida:not(:has(input:checked)) {
@@ -1228,7 +1264,7 @@ dialog[open] {
   letter-spacing: 0.04em;
 }
 
-.tabela tbody tr:last-child td {
+.tabela tbody tr:last-child :is(td, th) {
   border-bottom: 0;
 }
 
@@ -1457,5 +1493,294 @@ dialog[open] {
 
   .indice a[aria-current] {
     text-decoration: underline;
+  }
+}
+
+/* -- área do cliente: foto da conta, abas, números, linhas e o lugar do "Tenho interesse" (10/10/2026) ---- */
+
+/* foto (Gravatar, por escolha da pessoa) ou a inicial, sempre do mesmo tamanho: a foto entra por cima da inicial
+   só depois de carregar, e nada se mexe */
+.avatar {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--cor-marca);
+  color: var(--cor-sobre-marca);
+  font: 700 var(--texto-md) / 1 var(--fonte-titulos);
+  user-select: none;
+}
+
+.avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+}
+
+.avatar.com-foto img {
+  opacity: 1;
+}
+
+.avatar.grande {
+  width: 5rem;
+  height: 5rem;
+  font-size: 2rem;
+}
+
+/* abas (role="tab"): o mesmo desenho dos filtros, na largura toda */
+.abas {
+  display: flex;
+  gap: var(--esp-1);
+  padding: var(--esp-1);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie-2);
+}
+
+.abas [role="tab"] {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--alvo);
+  padding: var(--esp-2) var(--esp-3);
+  border: 0;
+  border-radius: var(--raio-sm);
+  background: transparent;
+  color: var(--cor-texto-2);
+  font-weight: 650;
+  font-size: var(--texto-sm);
+  line-height: 1.25;
+  cursor: pointer;
+  transition: background-color var(--rapido) var(--curva), color var(--rapido) var(--curva);
+}
+
+.abas [role="tab"]:hover {
+  color: var(--cor-texto);
+}
+
+.abas [role="tab"][aria-selected="true"] {
+  background: var(--cor-superficie);
+  color: var(--cor-marca-texto);
+  box-shadow: var(--sombra-1);
+}
+
+/* números do resumo (extratos) */
+.numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: var(--esp-3);
+  margin: 0 0 var(--esp-5);
+}
+
+.numeros > div {
+  padding: var(--esp-3) var(--esp-4);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie);
+}
+
+.numeros dt {
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+}
+
+.numeros dd {
+  margin: 0;
+  font-size: var(--texto-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.numeros dd.fraco {
+  font-size: var(--texto-xs);
+  font-weight: 400;
+}
+
+/* linhas de uma lista (extrato, aparelhos): título e valor na 1ª linha, o detalhe embaixo */
+.linhas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--esp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.linha {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--esp-1) var(--esp-3);
+  padding: var(--esp-3) var(--esp-4);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie);
+}
+
+.linha p {
+  margin: 0;
+  max-width: none;
+}
+
+.linha-titulo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-1) var(--esp-2);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.linha-titulo .icone {
+  color: var(--cor-texto-3);
+}
+
+.linha-valor {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.linha-valor.credito {
+  color: var(--cor-ok);
+}
+
+.linha-detalhe {
+  grid-column: 1 / -1;
+  color: var(--cor-texto-3);
+  font-size: var(--texto-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.linha-acao {
+  justify-self: end;
+}
+
+/* lugar do "Tenho interesse" (o botão chega com a conta): a altura já reservada, sem empurrar nada */
+.interesse-lugar {
+  display: flex;
+  align-items: center;
+  min-height: 2.25rem;
+}
+
+/* selo ao lado de um título ("Em breve") */
+h2 .selo,
+h3 .selo {
+  margin-left: var(--esp-2);
+  font-family: var(--fonte-texto);
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+
+/* janelas da área do cliente */
+dialog.menu-celular .dialogo-corpo {
+  gap: var(--esp-3);
+}
+
+.qr-mfa {
+  width: 13.75rem;
+  height: 13.75rem;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-sm);
+}
+
+.codigos-recuperacao {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: var(--esp-2) var(--esp-4);
+  margin: 0;
+  padding: var(--esp-3) var(--esp-4) var(--esp-3) var(--esp-6);
+  border: 1px dashed var(--cor-borda-campo);
+  border-radius: var(--raio-md);
+  font-family: var(--fonte-mono);
+}
+
+.codigos-recuperacao code {
+  font-size: var(--texto-md);
+  user-select: all;
+}
+
+.chave-manual summary,
+.textos-prontos summary {
+  min-height: var(--alvo);
+  padding-block: var(--esp-3);
+  color: var(--cor-marca-texto);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lista-links {
+  display: grid;
+  gap: var(--esp-2);
+  padding-left: var(--esp-5);
+}
+
+.lista-textos {
+  display: grid;
+  gap: var(--esp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lista-textos li {
+  display: grid;
+  gap: var(--esp-1);
+  padding: var(--esp-3);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+}
+
+.lista-textos q,
+.texto-padrao {
+  display: block;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.texto-padrao {
+  padding: var(--esp-3);
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie-2);
+}
+
+.texto-pronto {
+  max-width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+
+@media (min-width: 40em) {
+  dialog.menu-celular,
+  dialog.confirmar-identidade {
+    width: min(100% - 2rem, 28rem);
+  }
+
+  dialog.texto-proprio,
+  dialog.revisao-textos,
+  dialog.mfa,
+  dialog.aceite-documentos {
+    width: min(100% - 2rem, 40rem);
+  }
+}
+
+@media (pointer: coarse) {
+  .interesse-lugar {
+    min-height: var(--alvo);
+  }
+}
+
+@media (forced-colors: active) {
+  .abas [role="tab"][aria-selected="true"],
+  .avatar {
+    border: 1px solid CanvasText;
   }
 }

@@ -8,7 +8,9 @@
 <meta property="og:title" content="Render2Go · Vídeos curtos com IA a partir das suas fotos">
 <meta property="og:description" content="Envie as fotos do seu negócio, diga em português o que deve acontecer e receba um vídeo curto por foto.">
 <meta property="og:url" content="{{ORIGEM}}/">
-<script src="/estatico/inicio.js" data-chave="render2go-conectado" data-antecipar="/api/receitas /api/lotes /api/conta"></script>
+<!-- a mesma página serve as telas da área da conta (/modelos, /extratos...): o inicio.js marca a tela pelo endereço
+     e pede de antemão só o que ela mostra ("tela=caminho,caminho") -->
+<script src="/estatico/inicio.js" data-chave="render2go-conectado" data-antecipar="pedidos=/api/receitas,/api/lotes,/api/conta modelos=/api/receitas,/api/conta extratos=/api/conta,/api/extrato?dias=30 logs=/api/conta,/api/geracoes?horas=24 perfil=/api/conta configuracoes=/api/conta,/api/conta/sessoes projetos=/api/conta mix=/api/conta"></script>
 <!--@cabeca-->
 <script src="/estatico/cliente.js" defer></script>
 <script type="application/ld+json">
@@ -20,252 +22,618 @@
 </head>
 <body data-pagina="cliente">
 <!--@topo-->
-<main id="conteudo" class="conteudo" tabindex="-1">
-  <noscript>
-    <div class="recipiente"><p class="aviso erro">Esta página precisa de JavaScript. Ative o JavaScript no navegador e recarregue a página.</p></div>
-  </noscript>
-
-  <!-- quem ainda não entrou: apresentação e código de acesso -->
-  <div class="recipiente entrada so-sem-sessao">
-    <section class="hero" aria-labelledby="titulo-hero">
-      <p class="sobretitulo"><!--@icone brilho-->Vídeos com IA para pequenos negócios</p>
-      <h1 id="titulo-hero">Suas fotos viram vídeos curtos, prontos para postar</h1>
-      <p class="lead">Envie dezenas de fotos de uma vez, diga em português o que deve acontecer e receba um vídeo por foto.</p>
-      <!--@ilustracao-->
-    </section>
-
-    <section class="cartao elevado entrar" id="entrar" tabindex="-1" aria-labelledby="titulo-entrar">
-      <h2 id="titulo-entrar">Entrar ou criar conta</h2>
-      <!-- passo 1: e-mail, aceite e "não sou um robô"; passo 2: o código que chega no e-mail -->
-      <form id="form-email" novalidate>
-        <div class="campo">
-          <label for="email">Seu e-mail</label>
-          <input id="email" type="email" autocomplete="email" inputmode="email" required maxlength="254" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="send" aria-describedby="email-dica">
-          <p class="dica" id="email-dica">Gmail, Outlook/Hotmail, Yahoo, iCloud, UOL, BOL ou Terra. Não há senha: enviamos um código de acesso para o seu e-mail.</p>
-        </div>
-        <label class="marcacao" id="caixa-aceite">
-          <input id="aceite" type="checkbox" required aria-describedby="aceite-dica">
-          <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Uso</a> e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</span>
-        </label>
-        <p class="dica" id="aceite-dica">O aceite fica registrado com a sua conta, a data e o endereço de internet.</p>
-        <!-- lugar reservado desde o HTML: em produção o quadro sempre aparece, e o botão não desce quando ele chega -->
-        <div id="verificacao-entrar" class="verificacao"></div>
-        <button type="submit" class="botao primario largo" id="enviar-email"><!--@icone mensagem-->Receber o código</button>
-      </form>
-      <form id="form-codigo" novalidate hidden>
-        <p id="codigo-enviado" class="aviso info" tabindex="-1"></p>
-        <div class="campo">
-          <label for="codigo">Código de acesso (8 dígitos)</label>
-          <input id="codigo" inputmode="numeric" autocomplete="one-time-code" required maxlength="12" spellcheck="false" enterkeyhint="go" aria-describedby="codigo-dica">
-          <p class="dica" id="codigo-dica">Confira também a caixa de spam. O código vale por 10 minutos e só uma vez.</p>
-        </div>
-        <button type="submit" class="botao primario largo" id="enviar-codigo"><!--@icone chave-->Entrar</button>
-        <div class="acoes">
-          <button type="button" class="botao fantasma pequeno" id="trocar-email"><!--@icone voltar-->Usar outro e-mail</button>
-          <button type="button" class="botao fantasma pequeno" id="reenviar"><!--@icone atualizar-->Mandar outro código</button>
-        </div>
-      </form>
-      <p id="msg-entrada" class="aviso erro" hidden></p>
-      <p class="fraco">Primeira vez aqui? A conta é criada no primeiro acesso, com um teste gratuito: até 5 fotos viram vídeos de 3 s em 480p. Depois, você paga só o que usar, com saldo por Pix.</p>
-      <details class="codigo-antigo">
-        <summary>Tenho um código de acesso antigo</summary>
-        <form id="form-token" novalidate>
-          <div class="campo">
-            <label for="token">Código de acesso</label>
-            <div class="senha">
-              <input id="token" type="password" autocomplete="off" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go">
-              <button type="button" class="botao fantasma pequeno" id="mostrar-token" aria-controls="token" aria-pressed="false">Mostrar</button>
-            </div>
-            <p class="dica">Para quem recebeu um código antes das contas por e-mail. Vale o mesmo aceite dos termos acima.</p>
-          </div>
-          <button type="submit" class="botao largo" id="enviar-token">Entrar com o código</button>
-        </form>
-      </details>
-      <p class="fraco">Não consegue entrar? <a href="/suporte">Fale com o suporte</a>.</p>
-    </section>
-
-    <section class="como" aria-labelledby="titulo-como">
-      <h2 id="titulo-como">Como funciona</h2>
-      <ol>
-        <li><span><strong>Envie as fotos.</strong> Dezenas de uma vez, do celular ou do computador.</span></li>
-        <li><span><strong>Diga o que deve acontecer.</strong> Em português, do seu jeito, simples (“deixe bonito”) ou detalhado (“a câmera se aproxima devagar do produto”).</span></li>
-        <li><span><strong>Baixe os vídeos.</strong> Um vídeo curto por foto, depois de uma revisão rápida do pedido.</span></li>
-      </ol>
-    </section>
-  </div>
-
-  <!-- quem já entrou: novo pedido e acompanhamento -->
-  <div class="recipiente painel so-com-sessao" id="painel">
-    <div class="cab-pagina">
-      <h1 id="titulo-painel" tabindex="-1">Seus vídeos</h1>
-      <p class="fraco">Escolha as fotos, diga o que deve acontecer e acompanhe os pedidos aqui.</p>
-      <div class="conta-linha">
-        <p class="fraco conta-resumo" id="conta-resumo"></p>
-        <button type="button" class="botao pequeno" id="abrir-conta"><!--@icone pessoa-->Sua conta</button>
+<div class="moldura">
+  <!-- quem entrou: o menu da conta, ao lado do conteúdo no computador (no celular, "Menu" no topo abre uma cópia dele
+       numa janela de baixo). O item da tela atual já vem marcado pelo CSS (data-vista), antes do JavaScript. -->
+  <aside class="lateral so-com-sessao" id="lateral" aria-label="Sua conta">
+    <div class="quem" id="quem">
+      <span class="avatar" id="avatar" aria-hidden="true"><span class="avatar-inicial"></span></span>
+      <div class="quem-texto">
+        <p class="quem-nome" id="quem-nome"></p>
+        <p class="quem-plano fraco" id="conta-resumo"></p>
       </div>
     </div>
-    <p id="msg-painel" class="aviso erro" hidden></p>
+    <nav class="menu-conta" id="menu-conta" aria-label="Menu da conta">
+      <p class="grupo-menu" id="menu-criar">Criar</p>
+      <ul aria-labelledby="menu-criar">
+        <li><a href="/" data-vista="pedidos"><!--@icone video--><span>Pedidos</span></a></li>
+        <li><a href="/modelos" data-vista="modelos"><!--@icone cubo--><span>Modelos de IA</span></a></li>
+        <li><a href="/mix" data-vista="mix"><!--@icone camadas--><span>Mix</span><span class="selo">Em breve</span></a></li>
+        <li><a href="/projetos" data-vista="projetos"><!--@icone pasta--><span>Projetos</span><span class="selo">Em breve</span></a></li>
+      </ul>
+      <p class="grupo-menu" id="menu-acompanhar">Acompanhar</p>
+      <ul aria-labelledby="menu-acompanhar">
+        <li><a href="/logs" data-vista="logs"><!--@icone historico--><span>Logs</span></a></li>
+        <li><a href="/extratos" data-vista="extratos"><!--@icone recibo--><span>Extratos</span></a></li>
+      </ul>
+      <p class="grupo-menu" id="menu-da-conta">Conta</p>
+      <ul aria-labelledby="menu-da-conta">
+        <li><a href="/perfil" data-vista="perfil"><!--@icone pessoa--><span>Perfil</span></a></li>
+        <li><a href="/configuracoes" data-vista="configuracoes"><!--@icone ajustes--><span>Configurações</span></a></li>
+      </ul>
+    </nav>
+  </aside>
 
-    <div class="painel-grade">
-      <section class="cartao novo-pedido" aria-labelledby="titulo-novo">
-        <h2 id="titulo-novo">Novo pedido</h2>
-        <div id="plano-aviso" class="aviso info" hidden></div>
-        <!-- pré-pago: saldo, preço por segundo e extrato (só no plano pago) -->
-        <div id="saldo" class="saldo" hidden>
-          <p class="saldo-linha"><span>Seu saldo</span> <strong id="saldo-valor">R$ 0,00</strong></p>
-          <p class="dica" id="saldo-precos"></p>
-          <details class="extrato" id="extrato">
-            <summary>Ver extrato</summary>
-            <ul class="extrato-lista" id="extrato-lista" aria-label="Últimos movimentos do saldo"></ul>
-          </details>
-          <div class="acoes">
-            <button type="button" class="botao primario pequeno" id="adicionar-saldo" hidden><!--@icone brilho-->Adicionar saldo por Pix</button>
-          </div>
-          <p class="dica" id="saldo-recarga">Vídeo que não sai volta para o saldo.</p>
-        </div>
-        <!-- até a API responder: esqueleto no lugar das opções, com altura reservada (o que vem abaixo começa fora
-             da tela e não se mexe quando o saldo, o aviso do plano e as opções chegarem juntos: CLS zero) -->
-        <div class="esqueleto-pedido" id="esqueleto-pedido" aria-hidden="true">
-          <div class="esqueleto largo"><span></span><span></span><span></span></div>
-          <div class="esqueleto"><span></span><span></span><span></span></div>
-          <div class="esqueleto"><span></span><span></span><span></span></div>
-          <div class="esqueleto"><span></span><span></span><span></span></div>
-          <div class="esqueleto"><span></span><span></span><span></span></div>
-        </div>
-        <!-- antes do pedido: o que o cliente quer criar (finalidades de render2go_servico/modelos.py) -->
-        <div class="finalidades" id="finalidades" hidden>
-          <h3 id="titulo-finalidades" tabindex="-1">O que você quer criar?</h3>
-          <p class="dica" id="finalidades-dica">Escolha uma opção para começar. As marcadas com “Em breve” ainda não estão disponíveis: clique em “Tenho interesse” para nos dizer o que você quer usar.</p>
-          <ul class="blocos" id="blocos" aria-labelledby="titulo-finalidades" aria-describedby="finalidades-dica" aria-busy="true"></ul>
-        </div>
-        <div class="escolhida" id="escolhida" hidden>
-          <div class="escolhida-cab">
-            <span class="escolhida-icone" id="escolhida-icone"></span>
-            <div class="escolhida-texto">
-              <h3 id="escolhida-titulo" tabindex="-1"></h3>
-              <p class="fraco" id="escolhida-tipo"></p>
-            </div>
-            <button type="button" class="botao pequeno" id="trocar-finalidade"><!--@icone voltar-->Trocar</button>
-          </div>
-          <p class="modelo-uso" id="modelo-uso"></p>
-        </div>
-        <form id="form-lote" novalidate hidden>
-          <fieldset class="campos-lote passos" id="campos-lote" disabled>
-            <fieldset class="passo">
-              <legend>Fotos</legend>
-              <div class="soltar" id="soltar">
-                <!--@icone imagens-->
-                <p class="soltar-titulo"><span class="so-mouse">Arraste as fotos para cá ou escolha abaixo</span><span class="so-toque">Escolha as fotos do seu aparelho</span></p>
-                <div class="escolha">
-                  <input id="fotos" type="file" multiple accept="image/jpeg,image/png,image/webp" aria-describedby="fotos-dica">
-                  <label class="botao primario" for="fotos"><!--@icone enviar-->Escolher fotos</label>
-                  <input id="pasta" type="file" multiple webkitdirectory aria-describedby="fotos-dica">
-                  <label class="botao" for="pasta" id="rotulo-pasta"><!--@icone pasta-->Escolher uma pasta</label>
-                </div>
-                <p class="dica" id="fotos-dica">JPG, PNG ou WebP, até 50 MB cada. Cada foto vira um vídeo. Use a foto original, nítida e grande (não print nem foto baixada de site ou do WhatsApp).</p>
-              </div>
-              <div class="barra-fotos" id="barra-fotos" hidden>
-                <p id="contagem" class="fraco"></p>
-                <button type="button" class="botao pequeno" id="limpar"><!--@icone lixo-->Limpar</button>
-              </div>
-              <ul class="previa" id="previa" aria-label="Fotos escolhidas" hidden></ul>
-              <div class="aviso alerta" id="aviso-fotos" hidden></div>
-            </fieldset>
+  <main id="conteudo" class="conteudo" tabindex="-1">
+    <noscript>
+      <p class="aviso erro">Esta página precisa de JavaScript. Ative o JavaScript no navegador e recarregue a página.</p>
+    </noscript>
 
-            <fieldset class="passo">
-              <legend>Estilo e descrição</legend>
-              <div class="campo">
-                <label for="receita">Estilo</label>
-                <select id="receita"></select>
-              </div>
-              <div class="campo">
-                <label for="prompt">O que deve acontecer nos vídeos?</label>
-                <textarea id="prompt" required minlength="3" maxlength="600" spellcheck="true" autocapitalize="sentences" placeholder="Ex.: a câmera gira devagar em volta do carro" aria-describedby="prompt-dica prompt-contador"></textarea>
-                <div class="linha-campo">
-                  <p class="dica" id="prompt-dica">Escreva em português, do seu jeito. O texto vale para cada foto, uma de cada vez: descreva o que acontece numa foto só. Pode ser simples ou detalhado.</p>
-                  <span class="contador" id="prompt-contador">0/600</span>
-                </div>
-                <details class="exemplos-pedido">
-                  <summary>Ver exemplos de pedido</summary>
-                  <ul>
-                    <li><strong>Simples:</strong> “deixe bonito, com um movimento suave”</li>
-                    <li><strong>Simples:</strong> “vídeo de apresentação do carro”</li>
-                    <li><strong>Detalhado:</strong> “a câmera gira devagar em volta do carro e os faróis acendem”</li>
-                    <li><strong>Detalhado:</strong> “o vapor sobe do prato e a câmera se aproxima devagar”</li>
-                  </ul>
-                  <p class="dica">Cada vídeo mostra só o que está na foto, numa cena contínua. Evite pedir troca de produto, cortes ou texto escrito no vídeo.</p>
-                </details>
-                <div class="sugestao" id="sugestao" hidden>
-                  <p>Exemplo para este estilo: <q id="sugestao-texto"></q></p>
-                  <button type="button" class="botao pequeno" id="usar-sugestao"><!--@icone brilho-->Usar este exemplo</button>
-                </div>
-              </div>
-            </fieldset>
-
-            <fieldset class="passo">
-              <legend>Ajustes</legend>
-              <div class="duas">
-                <div class="campo">
-                  <label for="duracao">Duração</label>
-                  <select id="duracao">
-                    <option value="">Padrão do estilo</option>
-                    <option value="3">3 s</option>
-                    <option value="4">4 s</option>
-                    <option value="5">5 s</option>
-                    <option value="6">6 s</option>
-                    <option value="7">7 s</option>
-                  </select>
-                </div>
-                <div class="campo">
-                  <label for="qualidade">Qualidade</label>
-                  <select id="qualidade">
-                    <option value="rapida">Rápida (prévia, 480p)</option>
-                    <option value="alta">Alta (720p)</option>
-                  </select>
-                </div>
-              </div>
-              <div class="campo">
-                <label for="modelo">Modelo de geração</label>
-                <select id="modelo" aria-describedby="modelo-info"></select>
-                <p id="modelo-info" class="dica"></p>
-              </div>
-            </fieldset>
-
-            <fieldset class="passo">
-              <legend>Autorização</legend>
-              <label class="marcacao" id="caixa-consentimento">
-                <input id="consentimento" type="checkbox" aria-describedby="consentimento-dica">
-                <span id="texto-autorizacao">Tenho autorização por escrito das pessoas que aparecem nas fotos (obrigatório em estilos com pessoas).</span>
-              </label>
-              <p class="dica" id="consentimento-dica">Obrigatória quando aparecem pessoas nas fotos. Ao marcar, a declaração fica registrada com a sua conta, a data, o endereço de internet e este dispositivo.</p>
-            </fieldset>
-
-            <div class="enviar">
-              <p class="custo" id="custo" hidden></p>
-              <button type="submit" class="botao primario largo" id="enviar" aria-describedby="custo"><!--@icone enviar-->Enviar pedido</button>
-              <div class="progresso" id="area-progresso" hidden>
-                <div class="progresso-texto"><span id="progresso-texto">Enviando as fotos…</span><span id="progresso-pct"></span></div>
-                <progress id="progresso" aria-labelledby="progresso-texto"></progress>
-              </div>
-            </div>
-          </fieldset>
-          <p id="msg" class="aviso" hidden></p>
-        </form>
+    <!-- quem ainda não entrou: apresentação e código de acesso -->
+    <div class="entrada so-sem-sessao">
+      <section class="hero" aria-labelledby="titulo-hero">
+        <p class="sobretitulo"><!--@icone brilho-->Vídeos com IA para pequenos negócios</p>
+        <h1 id="titulo-hero">Suas fotos viram vídeos curtos, prontos para postar</h1>
+        <p class="lead">Envie dezenas de fotos de uma vez, diga em português o que deve acontecer e receba um vídeo por foto.</p>
+        <!--@ilustracao-->
       </section>
 
-      <section class="pedidos" aria-labelledby="titulo-pedidos">
-        <div class="cab-secao">
-          <h2 id="titulo-pedidos" tabindex="-1">Seus pedidos</h2>
-          <span class="fraco" id="atualizado"></span>
-        </div>
-        <div id="lotes" class="lotes" aria-busy="true">
-          <div class="cartao esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
-        </div>
-        <p class="suporte-link fraco">Precisa de ajuda? Fale com o suporte em <a id="link-suporte" href="/suporte">app.render2go.com/suporte</a></p>
+      <section class="cartao elevado entrar" id="entrar" tabindex="-1" aria-labelledby="titulo-entrar">
+        <h2 id="titulo-entrar">Entrar ou criar conta</h2>
+        <!-- passo 1: e-mail, aceite e "não sou um robô"; passo 2: o código que chega no e-mail; passo 3 (só com a
+             verificação em duas etapas ligada): o código do aplicativo autenticador ou um de recuperação -->
+        <form id="form-email" novalidate>
+          <div class="campo">
+            <label for="email">Seu e-mail</label>
+            <input id="email" type="email" autocomplete="email" inputmode="email" required maxlength="254" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="send" aria-describedby="email-dica">
+            <p class="dica" id="email-dica">Gmail, Outlook/Hotmail, Yahoo, iCloud, UOL, BOL ou Terra. Não há senha: enviamos um código de acesso para o seu e-mail.</p>
+          </div>
+          <label class="marcacao" id="caixa-aceite">
+            <input id="aceite" type="checkbox" required aria-describedby="aceite-dica">
+            <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Uso</a> e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</span>
+          </label>
+          <p class="dica" id="aceite-dica">O aceite fica registrado com a sua conta, a data e o endereço de internet.</p>
+          <!-- lugar reservado desde o HTML: em produção o quadro sempre aparece, e o botão não desce quando ele chega -->
+          <div id="verificacao-entrar" class="verificacao"></div>
+          <button type="submit" class="botao primario largo" id="enviar-email"><!--@icone mensagem-->Receber o código</button>
+        </form>
+        <form id="form-codigo" novalidate hidden>
+          <p id="codigo-enviado" class="aviso info" tabindex="-1"></p>
+          <div class="campo">
+            <label for="codigo">Código de acesso (8 dígitos)</label>
+            <input id="codigo" inputmode="numeric" autocomplete="one-time-code" required maxlength="12" spellcheck="false" enterkeyhint="go" aria-describedby="codigo-dica">
+            <p class="dica" id="codigo-dica">Confira também a caixa de spam. O código vale por 10 minutos e só uma vez.</p>
+          </div>
+          <button type="submit" class="botao primario largo" id="enviar-codigo"><!--@icone chave-->Entrar</button>
+          <div class="acoes">
+            <button type="button" class="botao fantasma pequeno" id="trocar-email"><!--@icone voltar-->Usar outro e-mail</button>
+            <button type="button" class="botao fantasma pequeno" id="reenviar"><!--@icone atualizar-->Mandar outro código</button>
+          </div>
+        </form>
+        <form id="form-mfa" novalidate hidden>
+          <p id="mfa-pedido" class="aviso info" tabindex="-1"></p>
+          <div class="campo">
+            <label for="codigo-mfa" id="rotulo-mfa">Código do aplicativo autenticador (6 dígitos)</label>
+            <input id="codigo-mfa" inputmode="numeric" autocomplete="one-time-code" required maxlength="40" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go" aria-describedby="codigo-mfa-dica">
+            <p class="dica" id="codigo-mfa-dica">Os 6 dígitos que aparecem agora no aplicativo (Google Authenticator, Microsoft Authenticator, Authy…).</p>
+          </div>
+          <button type="submit" class="botao primario largo" id="enviar-mfa"><!--@icone cadeado-->Confirmar e entrar</button>
+          <div class="acoes">
+            <button type="button" class="botao fantasma pequeno" id="mfa-voltar"><!--@icone voltar-->Voltar</button>
+            <button type="button" class="botao fantasma pequeno" id="mfa-recuperacao">Perdi o celular: usar um código de recuperação</button>
+          </div>
+        </form>
+        <p id="msg-entrada" class="aviso erro" hidden></p>
+        <p class="fraco">Primeira vez aqui? A conta é criada no primeiro acesso, com um teste gratuito: até 5 fotos viram vídeos de 3 s em 480p. Depois, você paga só o que usar, com saldo por Pix.</p>
+        <details class="codigo-antigo" id="codigo-antigo">
+          <summary>Tenho um código de acesso antigo</summary>
+          <form id="form-token" novalidate>
+            <div class="campo">
+              <label for="token">Código de acesso</label>
+              <div class="senha">
+                <input id="token" type="password" autocomplete="off" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go">
+                <button type="button" class="botao fantasma pequeno" id="mostrar-token" aria-controls="token" aria-pressed="false">Mostrar</button>
+              </div>
+              <p class="dica">Para quem recebeu um código antes das contas por e-mail. Vale o mesmo aceite dos termos acima.</p>
+            </div>
+            <button type="submit" class="botao largo" id="enviar-token">Entrar com o código</button>
+          </form>
+        </details>
+        <p class="fraco">Não consegue entrar? <a href="/suporte">Fale com o suporte</a>.</p>
+      </section>
+
+      <section class="como" aria-labelledby="titulo-como">
+        <h2 id="titulo-como">Como funciona</h2>
+        <ol>
+          <li><span><strong>Envie as fotos.</strong> Dezenas de uma vez, do celular ou do computador.</span></li>
+          <li><span><strong>Diga o que deve acontecer.</strong> Em português, do seu jeito, simples (“deixe bonito”) ou detalhado (“a câmera se aproxima devagar do produto”).</span></li>
+          <li><span><strong>Baixe os vídeos.</strong> Um vídeo curto por foto, depois de uma revisão rápida do pedido.</span></li>
+        </ol>
       </section>
     </div>
-  </div>
-</main>
+
+    <!-- quem já entrou: uma tela por endereço (o CSS mostra a do data-vista; as outras ficam fora da página) -->
+    <div class="area-conta so-com-sessao" id="painel">
+      <p id="msg-painel" class="aviso erro" hidden></p>
+      <!-- avisos da conta ao entrar (ex.: a conta pausada voltou a valer); os erros ficam na caixa de cima -->
+      <p id="aviso-conta" class="aviso ok" hidden></p>
+
+      <!-- Pedidos (/): o que criar, o novo pedido (texto único ou em sequência) e o acompanhamento -->
+      <section class="vista" id="vista-pedidos" aria-labelledby="titulo-painel">
+        <div class="cab-pagina">
+          <h1 id="titulo-painel" tabindex="-1">Pedidos</h1>
+          <p class="fraco">Escolha o que criar, envie as fotos, diga o que deve acontecer e acompanhe os pedidos aqui.</p>
+        </div>
+        <div class="painel-grade">
+          <section class="cartao novo-pedido" aria-labelledby="titulo-novo">
+            <h2 id="titulo-novo">Novo pedido</h2>
+            <div id="plano-aviso" class="aviso info" hidden></div>
+            <!-- pré-pago: saldo, preço por segundo e extrato (só no plano pago) -->
+            <div id="saldo" class="saldo" hidden>
+              <p class="saldo-linha"><span>Seu saldo</span> <strong id="saldo-valor">R$ 0,00</strong></p>
+              <p class="dica" id="saldo-precos"></p>
+              <details class="extrato" id="extrato">
+                <summary>Ver os últimos movimentos</summary>
+                <ul class="extrato-lista" id="extrato-lista" aria-label="Últimos movimentos do saldo"></ul>
+                <p class="dica"><a href="/extratos" data-vista="extratos">Extrato completo, por pedido e por modelo de IA</a></p>
+              </details>
+              <div class="acoes">
+                <button type="button" class="botao primario pequeno" id="adicionar-saldo" hidden><!--@icone brilho-->Adicionar saldo por Pix</button>
+              </div>
+              <p class="dica" id="saldo-recarga">Vídeo que não sai volta para o saldo.</p>
+            </div>
+            <!-- até a API responder: esqueleto no lugar das opções, com altura reservada (o que vem abaixo começa fora
+                 da tela e não se mexe quando o saldo, o aviso do plano e as opções chegarem juntos: CLS zero) -->
+            <div class="esqueleto-pedido" id="esqueleto-pedido" aria-hidden="true">
+              <div class="esqueleto largo"><span></span><span></span><span></span></div>
+              <div class="esqueleto"><span></span><span></span><span></span></div>
+              <div class="esqueleto"><span></span><span></span><span></span></div>
+              <div class="esqueleto"><span></span><span></span><span></span></div>
+              <div class="esqueleto"><span></span><span></span><span></span></div>
+            </div>
+            <!-- antes do pedido: o que o cliente quer criar (finalidades de render2go_servico/modelos.py) -->
+            <div class="finalidades" id="finalidades" hidden>
+              <h3 id="titulo-finalidades" tabindex="-1">O que você quer criar?</h3>
+              <p class="dica" id="finalidades-dica">Escolha uma opção para começar. As marcadas com “Em breve” ainda não estão disponíveis: clique em “Tenho interesse” para nos dizer o que você quer usar.</p>
+              <ul class="blocos" id="blocos" aria-labelledby="titulo-finalidades" aria-describedby="finalidades-dica" aria-busy="true"></ul>
+            </div>
+            <div class="escolhida" id="escolhida" hidden>
+              <div class="escolhida-cab">
+                <span class="escolhida-icone" id="escolhida-icone"></span>
+                <div class="escolhida-texto">
+                  <h3 id="escolhida-titulo" tabindex="-1"></h3>
+                  <p class="fraco" id="escolhida-tipo"></p>
+                </div>
+                <button type="button" class="botao pequeno" id="trocar-finalidade"><!--@icone voltar-->Trocar</button>
+              </div>
+              <p class="modelo-uso" id="modelo-uso"></p>
+            </div>
+            <form id="form-lote" novalidate hidden>
+              <fieldset class="campos-lote passos" id="campos-lote" disabled>
+                <fieldset class="passo">
+                  <legend>Fotos</legend>
+                  <div class="soltar" id="soltar">
+                    <!--@icone imagens-->
+                    <p class="soltar-titulo"><span class="so-mouse">Arraste as fotos para cá ou escolha abaixo</span><span class="so-toque">Escolha as fotos do seu aparelho</span></p>
+                    <div class="escolha">
+                      <input id="fotos" type="file" multiple accept="image/jpeg,image/png,image/webp" aria-describedby="fotos-dica">
+                      <label class="botao primario" for="fotos"><!--@icone enviar-->Escolher fotos</label>
+                      <input id="pasta" type="file" multiple webkitdirectory aria-describedby="fotos-dica">
+                      <label class="botao" for="pasta" id="rotulo-pasta"><!--@icone pasta-->Escolher uma pasta</label>
+                    </div>
+                    <p class="dica" id="fotos-dica">JPG, PNG ou WebP, até 50 MB cada. Cada foto vira um vídeo. Use a foto original, nítida e grande (não print nem foto baixada de site ou do WhatsApp).</p>
+                  </div>
+                  <div class="barra-fotos" id="barra-fotos" hidden>
+                    <p id="contagem" class="fraco"></p>
+                    <button type="button" class="botao pequeno" id="limpar"><!--@icone lixo-->Limpar</button>
+                  </div>
+                  <ul class="previa" id="previa" aria-label="Fotos escolhidas" hidden></ul>
+                  <div class="aviso alerta" id="aviso-fotos" hidden></div>
+                </fieldset>
+
+                <fieldset class="passo">
+                  <legend>Estilo e descrição</legend>
+                  <div class="campo">
+                    <label for="receita">Estilo</label>
+                    <select id="receita"></select>
+                  </div>
+                  <!-- duas abas: o mesmo texto para todas as fotos, ou a sequência (texto padrão + texto próprio em algumas) -->
+                  <div class="abas" id="abas-texto" role="tablist" aria-label="Como descrever os vídeos">
+                    <button type="button" role="tab" id="aba-mesmo" aria-selected="true" aria-controls="painel-texto">Mesmo texto para todas</button>
+                    <button type="button" role="tab" id="aba-sequencia" aria-selected="false" aria-controls="painel-texto" tabindex="-1">Sequência (texto por foto)</button>
+                  </div>
+                  <div class="pilha" id="painel-texto" role="tabpanel" aria-labelledby="aba-mesmo">
+                    <div class="campo">
+                      <label for="prompt" id="rotulo-prompt">O que deve acontecer nos vídeos?</label>
+                      <textarea id="prompt" required minlength="3" maxlength="600" spellcheck="true" autocapitalize="sentences" placeholder="Ex.: a câmera gira devagar em volta do carro" aria-describedby="prompt-dica prompt-contador"></textarea>
+                      <div class="linha-campo">
+                        <p class="dica" id="prompt-dica">Escreva em português, do seu jeito. O texto vale para cada foto, uma de cada vez: descreva o que acontece numa foto só. Pode ser simples ou detalhado.</p>
+                        <span class="contador" id="prompt-contador">0/600</span>
+                      </div>
+                      <p class="dica nota-textos" id="nota-textos" hidden></p>
+                      <details class="exemplos-pedido">
+                        <summary>Ver exemplos de pedido</summary>
+                        <ul>
+                          <li><strong>Simples:</strong> “deixe bonito, com um movimento suave”</li>
+                          <li><strong>Simples:</strong> “vídeo de apresentação do carro”</li>
+                          <li><strong>Detalhado:</strong> “a câmera gira devagar em volta do carro e os faróis acendem”</li>
+                          <li><strong>Detalhado:</strong> “o vapor sobe do prato e a câmera se aproxima devagar”</li>
+                        </ul>
+                        <p class="dica">Cada vídeo mostra só o que está na foto, numa cena contínua. Evite pedir troca de produto, cortes ou texto escrito no vídeo.</p>
+                      </details>
+                      <div class="sugestao" id="sugestao" hidden>
+                        <p>Exemplo para este estilo: <q id="sugestao-texto"></q></p>
+                        <button type="button" class="botao pequeno" id="usar-sugestao"><!--@icone brilho-->Usar este exemplo</button>
+                      </div>
+                    </div>
+                    <div class="sequencia pilha" id="sequencia" hidden>
+                      <div class="sequencia-cab">
+                        <h3 id="titulo-sequencia">Fotos com texto próprio</h3>
+                        <p class="dica">Marque as fotos que devem seguir outro texto e clique em “Escrever texto próprio”. As outras seguem o texto padrão acima. Até 600 caracteres por texto e 100 textos diferentes por pedido.</p>
+                      </div>
+                      <p class="seq-contagem" id="seq-contagem" tabindex="-1"></p>
+                      <div class="seq-barra">
+                        <div class="filtros" id="seq-filtros" role="group" aria-label="Mostrar as fotos">
+                          <button type="button" data-filtro="todas" aria-pressed="true">Todas</button>
+                          <button type="button" data-filtro="com" aria-pressed="false">Com texto próprio</button>
+                          <button type="button" data-filtro="sem" aria-pressed="false">Sem texto próprio</button>
+                        </div>
+                        <button type="button" class="botao pequeno" id="seq-marcar-pagina">Marcar todas desta página</button>
+                      </div>
+                      <ul class="seq-grade" id="seq-grade" aria-labelledby="titulo-sequencia"></ul>
+                      <div class="seq-paginas" id="seq-paginas" hidden>
+                        <button type="button" class="botao pequeno" id="seq-anterior"><!--@icone voltar-->Anterior</button>
+                        <span class="fraco" id="seq-pagina"></span>
+                        <button type="button" class="botao pequeno" id="seq-proxima">Próxima</button>
+                      </div>
+                      <div class="seq-acoes" id="seq-acoes">
+                        <p class="fraco" id="seq-marcadas">Nenhuma foto marcada</p>
+                        <div class="acoes">
+                          <button type="button" class="botao primario pequeno" id="seq-escrever" disabled><!--@icone editar-->Escrever texto próprio</button>
+                          <button type="button" class="botao pequeno" id="seq-padrao" disabled>Voltar ao texto padrão</button>
+                          <button type="button" class="botao fantasma pequeno" id="seq-desmarcar" disabled>Desmarcar</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </fieldset>
+
+                <fieldset class="passo">
+                  <legend>Ajustes</legend>
+                  <div class="duas">
+                    <div class="campo">
+                      <label for="duracao">Duração</label>
+                      <select id="duracao">
+                        <option value="">Padrão do estilo</option>
+                        <option value="3">3 s</option>
+                        <option value="4">4 s</option>
+                        <option value="5">5 s</option>
+                        <option value="6">6 s</option>
+                        <option value="7">7 s</option>
+                      </select>
+                    </div>
+                    <div class="campo">
+                      <label for="qualidade">Qualidade</label>
+                      <select id="qualidade">
+                        <option value="rapida">Rápida (prévia, 480p)</option>
+                        <option value="alta">Alta (720p)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="campo">
+                    <label for="modelo">Modelo de geração</label>
+                    <select id="modelo" aria-describedby="modelo-info"></select>
+                    <p id="modelo-info" class="dica"></p>
+                  </div>
+                </fieldset>
+
+                <fieldset class="passo">
+                  <legend>Autorização</legend>
+                  <label class="marcacao" id="caixa-consentimento">
+                    <input id="consentimento" type="checkbox" aria-describedby="consentimento-dica">
+                    <span id="texto-autorizacao">Tenho autorização por escrito das pessoas que aparecem nas fotos (obrigatório em estilos com pessoas).</span>
+                  </label>
+                  <p class="dica" id="consentimento-dica">Obrigatória quando aparecem pessoas nas fotos. Ao marcar, a declaração fica registrada com a sua conta, a data, o endereço de internet e este dispositivo.</p>
+                </fieldset>
+
+                <div class="enviar">
+                  <p class="custo" id="custo" hidden></p>
+                  <button type="submit" class="botao primario largo" id="enviar" aria-describedby="custo"><!--@icone enviar-->Enviar pedido</button>
+                  <div class="progresso" id="area-progresso" hidden>
+                    <div class="progresso-texto"><span id="progresso-texto">Enviando as fotos…</span><span id="progresso-pct"></span></div>
+                    <progress id="progresso" aria-labelledby="progresso-texto"></progress>
+                  </div>
+                </div>
+              </fieldset>
+              <p id="msg" class="aviso" hidden></p>
+            </form>
+          </section>
+
+          <section class="pedidos" aria-labelledby="titulo-pedidos">
+            <div class="cab-secao">
+              <h2 id="titulo-pedidos" tabindex="-1">Seus pedidos</h2>
+              <span class="fraco" id="atualizado"></span>
+            </div>
+            <div id="lotes" class="lotes" aria-busy="true">
+              <div class="cartao esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
+            </div>
+            <p class="suporte-link fraco">Precisa de ajuda? Fale com o suporte em <a id="link-suporte" href="/suporte">app.render2go.com/suporte</a></p>
+          </section>
+        </div>
+      </section>
+
+      <!-- Modelos de IA (/modelos): o catálogo inteiro; o disponível abre o pedido com ele -->
+      <section class="vista" id="vista-modelos" aria-labelledby="titulo-modelos">
+        <div class="cab-pagina">
+          <h1 id="titulo-modelos" tabindex="-1">Modelos de IA</h1>
+          <p class="fraco">Tudo o que o Render2Go gera e vai gerar. Os disponíveis já podem ser usados: escolha um e o pedido abre com ele. Nos que estão em breve, clique em “Tenho interesse” para saber quando saírem.</p>
+        </div>
+        <p id="modelos-msg" class="aviso erro" hidden></p>
+        <div class="dados-vista" id="modelos-lista" aria-busy="true">
+          <div class="esqueleto-cartoes" aria-hidden="true">
+            <div class="esqueleto"><span></span><span></span><span></span></div>
+            <div class="esqueleto"><span></span><span></span><span></span></div>
+            <div class="esqueleto"><span></span><span></span><span></span></div>
+            <div class="esqueleto"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Extratos (/extratos): o gasto por rodada, por modelo, as recargas e a planilha -->
+      <section class="vista" id="vista-extratos" aria-labelledby="titulo-extratos">
+        <div class="cab-pagina">
+          <h1 id="titulo-extratos" tabindex="-1">Extratos</h1>
+          <p class="fraco">O que você gastou em cada pedido, com o tipo e o modelo de IA, o que voltou para o saldo e as recargas.</p>
+        </div>
+        <div class="barra-filtros">
+          <div class="filtros" id="extrato-periodo" role="group" aria-label="Período do extrato">
+            <button type="button" data-dias="7" aria-pressed="false">7 dias</button>
+            <button type="button" data-dias="30" aria-pressed="true">30 dias</button>
+            <button type="button" data-dias="90" aria-pressed="false">90 dias</button>
+            <button type="button" data-dias="365" aria-pressed="false">12 meses</button>
+            <button type="button" data-dias="0" aria-pressed="false">Tudo</button>
+          </div>
+          <a class="botao pequeno" id="extrato-csv" href="/api/extrato.csv?dias=30" download><!--@icone baixar-->Baixar planilha (CSV)</a>
+        </div>
+        <p id="extratos-msg" class="aviso erro" hidden></p>
+        <div class="dados-vista" id="extratos-dados" aria-busy="true">
+          <div class="esqueleto-numeros" aria-hidden="true">
+            <div class="esqueleto"><span></span><span></span></div>
+            <div class="esqueleto"><span></span><span></span></div>
+            <div class="esqueleto"><span></span><span></span></div>
+            <div class="esqueleto"><span></span><span></span></div>
+          </div>
+          <div class="esqueleto-linhas" aria-hidden="true">
+            <div class="esqueleto"><span></span><span></span><span></span></div>
+            <div class="esqueleto"><span></span><span></span><span></span></div>
+            <div class="esqueleto"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Logs (/logs): os vídeos gerados e não excluídos, com o modelo, a hora e o arquivo -->
+      <section class="vista" id="vista-logs" aria-labelledby="titulo-logs">
+        <div class="cab-pagina">
+          <h1 id="titulo-logs" tabindex="-1">Logs</h1>
+          <p class="fraco">Os vídeos que você gerou e não excluiu, com o modelo que gerou, a hora e o arquivo. Os links valem por 24 h; ao voltar a esta tela, eles são renovados.</p>
+        </div>
+        <div class="barra-filtros">
+          <div class="filtros" id="logs-periodo" role="group" aria-label="Período dos logs">
+            <button type="button" data-horas="24" aria-pressed="true">24 horas</button>
+            <button type="button" data-horas="72" aria-pressed="false">3 dias</button>
+            <button type="button" data-horas="168" aria-pressed="false">7 dias</button>
+          </div>
+        </div>
+        <p id="logs-msg" class="aviso erro" hidden></p>
+        <ul class="geracoes dados-vista" id="logs-lista" aria-busy="true" aria-labelledby="titulo-logs">
+          <li class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></li>
+          <li class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></li>
+          <li class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></li>
+        </ul>
+      </section>
+
+      <!-- Perfil (/perfil): foto (Gravatar por escolha) ou inicial, nome e sobrenome; nome de usuário e indicação em breve -->
+      <section class="vista" id="vista-perfil" aria-labelledby="titulo-perfil">
+        <div class="cab-pagina">
+          <h1 id="titulo-perfil" tabindex="-1">Perfil</h1>
+          <p class="fraco">Como a sua conta aparece no Render2Go.</p>
+        </div>
+        <div class="grade-cartoes">
+          <section class="cartao pilha" aria-labelledby="t-foto">
+            <h2 id="t-foto">Foto</h2>
+            <div class="perfil-topo">
+              <span class="avatar grande" id="perfil-avatar" aria-hidden="true"><span class="avatar-inicial"></span></span>
+              <div class="perfil-quem">
+                <p class="perfil-nome uma-linha" id="perfil-nome"></p>
+                <p class="fraco uma-linha" id="perfil-email"></p>
+                <p class="fraco uma-linha" id="perfil-plano"></p>
+              </div>
+            </div>
+            <label class="marcacao" for="perfil-gravatar">
+              <input type="checkbox" id="perfil-gravatar" aria-describedby="gravatar-dica">
+              <span>Usar a minha foto do Gravatar</span>
+            </label>
+            <p class="dica" id="gravatar-dica">O Gravatar guarda uma foto ligada ao seu e-mail. Com esta opção ligada, se você tiver uma foto lá, ela aparece aqui; sem foto, fica a inicial. Quem busca a foto é o nosso servidor: o seu navegador não fala com o Gravatar.</p>
+          </section>
+          <form class="cartao pilha" id="form-perfil" novalidate aria-labelledby="t-nome">
+            <h2 id="t-nome">Nome</h2>
+            <div class="duas">
+              <div class="campo">
+                <label for="perfil-primeiro">Primeiro nome</label>
+                <input id="perfil-primeiro" autocomplete="given-name" maxlength="60" spellcheck="false" autocapitalize="words">
+              </div>
+              <div class="campo">
+                <label for="perfil-ultimo">Último nome</label>
+                <input id="perfil-ultimo" autocomplete="family-name" maxlength="60" spellcheck="false" autocapitalize="words">
+              </div>
+            </div>
+            <p class="dica">Opcional. Aparece no menu da sua conta, no lugar do e-mail.</p>
+            <p id="perfil-msg" class="aviso" hidden></p>
+            <div class="acoes">
+              <button type="submit" class="botao primario" id="perfil-salvar"><!--@icone ok-->Salvar</button>
+            </div>
+          </form>
+          <section class="cartao pilha em-breve-cartao" aria-labelledby="t-nome-usuario">
+            <h2 id="t-nome-usuario">Nome de usuário <span class="selo">Em breve</span></h2>
+            <p class="fraco">Um nome curto para a sua conta, como @padariadobairro, para compartilhar projetos e receber indicações.</p>
+            <div class="campo">
+              <label for="nome-usuario">Nome de usuário</label>
+              <input id="nome-usuario" disabled placeholder="padariadobairro" aria-describedby="nome-usuario-dica">
+              <p class="dica" id="nome-usuario-dica">Ainda não disponível.</p>
+            </div>
+            <div class="interesse-lugar" id="interesse-nome-usuario"></div>
+          </section>
+          <section class="cartao pilha em-breve-cartao" aria-labelledby="t-indicacao">
+            <h2 id="t-indicacao">Ganhos por indicação <span class="selo">Em breve</span></h2>
+            <p class="fraco">Indique o Render2Go para outros negócios e ganhe saldo quando eles fizerem a primeira recarga.</p>
+            <div class="acoes">
+              <button type="button" class="botao" disabled><!--@icone presente-->Ver meus ganhos</button>
+            </div>
+            <div class="interesse-lugar" id="interesse-indicacao"></div>
+          </section>
+        </div>
+      </section>
+
+      <!-- Configurações (/configuracoes): tudo o que diz respeito ao acesso -->
+      <section class="vista" id="vista-configuracoes" aria-labelledby="titulo-configuracoes">
+        <div class="cab-pagina">
+          <h1 id="titulo-configuracoes" tabindex="-1">Configurações</h1>
+          <p class="fraco">O acesso e a segurança da sua conta: tema, e-mail, verificação em duas etapas, aparelhos conectados, desativação e exclusão.</p>
+        </div>
+        <p id="config-msg" class="aviso erro" hidden></p>
+        <div class="pilha configuracoes">
+          <section class="cartao pilha" id="config-aparencia" aria-labelledby="t-aparencia">
+            <h2 id="t-aparencia">Aparência</h2>
+            <fieldset class="opcoes-tema">
+              <legend>Tema das páginas</legend>
+              <div class="opcoes-tema-grade">
+                <label class="marcacao"><input type="radio" name="tema" value="auto" id="tema-auto"><span class="opcao-tema"><!--@icone contraste--><strong>Automático</strong><span class="fraco">Igual ao do aparelho</span></span></label>
+                <label class="marcacao"><input type="radio" name="tema" value="claro" id="tema-claro"><span class="opcao-tema"><!--@icone sol--><strong>Claro</strong><span class="fraco">Fundo claro, sempre</span></span></label>
+                <label class="marcacao"><input type="radio" name="tema" value="escuro" id="tema-escuro"><span class="opcao-tema"><!--@icone lua--><strong>Escuro</strong><span class="fraco">Fundo escuro, sempre</span></span></label>
+              </div>
+            </fieldset>
+            <p class="dica">Vale em todas as páginas e nos aparelhos em que você entrar.</p>
+            <p id="tema-msg" class="aviso" hidden></p>
+          </section>
+
+          <section class="cartao pilha" id="config-email" aria-labelledby="t-email">
+            <h2 id="t-email">E-mail</h2>
+            <p class="uma-linha"><span class="fraco">E-mail da conta: </span><strong id="config-email-atual"></strong></p>
+            <p class="dica">É por ele que você entra (código de 8 dígitos) e recebe os avisos de segurança da conta.</p>
+            <div class="acoes">
+              <button type="button" class="botao" id="config-trocar-email" aria-expanded="false" aria-controls="form-email-novo"><!--@icone mensagem-->Trocar o e-mail</button>
+            </div>
+            <form id="form-email-novo" class="pilha" novalidate hidden>
+              <div class="campo">
+                <label for="email-novo">E-mail novo</label>
+                <input id="email-novo" type="email" autocomplete="email" inputmode="email" maxlength="254" spellcheck="false" autocapitalize="off" autocorrect="off" aria-describedby="email-novo-dica">
+                <p class="dica" id="email-novo-dica">Gmail, Outlook/Hotmail, Yahoo, iCloud, UOL, BOL ou Terra. Mandamos um código para ele; o endereço antigo recebe um aviso.</p>
+              </div>
+              <div class="campo" id="email-passo-codigo" hidden>
+                <label for="email-novo-codigo">Código que chegou no e-mail novo (8 dígitos)</label>
+                <input id="email-novo-codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="12" spellcheck="false">
+              </div>
+              <div class="acoes">
+                <button type="submit" class="botao primario" id="email-enviar">Mandar o código</button>
+                <button type="submit" class="botao primario" id="email-confirmar" hidden>Confirmar a troca</button>
+                <button type="button" class="botao" id="email-cancelar">Cancelar</button>
+              </div>
+            </form>
+            <p id="email-msg" class="aviso" hidden></p>
+          </section>
+
+          <section class="cartao pilha" id="config-mfa" aria-labelledby="t-mfa">
+            <h2 id="t-mfa" tabindex="-1">Verificação em duas etapas</h2>
+            <p class="fraco">Além do código do e-mail, a entrada pede um código do aplicativo autenticador do seu celular: quem tomar o seu e-mail continua sem entrar.</p>
+            <p class="mfa-estado" id="mfa-estado"></p>
+            <div class="aviso" id="mfa-aviso" hidden></div>
+            <div class="acoes">
+              <button type="button" class="botao primario" id="mfa-ligar"><!--@icone cadeado-->Ligar a verificação em duas etapas</button>
+              <button type="button" class="botao" id="mfa-codigos" hidden><!--@icone atualizar-->Gerar códigos de recuperação novos</button>
+              <button type="button" class="botao perigo" id="mfa-desligar" hidden>Desligar</button>
+            </div>
+          </section>
+
+          <section class="cartao pilha" id="config-aparelhos" aria-labelledby="t-aparelhos">
+            <h2 id="t-aparelhos" tabindex="-1">Aparelhos conectados</h2>
+            <p class="fraco">Onde a sua conta está aberta agora. Não reconhece um aparelho? Encerre a sessão dele.</p>
+            <p id="aparelhos-msg" class="aviso" hidden></p>
+            <ul class="linhas aparelhos" id="aparelhos" aria-busy="true" aria-labelledby="t-aparelhos">
+              <li class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></li>
+            </ul>
+            <div class="acoes">
+              <button type="button" class="botao" id="encerrar-outras">Encerrar os outros aparelhos</button>
+              <button type="button" class="botao" id="sair-de-todos"><!--@icone sair-->Sair de todos (inclusive este)</button>
+            </div>
+          </section>
+
+          <section class="cartao pilha" id="config-telefone" aria-labelledby="t-telefone">
+            <h2 id="t-telefone">Telefone <span class="selo">Em breve</span></h2>
+            <p class="fraco">Receber os códigos e os avisos da conta também por SMS ou WhatsApp.</p>
+            <div class="interesse-lugar" id="interesse-telefone"></div>
+          </section>
+
+          <section class="cartao pilha" id="config-dados" aria-labelledby="t-dados">
+            <h2 id="t-dados">Seus dados</h2>
+            <p class="fraco">Uma cópia dos dados da sua conta (perfil, pedidos, extrato e acessos) num arquivo JSON. Seus direitos estão na <a href="/privacidade">Política de Privacidade</a>.</p>
+            <p id="dados-msg" class="aviso" hidden></p>
+            <div class="acoes">
+              <button type="button" class="botao" id="baixar-dados"><!--@icone baixar-->Baixar meus dados</button>
+            </div>
+          </section>
+
+          <section class="cartao pilha zona-perigo" id="config-desativar" aria-labelledby="t-desativar">
+            <h2 id="t-desativar">Desativar a conta</h2>
+            <p class="fraco">Pausa a conta: você sai de todos os aparelhos e ninguém entra até você voltar. O saldo e o histórico ficam guardados. Para reativar, entre de novo com o código do e-mail.</p>
+            <p id="desativar-msg" class="aviso" hidden></p>
+            <div class="acoes">
+              <button type="button" class="botao perigo" id="desativar-conta"><!--@icone bloquear-->Desativar a conta</button>
+            </div>
+          </section>
+
+          <section class="cartao pilha zona-perigo" id="config-excluir" aria-labelledby="t-excluir">
+            <h2 id="t-excluir">Excluir a conta</h2>
+            <p class="fraco">Apaga a conta e o e-mail do serviço, para sempre. Com saldo, peça o reembolso pelo suporte antes. O extrato e os registros que a lei manda guardar ficam pelo prazo legal.</p>
+            <p id="excluir-msg" class="aviso" hidden></p>
+            <div class="acoes">
+              <button type="button" class="botao perigo" id="excluir-conta"><!--@icone lixo-->Excluir a conta</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- Projetos (/projetos): em breve -->
+      <section class="vista" id="vista-projetos" aria-labelledby="titulo-projetos">
+        <div class="cab-pagina">
+          <p class="sobretitulo"><!--@icone relogio-->Em breve</p>
+          <h1 id="titulo-projetos" tabindex="-1">Projetos</h1>
+          <p class="lead">Organize os pedidos por projeto: o cardápio novo, o lançamento de uma coleção, a campanha do Dia das Mães.</p>
+        </div>
+        <section class="cartao pilha em-breve-cartao" aria-labelledby="t-projetos">
+          <h2 id="t-projetos">O que vai dar para fazer</h2>
+          <ul class="lista-recursos">
+            <li>Juntar num lugar só as fotos, os textos e os vídeos de cada campanha.</li>
+            <li>Ver quanto cada projeto custou, no extrato.</li>
+            <li>Guardar os textos e os estilos que deram certo, para repetir no próximo pedido.</li>
+          </ul>
+          <p id="projetos-msg" class="aviso" hidden></p>
+          <div class="interesse-lugar" id="interesse-projetos"></div>
+        </section>
+      </section>
+
+      <!-- Mix (/mix): em breve (ADR 0010, proposto) -->
+      <section class="vista" id="vista-mix" aria-labelledby="titulo-mix">
+        <div class="cab-pagina">
+          <p class="sobretitulo"><!--@icone relogio-->Em breve</p>
+          <h1 id="titulo-mix" tabindex="-1">Mix</h1>
+          <p class="lead">Vários modelos de IA em sequência, a partir de um pedido só: cada resultado pode seguir para o próximo passo.</p>
+        </div>
+        <section class="cartao pilha em-breve-cartao" aria-labelledby="t-mix">
+          <h2 id="t-mix">Como vai funcionar</h2>
+          <ol class="passos-mix">
+            <li><strong>Pedido inicial.</strong> Envie fotos, um texto ou outros arquivos do seu negócio.</li>
+            <li><strong>Imagens.</strong> Gere imagens novas a partir deles, como o produto num fundo novo.</li>
+            <li><strong>Vídeos.</strong> Cada imagem vira um vídeo curto, de alguns segundos.</li>
+            <li><strong>Som.</strong> Acrescente uma trilha sonora ou uma narração.</li>
+          </ol>
+          <p class="fraco">Você escolhe os passos e vê o custo de cada um antes de começar. Os passos dependem de modelos que ainda vão sair: veja em <a href="/modelos" data-vista="modelos">Modelos de IA</a>.</p>
+          <p id="mix-msg" class="aviso" hidden></p>
+          <div class="interesse-lugar" id="interesse-mix"></div>
+        </section>
+      </section>
+    </div>
+  </main>
+</div>
 <!--@rodape-->
 <!--@anuncios-->
 </body>

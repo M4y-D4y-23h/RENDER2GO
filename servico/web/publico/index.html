@@ -8,7 +8,7 @@
 <meta property="og:title" content="Render2Go · Vídeos curtos com IA a partir das suas fotos">
 <meta property="og:description" content="Envie as fotos do seu negócio, diga em português o que deve acontecer e receba um vídeo curto por foto.">
 <meta property="og:url" content="https://app.render2go.com/">
-<script src="/estatico/inicio.js?v=12c9aa774e80" integrity="sha384-59TmH8lB7iYlICVLL0oTKNwQS0+bjCqWme0lHvbE2LEmZMpucHegzIVlhb++SnZZ" data-chave="render2go-conectado" data-antecipar="/api/receitas /api/lotes /api/conta"></script>
+<script src="/estatico/inicio.js?v=29f049734c1b" integrity="sha384-rsSlQ7J1ppSH9qMa3g/mCR7knraWn3hy3Qz4GtCHHTpOdLeer5fauCNgN2qJ+NOE" data-chave="render2go-conectado" data-antecipar="pedidos=/api/receitas,/api/lotes,/api/conta modelos=/api/receitas,/api/conta extratos=/api/conta,/api/extrato?dias=30 logs=/api/conta,/api/geracoes?horas=24 perfil=/api/conta configuracoes=/api/conta,/api/conta/sessoes projetos=/api/conta mix=/api/conta"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
@@ -16,7 +16,7 @@
 <meta name="format-detection" content="telephone=no">
 <meta name="application-name" content="Render2Go">
 <meta name="apple-mobile-web-app-title" content="Render2Go">
-<link rel="stylesheet" href="/estatico/estilo.css?v=d482f639f8e7" integrity="sha384-f1xp1Tg3/rbb71MiPYHtxom1Y/VHbpDtEYg5wQSjVf7QxDpRsHyp+fgDa6ffoG6v">
+<link rel="stylesheet" href="/estatico/estilo.css?v=5e15244108d1" integrity="sha384-jWb6+NmlNM3YMKOKZxUymf18ncnEQtbezadgAStyB9BB0b1O56wvedDWw/VcQ9kK">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -30,7 +30,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/cliente.js?v=c305b181ff8e" integrity="sha384-KmLvn4mrD+D/x8AAsxLZRhhgBl/a9sHBBTfh7Fix43s8r4xJ3WJcSgEGbMOHwEl+" defer></script>
+<script src="/estatico/cliente.js?v=076f001e0270" integrity="sha384-wVmpGnFn13Im88MNp/OfyhNjHIqP3vrq6MYuFcJ/sop7tzTCmDQ4BZnFBvGB322A" defer></script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
 {"@type":"Organization","@id":"https://app.render2go.com/#organizacao","name":"Render2Go","url":"https://app.render2go.com/","logo":"https://app.render2go.com/estatico/icone-512.png?v=d75fd84aa2d1"},
@@ -43,25 +43,58 @@
 <header class="topo">
 <div class="recipiente topo-interno">
 <a class="marca" href="/">
-<picture>
+<picture class="logo-claro">
 <source media="(max-width: 22.5em)" srcset="/estatico/icone.svg?v=5320513ad899" width="32" height="32">
-<source media="(prefers-color-scheme: dark)" srcset="/estatico/logo-escuro.svg?v=135b3af3bee0" width="211" height="32">
 <img src="/estatico/logo.svg?v=5f8eec44f1fd" alt="Render2Go" width="211" height="32">
+</picture>
+<picture class="logo-escuro">
+<source media="(max-width: 22.5em)" srcset="/estatico/icone.svg?v=5320513ad899" width="32" height="32">
+<img src="/estatico/logo-escuro.svg?v=135b3af3bee0" alt="Render2Go" width="211" height="32">
 </picture>
 </a>
 <nav class="navegacao" aria-label="Principal">
+<button type="button" class="so-com-sessao so-menu" id="abrir-menu" aria-haspopup="dialog"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span class="rotulo-nav">Menu</span></button>
 <a class="so-sem-sessao" href="/#entrar" data-nav="cliente" aria-current="page"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3a6 6 0 0 1-2.2 11.6L11 16.5H9v2H7v2H3v-3.6l6.2-6.2A6 6 0 0 1 15 3zM16.5 7.5h.01"/></svg><span class="rotulo-nav">Entrar</span></a>
-<a class="so-com-sessao" href="/" data-nav="cliente" aria-current="page"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM10 9.2v5.6l4.6-2.8z"/></svg><span class="rotulo-nav">Pedidos</span></a>
+<a class="so-com-sessao so-fora-da-conta" href="/" data-nav="cliente" aria-current="page"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM10 9.2v5.6l4.6-2.8z"/></svg><span class="rotulo-nav">Pedidos</span></a>
 <a href="/suporte" data-nav="suporte"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01"/></svg><span class="rotulo-nav">Suporte</span></a>
 <button type="button" class="so-com-sessao" id="sair"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16.5 14.5 12 10 7.5M14.5 12H4"/></svg><span class="rotulo-nav">Sair</span></button>
 </nav>
 </div>
 </header>
+<div class="moldura">
+<aside class="lateral so-com-sessao" id="lateral" aria-label="Sua conta">
+<div class="quem" id="quem">
+<span class="avatar" id="avatar" aria-hidden="true"><span class="avatar-inicial"></span></span>
+<div class="quem-texto">
+<p class="quem-nome" id="quem-nome"></p>
+<p class="quem-plano fraco" id="conta-resumo"></p>
+</div>
+</div>
+<nav class="menu-conta" id="menu-conta" aria-label="Menu da conta">
+<p class="grupo-menu" id="menu-criar">Criar</p>
+<ul aria-labelledby="menu-criar">
+<li><a href="/" data-vista="pedidos"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM10 9.2v5.6l4.6-2.8z"/></svg><span>Pedidos</span></a></li>
+<li><a href="/modelos" data-vista="modelos"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12 4 7.5"/></svg><span>Modelos de IA</span></a></li>
+<li><a href="/mix" data-vista="mix"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4l8 4-8 4-8-4zM4 12l8 4 8-4M4 16l8 4 8-4"/></svg><span>Mix</span><span class="selo">Em breve</span></a></li>
+<li><a href="/projetos" data-vista="projetos"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg><span>Projetos</span><span class="selo">Em breve</span></a></li>
+</ul>
+<p class="grupo-menu" id="menu-acompanhar">Acompanhar</p>
+<ul aria-labelledby="menu-acompanhar">
+<li><a href="/logs" data-vista="logs"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4v4.5H8M12 7.5V12l3 2"/></svg><span>Logs</span></a></li>
+<li><a href="/extratos" data-vista="extratos"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3h12v18l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5zM9 8h6M9 12h6M9 16h3.5"/></svg><span>Extratos</span></a></li>
+</ul>
+<p class="grupo-menu" id="menu-da-conta">Conta</p>
+<ul aria-labelledby="menu-da-conta">
+<li><a href="/perfil" data-vista="perfil"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0"/></svg><span>Perfil</span></a></li>
+<li><a href="/configuracoes" data-vista="configuracoes"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4"/></svg><span>Configurações</span></a></li>
+</ul>
+</nav>
+</aside>
 <main id="conteudo" class="conteudo" tabindex="-1">
 <noscript>
-<div class="recipiente"><p class="aviso erro">Esta página precisa de JavaScript. Ative o JavaScript no navegador e recarregue a página.</p></div>
+<p class="aviso erro">Esta página precisa de JavaScript. Ative o JavaScript no navegador e recarregue a página.</p>
 </noscript>
-<div class="recipiente entrada so-sem-sessao">
+<div class="entrada so-sem-sessao">
 <section class="hero" aria-labelledby="titulo-hero">
 <p class="sobretitulo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/></svg>Vídeos com IA para pequenos negócios</p>
 <h1 id="titulo-hero">Suas fotos viram vídeos curtos, prontos para postar</h1>
@@ -128,9 +161,22 @@
 <button type="button" class="botao fantasma pequeno" id="reenviar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.4 5.7M20 5v6h-6"/></svg>Mandar outro código</button>
 </div>
 </form>
+<form id="form-mfa" novalidate hidden>
+<p id="mfa-pedido" class="aviso info" tabindex="-1"></p>
+<div class="campo">
+<label for="codigo-mfa" id="rotulo-mfa">Código do aplicativo autenticador (6 dígitos)</label>
+<input id="codigo-mfa" inputmode="numeric" autocomplete="one-time-code" required maxlength="40" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go" aria-describedby="codigo-mfa-dica">
+<p class="dica" id="codigo-mfa-dica">Os 6 dígitos que aparecem agora no aplicativo (Google Authenticator, Microsoft Authenticator, Authy…).</p>
+</div>
+<button type="submit" class="botao primario largo" id="enviar-mfa"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 11h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM8 11V8a4 4 0 1 1 8 0v3M12 15v1.5"/></svg>Confirmar e entrar</button>
+<div class="acoes">
+<button type="button" class="botao fantasma pequeno" id="mfa-voltar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Voltar</button>
+<button type="button" class="botao fantasma pequeno" id="mfa-recuperacao">Perdi o celular: usar um código de recuperação</button>
+</div>
+</form>
 <p id="msg-entrada" class="aviso erro" hidden></p>
 <p class="fraco">Primeira vez aqui? A conta é criada no primeiro acesso, com um teste gratuito: até 5 fotos viram vídeos de 3 s em 480p. Depois, você paga só o que usar, com saldo por Pix.</p>
-<details class="codigo-antigo">
+<details class="codigo-antigo" id="codigo-antigo">
 <summary>Tenho um código de acesso antigo</summary>
 <form id="form-token" novalidate>
 <div class="campo">
@@ -155,16 +201,14 @@
 </ol>
 </section>
 </div>
-<div class="recipiente painel so-com-sessao" id="painel">
-<div class="cab-pagina">
-<h1 id="titulo-painel" tabindex="-1">Seus vídeos</h1>
-<p class="fraco">Escolha as fotos, diga o que deve acontecer e acompanhe os pedidos aqui.</p>
-<div class="conta-linha">
-<p class="fraco conta-resumo" id="conta-resumo"></p>
-<button type="button" class="botao pequeno" id="abrir-conta"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0"/></svg>Sua conta</button>
-</div>
-</div>
+<div class="area-conta so-com-sessao" id="painel">
 <p id="msg-painel" class="aviso erro" hidden></p>
+<p id="aviso-conta" class="aviso ok" hidden></p>
+<section class="vista" id="vista-pedidos" aria-labelledby="titulo-painel">
+<div class="cab-pagina">
+<h1 id="titulo-painel" tabindex="-1">Pedidos</h1>
+<p class="fraco">Escolha o que criar, envie as fotos, diga o que deve acontecer e acompanhe os pedidos aqui.</p>
+</div>
 <div class="painel-grade">
 <section class="cartao novo-pedido" aria-labelledby="titulo-novo">
 <h2 id="titulo-novo">Novo pedido</h2>
@@ -173,8 +217,9 @@
 <p class="saldo-linha"><span>Seu saldo</span> <strong id="saldo-valor">R$ 0,00</strong></p>
 <p class="dica" id="saldo-precos"></p>
 <details class="extrato" id="extrato">
-<summary>Ver extrato</summary>
+<summary>Ver os últimos movimentos</summary>
 <ul class="extrato-lista" id="extrato-lista" aria-label="Últimos movimentos do saldo"></ul>
+<p class="dica"><a href="/extratos" data-vista="extratos">Extrato completo, por pedido e por modelo de IA</a></p>
 </details>
 <div class="acoes">
 <button type="button" class="botao primario pequeno" id="adicionar-saldo" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/></svg>Adicionar saldo por Pix</button>
@@ -232,13 +277,19 @@
 <label for="receita">Estilo</label>
 <select id="receita"></select>
 </div>
+<div class="abas" id="abas-texto" role="tablist" aria-label="Como descrever os vídeos">
+<button type="button" role="tab" id="aba-mesmo" aria-selected="true" aria-controls="painel-texto">Mesmo texto para todas</button>
+<button type="button" role="tab" id="aba-sequencia" aria-selected="false" aria-controls="painel-texto" tabindex="-1">Sequência (texto por foto)</button>
+</div>
+<div class="pilha" id="painel-texto" role="tabpanel" aria-labelledby="aba-mesmo">
 <div class="campo">
-<label for="prompt">O que deve acontecer nos vídeos?</label>
+<label for="prompt" id="rotulo-prompt">O que deve acontecer nos vídeos?</label>
 <textarea id="prompt" required minlength="3" maxlength="600" spellcheck="true" autocapitalize="sentences" placeholder="Ex.: a câmera gira devagar em volta do carro" aria-describedby="prompt-dica prompt-contador"></textarea>
 <div class="linha-campo">
 <p class="dica" id="prompt-dica">Escreva em português, do seu jeito. O texto vale para cada foto, uma de cada vez: descreva o que acontece numa foto só. Pode ser simples ou detalhado.</p>
 <span class="contador" id="prompt-contador">0/600</span>
 </div>
+<p class="dica nota-textos" id="nota-textos" hidden></p>
 <details class="exemplos-pedido">
 <summary>Ver exemplos de pedido</summary>
 <ul>
@@ -252,6 +303,36 @@
 <div class="sugestao" id="sugestao" hidden>
 <p>Exemplo para este estilo: <q id="sugestao-texto"></q></p>
 <button type="button" class="botao pequeno" id="usar-sugestao"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/></svg>Usar este exemplo</button>
+</div>
+</div>
+<div class="sequencia pilha" id="sequencia" hidden>
+<div class="sequencia-cab">
+<h3 id="titulo-sequencia">Fotos com texto próprio</h3>
+<p class="dica">Marque as fotos que devem seguir outro texto e clique em “Escrever texto próprio”. As outras seguem o texto padrão acima. Até 600 caracteres por texto e 100 textos diferentes por pedido.</p>
+</div>
+<p class="seq-contagem" id="seq-contagem" tabindex="-1"></p>
+<div class="seq-barra">
+<div class="filtros" id="seq-filtros" role="group" aria-label="Mostrar as fotos">
+<button type="button" data-filtro="todas" aria-pressed="true">Todas</button>
+<button type="button" data-filtro="com" aria-pressed="false">Com texto próprio</button>
+<button type="button" data-filtro="sem" aria-pressed="false">Sem texto próprio</button>
+</div>
+<button type="button" class="botao pequeno" id="seq-marcar-pagina">Marcar todas desta página</button>
+</div>
+<ul class="seq-grade" id="seq-grade" aria-labelledby="titulo-sequencia"></ul>
+<div class="seq-paginas" id="seq-paginas" hidden>
+<button type="button" class="botao pequeno" id="seq-anterior"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Anterior</button>
+<span class="fraco" id="seq-pagina"></span>
+<button type="button" class="botao pequeno" id="seq-proxima">Próxima</button>
+</div>
+<div class="seq-acoes" id="seq-acoes">
+<p class="fraco" id="seq-marcadas">Nenhuma foto marcada</p>
+<div class="acoes">
+<button type="button" class="botao primario pequeno" id="seq-escrever" disabled><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17zM14.5 7.5l2 2"/></svg>Escrever texto próprio</button>
+<button type="button" class="botao pequeno" id="seq-padrao" disabled>Voltar ao texto padrão</button>
+<button type="button" class="botao fantasma pequeno" id="seq-desmarcar" disabled>Desmarcar</button>
+</div>
+</div>
 </div>
 </div>
 </fieldset>
@@ -314,8 +395,269 @@
 <p class="suporte-link fraco">Precisa de ajuda? Fale com o suporte em <a id="link-suporte" href="/suporte">app.render2go.com/suporte</a></p>
 </section>
 </div>
+</section>
+<section class="vista" id="vista-modelos" aria-labelledby="titulo-modelos">
+<div class="cab-pagina">
+<h1 id="titulo-modelos" tabindex="-1">Modelos de IA</h1>
+<p class="fraco">Tudo o que o Render2Go gera e vai gerar. Os disponíveis já podem ser usados: escolha um e o pedido abre com ele. Nos que estão em breve, clique em “Tenho interesse” para saber quando saírem.</p>
+</div>
+<p id="modelos-msg" class="aviso erro" hidden></p>
+<div class="dados-vista" id="modelos-lista" aria-busy="true">
+<div class="esqueleto-cartoes" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span><span></span></div>
+</div>
+</div>
+</section>
+<section class="vista" id="vista-extratos" aria-labelledby="titulo-extratos">
+<div class="cab-pagina">
+<h1 id="titulo-extratos" tabindex="-1">Extratos</h1>
+<p class="fraco">O que você gastou em cada pedido, com o tipo e o modelo de IA, o que voltou para o saldo e as recargas.</p>
+</div>
+<div class="barra-filtros">
+<div class="filtros" id="extrato-periodo" role="group" aria-label="Período do extrato">
+<button type="button" data-dias="7" aria-pressed="false">7 dias</button>
+<button type="button" data-dias="30" aria-pressed="true">30 dias</button>
+<button type="button" data-dias="90" aria-pressed="false">90 dias</button>
+<button type="button" data-dias="365" aria-pressed="false">12 meses</button>
+<button type="button" data-dias="0" aria-pressed="false">Tudo</button>
+</div>
+<a class="botao pequeno" id="extrato-csv" href="/api/extrato.csv?dias=30" download><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>Baixar planilha (CSV)</a>
+</div>
+<p id="extratos-msg" class="aviso erro" hidden></p>
+<div class="dados-vista" id="extratos-dados" aria-busy="true">
+<div class="esqueleto-numeros" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span></div>
+</div>
+<div class="esqueleto-linhas" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span><span></span></div>
+</div>
+</div>
+</section>
+<section class="vista" id="vista-logs" aria-labelledby="titulo-logs">
+<div class="cab-pagina">
+<h1 id="titulo-logs" tabindex="-1">Logs</h1>
+<p class="fraco">Os vídeos que você gerou e não excluiu, com o modelo que gerou, a hora e o arquivo. Os links valem por 24 h; ao voltar a esta tela, eles são renovados.</p>
+</div>
+<div class="barra-filtros">
+<div class="filtros" id="logs-periodo" role="group" aria-label="Período dos logs">
+<button type="button" data-horas="24" aria-pressed="true">24 horas</button>
+<button type="button" data-horas="72" aria-pressed="false">3 dias</button>
+<button type="button" data-horas="168" aria-pressed="false">7 dias</button>
+</div>
+</div>
+<p id="logs-msg" class="aviso erro" hidden></p>
+<ul class="geracoes dados-vista" id="logs-lista" aria-busy="true" aria-labelledby="titulo-logs">
+<li class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></li>
+<li class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></li>
+<li class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></li>
+</ul>
+</section>
+<section class="vista" id="vista-perfil" aria-labelledby="titulo-perfil">
+<div class="cab-pagina">
+<h1 id="titulo-perfil" tabindex="-1">Perfil</h1>
+<p class="fraco">Como a sua conta aparece no Render2Go.</p>
+</div>
+<div class="grade-cartoes">
+<section class="cartao pilha" aria-labelledby="t-foto">
+<h2 id="t-foto">Foto</h2>
+<div class="perfil-topo">
+<span class="avatar grande" id="perfil-avatar" aria-hidden="true"><span class="avatar-inicial"></span></span>
+<div class="perfil-quem">
+<p class="perfil-nome uma-linha" id="perfil-nome"></p>
+<p class="fraco uma-linha" id="perfil-email"></p>
+<p class="fraco uma-linha" id="perfil-plano"></p>
+</div>
+</div>
+<label class="marcacao" for="perfil-gravatar">
+<input type="checkbox" id="perfil-gravatar" aria-describedby="gravatar-dica">
+<span>Usar a minha foto do Gravatar</span>
+</label>
+<p class="dica" id="gravatar-dica">O Gravatar guarda uma foto ligada ao seu e-mail. Com esta opção ligada, se você tiver uma foto lá, ela aparece aqui; sem foto, fica a inicial. Quem busca a foto é o nosso servidor: o seu navegador não fala com o Gravatar.</p>
+</section>
+<form class="cartao pilha" id="form-perfil" novalidate aria-labelledby="t-nome">
+<h2 id="t-nome">Nome</h2>
+<div class="duas">
+<div class="campo">
+<label for="perfil-primeiro">Primeiro nome</label>
+<input id="perfil-primeiro" autocomplete="given-name" maxlength="60" spellcheck="false" autocapitalize="words">
+</div>
+<div class="campo">
+<label for="perfil-ultimo">Último nome</label>
+<input id="perfil-ultimo" autocomplete="family-name" maxlength="60" spellcheck="false" autocapitalize="words">
+</div>
+</div>
+<p class="dica">Opcional. Aparece no menu da sua conta, no lugar do e-mail.</p>
+<p id="perfil-msg" class="aviso" hidden></p>
+<div class="acoes">
+<button type="submit" class="botao primario" id="perfil-salvar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Salvar</button>
+</div>
+</form>
+<section class="cartao pilha em-breve-cartao" aria-labelledby="t-nome-usuario">
+<h2 id="t-nome-usuario">Nome de usuário <span class="selo">Em breve</span></h2>
+<p class="fraco">Um nome curto para a sua conta, como @padariadobairro, para compartilhar projetos e receber indicações.</p>
+<div class="campo">
+<label for="nome-usuario">Nome de usuário</label>
+<input id="nome-usuario" disabled placeholder="padariadobairro" aria-describedby="nome-usuario-dica">
+<p class="dica" id="nome-usuario-dica">Ainda não disponível.</p>
+</div>
+<div class="interesse-lugar" id="interesse-nome-usuario"></div>
+</section>
+<section class="cartao pilha em-breve-cartao" aria-labelledby="t-indicacao">
+<h2 id="t-indicacao">Ganhos por indicação <span class="selo">Em breve</span></h2>
+<p class="fraco">Indique o Render2Go para outros negócios e ganhe saldo quando eles fizerem a primeira recarga.</p>
+<div class="acoes">
+<button type="button" class="botao" disabled><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM3 7h18v4H3zM12 7v14M12 7C10.5 4 7.5 3.6 7.5 5.6 7.5 7 9.5 7 12 7zM12 7c1.5-3 4.5-3.4 4.5-1.4C16.5 7 14.5 7 12 7z"/></svg>Ver meus ganhos</button>
+</div>
+<div class="interesse-lugar" id="interesse-indicacao"></div>
+</section>
+</div>
+</section>
+<section class="vista" id="vista-configuracoes" aria-labelledby="titulo-configuracoes">
+<div class="cab-pagina">
+<h1 id="titulo-configuracoes" tabindex="-1">Configurações</h1>
+<p class="fraco">O acesso e a segurança da sua conta: tema, e-mail, verificação em duas etapas, aparelhos conectados, desativação e exclusão.</p>
+</div>
+<p id="config-msg" class="aviso erro" hidden></p>
+<div class="pilha configuracoes">
+<section class="cartao pilha" id="config-aparencia" aria-labelledby="t-aparencia">
+<h2 id="t-aparencia">Aparência</h2>
+<fieldset class="opcoes-tema">
+<legend>Tema das páginas</legend>
+<div class="opcoes-tema-grade">
+<label class="marcacao"><input type="radio" name="tema" value="auto" id="tema-auto"><span class="opcao-tema"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 3v18M12 7.5h4.5M12 12h6M12 16.5h4.5"/></svg><strong>Automático</strong><span class="fraco">Igual ao do aparelho</span></span></label>
+<label class="marcacao"><input type="radio" name="tema" value="claro" id="tema-claro"><span class="opcao-tema"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg><strong>Claro</strong><span class="fraco">Fundo claro, sempre</span></span></label>
+<label class="marcacao"><input type="radio" name="tema" value="escuro" id="tema-escuro"><span class="opcao-tema"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg><strong>Escuro</strong><span class="fraco">Fundo escuro, sempre</span></span></label>
+</div>
+</fieldset>
+<p class="dica">Vale em todas as páginas e nos aparelhos em que você entrar.</p>
+<p id="tema-msg" class="aviso" hidden></p>
+</section>
+<section class="cartao pilha" id="config-email" aria-labelledby="t-email">
+<h2 id="t-email">E-mail</h2>
+<p class="uma-linha"><span class="fraco">E-mail da conta: </span><strong id="config-email-atual"></strong></p>
+<p class="dica">É por ele que você entra (código de 8 dígitos) e recebe os avisos de segurança da conta.</p>
+<div class="acoes">
+<button type="button" class="botao" id="config-trocar-email" aria-expanded="false" aria-controls="form-email-novo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM3.5 7l8.5 6 8.5-6"/></svg>Trocar o e-mail</button>
+</div>
+<form id="form-email-novo" class="pilha" novalidate hidden>
+<div class="campo">
+<label for="email-novo">E-mail novo</label>
+<input id="email-novo" type="email" autocomplete="email" inputmode="email" maxlength="254" spellcheck="false" autocapitalize="off" autocorrect="off" aria-describedby="email-novo-dica">
+<p class="dica" id="email-novo-dica">Gmail, Outlook/Hotmail, Yahoo, iCloud, UOL, BOL ou Terra. Mandamos um código para ele; o endereço antigo recebe um aviso.</p>
+</div>
+<div class="campo" id="email-passo-codigo" hidden>
+<label for="email-novo-codigo">Código que chegou no e-mail novo (8 dígitos)</label>
+<input id="email-novo-codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="12" spellcheck="false">
+</div>
+<div class="acoes">
+<button type="submit" class="botao primario" id="email-enviar">Mandar o código</button>
+<button type="submit" class="botao primario" id="email-confirmar" hidden>Confirmar a troca</button>
+<button type="button" class="botao" id="email-cancelar">Cancelar</button>
+</div>
+</form>
+<p id="email-msg" class="aviso" hidden></p>
+</section>
+<section class="cartao pilha" id="config-mfa" aria-labelledby="t-mfa">
+<h2 id="t-mfa" tabindex="-1">Verificação em duas etapas</h2>
+<p class="fraco">Além do código do e-mail, a entrada pede um código do aplicativo autenticador do seu celular: quem tomar o seu e-mail continua sem entrar.</p>
+<p class="mfa-estado" id="mfa-estado"></p>
+<div class="aviso" id="mfa-aviso" hidden></div>
+<div class="acoes">
+<button type="button" class="botao primario" id="mfa-ligar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 11h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM8 11V8a4 4 0 1 1 8 0v3M12 15v1.5"/></svg>Ligar a verificação em duas etapas</button>
+<button type="button" class="botao" id="mfa-codigos" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.4 5.7M20 5v6h-6"/></svg>Gerar códigos de recuperação novos</button>
+<button type="button" class="botao perigo" id="mfa-desligar" hidden>Desligar</button>
+</div>
+</section>
+<section class="cartao pilha" id="config-aparelhos" aria-labelledby="t-aparelhos">
+<h2 id="t-aparelhos" tabindex="-1">Aparelhos conectados</h2>
+<p class="fraco">Onde a sua conta está aberta agora. Não reconhece um aparelho? Encerre a sessão dele.</p>
+<p id="aparelhos-msg" class="aviso" hidden></p>
+<ul class="linhas aparelhos" id="aparelhos" aria-busy="true" aria-labelledby="t-aparelhos">
+<li class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></li>
+</ul>
+<div class="acoes">
+<button type="button" class="botao" id="encerrar-outras">Encerrar os outros aparelhos</button>
+<button type="button" class="botao" id="sair-de-todos"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16.5 14.5 12 10 7.5M14.5 12H4"/></svg>Sair de todos (inclusive este)</button>
+</div>
+</section>
+<section class="cartao pilha" id="config-telefone" aria-labelledby="t-telefone">
+<h2 id="t-telefone">Telefone <span class="selo">Em breve</span></h2>
+<p class="fraco">Receber os códigos e os avisos da conta também por SMS ou WhatsApp.</p>
+<div class="interesse-lugar" id="interesse-telefone"></div>
+</section>
+<section class="cartao pilha" id="config-dados" aria-labelledby="t-dados">
+<h2 id="t-dados">Seus dados</h2>
+<p class="fraco">Uma cópia dos dados da sua conta (perfil, pedidos, extrato e acessos) num arquivo JSON. Seus direitos estão na <a href="/privacidade">Política de Privacidade</a>.</p>
+<p id="dados-msg" class="aviso" hidden></p>
+<div class="acoes">
+<button type="button" class="botao" id="baixar-dados"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>Baixar meus dados</button>
+</div>
+</section>
+<section class="cartao pilha zona-perigo" id="config-desativar" aria-labelledby="t-desativar">
+<h2 id="t-desativar">Desativar a conta</h2>
+<p class="fraco">Pausa a conta: você sai de todos os aparelhos e ninguém entra até você voltar. O saldo e o histórico ficam guardados. Para reativar, entre de novo com o código do e-mail.</p>
+<p id="desativar-msg" class="aviso" hidden></p>
+<div class="acoes">
+<button type="button" class="botao perigo" id="desativar-conta"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.6 5.6l12.8 12.8"/></svg>Desativar a conta</button>
+</div>
+</section>
+<section class="cartao pilha zona-perigo" id="config-excluir" aria-labelledby="t-excluir">
+<h2 id="t-excluir">Excluir a conta</h2>
+<p class="fraco">Apaga a conta e o e-mail do serviço, para sempre. Com saldo, peça o reembolso pelo suporte antes. O extrato e os registros que a lei manda guardar ficam pelo prazo legal.</p>
+<p id="excluir-msg" class="aviso" hidden></p>
+<div class="acoes">
+<button type="button" class="botao perigo" id="excluir-conta"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2M6.5 7l.8 12a1 1 0 0 0 1 1h7.4a1 1 0 0 0 1-1l.8-12"/></svg>Excluir a conta</button>
+</div>
+</section>
+</div>
+</section>
+<section class="vista" id="vista-projetos" aria-labelledby="titulo-projetos">
+<div class="cab-pagina">
+<p class="sobretitulo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7.5V12l3 2"/></svg>Em breve</p>
+<h1 id="titulo-projetos" tabindex="-1">Projetos</h1>
+<p class="lead">Organize os pedidos por projeto: o cardápio novo, o lançamento de uma coleção, a campanha do Dia das Mães.</p>
+</div>
+<section class="cartao pilha em-breve-cartao" aria-labelledby="t-projetos">
+<h2 id="t-projetos">O que vai dar para fazer</h2>
+<ul class="lista-recursos">
+<li>Juntar num lugar só as fotos, os textos e os vídeos de cada campanha.</li>
+<li>Ver quanto cada projeto custou, no extrato.</li>
+<li>Guardar os textos e os estilos que deram certo, para repetir no próximo pedido.</li>
+</ul>
+<p id="projetos-msg" class="aviso" hidden></p>
+<div class="interesse-lugar" id="interesse-projetos"></div>
+</section>
+</section>
+<section class="vista" id="vista-mix" aria-labelledby="titulo-mix">
+<div class="cab-pagina">
+<p class="sobretitulo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7.5V12l3 2"/></svg>Em breve</p>
+<h1 id="titulo-mix" tabindex="-1">Mix</h1>
+<p class="lead">Vários modelos de IA em sequência, a partir de um pedido só: cada resultado pode seguir para o próximo passo.</p>
+</div>
+<section class="cartao pilha em-breve-cartao" aria-labelledby="t-mix">
+<h2 id="t-mix">Como vai funcionar</h2>
+<ol class="passos-mix">
+<li><strong>Pedido inicial.</strong> Envie fotos, um texto ou outros arquivos do seu negócio.</li>
+<li><strong>Imagens.</strong> Gere imagens novas a partir deles, como o produto num fundo novo.</li>
+<li><strong>Vídeos.</strong> Cada imagem vira um vídeo curto, de alguns segundos.</li>
+<li><strong>Som.</strong> Acrescente uma trilha sonora ou uma narração.</li>
+</ol>
+<p class="fraco">Você escolhe os passos e vê o custo de cada um antes de começar. Os passos dependem de modelos que ainda vão sair: veja em <a href="/modelos" data-vista="modelos">Modelos de IA</a>.</p>
+<p id="mix-msg" class="aviso" hidden></p>
+<div class="interesse-lugar" id="interesse-mix"></div>
+</section>
+</section>
 </div>
 </main>
+</div>
 <footer class="rodape">
 <div class="recipiente rodape-interno">
 <div class="rodape-marca">

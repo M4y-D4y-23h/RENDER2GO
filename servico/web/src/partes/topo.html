@@ -5,10 +5,12 @@
       <!--@logo-->
     </a>
     <!-- quem não entrou vê "Entrar"; quem entrou, "Pedidos" e "Sair" (o inicio.js marca a sessão antes do 1º quadro:
-         nada aparece depois nem empurra os outros itens) -->
+         nada aparece depois nem empurra os outros itens). Na área do cliente, no celular, "Menu" abre o menu da conta
+         (no computador ele fica ao lado do conteúdo); o CSS decide pelo data-pagina, já no 1º quadro. -->
     <nav class="navegacao" aria-label="Principal">
+      <button type="button" class="so-com-sessao so-menu" id="abrir-menu" aria-haspopup="dialog"><!--@icone menu--><span class="rotulo-nav">Menu</span></button>
       <a class="so-sem-sessao" href="/#entrar" data-nav="cliente"><!--@icone chave--><span class="rotulo-nav">Entrar</span></a>
-      <a class="so-com-sessao" href="/" data-nav="cliente"><!--@icone video--><span class="rotulo-nav">Pedidos</span></a>
+      <a class="so-com-sessao so-fora-da-conta" href="/" data-nav="cliente"><!--@icone video--><span class="rotulo-nav">Pedidos</span></a>
       <a href="/suporte" data-nav="suporte"><!--@icone ajuda--><span class="rotulo-nav">Suporte</span></a>
       <button type="button" class="so-com-sessao" id="sair"><!--@icone sair--><span class="rotulo-nav">Sair</span></button>
     </nav>

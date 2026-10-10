@@ -265,6 +265,9 @@ export class ErroApi extends Error {
   constructor(
     mensagem: string,
     readonly status: number,
+    // por que a API recusou, quando a página pode resolver (X-Render2Go-Motivo): "confirmar" (confirme que é
+    // você, configurações da conta) ou "aceite" (termos ou privacidade em versão nova)
+    readonly motivo: string | null = null,
   ) {
     super(mensagem);
   }
@@ -282,6 +285,12 @@ function mensagemDeErro(detalhe: unknown, status: number): string {
   if (status === 429) return "muitas tentativas seguidas; espere um pouco e tente de novo";
   if (status >= 500) return "o serviço está com um problema agora; tente de novo em instantes";
   return detalhe ? JSON.stringify(detalhe) : `erro ${status}`;
+}
+
+/** Respostas pedidas no <head> com a sessão que a página tinha ao abrir: quando ela não vale mais (venceu, ou a
+ * pessoa entrou de novo agora), nenhuma delas serve, e as telas pedem de novo. */
+export function descartarAntecipados(): void {
+  delete (window as Window & { __render2go?: Record<string, Promise<Response>> }).__render2go;
 }
 
 /** Resposta que o inicio.js já pediu no <head> (usada uma vez só); sem ela, null. */
@@ -315,7 +324,7 @@ export async function api<T>(caminho: string, init: RequestInit = {}): Promise<T
     throw new ErroApi("sem conexão com o serviço; confira a internet e tente de novo", 0);
   }
   const corpo = await r.json().catch(() => ({}));
-  if (!r.ok) throw new ErroApi(mensagemDeErro((corpo as { detail?: unknown }).detail, r.status), r.status);
+  if (!r.ok) throw new ErroApi(mensagemDeErro((corpo as { detail?: unknown }).detail, r.status), r.status, r.headers.get("X-Render2Go-Motivo"));
   return corpo as T;
 }
 
@@ -431,12 +440,24 @@ export function dialogo(titulo: string, classe = ""): { d: HTMLDialogElement; co
   return { d, corpo, titulo: h };
 }
 
-export function confirmar(opcoes: { titulo: string; texto: string; confirmar: string; perigo?: boolean }): Promise<boolean> {
+/** Pergunta antes de uma ação. Com `palavra`, a pessoa digita a palavra para liberar o botão (ação sem volta). */
+export function confirmar(opcoes: { titulo: string; texto: string | string[]; confirmar: string; perigo?: boolean; palavra?: string }): Promise<boolean> {
   const origem = document.activeElement as HTMLElement | null;
   const { d, corpo } = dialogo(opcoes.titulo, "confirmacao");
   const nao = criar("button", { type: "button", className: "botao", textContent: "Cancelar" });
   const sim = criar("button", { type: "button", className: `botao ${opcoes.perigo ? "perigo" : "primario"}`, textContent: opcoes.confirmar });
-  corpo.append(criar("p", { textContent: opcoes.texto }), criar("div", { className: "dialogo-acoes" }, [nao, sim]));
+  const textos = typeof opcoes.texto === "string" ? [opcoes.texto] : opcoes.texto;
+  corpo.append(...textos.map((t) => criar("p", { textContent: t })));
+  let campo: HTMLInputElement | null = null;
+  if (opcoes.palavra) {
+    const palavra = opcoes.palavra;
+    const id = `${d.getAttribute("aria-labelledby")}-palavra`;
+    campo = criar("input", { id, autocomplete: "off", spellcheck: false, autocapitalize: "characters", maxLength: 20 });
+    sim.disabled = true;
+    campo.addEventListener("input", () => (sim.disabled = campo!.value.trim().toUpperCase() !== palavra));
+    corpo.append(criar("div", { className: "campo" }, [criar("label", { htmlFor: id, textContent: `Para confirmar, digite ${palavra}` }), campo]));
+  }
+  corpo.append(criar("div", { className: "dialogo-acoes" }, [nao, sim]));
   nao.addEventListener("click", () => d.close("nao"));
   sim.addEventListener("click", () => d.close("sim"));
   return new Promise((resolver) => {
@@ -446,8 +467,33 @@ export function confirmar(opcoes: { titulo: string; texto: string; confirmar: st
       origem?.focus();
     });
     d.showModal();
-    nao.focus();
+    (campo ?? nao).focus();
   });
+}
+
+/** Clique comum (botão principal, sem Ctrl, Shift, Alt ou ⌘): os outros abrem o link numa aba nova, como sempre. */
+export function cliqueSimples(ev: MouseEvent): boolean {
+  return ev.button === 0 && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey && !ev.defaultPrevented;
+}
+
+/** Copia para a área de transferência; false sem permissão (a página deixa o texto selecionado). */
+export async function copiarTexto(texto: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(texto);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Baixa um texto gerado na página (códigos de recuperação). */
+export function baixarTexto(texto: string, nome: string): void {
+  const url = URL.createObjectURL(new Blob([texto], { type: "text/plain;charset=utf-8" }));
+  const a = criar("a", { href: url, download: nome });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 /** Baixa um JSON gerado na página (registro de auditoria). */

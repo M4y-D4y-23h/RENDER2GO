@@ -175,6 +175,10 @@ NOME = re.compile(r"[^A-Za-z0-9_-]+")
 PUBLICO = SERVICO_DIR / "web" / "publico"  # páginas compiladas (cd servico/web && npm run build)
 PAGINAS = {"/": "index.html", "/suporte": "suporte.html", "/termos": "termos.html", "/privacidade": "privacidade.html",
            "/cookies": "cookies.html", "/verificacao": "verificacao.html"}  # fmt: skip
+# telas da área do cliente (menu lateral): a mesma página da raiz, que mostra a tela pelo endereço (ts/inicio.ts e
+# ts/moldura.ts). São da conta de quem entrou: noindex e fora do sitemap.xml
+TELAS_CONTA = ("/modelos", "/extratos", "/logs", "/perfil", "/configuracoes", "/projetos", "/mix")
+PAGINAS.update(dict.fromkeys(TELAS_CONTA, "index.html"))
 # /verificacao: a página isolada do "não sou um robô" (Turnstile), aberta num quadro das páginas de entrada e
 # de suporte. Só ela carrega o script da Cloudflare, com uma política própria (sem Trusted Types, que o
 # script de terceiros não segue); as outras páginas continuam com trusted-types 'none'.
@@ -1817,13 +1821,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @app.get("/api/conta/foto")
     def minha_foto(request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
-        """A foto do Gravatar, servida daqui (o navegador não fala com terceiros). 404: sem foto (a página mostra
-        a inicial)."""
+        """A foto do Gravatar, servida daqui (o navegador não fala com terceiros). Sem a escolha da pessoa: 404.
+        Com a escolha, mas sem foto no Gravatar: 204 (a página mostra a inicial, sem erro no console do navegador)."""
         if not cli.get("gravatar") or not cli.get("email"):
             raise HTTPException(404, "sem foto")
         foto = c.fotos.foto(cli["email"])
         if foto is None:
-            raise HTTPException(404, "sem foto no Gravatar")
+            return Response(status_code=204, headers={"Cache-Control": "private, max-age=3600"})
         dados, tipo = foto
         etag = '"' + hashlib.sha256(dados).hexdigest()[:32] + '"'
         cab = {"Cache-Control": "private, max-age=86400", "ETag": etag}
@@ -3349,6 +3353,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if caminho == "/verificacao":  # a página isolada do Turnstile, só dentro de um quadro do próprio site
             h["Content-Security-Policy"] = CSP_VERIFICACAO
             h["X-Frame-Options"] = "SAMEORIGIN"
+            h["X-Robots-Tag"] = "noindex, nofollow"
+        if caminho in TELAS_CONTA:
             h["X-Robots-Tag"] = "noindex, nofollow"
         if da_api or do_painel:
             h.setdefault("Cache-Control", "no-store")  # respostas com dados da conta não ficam em cache

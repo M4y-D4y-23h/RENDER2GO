@@ -226,7 +226,8 @@ html:not(.com-sessao) body[data-pagina="cliente"] {
   gap: var(--esp-6);
 }
 
-@media (min-width: 64em) {
+/* pedido e lista lado a lado só com espaço de sobra (o menu lateral já ocupa uma coluna a partir de 64em) */
+@media (min-width: 80em) {
   .painel-grade {
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
     align-items: start;
@@ -396,38 +397,6 @@ html:not(.com-sessao) body[data-pagina="cliente"] {
    ser empurrado para baixo quando a lista chega (CLS) */
 .lotes[aria-busy="true"] ~ .suporte-link {
   visibility: hidden;
-}
-
-/* "Conectado como …" chega da API depois do 1º quadro: a linha já tem a altura final (sem deslocamento, CLS),
-   com até 2 linhas no celular e 1 no computador; o texto inteiro fica no título e no leitor de tela */
-.conta-linha {
-  display: flex;
-  align-items: center;
-  gap: var(--esp-3);
-}
-
-.conta-resumo {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: calc(2 * var(--entrelinha) * 1em);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-
-.conta-linha .botao {
-  flex: none;
-}
-
-@media (min-width: 40em) {
-  .conta-resumo {
-    min-height: calc(var(--entrelinha) * 1em);
-    -webkit-line-clamp: 1;
-    line-clamp: 1;
-  }
 }
 
 /* -- suporte e erro ------------------------------------------------------------------------- */
@@ -770,17 +739,22 @@ html:not(.com-sessao) body[data-pagina="cliente"] {
   text-align: left;
 }
 
-button.bloco {
+button.bloco,
+a.bloco {
   cursor: pointer;
+  text-decoration: none;
   transition: border-color var(--rapido) var(--curva), box-shadow var(--rapido) var(--curva);
 }
 
-button.bloco:hover {
+button.bloco:hover,
+a.bloco:hover {
   border-color: var(--cor-marca);
   box-shadow: var(--sombra-2);
+  color: var(--cor-texto);
 }
 
-button.bloco:active {
+button.bloco:active,
+a.bloco:active {
   transform: translateY(1px);
 }
 
@@ -923,70 +897,6 @@ button.bloco:active {
 /* no celular o "Trocar" desce para a 2ª linha: a descrição não pode encostar nele */
 .escolhida .modelo-uso {
   margin-top: var(--esp-3);
-}
-
-/* janela "Ver todas" */
-.grupo-opcoes h3 {
-  margin: var(--esp-4) 0 var(--esp-2);
-  font-size: var(--texto-md);
-}
-
-.grupo-opcoes:first-child h3 {
-  margin-top: 0;
-}
-
-.opcoes {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--esp-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.opcao {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: var(--esp-2) var(--esp-3);
-  padding: var(--esp-3);
-  border: 1px solid var(--cor-borda);
-  border-radius: var(--raio-md);
-}
-
-.opcao > .icone {
-  width: 1.5rem;
-  height: 1.5rem;
-  color: var(--cor-marca-texto);
-}
-
-.opcao > .botao,
-.opcao > .interesse-ok {
-  grid-column: 2;
-  justify-self: start;
-}
-
-.opcao-texto p {
-  margin: 0;
-}
-
-.opcao-titulo {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--esp-2);
-}
-
-@media (min-width: 40em) {
-  .opcao {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .opcao > .botao,
-  .opcao > .interesse-ok {
-    grid-column: 3;
-    align-self: center;
-  }
 }
 
 /* -- conta por e-mail (ADR 0007) ------------------------------------------------------------------ */
@@ -1223,3 +1133,678 @@ button.bloco:active {
   }
 }
 
+/* -- área do cliente: moldura com o menu lateral e uma tela por endereço (10/10/2026) ------------------------
+   Computador (64em ou mais): o menu fica ao lado do conteúdo, fixo e com rolagem própria. Celular: o menu sai da
+   página e abre numa janela de baixo pelo botão "Menu" do topo (moldura.ts). A tela do endereço já vem marcada no
+   <html> (data-vista, pelo inicio.js): o CSS mostra só ela e destaca o item do menu desde o primeiro quadro. */
+
+.moldura {
+  flex: 1 0 auto;
+  width: min(100% - 2 * var(--margem), var(--largura-pagina));
+  margin-inline: auto;
+}
+
+/* quem entrou: a área ocupa ao menos a altura da tela. O rodapé começa fora dela, e o que chega da API depois do
+   primeiro quadro nunca o puxa para dentro da tela (CLS) */
+.area-conta {
+  min-height: calc(100vh - var(--altura-topo));
+}
+
+.vista {
+  display: none;
+}
+
+.area-conta > .aviso {
+  margin-bottom: var(--esp-4);
+}
+
+html:not([data-vista]) #vista-pedidos,
+html[data-vista="pedidos"] #vista-pedidos,
+html[data-vista="modelos"] #vista-modelos,
+html[data-vista="extratos"] #vista-extratos,
+html[data-vista="logs"] #vista-logs,
+html[data-vista="perfil"] #vista-perfil,
+html[data-vista="configuracoes"] #vista-configuracoes,
+html[data-vista="projetos"] #vista-projetos,
+html[data-vista="mix"] #vista-mix {
+  display: block;
+}
+
+/* topo da área do cliente: "Menu" no lugar de "Pedidos" (o menu da conta tem os pedidos e o resto); no computador
+   o menu já está ao lado do conteúdo */
+.navegacao .so-menu {
+  display: none;
+}
+
+body[data-pagina="cliente"] .navegacao .so-fora-da-conta {
+  display: none;
+}
+
+@media (max-width: 63.99em) {
+  .com-sessao body[data-pagina="cliente"] .navegacao .so-menu {
+    display: inline-flex;
+  }
+}
+
+.lateral {
+  display: none;
+}
+
+@media (min-width: 64em) {
+  .com-sessao .moldura {
+    display: grid;
+    grid-template-columns: 15rem minmax(0, 1fr);
+    column-gap: var(--esp-6);
+    align-items: start;
+  }
+
+  .lateral {
+    position: sticky;
+    top: var(--altura-topo);
+    display: grid;
+    align-content: start;
+    gap: var(--esp-4);
+    max-height: calc(100vh - var(--altura-topo));
+    max-height: calc(100dvh - var(--altura-topo));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-block: var(--esp-6) var(--esp-5);
+    scrollbar-width: thin;
+  }
+}
+
+/* quem entrou, no alto do menu: foto ou inicial, nome (ou e-mail) e plano, cada linha com a altura já reservada */
+.quem {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-3);
+  min-width: 0;
+  padding: var(--esp-3);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  background: var(--cor-superficie);
+}
+
+.quem-texto {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.quem-nome,
+.quem-plano {
+  min-height: calc(var(--entrelinha) * 1em);
+  max-width: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.quem-nome {
+  font-weight: 650;
+}
+
+.menu-conta {
+  display: grid;
+  gap: var(--esp-1);
+}
+
+.menu-conta ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.grupo-menu {
+  margin: var(--esp-3) 0 0;
+  padding: 0 var(--esp-3);
+  color: var(--cor-texto-3);
+  font-size: var(--texto-xs);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.menu-conta .grupo-menu:first-child {
+  margin-top: 0;
+}
+
+.menu-conta a {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-3);
+  min-height: var(--alvo);
+  padding: 0 var(--esp-3);
+  border-radius: var(--raio-md);
+  color: var(--cor-texto-2);
+  font-weight: 600;
+  font-size: var(--texto-sm);
+  text-decoration: none;
+  transition: background-color var(--rapido) var(--curva), color var(--rapido) var(--curva);
+}
+
+.menu-conta a > span:first-of-type {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.menu-conta a .icone {
+  color: var(--cor-texto-3);
+}
+
+.menu-conta a:hover {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto);
+}
+
+.menu-conta .selo {
+  padding: 0.1rem 0.45rem;
+  font-size: 0.6875rem;
+}
+
+/* a tela aberta (sem mudar a largura do texto: só a cor e o fundo) */
+html:not([data-vista]) .menu-conta a[data-vista="pedidos"],
+html[data-vista="pedidos"] .menu-conta a[data-vista="pedidos"],
+html[data-vista="modelos"] .menu-conta a[data-vista="modelos"],
+html[data-vista="extratos"] .menu-conta a[data-vista="extratos"],
+html[data-vista="logs"] .menu-conta a[data-vista="logs"],
+html[data-vista="perfil"] .menu-conta a[data-vista="perfil"],
+html[data-vista="configuracoes"] .menu-conta a[data-vista="configuracoes"],
+html[data-vista="projetos"] .menu-conta a[data-vista="projetos"],
+html[data-vista="mix"] .menu-conta a[data-vista="mix"] {
+  background: var(--cor-marca-suave);
+  color: var(--cor-marca-texto);
+}
+
+html:not([data-vista]) .menu-conta a[data-vista="pedidos"] .icone,
+html[data-vista="pedidos"] .menu-conta a[data-vista="pedidos"] .icone,
+html[data-vista="modelos"] .menu-conta a[data-vista="modelos"] .icone,
+html[data-vista="extratos"] .menu-conta a[data-vista="extratos"] .icone,
+html[data-vista="logs"] .menu-conta a[data-vista="logs"] .icone,
+html[data-vista="perfil"] .menu-conta a[data-vista="perfil"] .icone,
+html[data-vista="configuracoes"] .menu-conta a[data-vista="configuracoes"] .icone,
+html[data-vista="projetos"] .menu-conta a[data-vista="projetos"] .icone,
+html[data-vista="mix"] .menu-conta a[data-vista="mix"] .icone {
+  color: var(--cor-marca-texto);
+}
+
+/* filtros de período e o que fica ao lado deles (planilha) */
+.barra-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-3);
+  margin-bottom: var(--esp-5);
+}
+
+/* o que chega da API numa tela: troca de uma vez, no lugar do esqueleto (nada visível vem depois dele) */
+.dados-vista > h2 {
+  margin: var(--esp-6) 0 var(--esp-3);
+  font-size: var(--titulo-3);
+}
+
+.dados-vista > .acoes {
+  margin-block: var(--esp-4);
+}
+
+.dados-vista > .aviso {
+  margin-bottom: var(--esp-4);
+}
+
+.esqueleto-cartoes,
+.esqueleto-numeros,
+.esqueleto-linhas {
+  display: grid;
+  gap: var(--esp-3);
+}
+
+.esqueleto-cartoes {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+}
+
+.esqueleto-numeros {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  margin-bottom: var(--esp-5);
+}
+
+.esqueleto-cartoes .esqueleto,
+.esqueleto-numeros .esqueleto,
+.esqueleto-linhas .esqueleto,
+.geracoes > .esqueleto,
+.aparelhos > .esqueleto {
+  align-content: start;
+  padding: var(--esp-4);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+}
+
+.esqueleto-cartoes .esqueleto {
+  min-height: 12rem;
+}
+
+.esqueleto-numeros .esqueleto {
+  min-height: 5.25rem;
+}
+
+.esqueleto-linhas .esqueleto,
+.aparelhos > .esqueleto {
+  min-height: 5.5rem;
+}
+
+.geracoes > .esqueleto {
+  min-height: 8rem;
+}
+
+/* -- área do cliente: pedido em sequência (texto por foto) ------------------------------------------------- */
+
+.nota-textos {
+  color: var(--cor-acento-texto);
+}
+
+.sequencia {
+  padding: var(--esp-4);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  background: var(--cor-superficie-2);
+}
+
+.sequencia-cab h3 {
+  margin-bottom: var(--esp-1);
+  font-size: var(--texto-md);
+}
+
+.seq-contagem {
+  margin: 0;
+  font-weight: 650;
+}
+
+.seq-barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-2);
+}
+
+.seq-barra .filtros {
+  background: var(--cor-superficie);
+}
+
+.seq-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: var(--esp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seq-foto {
+  display: grid;
+  align-content: start;
+  gap: var(--esp-1);
+  min-width: 0;
+  padding: var(--esp-1);
+  border: 2px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie);
+}
+
+.seq-foto.tem-texto {
+  border-color: var(--cor-acento);
+}
+
+.seq-foto.marcada {
+  border-color: var(--cor-marca);
+  background: var(--cor-marca-suave);
+}
+
+.seq-marcar {
+  position: relative;
+  display: grid;
+  gap: var(--esp-1);
+  min-width: 0;
+  cursor: pointer;
+}
+
+.seq-marcar input[type="checkbox"] {
+  position: absolute;
+  top: 0.375rem;
+  left: 0.375rem;
+  z-index: 1;
+  margin: 0;
+}
+
+.seq-imagem {
+  display: block;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: var(--raio-sm);
+  background: var(--cor-superficie-2);
+}
+
+.seq-imagem img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.seq-nome {
+  overflow: hidden;
+  color: var(--cor-texto-2);
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.seq-texto {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  margin: 0;
+  color: var(--cor-acento-texto);
+  font-size: var(--texto-xs);
+  overflow-wrap: anywhere;
+}
+
+.seq-foto.marcada .seq-texto {
+  color: var(--cor-marca-texto);
+}
+
+.seq-vazio {
+  grid-column: 1 / -1;
+  padding: var(--esp-3);
+}
+
+.seq-paginas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--esp-3);
+}
+
+/* as ações das fotos marcadas ficam à mão no pé da tela enquanto a grade passa (sticky) */
+.seq-acoes {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-2) var(--esp-3);
+  margin: 0 calc(-1 * var(--esp-4)) calc(-1 * var(--esp-4));
+  padding: var(--esp-3) var(--esp-4) calc(var(--esp-3) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--cor-borda);
+  border-radius: 0 0 var(--raio-lg) var(--raio-lg);
+  background: var(--cor-superficie);
+}
+
+.seq-acoes p {
+  margin: 0;
+}
+
+/* -- área do cliente: modelos de IA ------------------------------------------------------------------- */
+
+.resumo-modelos {
+  margin: 0 0 var(--esp-4);
+  color: var(--cor-texto-2);
+}
+
+.grupo-modelos + .grupo-modelos {
+  margin-top: var(--esp-6);
+}
+
+.grupo-modelos h2 {
+  margin-bottom: var(--esp-3);
+  font-size: var(--titulo-3);
+}
+
+.cartoes-modelos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+  gap: var(--esp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cartao.modelo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}
+
+.cartao.modelo.disponivel {
+  border: 2px solid var(--cor-marca);
+  background: linear-gradient(135deg, var(--cor-marca-suave), var(--cor-superficie) 70%);
+}
+
+.cartao.modelo > .acoes {
+  margin-top: auto;
+}
+
+.modelo-cab {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--esp-3);
+}
+
+.modelo-cab > .icone {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--cor-marca-texto);
+}
+
+.modelo-nome p {
+  margin: 0;
+}
+
+.modelos-da-opcao {
+  display: grid;
+  gap: var(--esp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.modelos-da-opcao li {
+  padding: var(--esp-2) var(--esp-3);
+  border-radius: var(--raio-sm);
+  background: var(--cor-superficie-2);
+  font-size: var(--texto-sm);
+}
+
+.modelos-da-opcao p {
+  margin: 0;
+}
+
+/* -- área do cliente: logs ------------------------------------------------------------------------------ */
+
+.geracoes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--esp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geracao {
+  display: grid;
+  gap: var(--esp-2);
+  padding: var(--esp-3);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  background: var(--cor-superficie);
+}
+
+.geracao .video {
+  flex-wrap: wrap;
+  padding: 0;
+  border: 0;
+}
+
+.geracao p {
+  margin: 0;
+  padding-inline: var(--esp-2); /* alinhado com o nome do vídeo, dentro do botão de assistir */
+}
+
+.texto-log {
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+  overflow-wrap: anywhere;
+}
+
+.sem-itens {
+  list-style: none;
+}
+
+/* -- área do cliente: perfil, configurações, projetos e mix ------------------------------------------------ */
+
+.grade-cartoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  align-items: start;
+  gap: var(--esp-4);
+}
+
+.perfil-topo {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-4);
+  min-width: 0;
+}
+
+.perfil-quem {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.perfil-quem p {
+  min-height: calc(var(--entrelinha) * 1em);
+}
+
+.perfil-nome {
+  font-family: var(--fonte-titulos);
+  font-size: var(--texto-lg);
+  font-weight: 700;
+}
+
+.em-breve-cartao {
+  background: var(--cor-superficie-2);
+}
+
+.em-breve-cartao .selo {
+  border: 1px solid var(--cor-borda);
+  background: var(--cor-superficie);
+}
+
+.configuracoes {
+  max-width: 46rem;
+}
+
+.opcoes-tema {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.opcoes-tema > legend {
+  margin-bottom: var(--esp-2);
+  padding: 0;
+  font-weight: 650;
+}
+
+.opcoes-tema-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: var(--esp-2);
+}
+
+.opcao-tema {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.opcao-tema .icone {
+  margin-bottom: var(--esp-1);
+  color: var(--cor-marca-texto);
+}
+
+.mfa-estado {
+  min-height: calc(3 * var(--entrelinha) * 1em);
+  font-weight: 600;
+}
+
+.mfa-estado.ligada {
+  color: var(--cor-ok);
+}
+
+@media (min-width: 40em) {
+  .mfa-estado {
+    min-height: calc(2 * var(--entrelinha) * 1em);
+  }
+}
+
+/* aparelho conectado: no celular, o botão desce para baixo do texto (o nome do aparelho fica numa linha só) */
+.linha.aparelho {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "titulo" "detalhe" "acao";
+}
+
+.linha.aparelho .linha-titulo {
+  grid-area: titulo;
+}
+
+.linha.aparelho .linha-detalhe {
+  grid-area: detalhe;
+}
+
+.linha.aparelho .linha-acao {
+  grid-area: acao;
+  justify-self: start;
+  margin-top: var(--esp-1);
+}
+
+@media (min-width: 40em) {
+  .linha.aparelho {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "titulo acao" "detalhe acao";
+    align-items: center;
+  }
+
+  .linha.aparelho .linha-acao {
+    justify-self: end;
+    margin-top: 0;
+  }
+}
+
+.zona-perigo {
+  border-color: var(--cor-erro-borda);
+}
+
+.zona-perigo h2 {
+  color: var(--cor-erro);
+}
+
+.lista-recursos,
+.passos-mix {
+  display: grid;
+  gap: var(--esp-2);
+  padding-left: var(--esp-5);
+}
+
+.lista-recursos li::marker,
+.passos-mix li::marker {
+  color: var(--cor-marca);
+  font-weight: 700;
+}

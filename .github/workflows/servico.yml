@@ -65,7 +65,7 @@ jobs:
       - name: Páginas no Chromium (playwright e axe-core)
         run: |
           uv run --with playwright==1.56.0 playwright install --with-deps chromium
-          uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py
+          uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py tests/test_paginas_conta.py
 
   web:
     runs-on: ubuntu-latest

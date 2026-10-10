@@ -71,6 +71,14 @@ def test_pages_carry_security_headers_and_revalidate_with_etag(web):
         assert "server" not in r.headers  # sem anunciar o servidor
     assert web.get(f"{PAINEL}/").headers["x-robots-tag"] == "noindex, nofollow"
     assert "x-robots-tag" not in web.get("/").headers
+    # as telas da área do cliente: a mesma página da raiz (a tela vem do endereço), da conta de quem entrou: noindex
+    raiz = web.get("/")
+    for tela in ("/modelos", "/extratos", "/logs", "/perfil", "/configuracoes", "/projetos", "/mix"):
+        r = web.get(tela)
+        assert r.status_code == 200 and r.content == raiz.content, tela
+        assert r.headers["x-robots-tag"] == "noindex, nofollow" and r.headers["cache-control"] == "no-cache", tela
+        assert r.headers["content-security-policy"] == raiz.headers["content-security-policy"], tela
+    assert web.get("/pedidos").status_code == 404 and web.get("/extratos/x").status_code == 404
     # sem o mapa da API, sem o painel antigo e sem lista de caminhos
     for caminho in ("/openapi.json", "/docs", "/redoc", "/aprovar", "/robots.txt", "/estatico/aprovar.js"):
         assert web.get(caminho).status_code == 404, caminho
@@ -172,6 +180,8 @@ def test_indexing_files_manifest_and_icons(web):
     for pagina in ("suporte", "termos", "privacidade", "cookies"):
         assert f"<loc>https://app.render2go.com/{pagina}</loc>" in mapa.text
     assert "painel" not in mapa.text and "aprovar" not in mapa.text and "verificacao" not in mapa.text
+    for tela in ("modelos", "extratos", "logs", "perfil", "configuracoes", "projetos", "mix"):
+        assert f"/{tela}<" not in mapa.text  # telas da conta: fora do mapa
     manifesto = web.get("/manifest.webmanifest")
     assert manifesto.headers["content-type"] == "application/manifest+json"
     dados = json.loads(manifesto.text)
@@ -228,14 +238,38 @@ def test_old_cached_page_reloads_once_into_the_new_one(web):
 # -- contraste das cores (WCAG 2.2, AA) -------------------------------------------------------------
 
 
+COR = r"--(cor-[a-z0-9-]+):\s*(#[0-9a-f]{6})"
+
+
+def _blocos_escuros(css: str) -> tuple[str, str]:
+    """O tema escuro aparece duas vezes: o do aparelho (sem tema escolhido na conta) e o escolhido (data-tema)."""
+    resto = css.split("@media (prefers-color-scheme: dark)", 1)[1]
+    automatico = resto.split(':root:not([data-tema="claro"]) {', 1)[1].split("}", 1)[0]
+    escolhido = css.split(':root[data-tema="escuro"] {', 1)[1].split("}", 1)[0]
+    return automatico, escolhido
+
+
 def _cores(css: str) -> tuple[dict[str, str], dict[str, str]]:
-    claro = dict(
-        re.findall(r"--(cor-[a-z0-9-]+):\s*(#[0-9a-f]{6})", css.split("@media (prefers-color-scheme: dark)")[0])
-    )
-    escuro = dict(claro)
-    bloco = css.split("@media (prefers-color-scheme: dark)")[1].split("@media")[0]
-    escuro.update(re.findall(r"--(cor-[a-z0-9-]+):\s*(#[0-9a-f]{6})", bloco))
+    claro = dict(re.findall(COR, css.split("@media (prefers-color-scheme: dark)")[0]))
+    escuro = {**claro, **dict(re.findall(COR, _blocos_escuros(css)[0]))}
     return claro, escuro
+
+
+def test_dark_theme_is_the_same_for_the_device_choice_and_the_account_choice():
+    """tokens.css: o escuro do aparelho e o escuro escolhido na conta têm as mesmas declarações (cores, sombras e
+    brilhos), e o claro escolhido na conta é o padrão (:root), que o escuro do aparelho não sobrescreve."""
+    css = TOKENS.read_text()
+    automatico, escolhido = _blocos_escuros(css)
+
+    def declaracoes(bloco: str) -> list[str]:
+        return [linha.strip() for linha in bloco.splitlines() if linha.strip()]
+
+    assert declaracoes(automatico) == declaracoes(escolhido)
+    assert len(re.findall(COR, escolhido)) >= 25 and "color-scheme: dark;" in escolhido
+    assert '@media (prefers-color-scheme: dark) {\n  :root:not([data-tema="claro"]) {' in css
+    # as preferências do aparelho que valem nos dois temas (mais contraste, impressão) ganham dos blocos acima
+    for media in ("@media (prefers-contrast: more) {\n  :root:root {", "@media print {\n  :root:root {"):
+        assert media in css and css.index(media) > css.index(':root[data-tema="escuro"] {'), media
 
 
 def _contraste(a: str, b: str) -> float:
@@ -261,6 +295,9 @@ PARES = [
     ("cor-sobre-marca", "cor-marca", 4.5),
     ("cor-sobre-marca", "cor-marca-forte", 4.5),
     ("cor-marca-texto", "cor-marca-suave", 4.5),
+    ("cor-marca-texto", "cor-superficie", 4.5),  # aba e filtro escolhidos, links das janelas
+    ("cor-marca", "cor-superficie-2", 4.5),  # números das listas nos cartões "em breve"
+    ("cor-acento-texto", "cor-superficie-2", 4.5),
     ("cor-acento-texto", "cor-acento-suave", 4.5),
     ("cor-acento-texto", "cor-superficie", 4.5),
     ("cor-ok", "cor-ok-fundo", 4.5),
@@ -274,6 +311,8 @@ PARES = [
     ("cor-borda-campo", "cor-fundo", 3),
     ("cor-foco", "cor-superficie", 3),
     ("cor-foco", "cor-fundo", 3),
+    ("cor-acento", "cor-superficie", 3),  # borda da foto com texto próprio (pedido em sequência)
+    ("cor-marca", "cor-marca-suave", 3),  # borda da foto marcada
 ]
 
 
@@ -297,9 +336,8 @@ def _brilhos(css: str) -> tuple[dict, dict]:
     def ler(trecho: str) -> dict:
         return {n: (int(r), int(g), int(b), float(a)) for n, r, g, b, a in re.findall(RGBA, trecho)}
 
-    claro_css, resto = css.split("@media (prefers-color-scheme: dark)", 1)
-    claro = ler(claro_css)
-    return claro, {**claro, **ler(resto.split("@media")[0])}
+    claro = ler(css.split("@media (prefers-color-scheme: dark)", 1)[0])
+    return claro, {**claro, **ler(_blocos_escuros(css)[0])}
 
 
 @pytest.mark.parametrize("tema", ["claro", "escuro"])

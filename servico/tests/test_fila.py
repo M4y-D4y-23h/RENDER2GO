@@ -111,6 +111,7 @@ def ambiente(tmp_path, monkeypatch):
         retrato_s=0,
         email=suporte.ConfigEmail(host="smtp.teste", para="", de="Render2Go <nao-responda@render2go.com>"),
         enviar_email=lambda cfg_, msg: enviados.append(msg),
+        baixar_gravatar=lambda email: None,  # nenhum teste fala com o Gravatar de verdade (o teste troca, se precisar)
     )
     porta = _porta()
     srv = uvicorn.Server(uvicorn.Config(criar_app(cfg), host="127.0.0.1", port=porta, log_level="error"))
