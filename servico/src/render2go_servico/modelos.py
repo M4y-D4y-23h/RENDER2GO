@@ -212,6 +212,21 @@ def nome(modelo_id: str | None) -> str:
     return m["nome"] if m else (modelo_id or PADRAO)
 
 
+def info(modelo_id: str | None) -> dict:
+    """Nome do modelo e o tipo de geração dele (extrato e logs): {id, nome, finalidade, titulo, tipo}.
+    Modelo que saiu do catálogo aparece pelo id, sem tipo."""
+    mid = modelo_id or PADRAO
+    m = next((m for m in MODELOS if m["id"] == mid), None)
+    f = next((f for f in FINALIDADES if m and f["id"] == m["finalidade"]), None)
+    return {
+        "id": mid,
+        "nome": m["nome"] if m else mid,
+        "finalidade": f["id"] if f else None,
+        "titulo": f["titulo"] if f else None,
+        "tipo": f["tipo"] if f else None,
+    }
+
+
 def finalidades() -> list[dict]:
     """Catálogo para a página: cada finalidade com os modelos disponíveis e se já pode ser usada."""
     out = []

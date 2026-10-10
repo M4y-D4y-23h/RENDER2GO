@@ -7,7 +7,9 @@ Estados do lote:
 Nenhum job de GPU existe antes da aprovação (ADR 0004: revisão humana no lugar do C2
 enquanto o classificador não existe). Aprovado o lote, nascem um job `compilar` (o pedido
 vira prompt uma vez) e os jobs `render` (um por foto e variação), que só ficam disponíveis
-depois que o prompt existe.
+depois que o prompt existe. Pedido em sequência (10/10/2026): a foto com texto próprio ganha um
+`compilar` a mais por texto distinto (fotos com o mesmo texto dividem a compilação); o render dela
+espera esse prompt, e o dela entra na fila logo antes dos renders da foto, na vez do cliente.
 
 Fila: o worker reivindica um job com prazo (`lease`). Se o prazo vence sem conclusão, o job
 volta para a fila, até MAX_TENTATIVAS. No Postgres a reivindicação usa
@@ -190,6 +192,7 @@ INDICES = [
     "CREATE INDEX IF NOT EXISTS comandos_pendentes ON comandos (executado_em, criado)",
     "CREATE INDEX IF NOT EXISTS tokens_worker_gerador ON tokens_worker (gerador)",
     "CREATE INDEX IF NOT EXISTS auditoria_admin_quando ON auditoria_admin (quando)",
+    "CREATE INDEX IF NOT EXISTS fotos_lote ON fotos (lote_id)",
 ]
 # vídeos já iniciados (ou prontos) de cada cliente nos pedidos em andamento: a vez na fila é por cliente
 INICIADOS_POR_CLIENTE = (
@@ -243,6 +246,14 @@ COLUNAS_NOVAS = [
     ("lotes", "rede", "TEXT"),  # IPv4 inteiro ou IPv6 /64: limite do teste por rede (troca de IPv6 não escapa)
     ("lotes", "modelo", "TEXT"),  # modelo de geração (o pod só pega jobs dos modelos que roda)
     ("lotes", "porta", "INTEGER"),  # porta de origem da conexão (Marco Civil, com o IP e a hora)
+    # texto próprio de uma foto (pedido em sequência, 10/10/2026): vazio = o texto padrão do lote; a
+    # compilação dele (prompt_en) vale para todas as fotos do lote com o mesmo texto
+    ("fotos", "prompt", "TEXT"),
+    ("fotos", "prompt_en", "TEXT"),
+    # extrato por rodada (10/10/2026): o modelo de geração do pedido fica no movimento, que sobrevive à
+    # limpeza do histórico (antes desta coluna, só houve o Wan 2.2)
+    ("movimentos", "modelo", "TEXT"),
+    ("jobs", "excluido_em", "DOUBLE PRECISION"),  # vídeo que o cliente excluiu (sai do armazenamento)
 ]
 MODELO_PADRAO = "wan2.2-i2v"
 SESSAO_TIPOS = ("cliente", "admin")
@@ -546,6 +557,11 @@ class Banco:
                 "autorizacoes": c.all(
                     "SELECT lote_id, declarante, texto_versao, texto, quando, ip, dispositivo FROM consentimentos"
                     " WHERE cliente_id = ? ORDER BY quando",
+                    (cliente_id,),
+                ),
+                "textos_por_foto": c.all(
+                    "SELECT f.lote_id, f.nome, f.prompt AS texto FROM fotos f JOIN lotes l ON l.id = f.lote_id"
+                    " WHERE l.cliente_id = ? AND f.prompt IS NOT NULL ORDER BY f.lote_id, f.nome",
                     (cliente_id,),
                 ),
                 "movimentos": c.all(
@@ -1110,7 +1126,9 @@ class Banco:
                 ),
                 "autorizacao": c.one("SELECT * FROM consentimentos WHERE lote_id = ?", (lote_id,)),
                 "fotos": c.all(
-                    "SELECT nome, tipo, bytes, sha256, analise FROM fotos WHERE lote_id = ? ORDER BY nome", (lote_id,)
+                    "SELECT nome, tipo, bytes, sha256, analise, prompt AS texto FROM fotos WHERE lote_id = ?"
+                    " ORDER BY nome",
+                    (lote_id,),
                 ),
                 "eventos": c.all(
                     "SELECT quando, tipo, detalhe FROM eventos WHERE lote_id = ? ORDER BY quando", (lote_id,)
@@ -1194,14 +1212,15 @@ class Banco:
         job_id: str | None = None,
         descricao: str | None = None,
         por: str | None = None,
+        modelo: str | None = None,
     ) -> bool:
         """Grava um movimento; False se a referência já existe (nada é cobrado ou devolvido duas vezes)."""
         if tipo not in TIPOS_MOVIMENTO:
             raise BancoError(f"tipo de movimento desconhecido: {tipo}")
         n = c.run(
-            "INSERT INTO movimentos (id, cliente_id, quando, tipo, valor, referencia, lote_id, job_id, descricao, por)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (referencia) DO NOTHING",
-            (novo_id("mov"), cliente_id, time.time(), tipo, valor, referencia, lote_id, job_id, descricao, por),
+            "INSERT INTO movimentos (id, cliente_id, quando, tipo, valor, referencia, lote_id, job_id, descricao, por,"
+            " modelo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (referencia) DO NOTHING",
+            (novo_id("mov"), cliente_id, time.time(), tipo, valor, referencia, lote_id, job_id, descricao, por, modelo),
         )
         return n > 0
 
@@ -1237,6 +1256,97 @@ class Banco:
                 (cliente_id, limite),
             )
 
+    # extrato por rodada (cada pedido é uma rodada: cobrado, devolvido e o líquido), créditos e resumo
+    RODADAS = (
+        "SELECT m.lote_id, MIN(m.quando) AS quando,"
+        " COALESCE(SUM(CASE WHEN m.tipo = 'pedido' THEN -m.valor ELSE 0 END), 0) AS cobrado,"
+        " COALESCE(SUM(CASE WHEN m.tipo = 'estorno' THEN m.valor ELSE 0 END), 0) AS devolvido,"
+        " MAX(m.modelo) AS modelo, MAX(CASE WHEN m.tipo = 'pedido' THEN m.descricao END) AS descricao"
+        # estornos chegam dias depois da cobrança, nunca 30: a janela de volta limita a leitura sem
+        # perder a rodada que começou dentro do período
+        " FROM movimentos m WHERE m.cliente_id = ? AND m.lote_id IS NOT NULL AND m.quando >= ?"
+        " GROUP BY m.lote_id HAVING MIN(m.quando) >= ?"
+    )
+    VOLTA_S = 30 * 86400
+
+    def extrato_rodadas(self, cliente_id: str, desde: float, antes: float, limite: int = 50) -> list[dict]:
+        """Rodadas (pedidos cobrados) que começaram em [desde, antes), da mais recente para a mais antiga,
+        com o pedido (quando ainda está no histórico) para o tipo, o modelo e a quantidade de vídeos."""
+        with self.tx() as c:
+            linhas = c.all(
+                f"SELECT * FROM ({self.RODADAS}) r WHERE r.quando < ? ORDER BY r.quando DESC LIMIT ?",
+                (cliente_id, desde - self.VOLTA_S, desde, antes, limite),
+            )
+            ids = [r["lote_id"] for r in linhas]
+            lotes = {}
+            if ids:
+                lotes = {
+                    lt["id"]: lt
+                    for lt in c.all(
+                        "SELECT id, status, pedido, n_fotos, modelo FROM lotes"
+                        f" WHERE id IN ({', '.join('?' * len(ids))})",
+                        tuple(ids),
+                    )
+                }
+        for r in linhas:
+            r["lote"] = lotes.get(r["lote_id"])
+        return linhas
+
+    def extrato_resumo(self, cliente_id: str, desde: float) -> dict[str, Any]:
+        """Totais do período: gasto, devolvido, créditos (recargas e ajustes) e o gasto por modelo."""
+        with self.tx() as c:
+            por_modelo = c.all(
+                f"SELECT r.modelo, COUNT(*) AS rodadas, SUM(r.cobrado) AS cobrado, SUM(r.devolvido) AS devolvido"
+                f" FROM ({self.RODADAS}) r GROUP BY r.modelo",
+                (cliente_id, desde - self.VOLTA_S, desde),
+            )
+            creditos = c.one(
+                "SELECT COALESCE(SUM(CASE WHEN valor > 0 THEN valor ELSE 0 END), 0) AS recargas,"
+                " COALESCE(SUM(CASE WHEN valor < 0 THEN -valor ELSE 0 END), 0) AS ajustes"
+                " FROM movimentos WHERE cliente_id = ? AND lote_id IS NULL AND quando >= ?",
+                (cliente_id, desde),
+            )
+            saldo = self._saldo(c, cliente_id)
+        return {"por_modelo": por_modelo, "recargas": int(creditos["recargas"]), "ajustes": int(creditos["ajustes"]),
+                "saldo": saldo}  # fmt: skip
+
+    def extrato_creditos(self, cliente_id: str, desde: float, antes: float, limite: int = 50) -> list[dict]:
+        """Recargas e ajustes (movimentos sem pedido) em [desde, antes), do mais recente para o mais antigo."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT quando, tipo, valor, descricao FROM movimentos WHERE cliente_id = ? AND lote_id IS NULL"
+                " AND quando >= ? AND quando < ? ORDER BY quando DESC LIMIT ?",
+                (cliente_id, desde, antes, limite),
+            )
+
+    def geracoes(self, cliente_id: str, desde: float, limite: int = 500) -> list[dict]:
+        """Vídeos prontos (e não excluídos) da conta desde `desde`, do mais recente para o mais antigo.
+        A janela nos lotes (pedido criado até 7 dias antes) usa o índice da conta e limita a leitura."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT j.id, j.arquivo, j.atualizado AS gerado_em, j.lote_id, j.segundos, l.pedido, l.modelo,"
+                " f.prompt AS texto FROM jobs j JOIN lotes l ON l.id = j.lote_id LEFT JOIN fotos f ON f.id = j.foto_id"
+                " WHERE l.cliente_id = ? AND l.criado >= ? AND j.tipo = 'render' AND j.status = 'ok'"
+                " AND j.excluido_em IS NULL AND j.atualizado >= ? ORDER BY j.atualizado DESC LIMIT ?",
+                (cliente_id, desde - 7 * 86400, desde, limite),
+            )
+
+    def excluir_video(self, job_id: str, cliente_id: str) -> dict | None:
+        """Marca o vídeo como excluído pelo cliente (o arquivo sai do armazenamento na API); None se o job
+        não é dele, não está pronto ou já foi excluído."""
+        with self.tx() as c:
+            j = c.one(
+                "SELECT j.id, j.arquivo, j.lote_id FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                " WHERE j.id = ? AND l.cliente_id = ? AND j.tipo = 'render' AND j.status = 'ok'"
+                " AND j.excluido_em IS NULL",
+                (job_id, cliente_id),
+            )
+            if j is None:
+                return None
+            c.run("UPDATE jobs SET excluido_em = ? WHERE id = ?", (time.time(), job_id))
+            self.evento(c, j["lote_id"], "video_excluido", {"arquivo": j["arquivo"]})
+            return j
+
     def cobranca(self, lote_id: str) -> dict[str, int]:
         """Quanto o pedido custou e quanto já voltou para o saldo (vídeos que não saíram, recusa)."""
         with self.tx() as c:
@@ -1266,19 +1376,30 @@ class Banco:
             f"pedido:{lote['id']}",
             lote_id=lote["id"],
             descricao=f"{videos} vídeo(s) de {pedido.get('duracao')} s em {resolucao}",
+            modelo=lote.get("modelo") or pedido.get("modelo") or MODELO_PADRAO,
         )
 
     def _estornar_lote(self, c, lote_id: str, descricao: str) -> None:
         """Pedido recusado depois de cobrado: volta o valor inteiro (ainda não há vídeos)."""
-        cobr = c.one("SELECT cliente_id, valor FROM movimentos WHERE referencia = ?", (f"pedido:{lote_id}",))
+        cobr = c.one("SELECT cliente_id, valor, modelo FROM movimentos WHERE referencia = ?", (f"pedido:{lote_id}",))
         if cobr:
             ref = f"estorno-lote:{lote_id}"
-            self._movimento(c, cobr["cliente_id"], "estorno", -int(cobr["valor"]), ref, lote_id, None, descricao)
+            self._movimento(
+                c,
+                cobr["cliente_id"],
+                "estorno",
+                -int(cobr["valor"]),
+                ref,
+                lote_id,
+                None,
+                descricao,
+                modelo=cobr["modelo"],
+            )
 
     def _estornar_videos(self, c, lote_id: str) -> None:
         """Cada vídeo que terminou em erro ou foi cancelado volta para o saldo (uma vez só)."""
         cobr = c.one(
-            "SELECT m.cliente_id, l.preco_video FROM movimentos m JOIN lotes l ON l.id = m.lote_id"
+            "SELECT m.cliente_id, m.modelo, l.preco_video FROM movimentos m JOIN lotes l ON l.id = m.lote_id"
             " WHERE m.referencia = ?",
             (f"pedido:{lote_id}",),
         )
@@ -1298,6 +1419,7 @@ class Banco:
                 lote_id,
                 j["id"],
                 f"{j['arquivo']}: o vídeo não saiu",
+                modelo=cobr["modelo"],
             )
 
     def fotos_hoje(self, cliente_id: str) -> int:
@@ -1320,7 +1442,7 @@ class Banco:
         autorizacao: dict | None = None,
         preco_video: int | None = None,
     ) -> str:
-        """fotos: [{nome, tipo, bytes, chave}] (já validadas pela API).
+        """fotos: [{nome, tipo, bytes, chave, prompt?}] (já validadas pela API; prompt: texto próprio da foto).
         origem: {ip, dispositivo, agente, fuso} de quem pediu.
         autorizacao: {declarante, texto_versao, texto} quando a caixa de autorização foi marcada;
         gravada na mesma transação, com a origem e a lista de fotos (auditoria).
@@ -1380,7 +1502,7 @@ class Banco:
                 )
             for f in fotos:
                 c.run(
-                    "INSERT INTO fotos (id, lote_id, nome, tipo, bytes, chave) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO fotos (id, lote_id, nome, tipo, bytes, chave, prompt) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         novo_id("foto"),
                         lid,
@@ -1388,6 +1510,7 @@ class Banco:
                         f["tipo"],
                         f["bytes"],
                         f["chave"].replace("{lote}", lid),
+                        f.get("prompt") or None,
                     ),
                 )
             self.evento(
@@ -1797,6 +1920,18 @@ class Banco:
                 " VALUES (?, ?, 'compilar', 'pendente', ?, ?)",
                 (novo_id("job"), lote_id, agora, agora),
             )
+            # textos próprios: um compilar por texto distinto, preso à 1ª foto (na ordem da lista) que o usa;
+            # o arquivo "<foto>-v0" põe a compilação logo antes dos renders dessa foto na fila
+            primeiras: dict[str, dict] = {}
+            for f in c.all("SELECT id, nome, prompt FROM fotos WHERE lote_id = ? AND prompt IS NOT NULL ORDER BY nome",
+                           (lote_id,)):  # fmt: skip
+                primeiras.setdefault(f["prompt"], f)
+            for f in primeiras.values():
+                c.run(
+                    "INSERT INTO jobs (id, lote_id, tipo, foto_id, arquivo, status, criado, atualizado)"
+                    " VALUES (?, ?, 'compilar', ?, ?, 'pendente', ?, ?)",
+                    (novo_id("job"), lote_id, f["id"], f"{f['nome']}-v0", agora, agora),
+                )
             for t in tarefas:
                 c.run(
                     "INSERT INTO jobs (id, lote_id, tipo, foto_id, variacao, seed, arquivo, status, criado, atualizado)"
@@ -1812,7 +1947,7 @@ class Banco:
                         agora,
                     ),
                 )
-            self.evento(c, lote_id, "aprovado", {"por": quem, "jobs": len(tarefas)})
+            self.evento(c, lote_id, "aprovado", {"por": quem, "jobs": len(tarefas), "textos": len(primeiras)})
 
     def recusar(self, lote_id: str, quem: str, motivo: str) -> None:
         with self.tx() as c:
@@ -1825,6 +1960,22 @@ class Banco:
                 raise BancoError("lote não pode mais ser recusado")
             self._estornar_lote(c, lote_id, f"pedido recusado: {motivo}"[:200])
             self.evento(c, lote_id, "recusado", {"por": quem, "motivo": motivo})
+
+    def definir_prompt_foto(self, foto_id: str, prompt_en: str, compilador: str) -> None:
+        """Prompt compilado do texto próprio de uma foto: vale para todas as fotos do lote com o mesmo texto."""
+        with self.tx() as c:
+            f = c.one("SELECT lote_id, prompt FROM fotos WHERE id = ?", (foto_id,))
+            if f is None or f["prompt"] is None:
+                raise BancoError("foto sem texto próprio")
+            n = c.run(
+                "UPDATE fotos SET prompt_en = ? WHERE lote_id = ? AND prompt = ? AND prompt_en IS NULL",
+                (prompt_en, f["lote_id"], f["prompt"]),
+            )
+            self.evento(c, f["lote_id"], "prompt_foto", {"compilador": compilador, "fotos": n})
+
+    def foto(self, foto_id: str) -> dict | None:
+        with self.tx() as c:
+            return c.one("SELECT * FROM fotos WHERE id = ?", (foto_id,))
 
     def definir_prompt(self, lote_id: str, prompt_en: str, compilador: str) -> None:
         with self.tx() as c:
@@ -1840,7 +1991,8 @@ class Banco:
     def reivindicar(
         self, worker: str, lease_s: float = 900, tipos: list[str] | None = None, modelos: list[str] | None = None
     ) -> dict | None:
-        """Próximo job (compilar antes de render; render só com o prompt pronto).
+        """Próximo job (compilar antes de render; render só com o prompt pronto: o do lote ou, na foto com
+        texto próprio, o dela).
 
         `tipos`: só esses tipos de job (o pod que ainda baixa os modelos pega só "compilar").
         `modelos`: só pedidos desses modelos de geração (cada pod roda os seus; sem a lista, qualquer um)."""
@@ -1878,11 +2030,14 @@ class Banco:
             job = c.one(
                 f"WITH inic AS ({INICIADOS_POR_CLIENTE})"
                 " SELECT j.* FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                " LEFT JOIN fotos f ON f.id = j.foto_id"
                 " LEFT JOIN inic ON inic.cliente_id = l.cliente_id"
                 " WHERE j.status = 'pendente' AND l.status IN ('aprovado', 'processando')"
-                " AND (j.tipo = 'compilar' OR l.prompt_en IS NOT NULL)"
+                " AND (j.tipo = 'compilar' OR (f.prompt IS NULL AND l.prompt_en IS NOT NULL)"
+                " OR (f.prompt IS NOT NULL AND f.prompt_en IS NOT NULL))"
                 f" AND j.tipo IN ({', '.join('?' * len(tipos))}){filtro_modelo}"
-                " ORDER BY CASE j.tipo WHEN 'compilar' THEN 0 ELSE 1 END, l.prioridade,"
+                # o compilar do lote passa na frente; o de um texto próprio espera a vez como um render
+                " ORDER BY CASE WHEN j.tipo = 'compilar' AND j.foto_id IS NULL THEN 0 ELSE 1 END, l.prioridade,"
                 " COALESCE(inic.n, 0), l.criado, l.id, j.criado, j.arquivo, j.id LIMIT 1" + trava,
                 (*tipos, *args_modelo),
             )
@@ -1935,12 +2090,21 @@ class Banco:
 
     def _fechar_lote(self, c, lote_id: str) -> None:
         agora = time.time()
-        # compilação que falhou de vez: os renders do lote não têm como rodar
+        # compilação que falhou de vez: os renders que dependiam dela não têm como rodar. A do lote derruba
+        # as fotos sem texto próprio; a de um texto próprio, só as fotos com esse texto
         c.run(
             "UPDATE jobs SET status = 'cancelado', erro = 'compilação falhou', atualizado = ?"
             " WHERE lote_id = ? AND tipo = 'render' AND status = 'pendente' AND EXISTS"
-            " (SELECT 1 FROM jobs k WHERE k.lote_id = ? AND k.tipo = 'compilar' AND k.status = 'erro')",
-            (agora, lote_id, lote_id),
+            " (SELECT 1 FROM jobs k WHERE k.lote_id = ? AND k.tipo = 'compilar' AND k.foto_id IS NULL"
+            " AND k.status = 'erro') AND foto_id IN (SELECT id FROM fotos WHERE lote_id = ? AND prompt IS NULL)",
+            (agora, lote_id, lote_id, lote_id),
+        )
+        c.run(
+            "UPDATE jobs SET status = 'cancelado', erro = 'compilação do texto da foto falhou', atualizado = ?"
+            " WHERE lote_id = ? AND tipo = 'render' AND status = 'pendente' AND foto_id IN"
+            " (SELECT f.id FROM fotos f WHERE f.lote_id = ? AND f.prompt IN (SELECT t.prompt FROM jobs k"
+            " JOIN fotos t ON t.id = k.foto_id WHERE k.lote_id = ? AND k.tipo = 'compilar' AND k.status = 'erro'))",
+            (agora, lote_id, lote_id, lote_id),
         )
         self._estornar_videos(c, lote_id)
         r = c.one(
@@ -1996,8 +2160,13 @@ class Banco:
             self._sq.execute("VACUUM")
 
     def jobs(self, lote_id: str) -> list[dict]:
+        """Jobs do lote; `texto`: o texto próprio da foto (None = o texto padrão do lote)."""
         with self.tx() as c:
-            return c.all("SELECT * FROM jobs WHERE lote_id = ? ORDER BY tipo, arquivo", (lote_id,))
+            return c.all(
+                "SELECT j.*, f.prompt AS texto FROM jobs j LEFT JOIN fotos f ON f.id = j.foto_id"
+                " WHERE j.lote_id = ? ORDER BY j.tipo, j.arquivo",
+                (lote_id,),
+            )
 
     def jobs_de(self, lotes: list[str]) -> dict[str, list[dict]]:
         """Os jobs de render de vários lotes numa consulta só (lista de pedidos do cliente)."""
@@ -2005,8 +2174,10 @@ class Banco:
             return {}
         with self.tx() as c:
             linhas = c.all(
-                "SELECT id, lote_id, tipo, arquivo, status, aviso FROM jobs"
-                f" WHERE lote_id IN ({', '.join('?' * len(lotes))}) AND tipo = 'render' ORDER BY arquivo",
+                "SELECT j.id, j.lote_id, j.tipo, j.arquivo, j.status, j.aviso, j.excluido_em, f.prompt AS texto"
+                " FROM jobs j"
+                " LEFT JOIN fotos f ON f.id = j.foto_id"
+                f" WHERE j.lote_id IN ({', '.join('?' * len(lotes))}) AND j.tipo = 'render' ORDER BY j.arquivo",
                 tuple(lotes),
             )
         por: dict[str, list[dict]] = {lid: [] for lid in lotes}

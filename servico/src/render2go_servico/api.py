@@ -107,6 +107,12 @@ from render2go_servico.db import Banco, BancoError, SaldoInsuficiente
 
 TIPOS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 MAX_FOTOS_LOTE = 1000
+# pedido em sequência: textos próprios distintos por lote (cada um vira uma compilação a mais no pod)
+MAX_TEXTOS_FOTO = 100
+DIAS_EXTRATO = (7, 30, 90, 365, 0)  # períodos do extrato (0 = tudo)
+MAX_LINHAS_CSV = 5000
+RESOLUCAO_EXTRATO = {"rapida": "480p", "alta": "720p"}
+DESCRICAO_PEDIDO = re.compile(r"^(?P<videos>\d+) vídeo\(s\) de (?P<duracao>\d+) s em (?P<resolucao>\w+)")
 MAX_BYTES_FOTO = 50 * 1024**2
 URL_ENVIO_S = 3600
 URL_DOWNLOAD_S = 24 * 3600
@@ -688,6 +694,43 @@ def _anti_robo(c: Config, resposta: str | None, origem: dict, acao: str) -> None
         raise HTTPException(403, f"não foi possível confirmar que você não é um robô ({motivo}); tente de novo")
 
 
+def _celula_csv(v: str) -> str:
+    """Célula de CSV: aspas quando preciso e, contra fórmulas (=, +, -, @) abertas no Excel, um apóstrofo."""
+    v = str(v)
+    if v[:1] in ("=", "+", "-", "@") and not re.fullmatch(r"-?[0-9]+(,[0-9]+)?", v):
+        v = "'" + v
+    if any(ch in v for ch in (";", '"', "\n", "\r")):
+        v = '"' + v.replace('"', '""') + '"'
+    return v
+
+
+def _textos_por_foto(body: Any, receita: dict) -> list[str | None]:
+    """Pedido em sequência: o texto próprio de cada foto (None = o texto padrão do pedido), conferido como o
+    texto padrão (filtro de conteúdo C1 e estilos). Texto igual ao padrão não conta como próprio."""
+    padrao = " ".join(body.prompt.split())
+    textos: list[str | None] = []
+    for f in body.fotos:
+        t = " ".join((f.prompt or "").split())
+        if not t or t == padrao:
+            textos.append(None)
+            continue
+        if len(t) < 3:
+            raise HTTPException(422, f"{f.nome}: o texto próprio da foto precisa de pelo menos 3 letras")
+        d = filtros.avaliar(t)
+        if not d.allowed:  # C1 também em cada texto próprio (ADR 0004)
+            raise HTTPException(422, f"{f.nome}: texto recusado pelo filtro de conteúdo: {d.reason}")
+        try:
+            presets.compose("i2v", t, receita["presets"])
+        except presets.PresetError as e:
+            raise HTTPException(422, f"{f.nome}: {e}") from e
+        textos.append(t)
+    if len({t for t in textos if t}) > MAX_TEXTOS_FOTO:
+        raise HTTPException(
+            422, f"no máximo {MAX_TEXTOS_FOTO} textos diferentes por pedido (fotos com o mesmo texto contam uma vez)"
+        )
+    return textos
+
+
 def duracoes(plano: str) -> list[int]:
     """Durações aceitas: 3 s só no teste gratuito; nos outros planos, de 4 a 7 s."""
     if plano == "teste":
@@ -706,6 +749,8 @@ class FotoIn(BaseModel):
     nome: str = Field(min_length=1, max_length=200)
     tipo: str = Field(max_length=40)
     bytes: int = Field(gt=0)
+    # pedido em sequência: o texto só desta foto (vazio = o texto padrão do pedido)
+    prompt: str | None = Field(None, max_length=600)
 
 
 class NavegadorIn(BaseModel):
@@ -1294,6 +1339,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(422, str(e)) from e
         if not 1 <= len(body.fotos) <= MAX_FOTOS_LOTE:
             raise HTTPException(422, f"de 1 a {MAX_FOTOS_LOTE} fotos por lote")
+        textos = _textos_por_foto(body, r)
         if cli["plano"] == "teste":
             pedido_teste = (body.qualidade, body.duracao or TESTE["duracao"], body.variacoes)
             if pedido_teste != (TESTE["qualidade"], TESTE["duracao"], TESTE["variacoes"]):
@@ -1312,7 +1358,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             if saldo < custo:
                 raise HTTPException(402, sem_saldo(custo, saldo))
         fotos, usados = [], set()
-        for f in body.fotos:
+        for f, texto in zip(body.fotos, textos, strict=True):
             if f.tipo not in TIPOS:
                 raise HTTPException(422, f"{f.nome}: use JPG, PNG ou WebP")
             if f.bytes > MAX_BYTES_FOTO:
@@ -1330,9 +1376,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "bytes": f.bytes,
                     "chave": chave_entrada(cli["id"], "{lote}", arq),
                     "original": f.nome,
+                    "prompt": texto,
                 }
             )
         pedido = body.model_dump(exclude={"fotos", "declarante", "navegador"})
+        if any(textos):  # pedido em sequência: os textos ficam nas fotos; aqui, só quantos são
+            pedido["textos_por_foto"] = len({t for t in textos if t})
         autorizacao = None
         if body.consentimento:  # registro de auditoria: conta, de onde, qual texto, quais fotos, sinais
             sinais = body.navegador.model_dump() if body.navegador else {}
@@ -1407,8 +1456,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             jobs = [j for j in c.banco.jobs(lt["id"]) if j["tipo"] == "render"]
         videos = []
         for j in jobs:
-            item = {"arquivo": j["arquivo"], "status": j["status"], "aviso": j["aviso"]}
-            if j["status"] == "ok":
+            item = {"id": j["id"], "arquivo": j["arquivo"], "status": j["status"], "aviso": j["aviso"],
+                    "texto": j.get("texto"), "excluido": bool(j.get("excluido_em"))}  # fmt: skip
+            if j["status"] == "ok" and not j.get("excluido_em"):
                 chave = chave_saida(cliente_id, lt["id"], j["arquivo"])
                 item["url"] = c.armazenamento.url("GET", chave, URL_DOWNLOAD_S)  # abre e toca no navegador
                 item["baixar"] = c.armazenamento.url(  # o mesmo vídeo, salvo como arquivo
@@ -1541,6 +1591,170 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "extrato": c.banco.extrato(cli["id"], 20),
             "pagamento": c.mp is not None,
         }
+
+    # -- extrato por rodada e logs de geração (10/10/2026) -----------------------------------------
+
+    def _periodo(dias: int) -> float:
+        if dias not in DIAS_EXTRATO:
+            raise HTTPException(422, f"período: {', '.join(map(str, DIAS_EXTRATO))} dias (0 = tudo)")
+        return time.time() - dias * 86400 if dias else 0.0
+
+    def _rodada(r: dict) -> dict:
+        """Uma rodada do extrato: o pedido, o tipo e o modelo de geração, os vídeos e quanto custou."""
+        lt = r["lote"]
+        info = modelos.info(r["modelo"] or (lt or {}).get("modelo"))
+        videos = duracao = resolucao = None
+        if lt:
+            p = json.loads(lt["pedido"])
+            videos = int(lt["n_fotos"]) * int(p.get("variacoes") or 1)
+            duracao, resolucao = p.get("duracao"), RESOLUCAO_EXTRATO.get(p.get("qualidade"), p.get("qualidade"))
+        elif m := DESCRICAO_PEDIDO.match(r["descricao"] or ""):  # pedido que já saiu do histórico
+            videos, duracao, resolucao = int(m["videos"]), int(m["duracao"]), m["resolucao"]
+        cobrado, devolvido = int(r["cobrado"]), int(r["devolvido"])
+        return {
+            "tipo": "rodada",
+            "lote": r["lote_id"],
+            "quando": r["quando"],
+            "modelo": info["nome"],
+            "modelo_id": info["id"],
+            "finalidade": info["titulo"],
+            "tipo_modelo": info["tipo"],
+            "videos": videos,
+            "duracao": duracao,
+            "resolucao": resolucao,
+            "cobrado": cobrado,
+            "devolvido": devolvido,
+            "liquido": cobrado - devolvido,
+            "status": lt["status"] if lt else None,
+        }
+
+    def _itens_extrato(
+        c: Config, cliente_id: str, desde: float, antes: float, limite: int
+    ) -> tuple[list, float | None]:
+        rodadas = [_rodada(r) for r in c.banco.extrato_rodadas(cliente_id, desde, antes, limite)]
+        creditos = [
+            {"tipo": m["tipo"], "quando": m["quando"], "valor": int(m["valor"]), "descricao": m["descricao"]}
+            for m in c.banco.extrato_creditos(cliente_id, desde, antes, limite)
+        ]
+        itens = sorted(rodadas + creditos, key=lambda x: x["quando"], reverse=True)
+        proximo = itens[limite - 1]["quando"] if len(itens) > limite else None
+        return itens[:limite], proximo
+
+    @app.get("/api/extrato")
+    def extrato(dias: int = 30, antes: float | None = None, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """Extrato por rodada: cada pedido com o tipo e o modelo de geração e o total (cobrado − devolvido),
+        as recargas e os ajustes, e o resumo do período (com o gasto por modelo). Paginado por `antes`."""
+        desde = _periodo(dias)
+        itens, proximo = _itens_extrato(c, cli["id"], desde, antes or time.time() + 1, 50)
+        resumo = c.banco.extrato_resumo(cli["id"], desde)
+        por_modelo = []
+        for m in resumo["por_modelo"]:
+            info = modelos.info(m["modelo"])
+            cobrado, devolvido = int(m["cobrado"] or 0), int(m["devolvido"] or 0)
+            por_modelo.append({"modelo": info["nome"], "modelo_id": info["id"], "finalidade": info["titulo"],
+                               "tipo_modelo": info["tipo"], "rodadas": int(m["rodadas"]), "cobrado": cobrado,
+                               "devolvido": devolvido, "liquido": cobrado - devolvido})  # fmt: skip
+        gasto = sum(m["cobrado"] for m in por_modelo)
+        devolvido = sum(m["devolvido"] for m in por_modelo)
+        return {
+            "plano": cli["plano"],
+            "dias": dias,
+            "resumo": {
+                "gasto": gasto,
+                "devolvido": devolvido,
+                "liquido": gasto - devolvido,
+                "rodadas": sum(m["rodadas"] for m in por_modelo),
+                "recargas": resumo["recargas"],
+                "ajustes": resumo["ajustes"],
+                "saldo": resumo["saldo"],
+            },
+            "por_modelo": sorted(por_modelo, key=lambda m: m["liquido"], reverse=True),
+            "itens": itens,
+            "proximo": proximo,
+        }
+
+    @app.get("/api/extrato.csv")
+    def extrato_csv(dias: int = 30, fuso_min: int = 0, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """O extrato do período numa planilha (CSV com ; e vírgula decimal, como o Excel em português abre)."""
+        if not -14 * 60 <= fuso_min <= 14 * 60:
+            raise HTTPException(422, "fuso inválido")
+        itens, _ = _itens_extrato(c, cli["id"], _periodo(dias), time.time() + 1, MAX_LINHAS_CSV)
+
+        def reais_csv(v: int | None) -> str:
+            return "" if v is None else f"{v / 100:.2f}".replace(".", ",")
+
+        linhas = [
+            "Data;Tipo;Pedido;Tipo de modelo;Modelo de IA;Vídeos;Cobrado (R$);Devolvido (R$);"
+            "Total da rodada (R$);Crédito (R$);Descrição"
+        ]
+        for x in itens:
+            quando = time.strftime("%d/%m/%Y %H:%M", time.gmtime(x["quando"] + fuso_min * 60))
+            if x["tipo"] == "rodada":
+                desc = f"{x['videos']} vídeo(s) de {x['duracao']} s em {x['resolucao']}" if x["videos"] else ""
+                campos = [
+                    quando, "Pedido", x["lote"], x["tipo_modelo"] or "", x["modelo"], str(x["videos"] or ""),
+                    reais_csv(x["cobrado"]), reais_csv(x["devolvido"]), reais_csv(x["liquido"]), "", desc,
+                ]  # fmt: skip
+            else:
+                tipo = "Recarga" if x["tipo"] == "recarga" else "Ajuste"
+                campos = [quando, tipo, "", "", "", "", "", "", "", reais_csv(x["valor"]), x["descricao"] or ""]
+            linhas.append(";".join(_celula_csv(v) for v in campos))
+        corpo = "\ufeff" + "\r\n".join(linhas) + "\r\n"  # BOM: o Excel reconhece o UTF-8 (acentos)
+        nome = f"render2go-extrato-{time.strftime('%Y-%m-%d')}.csv"
+        return Response(
+            corpo.encode(), media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{nome}"', "Cache-Control": "no-store"},
+        )  # fmt: skip
+
+    @app.get("/api/geracoes")
+    def geracoes(horas: int = 24, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """Logs de geração: os vídeos prontos (e não excluídos) das últimas `horas`, com o modelo que gerou,
+        a hora e os links (assistir e baixar, assinados por 24 h)."""
+        if not 1 <= horas <= 7 * 24:
+            raise HTTPException(422, "de 1 a 168 horas")
+        itens = []
+        for j in c.banco.geracoes(cli["id"], time.time() - horas * 3600):
+            p = json.loads(j["pedido"])
+            info = modelos.info(j["modelo"] or p.get("modelo"))
+            chave = chave_saida(cli["id"], j["lote_id"], j["arquivo"])
+            itens.append(
+                {
+                    "id": j["id"],
+                    "arquivo": j["arquivo"],
+                    "lote": j["lote_id"],
+                    "gerado_em": j["gerado_em"],
+                    "modelo": info["nome"],
+                    "finalidade": info["titulo"],
+                    "tipo_modelo": info["tipo"],
+                    "duracao": p.get("duracao"),
+                    "resolucao": RESOLUCAO_EXTRATO.get(p.get("qualidade"), p.get("qualidade")),
+                    "texto": j["texto"] or p.get("prompt"),
+                    "texto_proprio": j["texto"] is not None,
+                    "url": c.armazenamento.url("GET", chave, URL_DOWNLOAD_S),
+                    "baixar": c.armazenamento.url(
+                        "GET",
+                        chave,
+                        URL_DOWNLOAD_S,
+                        extra={"response-content-disposition": f'attachment; filename="{j["arquivo"]}"'},
+                    ),  # fmt: skip
+                }
+            )
+        return {"horas": horas, "itens": itens}
+
+    @app.post("/api/geracoes/{job_id}/excluir")
+    def excluir_geracao(job_id: str, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """O cliente exclui um vídeo pronto: o arquivo (e a folha de conferência) sai do armazenamento."""
+        j = c.banco.excluir_video(job_id[:80], cli["id"])
+        if j is None:
+            raise HTTPException(404, "vídeo não encontrado")
+        stem = Path(j["arquivo"]).stem
+        for nome in (j["arquivo"], f"conferencia/{stem}.jpg"):
+            with contextlib.suppress(Exception):  # o armazenamento fora do ar não desfaz a exclusão
+                c.armazenamento.apagar(chave_saida(cli["id"], j["lote_id"], nome))
+        c.banco.registrar_acesso(
+            cli["id"], "video_excluido", origem_de(request), {"lote": j["lote_id"], "arquivo": j["arquivo"]}
+        )
+        return {"ok": True}
 
     @app.get("/api/lotes/{lote_id}")
     def ver_lote(lote_id: str, cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -1771,6 +1985,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                             "nome": f["nome"],
                             "url": c.armazenamento.url("GET", f["chave"], 3600),
                             "analise": json.loads(f["analise"]) if f["analise"] else None,
+                            # pedido em sequência: o revisor vê e aprova cada texto próprio
+                            "texto": f["prompt"],
+                            "filtro_c1": filtros.avaliar(f["prompt"]).reason if f["prompt"] else None,
                         }
                         for f in fotos
                     ],
@@ -2082,6 +2299,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             return {"job": None, "fila": c.banco.fila()}
         lt = c.banco.lote(job["lote_id"])
         pedido = json.loads(lt["pedido"])
+        foto = c.banco.foto(job["foto_id"]) if job["foto_id"] else None
+        if job["tipo"] == "compilar" and foto is not None:
+            # texto próprio de uma foto: o worker compila esse texto como compilaria o do pedido
+            pedido = {**pedido, "prompt": foto["prompt"]}
         out: dict[str, Any] = {
             "job_id": job["id"],
             "tipo": job["tipo"],
@@ -2091,10 +2312,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "aprovado_em": lt["aprovado_em"],
         }
         if job["tipo"] == "render":
-            foto = next(f for f in c.banco.fotos(lt["id"]) if f["id"] == job["foto_id"])
             stem = Path(job["arquivo"]).stem
             out |= {
-                "prompt_en": lt["prompt_en"],
+                "prompt_en": foto["prompt_en"] if foto["prompt"] else lt["prompt_en"],
                 "arquivo": job["arquivo"],
                 "seed": job["seed"],
                 "foto_url": c.armazenamento.url("GET", foto["chave"], 3600),
@@ -2128,11 +2348,15 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         d = filtros.avaliar(body.prompt_en)
         if not d.allowed:  # C1 também no prompt compilado
             c.banco.concluir(job_id, body.worker, "erro", erro=d.reason)
-            with contextlib.suppress(BancoError):  # já recusado ou já em andamento
-                c.banco.recusar(job["lote_id"], "filtro-c1", d.reason)
+            if not job["foto_id"]:  # texto próprio recusado derruba só as fotos com esse texto
+                with contextlib.suppress(BancoError):  # já recusado ou já em andamento
+                    c.banco.recusar(job["lote_id"], "filtro-c1", d.reason)
             _se_fechou(c, job["lote_id"])
             raise HTTPException(422, d.reason)
-        c.banco.definir_prompt(job["lote_id"], body.prompt_en, body.compilador)
+        if job["foto_id"]:
+            c.banco.definir_prompt_foto(job["foto_id"], body.prompt_en, body.compilador)
+        else:
+            c.banco.definir_prompt(job["lote_id"], body.prompt_en, body.compilador)
         return {"ok": True}
 
     @app.post("/api/worker/jobs/{job_id}/concluir")
