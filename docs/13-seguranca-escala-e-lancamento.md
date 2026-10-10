@@ -159,13 +159,13 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
    - **Picos:** o SES começa no "sandbox" (200 e-mails por dia, 1 por segundo); na saída do sandbox você pede os limites (ex.: 50 mil por dia e 20 por segundo) e pede mais antes de cada campanha grande. Acima do limite por segundo, o SES responde "454 Throttling" e o serviço tenta de novo em 1 s e em 4 s.
    - **Plano B:** se a AWS demorar a liberar a produção, use o Resend no começo. Trocar depois é só mudar o SMTP no `.env` e os registros de DNS.
 2. **Cloudflare Turnstile** ("não sou um robô", gratuito): seção 6.1.2.
-3. **Segredos novos** (`docs/09`, seção 0, "09/10/2026 (4)"):
+3. **Segredos novos** (`docs/09`, seção 0, "09/10/2026 (4)", bloco 2, que gera e grava todos):
    - `RENDER2GO_SEGREDO_CONTAS`;
    - `RENDER2GO_ADMIN_CAMINHO`, o endereço do painel. Guarde num gerenciador de senhas, não nos favoritos sincronizados;
    - um `RENDER2GO_ADMIN_TOKENS` novo, porque o antigo ficou guardado em navegadores;
    - `RENDER2GO_ADMIN_TOTP`, cadastrado no aplicativo autenticador (Google Authenticator, Authy ou 1Password). Guarde o segredo também no gerenciador de senhas;
    - `RENDER2GO_WORKER_TOKENS` vazio.
-4. **Identificação do vendedor** (rodapé e páginas legais): razão social, CNPJ, endereço, e-mail de contato e e-mail de privacidade (`RENDER2GO_EMPRESA_*` e `RENDER2GO_EMAIL_*`). Sem eles, as páginas mostram "[preencher]".
+4. **Identificação do vendedor** (rodapé e páginas legais): razão social, CNPJ, endereço, e-mail de contato e e-mail de privacidade (`RENDER2GO_EMPRESA_*` e `RENDER2GO_EMAIL_*`; `docs/09`, seção 0, bloco 3). Sem eles, as páginas mostram "[preencher]". Pessoa física pode usar o nome completo e o CPF (Decreto 7.962/2013, art. 2º, I), mas o endereço e o documento ficam públicos no site. Um e-mail do próprio domínio (ex.: `contato@render2go.com`) precisa de quem o receba: o Email Routing da Cloudflare (gratuito) encaminha para o seu Gmail.
 5. **Mercado Pago** (pode ficar para depois do 1º dia; sem ele, a recarga continua manual):
    - conta verificada, de preferência PJ, com uma **chave Pix cadastrada** (sem ela, o Pix não é oferecido);
    - "Suas integrações" → criar uma aplicação → credenciais de **produção** → Access Token em `RENDER2GO_MP_ACCESS_TOKEN`;

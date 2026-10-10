@@ -8,22 +8,88 @@ Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem p
 
 ### 09/10/2026 (4): contas por e-mail, painel secreto com 2 fatores, Pix e segurança
 
-**Esta atualização tem passos antes.** Sem eles, ninguém novo consegue entrar e o painel fica fora do ar. Prepare primeiro o que está no `docs/13`, seção 6.1: o e-mail transacional (SMTP com SPF, DKIM e DMARC), o "não sou um robô" (Turnstile), os dados da empresa e, se quiser já no 1º dia, o Mercado Pago. Depois, no servidor, **sem pedido gerando**:
+**Esta atualização tem passos antes.** Sem eles, ninguém novo consegue entrar e o painel fica fora do ar. Prepare primeiro o que está no `docs/13`, seção 6.1: o e-mail transacional (SMTP com SPF, DKIM e DMARC), o "não sou um robô" (Turnstile), os dados da empresa e, se quiser já no 1º dia, o Mercado Pago. Tenha à mão o aplicativo autenticador no celular (Google Authenticator, Authy ou 1Password) e o gerenciador de senhas. Depois, no servidor, **sem pedido gerando**, cole um bloco de cada vez:
 
+**1) Backup do banco e imagem nova** (os contêineres ainda não mudam):
 ```bash
-cd ~/GPU2GO && git pull
-cd servico/implantacao
-# 1) backup do banco antes de mudar
+cd ~/GPU2GO && git pull && cd servico/implantacao
 docker compose exec -T postgres pg_dump -U gpu2go gpu2go | gzip > ~/backup-antes-contas-$(date +%F).sql.gz
-# 2) imagem nova, sem trocar ainda os contêineres
+ls -lh ~/backup-antes-contas-*.sql.gz
 docker compose build
-# 3) segredos novos
-python3 -c "import secrets; print('/painel-' + secrets.token_urlsafe(18))"   # RENDER2GO_ADMIN_CAMINHO
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"                # rode 2 vezes: RENDER2GO_ADMIN_TOKENS (novo) e RENDER2GO_SEGREDO_CONTAS
-docker compose run --rm --no-deps api render2go-servico totp-novo            # RENDER2GO_ADMIN_TOTP; cadastre no aplicativo autenticador
-# 4) .env: as variáveis novas estão no exemplo.env (painel, contas, SMTP e remetente, Turnstile, empresa, Pix, escala)
-nano .env
-# 5) sobe tudo, com o contêiner novo "analisador", e confere
+```
+
+**2) Painel e segredos.** O bloco gera o endereço secreto do painel, um token novo (o antigo ficou guardado em navegadores), a chave do autenticador e o segredo das contas (`RENDER2GO_SEGREDO_CONTAS`, mantido se já existir), e esvazia o `RENDER2GO_WORKER_TOKENS`. Ele mostra o endereço, o token e a chave **uma vez**: guarde os três no gerenciador de senhas e cadastre a chave no aplicativo (adicionar conta → inserir chave de configuração → baseada em tempo). Rodar de novo não troca nada; o `.env` anterior fica em `.env.antes-painel`. Depois de guardar, `clear` limpa a tela.
+```bash
+{
+  cd ~/GPU2GO/servico/implantacao && { [ -e .env.antes-painel ] || cp -p .env .env.antes-painel; }
+  if grep -qE '^RENDER2GO_ADMIN_CAMINHO=.+' .env; then
+    echo "O painel já estava configurado (RENDER2GO_ADMIN_CAMINHO preenchido): nada foi trocado."
+  else
+    NOVO() { python3 -c 'import secrets; print(secrets.token_urlsafe(32))'; }
+    CAMINHO="/painel-$(python3 -c 'import secrets; print(secrets.token_urlsafe(18))')"
+    TOKEN=$(NOVO)
+    TOTP=$(python3 -c 'import base64, secrets; print(base64.b32encode(secrets.token_bytes(20)).decode())')
+    CONTAS=$(sed -n -E 's/^RENDER2GO_SEGREDO_CONTAS=(.+)$/\1/p' .env | tail -n1)
+    [ -z "$CONTAS" ] && CONTAS=$(NOVO)
+    sed -i -E '/^RENDER2GO_(ADMIN_CAMINHO|ADMIN_TOKENS|ADMIN_TOTP|SEGREDO_CONTAS|WORKER_TOKENS)=/d' .env
+    [ -n "$(tail -c1 .env)" ] && echo >> .env
+    printf '%s\n' \
+      "RENDER2GO_ADMIN_CAMINHO=$CAMINHO" \
+      "RENDER2GO_ADMIN_TOKENS=$TOKEN" \
+      "RENDER2GO_ADMIN_TOTP=$TOTP" \
+      "RENDER2GO_SEGREDO_CONTAS=$CONTAS" \
+      'RENDER2GO_WORKER_TOKENS=' >> .env
+    echo
+    echo "=== GUARDE AGORA no gerenciador de senhas (depois, só no .env) ==="
+    echo "Endereço do painel:     https://app.render2go.com$CAMINHO/"
+    echo "Token do painel:        $TOKEN"
+    echo "Chave do autenticador:  $(echo "$TOTP" | sed -E 's/(.{4})/\1 /g; s/ $//')"
+    echo "  (no aplicativo: adicionar conta → inserir chave de configuração; nome: Render2Go painel; baseada em tempo)"
+    unset CAMINHO TOKEN TOTP CONTAS
+  fi
+}
+```
+
+**3) Dados da empresa** (rodapé, termos e privacidade; Decreto 7.962/2013). O bloco pergunta e grava; sem apóstrofo nos textos. Pessoa física pode usar o nome completo e o CPF ("CPF 123.456.789-00"); os dados ficam públicos no site. Se errar algum, rode de novo: ele pergunta e troca os cinco; o `.env` de antes da 1ª vez fica em `.env.antes-empresa`.
+```bash
+{
+  cd ~/GPU2GO/servico/implantacao && { [ -e .env.antes-empresa ] || cp -p .env .env.antes-empresa; }
+  PERGUNTA() {
+    local v=
+    while :; do
+      read -rp "$1: " v; v=${v//$'\r'}; v=${v//$'\t'/ }
+      v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+      if [ -z "$v" ]; then continue; fi
+      if [[ "$v" == *"'"* ]]; then echo "  Sem apóstrofo ('), por favor. Digite de novo." >&2; continue; fi
+      if [ -n "$2" ] && ! [[ "$v" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then echo "  Isso não parece um e-mail. Digite de novo." >&2; continue; fi
+      break
+    done
+    printf '%s' "$v"
+  }
+  NOME=$(PERGUNTA "Razão social (ou nome completo, se for pessoa física)")
+  DOC=$(PERGUNTA "Documento, com o tipo na frente (ex.: CNPJ 12.345.678/0001-90)")
+  ENDERECO=$(PERGUNTA "Endereço completo (rua, número, bairro, cidade/UF, CEP)")
+  CONTATO=$(PERGUNTA "E-mail de contato" email)
+  PRIVACIDADE=$(PERGUNTA "E-mail de privacidade (LGPD; pode ser o mesmo)" email)
+  sed -i -E '/^RENDER2GO_(EMPRESA_NOME|EMPRESA_DOCUMENTO|EMPRESA_ENDERECO|EMAIL_CONTATO|EMAIL_PRIVACIDADE)=/d' .env
+  [ -n "$(tail -c1 .env)" ] && echo >> .env
+  printf '%s\n' \
+    "RENDER2GO_EMPRESA_NOME='$NOME'" \
+    "RENDER2GO_EMPRESA_DOCUMENTO='$DOC'" \
+    "RENDER2GO_EMPRESA_ENDERECO='$ENDERECO'" \
+    "RENDER2GO_EMAIL_CONTATO='$CONTATO'" \
+    "RENDER2GO_EMAIL_PRIVACIDADE='$PRIVACIDADE'" >> .env
+  unset NOME DOC ENDERECO CONTATO PRIVACIDADE
+  echo; grep -E '^RENDER2GO_(EMPRESA_|EMAIL_CONTATO|EMAIL_PRIVACIDADE)' .env
+}
+```
+
+**4) E-mail (SMTP):** o bloco do `docs/13`, seção 6.1.1, passo 14 (credenciais SMTP do SES). O Turnstile (seção 6.1.2) e o Mercado Pago (seção 6.1, item 5) têm blocos e passos próprios.
+
+**5) Sobe tudo**, com o contêiner novo "analisador", e confere:
+```bash
+cd ~/GPU2GO/servico/implantacao
+comm -23 <(grep -oE '^RENDER2GO_[A-Z0-9_]+' exemplo.env | sort -u) <(grep -oE '^RENDER2GO_[A-Z0-9_]+' .env | sort -u)   # variáveis do exemplo que o .env não tem (quase todas têm padrão)
 docker compose up -d
 docker compose ps --format "table {{.Service}}\t{{.Status}}"
 docker compose logs api | grep AVISO      # o que ainda falta configurar (aparece também no painel, em "Segurança")
