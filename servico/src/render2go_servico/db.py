@@ -37,6 +37,12 @@ e-mail (`codigos`), já no teste gratuito; a sessão fica num cookie HttpOnly e 
 (`sessoes`, também as do painel). O aceite dos termos (`aceites`) e os registros de acesso
 (`acessos`, Marco Civil da Internet: 6 meses) não saem com a limpeza do histórico.
 
+Configurações da conta (10/10/2026): verificação em duas etapas do cliente (segredo do aplicativo cifrado em
+`clientes.mfa_segredo`; códigos de recuperação só como HMAC em `codigos_recuperacao`; o passo do aplicativo na
+entrada é uma linha de `sessoes` do tipo "mfa", de 5 minutos), confirmação recente por sessão
+(`sessoes.confirmada_ate`), pausa pelo próprio cliente (`clientes.pausada_em`), perfil, tema e o resumo dos
+e-mails que saíram de uma conta numa troca (`emails_antigos`: sem 2º teste grátis com eles).
+
 Pagamentos (ADR 0008): cada Pix de recarga é uma linha em `pagamentos`; o crédito entra no saldo uma
 vez só (referência `pagamento:<provedor>:<id>`). Painel → orquestrador: `comandos` (desligar um pod,
 parada de emergência) e `estado` (pausa e sinal de vida do orquestrador). Cada pod recebe um token de
@@ -163,6 +169,14 @@ ESQUEMA = [
     """CREATE TABLE IF NOT EXISTS auditoria_admin (
         quando DOUBLE PRECISION NOT NULL, admin TEXT NOT NULL, acao TEXT NOT NULL, alvo TEXT, detalhe TEXT,
         ip TEXT)""",
+    # verificação em duas etapas do cliente: códigos de recuperação de uso único, guardados só como HMAC
+    """CREATE TABLE IF NOT EXISTS codigos_recuperacao (
+        id TEXT PRIMARY KEY, cliente_id TEXT NOT NULL REFERENCES clientes(id), resumo TEXT NOT NULL,
+        criado DOUBLE PRECISION NOT NULL, usado_em DOUBLE PRECISION)""",
+    # resumo irreversível (HMAC) dos e-mails que saíram de uma conta numa troca de e-mail: como o da conta
+    # excluída, só serve para o endereço antigo não ganhar outro teste grátis numa conta nova
+    """CREATE TABLE IF NOT EXISTS emails_antigos (
+        resumo TEXT PRIMARY KEY, cliente_id TEXT, quando DOUBLE PRECISION NOT NULL)""",
 ]
 # índices: depois das colunas novas (um banco antigo ganha a coluna antes do índice que a usa)
 INDICES = [
@@ -193,6 +207,7 @@ INDICES = [
     "CREATE INDEX IF NOT EXISTS tokens_worker_gerador ON tokens_worker (gerador)",
     "CREATE INDEX IF NOT EXISTS auditoria_admin_quando ON auditoria_admin (quando)",
     "CREATE INDEX IF NOT EXISTS fotos_lote ON fotos (lote_id)",
+    "CREATE INDEX IF NOT EXISTS codigos_recuperacao_cliente ON codigos_recuperacao (cliente_id, resumo)",
 ]
 # vídeos já iniciados (ou prontos) de cada cliente nos pedidos em andamento: a vez na fila é por cliente
 INICIADOS_POR_CLIENTE = (
@@ -254,9 +269,24 @@ COLUNAS_NOVAS = [
     # limpeza do histórico (antes desta coluna, só houve o Wan 2.2)
     ("movimentos", "modelo", "TEXT"),
     ("jobs", "excluido_em", "DOUBLE PRECISION"),  # vídeo que o cliente excluiu (sai do armazenamento)
+    # configurações da conta (10/10/2026): perfil, tema, verificação em duas etapas e pausa pelo cliente
+    ("clientes", "primeiro_nome", "TEXT"),
+    ("clientes", "ultimo_nome", "TEXT"),
+    ("clientes", "gravatar", "INTEGER"),  # 1: a pessoa escolheu mostrar a foto do Gravatar
+    ("clientes", "tema", "TEXT"),  # claro ou escuro; NULL = o do aparelho
+    ("clientes", "mfa_segredo", "TEXT"),  # segredo do aplicativo autenticador, cifrado (contas.cifrar)
+    ("clientes", "mfa_ativo_em", "DOUBLE PRECISION"),
+    ("clientes", "mfa_ultimo", "BIGINT"),  # último passo de 30 s aceito: o mesmo código não vale duas vezes
+    ("clientes", "mfa_pendente", "TEXT"),  # segredo novo, cifrado, até a pessoa confirmar o 1º código
+    ("clientes", "mfa_pendente_em", "DOUBLE PRECISION"),
+    ("clientes", "pausada_em", "DOUBLE PRECISION"),  # desativada pelo próprio cliente: entrar de novo reativa
+    ("clientes", "privacidade_versao", "TEXT"),  # versão da política de privacidade aceita por último
+    ("sessoes", "confirmada_ate", "DOUBLE PRECISION"),  # confirmação recente ("é você mesmo?") até
+    ("sessoes", "contexto", "TEXT"),  # desafio da verificação em duas etapas: o que a entrada guardou (JSON)
 ]
 MODELO_PADRAO = "wan2.2-i2v"
-SESSAO_TIPOS = ("cliente", "admin")
+# "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
+SESSAO_TIPOS = ("cliente", "admin", "mfa")
 COMANDOS = ("desligar_pod", "emergencia", "retomar")
 TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno")
 RESOLUCAO = {"rapida": "480p", "alta": "720p"}  # qualidade do pedido → resolução (descrição no extrato)
@@ -430,7 +460,8 @@ class Banco:
         self, email: str, email_norm: str, plano: str = "teste", cota: int = 500, resumo: str | None = None
     ) -> tuple[dict, bool]:
         """A conta deste e-mail; sem conta, cria (no 1º acesso, já no teste gratuito). (conta, nova).
-        `resumo`: HMAC do e-mail; se uma conta excluída tinha esse e-mail, a nova nasce sem o teste grátis."""
+        `resumo`: HMAC do e-mail; se uma conta excluída tinha esse e-mail, ou se ele saiu de uma conta numa
+        troca de e-mail, a nova nasce sem o teste grátis."""
         if plano not in PLANOS:
             raise BancoError(f"plano desconhecido: {plano}")
         agora = time.time()
@@ -438,8 +469,15 @@ class Banco:
             atual = c.one("SELECT * FROM clientes WHERE email_norm = ?", (email_norm,))
             if atual:
                 return atual, False
-            if plano == "teste" and resumo and c.one("SELECT id FROM clientes WHERE email_resumo = ?", (resumo,)):
-                plano = "pago"  # o teste grátis desse e-mail já foi usado por uma conta excluída
+            if (
+                plano == "teste"
+                and resumo
+                and (
+                    c.one("SELECT id FROM clientes WHERE email_resumo = ?", (resumo,))
+                    or c.one("SELECT resumo FROM emails_antigos WHERE resumo = ?", (resumo,))
+                )
+            ):
+                plano = "pago"  # o teste grátis desse e-mail já foi usado (conta excluída ou e-mail trocado)
             cid = novo_id("cli")
             n = c.run(
                 "INSERT INTO clientes (id, nome, token_sha, cota_fotos_dia, plano, criado, email, email_norm)"
@@ -472,7 +510,7 @@ class Banco:
             )
 
     def registrar_aceite(self, cliente_id: str, documentos: dict[str, str], origem: dict) -> int:
-        """Aceite dos documentos (ex.: {"termos": "termos-v1", "privacidade": "privacidade-v1"}) que a
+        """Aceite dos documentos (ex.: {"termos": "termos-v2", "privacidade": "privacidade-v2"}) que a
         conta ainda não aceitou nessa versão; devolve quantos foram gravados."""
         agora, novos = time.time(), 0
         with self.tx() as c:
@@ -490,6 +528,10 @@ class Banco:
                 novos += 1
             if "termos" in documentos:
                 c.run("UPDATE clientes SET termos_versao = ? WHERE id = ?", (documentos["termos"], cliente_id))
+            if "privacidade" in documentos:
+                c.run(
+                    "UPDATE clientes SET privacidade_versao = ? WHERE id = ?", (documentos["privacidade"], cliente_id)
+                )
         return novos
 
     def registrar_acesso(self, cliente_id: str | None, evento: str, origem: dict, detalhe: Any = None) -> None:
@@ -527,14 +569,20 @@ class Banco:
     def dados_da_conta(self, cliente_id: str) -> dict[str, Any]:
         """Tudo o que o serviço guarda sobre a conta (LGPD, art. 18: acesso e portabilidade)."""
         with self.tx() as c:
+            # nunca o segredo do autenticador nem os resumos dos códigos de recuperação
             conta = c.one(
-                "SELECT id, nome, email, plano, ativo, criado, termos_versao, ultimo_acesso FROM clientes WHERE id = ?",
+                "SELECT id, nome, email, plano, ativo, criado, termos_versao, privacidade_versao, ultimo_acesso,"
+                " primeiro_nome, ultimo_nome, gravatar, tema, mfa_ativo_em, pausada_em FROM clientes WHERE id = ?",
                 (cliente_id,),
             )
             if conta is None:
                 raise BancoError("cliente não encontrado")
             return {
                 "conta": conta,
+                "codigos_recuperacao": c.all(
+                    "SELECT criado, usado_em FROM codigos_recuperacao WHERE cliente_id = ? ORDER BY criado",
+                    (cliente_id,),
+                ),
                 "aceites": c.all(
                     "SELECT documento, versao, quando, ip FROM aceites WHERE cliente_id = ? ORDER BY quando",
                     (cliente_id,),
@@ -602,15 +650,19 @@ class Banco:
                 raise BancoError("há pedidos em andamento: espere terminar para excluir a conta")
             n = c.run(
                 "UPDATE clientes SET ativo = 0, excluido_em = ?, email = NULL, email_norm = NULL, nome = ?,"
-                " token_sha = ?, email_resumo = ? WHERE id = ? AND excluido_em IS NULL",
+                " token_sha = ?, email_resumo = ?, primeiro_nome = NULL, ultimo_nome = NULL, gravatar = NULL,"
+                " tema = NULL, mfa_segredo = NULL, mfa_ativo_em = NULL, mfa_ultimo = NULL, mfa_pendente = NULL,"
+                " mfa_pendente_em = NULL, pausada_em = NULL WHERE id = ? AND excluido_em IS NULL",
                 (agora, "conta excluída", sha(secrets.token_urlsafe(32)), resumo, cliente_id),
             )
             if not n:
                 raise BancoError("cliente não encontrado")
+            # todas as sessões, também o passo do autenticador de uma entrada em andamento
             c.run(
                 "UPDATE sessoes SET revogada_em = ? WHERE cliente_id = ? AND revogada_em IS NULL", (agora, cliente_id)
             )
             c.run("DELETE FROM interesses WHERE cliente_id = ?", (cliente_id,))
+            c.run("DELETE FROM codigos_recuperacao WHERE cliente_id = ?", (cliente_id,))
             c.run("UPDATE suporte SET email = NULL WHERE cliente_id = ?", (cliente_id,))
 
     # -- códigos de entrada por e-mail ----------------------------------------------------------
@@ -667,16 +719,23 @@ class Banco:
     # -- sessões (cliente e painel) -------------------------------------------------------------
 
     def criar_sessao(
-        self, tipo: str, validade_s: float, origem: dict, cliente_id: str | None = None, admin: str | None = None
+        self,
+        tipo: str,
+        validade_s: float,
+        origem: dict,
+        cliente_id: str | None = None,
+        admin: str | None = None,
+        contexto: Any = None,
     ) -> str:
-        """Devolve o token da sessão (vai só para o cookie); o banco guarda o SHA-256."""
+        """Devolve o token da sessão (vai só para o cookie); o banco guarda o SHA-256. `contexto` (JSON): o que
+        o passo do autenticador guarda da entrada que o pediu."""
         if tipo not in SESSAO_TIPOS:
             raise BancoError(f"tipo de sessão desconhecido: {tipo}")
         token, agora = secrets.token_urlsafe(32), time.time()
         with self.tx() as c:
             c.run(
-                "INSERT INTO sessoes (id, tipo, cliente_id, admin, criado, expira, ultimo_uso, ip, agente)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO sessoes (id, tipo, cliente_id, admin, criado, expira, ultimo_uso, ip, agente, contexto)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     sha(token),
                     tipo,
@@ -687,12 +746,13 @@ class Banco:
                     agora,
                     origem.get("ip"),
                     (origem.get("agente") or "")[:300] or None,
+                    json.dumps(contexto, ensure_ascii=False) if contexto is not None else None,
                 ),
             )
         return token
 
     def sessao(self, token: str, tipo: str) -> dict | None:
-        """Sessão válida (não vencida nem revogada); a de cliente vem com a conta (ativa)."""
+        """Sessão válida (não vencida nem revogada); a de cliente vem com a conta (ativa e não pausada)."""
         agora = time.time()
         with self.tx() as c:
             s = c.one(
@@ -702,7 +762,9 @@ class Banco:
             if s is None:
                 return None
             if tipo == "cliente":
-                cli = c.one("SELECT * FROM clientes WHERE id = ? AND ativo = 1", (s["cliente_id"],))
+                cli = c.one(
+                    "SELECT * FROM clientes WHERE id = ? AND ativo = 1 AND pausada_em IS NULL", (s["cliente_id"],)
+                )
                 if cli is None:
                     return None
                 s["cliente"] = cli
@@ -710,9 +772,14 @@ class Banco:
                 c.run("UPDATE sessoes SET ultimo_uso = ? WHERE id = ?", (agora, s["id"]))
             return s
 
-    def revogar_sessao(self, token: str) -> None:
+    def revogar_sessao(self, token: str) -> bool:
+        """True se a sessão estava valendo (o passo do autenticador usa isso: vale uma vez só)."""
         with self.tx() as c:
-            c.run("UPDATE sessoes SET revogada_em = ? WHERE id = ? AND revogada_em IS NULL", (time.time(), sha(token)))
+            return bool(
+                c.run(
+                    "UPDATE sessoes SET revogada_em = ? WHERE id = ? AND revogada_em IS NULL", (time.time(), sha(token))
+                )
+            )
 
     def revogar_sessoes(self, cliente_id: str | None = None, tipo: str = "cliente") -> int:
         """Todas as sessões da conta (sair de todos os aparelhos); sem conta, todas as do tipo."""
@@ -725,6 +792,267 @@ class Banco:
             return c.run(
                 "UPDATE sessoes SET revogada_em = ? WHERE tipo = ? AND revogada_em IS NULL", (time.time(), tipo)
             )
+
+    # -- configurações da conta: confirmação recente, aparelhos, verificação em duas etapas -------------
+
+    def desafio_mfa(self, token: str) -> dict | None:
+        """O passo do autenticador de uma entrada em andamento (válido), com a conta (ativa) e o contexto."""
+        with self.tx() as c:
+            s = c.one(
+                "SELECT * FROM sessoes WHERE id = ? AND tipo = 'mfa' AND revogada_em IS NULL AND expira > ?",
+                (sha(token), time.time()),
+            )
+            if s is None:
+                return None
+            cli = c.one("SELECT * FROM clientes WHERE id = ? AND ativo = 1 AND excluido_em IS NULL", (s["cliente_id"],))
+            if cli is None:
+                return None
+        s["cliente"] = cli
+        s["contexto"] = json.loads(s["contexto"]) if s["contexto"] else {}
+        return s
+
+    def confirmar_sessao(self, token: str, ate: float) -> None:
+        """Confirmação recente ("é você mesmo?"): as ações sensíveis ficam liberadas nesta sessão até `ate`."""
+        with self.tx() as c:
+            c.run(
+                "UPDATE sessoes SET confirmada_ate = ? WHERE id = ? AND tipo = 'cliente' AND revogada_em IS NULL",
+                (ate, sha(token)),
+            )
+
+    def sessoes_ativas(self, cliente_id: str, atual: str | None = None, limite: int = 50) -> list[dict]:
+        """Aparelhos conectados: as sessões válidas da conta, a atual primeiro, depois as usadas mais há pouco."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT id, criado, ultimo_uso, ip, agente FROM sessoes WHERE cliente_id = ? AND tipo = 'cliente'"
+                " AND revogada_em IS NULL AND expira > ?"
+                " ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, ultimo_uso DESC LIMIT ?",
+                (cliente_id, time.time(), atual or "", limite),
+            )
+
+    def revogar_sessao_id(self, cliente_id: str, sid: str) -> bool:
+        with self.tx() as c:
+            return bool(
+                c.run(
+                    "UPDATE sessoes SET revogada_em = ? WHERE id = ? AND cliente_id = ? AND tipo = 'cliente'"
+                    " AND revogada_em IS NULL",
+                    (time.time(), sid, cliente_id),
+                )
+            )
+
+    def revogar_outras(self, cliente_id: str, atual: str) -> int:
+        """Encerra as outras sessões da conta (e entradas em andamento no passo do autenticador)."""
+        with self.tx() as c:
+            return c.run(
+                "UPDATE sessoes SET revogada_em = ? WHERE cliente_id = ? AND tipo IN ('cliente', 'mfa') AND id <> ?"
+                " AND revogada_em IS NULL",
+                (time.time(), cliente_id, atual),
+            )
+
+    def conta(self, cliente_id: str) -> dict | None:
+        """A linha inteira da conta (uso interno: tem o segredo cifrado e o resumo do token)."""
+        with self.tx() as c:
+            return c.one("SELECT * FROM clientes WHERE id = ?", (cliente_id,))
+
+    def resumo_conta(self, cliente_id: str, teste: bool, mfa: bool) -> dict[str, Any]:
+        """O que GET /api/conta mostra além da linha da conta, numa transação só (é pedido em toda página):
+        saldo, se o teste gratuito já foi usado, os "Tenho interesse" e os códigos de recuperação que restam."""
+        with self.tx() as c:
+            out: dict[str, Any] = {"saldo": self._saldo(c, cliente_id)}
+            if teste:
+                r = c.one(f"SELECT COUNT(*) AS n FROM lotes WHERE cliente_id = ? AND {ATIVO}", (cliente_id,))
+                out["teste_usado"] = int(r["n"]) > 0
+            out["interesses"] = [
+                r["finalidade"]
+                for r in c.all(
+                    "SELECT finalidade FROM interesses WHERE cliente_id = ? ORDER BY quando, finalidade", (cliente_id,)
+                )
+            ]
+            if mfa:
+                r = c.one(
+                    "SELECT COUNT(*) AS n FROM codigos_recuperacao WHERE cliente_id = ? AND usado_em IS NULL",
+                    (cliente_id,),
+                )
+                out["codigos"] = int(r["n"])
+        return out
+
+    def mfa_iniciar(self, cliente_id: str, pendente: str) -> bool:
+        """Guarda o segredo novo (cifrado) até a pessoa confirmar um código; False se o MFA já está ligado."""
+        with self.tx() as c:
+            return bool(
+                c.run(
+                    "UPDATE clientes SET mfa_pendente = ?, mfa_pendente_em = ? WHERE id = ? AND mfa_segredo IS NULL",
+                    (pendente, time.time(), cliente_id),
+                )
+            )
+
+    def mfa_ativar(self, cliente_id: str, pendente: str, contador: int, resumos: list[str], validade_s: float) -> bool:
+        """Liga o MFA com o segredo que a pessoa confirmou (`pendente`, o valor lido e conferido: se outra aba
+        gerou outro segredo no meio, nada muda) e grava os códigos de recuperação novos."""
+        agora = time.time()
+        with self.tx() as c:
+            n = c.run(
+                "UPDATE clientes SET mfa_segredo = ?, mfa_ativo_em = ?, mfa_ultimo = ?, mfa_pendente = NULL,"
+                " mfa_pendente_em = NULL WHERE id = ? AND mfa_segredo IS NULL AND mfa_pendente = ?"
+                " AND mfa_pendente_em > ?",
+                (pendente, agora, contador, cliente_id, pendente, agora - validade_s),
+            )
+            if not n:
+                return False
+            self._trocar_codigos(c, cliente_id, resumos)
+            return True
+
+    def mfa_desligar(self, cliente_id: str) -> bool:
+        """Desliga o MFA: o segredo e os códigos de recuperação saem do banco."""
+        agora = time.time()
+        with self.tx() as c:
+            n = c.run(
+                "UPDATE clientes SET mfa_segredo = NULL, mfa_ativo_em = NULL, mfa_ultimo = NULL, mfa_pendente = NULL,"
+                " mfa_pendente_em = NULL WHERE id = ? AND (mfa_segredo IS NOT NULL OR mfa_pendente IS NOT NULL)",
+                (cliente_id,),
+            )
+            c.run("DELETE FROM codigos_recuperacao WHERE cliente_id = ?", (cliente_id,))
+            c.run(
+                "UPDATE sessoes SET revogada_em = ? WHERE cliente_id = ? AND tipo = 'mfa' AND revogada_em IS NULL",
+                (agora, cliente_id),
+            )
+            return bool(n)
+
+    def _trocar_codigos(self, c, cliente_id: str, resumos: list[str]) -> None:
+        agora = time.time()
+        c.run("DELETE FROM codigos_recuperacao WHERE cliente_id = ?", (cliente_id,))
+        for r in resumos:
+            c.run(
+                "INSERT INTO codigos_recuperacao (id, cliente_id, resumo, criado) VALUES (?, ?, ?, ?)",
+                (novo_id("rec"), cliente_id, r, agora),
+            )
+
+    def trocar_codigos_recuperacao(self, cliente_id: str, resumos: list[str]) -> bool:
+        """Códigos de recuperação novos (os anteriores deixam de valer); False sem o MFA ligado."""
+        with self.tx() as c:
+            if not c.one("SELECT id FROM clientes WHERE id = ? AND mfa_segredo IS NOT NULL", (cliente_id,)):
+                return False
+            self._trocar_codigos(c, cliente_id, resumos)
+            return True
+
+    def usar_codigo_recuperacao(self, cliente_id: str, resumo: str) -> int | None:
+        """Gasta um código de recuperação (uma vez só, mesmo com dois pedidos ao mesmo tempo); devolve quantos
+        restam, ou None se o código não vale."""
+        with self.tx() as c:
+            n = c.run(
+                "UPDATE codigos_recuperacao SET usado_em = ? WHERE cliente_id = ? AND resumo = ? AND usado_em IS NULL",
+                (time.time(), cliente_id, resumo),
+            )
+            if not n:
+                return None
+            r = c.one(
+                "SELECT COUNT(*) AS n FROM codigos_recuperacao WHERE cliente_id = ? AND usado_em IS NULL", (cliente_id,)
+            )
+            return int(r["n"])
+
+    def mfa_usar_contador(self, cliente_id: str, contador: int) -> bool:
+        """Aceita o código do aplicativo só se o passo de 30 s for posterior ao último aceito (de forma
+        atômica): o mesmo código não vale duas vezes, nem em dois pedidos ao mesmo tempo."""
+        with self.tx() as c:
+            return bool(
+                c.run(
+                    "UPDATE clientes SET mfa_ultimo = ? WHERE id = ? AND mfa_segredo IS NOT NULL"
+                    " AND (mfa_ultimo IS NULL OR mfa_ultimo < ?)",
+                    (contador, cliente_id, contador),
+                )
+            )
+
+    def pausar_conta(self, cliente_id: str) -> dict[str, Any]:
+        """O cliente desativa a própria conta: as sessões caem e o saldo fica; entrar de novo pelo código do
+        e-mail reativa. Pedido em andamento bloqueia; envio que não terminou é recusado."""
+        agora = time.time()
+        with self.tx() as c:
+            self._travar_cliente(c, cliente_id)
+            em_curso = c.one(
+                "SELECT COUNT(*) AS n FROM lotes WHERE cliente_id = ?"
+                " AND status IN ('aguardando_aprovacao', 'aprovado', 'processando')",
+                (cliente_id,),
+            )
+            if int(em_curso["n"]):
+                raise BancoError("há pedidos em andamento: espere terminar para desativar a conta")
+            if not c.run(
+                "UPDATE clientes SET pausada_em = ? WHERE id = ? AND ativo = 1 AND pausada_em IS NULL"
+                " AND excluido_em IS NULL",
+                (agora, cliente_id),
+            ):
+                raise BancoError("a conta não está ativa")
+            lotes = [
+                r["id"]
+                for r in c.all(
+                    "SELECT id FROM lotes WHERE cliente_id = ? AND status = 'aguardando_envio'", (cliente_id,)
+                )
+            ]
+            for lid in lotes:
+                c.run(
+                    "UPDATE lotes SET status = 'recusado', motivo = ? WHERE id = ?",
+                    ("envio não concluído; conta desativada pelo cliente", lid),
+                )
+                self.evento(c, lid, "conta_desativada", None)
+            n = c.run(
+                "UPDATE sessoes SET revogada_em = ? WHERE cliente_id = ? AND revogada_em IS NULL", (agora, cliente_id)
+            )
+        return {"sessoes": n, "lotes": lotes}
+
+    def reativar_pausada(self, cliente_id: str) -> bool:
+        with self.tx() as c:
+            return bool(
+                c.run("UPDATE clientes SET pausada_em = NULL WHERE id = ? AND pausada_em IS NOT NULL", (cliente_id,))
+            )
+
+    PERFIL = ("primeiro_nome", "ultimo_nome", "gravatar")
+
+    def atualizar_perfil(self, cliente_id: str, campos: dict[str, Any]) -> None:
+        """Nome, sobrenome e a escolha do Gravatar (já validados pela API)."""
+        if not campos or not set(campos) <= set(self.PERFIL):
+            raise BancoError("campos do perfil inválidos")
+        with self.tx() as c:
+            c.run(
+                f"UPDATE clientes SET {', '.join(f'{k} = ?' for k in campos)} WHERE id = ?",
+                (*campos.values(), cliente_id),
+            )
+
+    def definir_tema(self, cliente_id: str, tema: str | None) -> None:
+        if tema not in (None, "claro", "escuro"):
+            raise BancoError(f"tema desconhecido: {tema}")
+        with self.tx() as c:
+            c.run("UPDATE clientes SET tema = ? WHERE id = ?", (tema, cliente_id))
+
+    def trocar_email(self, cliente_id: str, email: str, email_norm: str, resumo_antigo: str | None) -> str | None:
+        """Troca o e-mail da conta (já confirmado por código no endereço novo); devolve o anterior. O resumo do
+        anterior fica em `emails_antigos` (sem 2º teste grátis com ele). O nome que era o e-mail acompanha."""
+        trava = " FOR UPDATE" if self.pg else ""
+        try:
+            with self.tx() as c:
+                atual = c.one(
+                    "SELECT email, nome FROM clientes WHERE id = ? AND excluido_em IS NULL" + trava, (cliente_id,)
+                )
+                if atual is None:
+                    raise BancoError("cliente não encontrado")
+                dono = c.one("SELECT id FROM clientes WHERE email_norm = ?", (email_norm,))
+                if dono and dono["id"] != cliente_id:
+                    raise BancoError("este e-mail já é de outra conta")
+                nome = email if atual["nome"] == atual["email"] else atual["nome"]
+                c.run(
+                    "UPDATE clientes SET email = ?, email_norm = ?, nome = ? WHERE id = ?",
+                    (email, email_norm, nome, cliente_id),
+                )
+                if resumo_antigo:
+                    c.run(
+                        "INSERT INTO emails_antigos (resumo, cliente_id, quando) VALUES (?, ?, ?)"
+                        " ON CONFLICT (resumo) DO NOTHING",
+                        (resumo_antigo, cliente_id, time.time()),
+                    )
+        except BancoError:
+            raise
+        except Exception as e:  # outra conta pegou o mesmo e-mail ao mesmo tempo (índice único)
+            if isinstance(e, sqlite3.IntegrityError) or type(e).__name__ == "UniqueViolation":
+                raise BancoError("este e-mail já é de outra conta") from e
+            raise
+        return atual["email"]
 
     # -- limites de requisições (compartilhados entre processos) --------------------------------
 
@@ -1150,12 +1478,16 @@ class Banco:
     def cliente(self, cliente_id: str) -> dict | None:
         with self.tx() as c:
             return c.one(
-                "SELECT id, nome, plano, ativo, email, criado, excluido_em FROM clientes WHERE id = ?", (cliente_id,)
+                "SELECT id, nome, plano, ativo, email, criado, excluido_em, pausada_em, mfa_ativo_em FROM clientes"
+                " WHERE id = ?",
+                (cliente_id,),
             )
 
-    def cliente_por_token(self, token: str) -> dict | None:
+    def cliente_por_token(self, token: str, pausadas: bool = False) -> dict | None:
+        """Conta do código de acesso antigo; a pausada pelo cliente só para entrar de novo (`pausadas`)."""
+        pausa = "" if pausadas else " AND pausada_em IS NULL"
         with self.tx() as c:
-            return c.one("SELECT * FROM clientes WHERE token_sha = ? AND ativo = 1", (sha(token),))
+            return c.one(f"SELECT * FROM clientes WHERE token_sha = ? AND ativo = 1{pausa}", (sha(token),))
 
     def clientes(self, busca: str | None = None, limite: int = 200) -> list[dict]:
         """Clientes com o saldo (para o painel), os mais recentes primeiro; `busca` filtra por e-mail,
@@ -1174,6 +1506,7 @@ class Banco:
         with self.tx() as c:
             return c.all(
                 "SELECT k.id, k.nome, k.email, k.plano, k.ativo, k.criado, k.ultimo_acesso, k.excluido_em,"
+                " k.pausada_em, k.mfa_ativo_em,"
                 " COALESCE((SELECT SUM(m.valor) FROM movimentos m WHERE m.cliente_id = k.id), 0) AS saldo"
                 f" FROM clientes k{onde} ORDER BY k.criado DESC LIMIT ?",
                 (*args, limite),
@@ -1185,10 +1518,13 @@ class Banco:
                 "SELECT COUNT(*) AS total, SUM(CASE WHEN plano = 'teste' THEN 1 ELSE 0 END) AS teste,"
                 " SUM(CASE WHEN plano = 'pago' THEN 1 ELSE 0 END) AS pago,"
                 " SUM(CASE WHEN email IS NOT NULL THEN 1 ELSE 0 END) AS com_email,"
-                " SUM(CASE WHEN criado > ? THEN 1 ELSE 0 END) AS novos_24h FROM clientes WHERE excluido_em IS NULL",
+                " SUM(CASE WHEN criado > ? THEN 1 ELSE 0 END) AS novos_24h,"
+                " SUM(CASE WHEN pausada_em IS NOT NULL THEN 1 ELSE 0 END) AS pausadas,"
+                " SUM(CASE WHEN mfa_ativo_em IS NOT NULL THEN 1 ELSE 0 END) AS com_mfa"
+                " FROM clientes WHERE excluido_em IS NULL",
                 (time.time() - 86400,),
             )
-        return {k: int(r[k] or 0) for k in ("total", "teste", "pago", "com_email", "novos_24h")}
+        return {k: int(r[k] or 0) for k in ("total", "teste", "pago", "com_email", "novos_24h", "pausadas", "com_mfa")}
 
     # -- saldo pré-pago ---------------------------------------------------------------------
 

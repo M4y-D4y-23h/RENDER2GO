@@ -102,7 +102,7 @@ def test_first_access_creates_a_free_trial_account_with_the_code_from_the_email(
         aceites = c.all("SELECT documento, versao, ip FROM aceites WHERE cliente_id = ?", (conta["id"],))
         acessos = c.all("SELECT evento, ip FROM acessos WHERE cliente_id = ?", (conta["id"],))
     assert sorted(a["documento"] for a in aceites) == ["privacidade", "termos"]  # uma vez por versão
-    assert {a["versao"] for a in aceites} == {"termos-v1", "privacidade-v1"}
+    assert {a["versao"] for a in aceites} == set(contas.DOCUMENTOS.values())
     assert [a["evento"] for a in acessos] == ["entrada", "entrada"] and acessos[0]["ip"] == "testclient"
 
 

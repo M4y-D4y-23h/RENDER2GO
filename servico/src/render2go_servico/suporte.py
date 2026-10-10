@@ -113,22 +113,56 @@ def montar(cfg: ConfigEmail, msg: dict) -> EmailMessage:
     return e
 
 
-def montar_codigo(cfg: ConfigEmail, para: str, codigo: str, minutos: int) -> EmailMessage:
-    """E-mail com o código de entrada: só texto, sem links (nada para clicar = nada para imitar)."""
+def _do_sistema(cfg: ConfigEmail, para: str, assunto: str) -> EmailMessage:
+    """Cabeçalhos dos e-mails automáticos (códigos e avisos de segurança), do remetente do sistema."""
     e = EmailMessage()
     remetente = cfg.de_sistema or cfg.de
-    e["Subject"] = f"{codigo} é o seu código de acesso ao Render2Go"
+    e["Subject"] = assunto
     e["From"] = remetente
     e["To"] = para
     e["Date"] = formatdate(localtime=False)
     e["Message-ID"] = make_msgid(domain=remetente.rsplit("@", 1)[-1].strip("> ") if "@" in remetente else None)
     e["Auto-Submitted"] = "auto-generated"  # resposta automática de férias não volta para cá
+    return e
+
+
+RODAPE = "Render2Go · vídeos curtos com IA para pequenos negócios\n"
+# por que o código foi pedido: o assunto e a 1ª frase mudam; o resto (validade, alerta) é o mesmo
+MOTIVOS_CODIGO = {
+    "entrada": ("{codigo} é o seu código de acesso ao Render2Go", "Seu código de acesso ao Render2Go é:"),
+    "confirmar": (
+        "{codigo} é o código para confirmar uma alteração na sua conta do Render2Go",
+        "Alguém (provavelmente você) está mudando uma configuração importante da sua conta. O código é:",
+    ),
+    "email-novo": (
+        "{codigo} é o código para confirmar o seu novo e-mail no Render2Go",
+        "Para usar este endereço na sua conta do Render2Go, digite este código na página:",
+    ),
+}
+
+
+def montar_codigo(cfg: ConfigEmail, para: str, codigo: str, minutos: int, motivo: str = "entrada") -> EmailMessage:
+    """E-mail com um código (entrada, confirmação de uma alteração ou e-mail novo): só texto, sem links
+    (nada para clicar = nada para imitar)."""
+    assunto, abertura = MOTIVOS_CODIGO[motivo]
+    e = _do_sistema(cfg, para, assunto.format(codigo=codigo))
     e.set_content(
-        f"Seu código de acesso ao Render2Go é:\n\n    {codigo}\n\n"
+        f"{abertura}\n\n    {codigo}\n\n"
         f"Ele vale por {minutos} minutos e só uma vez. Digite o código na página em que você pediu.\n\n"
         "Se não foi você que pediu, ignore este e-mail: ninguém entra na sua conta sem o código.\n"
-        "Nunca pedimos este código por telefone, WhatsApp ou outro e-mail.\n\n"
-        "Render2Go · vídeos curtos com IA para pequenos negócios\n"
+        "Nunca pedimos este código por telefone, WhatsApp ou outro e-mail.\n\n" + RODAPE
+    )
+    return e
+
+
+def montar_aviso(cfg: ConfigEmail, para: str, assunto: str, texto: str) -> EmailMessage:
+    """Aviso de segurança da conta (verificação em duas etapas, troca de e-mail, código de recuperação usado,
+    conta desativada ou excluída): só texto e sem links, como os códigos."""
+    e = _do_sistema(cfg, para, f"Render2Go: {_linha(assunto, 100)}")
+    e.set_content(
+        f"{texto.strip()}\n\n"
+        "Se não foi você, fale com o suporte do Render2Go pela página de suporte do site, digitando o endereço "
+        "no navegador (não responda a e-mails que peçam o seu código).\n\n" + RODAPE
     )
     return e
 

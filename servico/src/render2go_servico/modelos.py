@@ -202,6 +202,24 @@ FINALIDADES = [
 ]
 IDS_FINALIDADES = {f["id"] for f in FINALIDADES}
 
+# recursos da área do cliente ainda em breve: o "Tenho interesse" deles entra na mesma tabela (`interesses`),
+# com o prefixo "recurso:", e aparece no painel junto com o das finalidades
+RECURSOS = {
+    "recurso:projetos": {"titulo": "Projetos", "tipo": "Área do cliente"},
+    "recurso:mix": {"titulo": "Mix (vários modelos em sequência)", "tipo": "Área do cliente"},
+    "recurso:indicacao": {"titulo": "Ganhos por indicação", "tipo": "Perfil"},
+    "recurso:nome-usuario": {"titulo": "Nome de usuário", "tipo": "Perfil"},
+    "recurso:telefone": {"titulo": "Telefone na conta", "tipo": "Configurações"},
+}
+
+
+def titulo_interesse(chave: str) -> dict:
+    """Título e tipo de um "Tenho interesse" (finalidade ou recurso), para o painel."""
+    if chave in RECURSOS:
+        return RECURSOS[chave]
+    f = next((f for f in FINALIDADES if f["id"] == chave), None)
+    return {"titulo": f["titulo"], "tipo": f["tipo"]} if f else {"titulo": chave, "tipo": ""}
+
 
 def disponiveis() -> list[dict]:
     return [m for m in MODELOS if m["disponivel"]]

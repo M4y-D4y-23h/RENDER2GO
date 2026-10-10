@@ -5,12 +5,24 @@ HttpOnly (`__Host-render2go`). No 1º acesso a conta nasce no teste gratuito. Pe
 precisam do cabeçalho X-Render2Go (a página manda; outro site não consegue).
     GET  /api/publico                  o que a página de entrada precisa (chave do Turnstile, domínios)
     POST /api/conta/codigo             manda o código para o e-mail (Turnstile e limites por rede e e-mail)
-    POST /api/conta/entrar             confere o código; cria a conta no 1º acesso; abre a sessão
+    POST /api/conta/entrar             confere o código; cria a conta no 1º acesso; abre a sessão (com a
+                                       verificação em duas etapas, devolve o desafio do aplicativo)
     POST /api/conta/entrar-codigo      clientes antigos: entra com o código de acesso (abre a mesma sessão)
+    POST /api/conta/entrar-mfa         2º passo: código do aplicativo autenticador ou de recuperação
     POST /api/conta/sair | /sair-de-todos
-    GET  /api/conta                    e-mail, plano, saldo e o teste gratuito
+    GET  /api/conta                    e-mail, plano, saldo, teste, perfil, tema, MFA, confirmação e aceites
     GET  /api/conta/dados              tudo o que guardamos sobre a conta (LGPD, art. 18)
-    POST /api/conta/excluir            exclui a conta (LGPD); com saldo, o reembolso vem antes
+    POST /api/conta/excluir            exclui a conta (LGPD; confirmação recente); com saldo, reembolso antes
+Configurações da conta (só a sessão do navegador; as marcadas com * pedem a confirmação recente, 10 min):
+    POST /api/conta/confirmar/codigo | /confirmar   "é você mesmo?": código do e-mail (ou, com a verificação
+                                       em duas etapas, só o do aplicativo ou um de recuperação)
+    POST /api/conta/mfa/iniciar* | /ativar | /desligar* | /codigos*   verificação em duas etapas (TOTP)
+    POST /api/conta/email/codigo* | /email   troca de e-mail, com código no endereço novo
+    GET  /api/conta/sessoes            aparelhos conectados; POST .../{ref}/encerrar e .../encerrar-outras
+    POST /api/conta/desativar          pausa a conta (entrar de novo reativa); o saldo fica
+    POST /api/conta/perfil | /preferencias   nome, sobrenome, Gravatar (por escolha) e tema
+    GET  /api/conta/foto               a foto do Gravatar, baixada pelo servidor (sem terceiros na página)
+    POST /api/conta/aceitar            aceite da versão nova dos termos e da privacidade (sessão aberta antes)
 
 Cliente (sessão; ou Authorization: Bearer <código de acesso antigo>):
     GET  /api/receitas                 receitas, formatos, limites e as finalidades (tela antes do pedido)
@@ -101,7 +113,7 @@ from pydantic import BaseModel, Field
 from render2go_worker import conferencia, filtros, lote, preparo, presets
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from render2go_servico import SERVICO_DIR, contas, modelos, pagamentos, pessoas, precos, suporte
+from render2go_servico import SERVICO_DIR, contas, modelos, pagamentos, perfil, pessoas, precos, suporte
 from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_saida
 from render2go_servico.db import Banco, BancoError, SaldoInsuficiente
 
@@ -380,6 +392,9 @@ class Config:
     provedor_pagamento: Callable[[pagamentos.ConfigMP], Any] = pagamentos.MercadoPago
     analise: str = "api"  # "api" (thread na API), "separada" (serviço próprio) ou "desligada"
     retrato_s: float = RETRATO_S  # validade do retrato da fila e dos pods (0: sempre lê do banco)
+    # foto do perfil: quem baixa do Gravatar (os testes trocam; nenhum teste fala com o Gravatar de verdade)
+    baixar_gravatar: Callable[[str], Any] = perfil.baixar_gravatar
+    _fotos: perfil.CacheFotos | None = None
     _janelas: dict = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _analises: AnaliseFotos | None = None
@@ -430,6 +445,18 @@ class Config:
     @property
     def chave_codigos(self) -> bytes:
         return contas.chave_contas(self.segredo_contas, self.segredo_aprovacao)
+
+    @property
+    def chave_segredos(self) -> bytes:
+        """Chave AES-GCM dos segredos do aplicativo autenticador guardados no banco."""
+        return contas.chave_segredos(self.segredo_contas, self.segredo_aprovacao)
+
+    @property
+    def fotos(self) -> perfil.CacheFotos:
+        with self._lock:
+            if self._fotos is None:
+                self._fotos = perfil.CacheFotos(self.baixar_gravatar)
+            return self._fotos
 
     def retrato(self, chave: str, fn: Callable[[], Any]) -> Any:
         """O mesmo valor para todas as requisições de um intervalo curto (fila, pods, médias): com
@@ -653,11 +680,68 @@ def _enviar_suporte(c: Config, sid: str, dados: dict) -> None:
         print(f"[suporte] AVISO: e-mail {sid} não saiu: {e}", flush=True)
 
 
-def _enviar_codigo(c: Config, para: str, codigo: str) -> None:
+def _enviar_codigo(c: Config, para: str, codigo: str, motivo: str = "entrada") -> None:
     try:
-        _enviar_com_reenvio(c, suporte.montar_codigo(c.email, para, codigo, contas.CODIGO_VALIDADE_S // 60))
+        _enviar_com_reenvio(c, suporte.montar_codigo(c.email, para, codigo, contas.CODIGO_VALIDADE_S // 60, motivo))
     except Exception as e:  # noqa: BLE001 (a pessoa pede outro código; o erro fica no registro)
         print(f"[conta] AVISO: código para {para.split('@')[-1]} não saiu: {type(e).__name__}: {e}", flush=True)
+
+
+def _enviar_aviso(c: Config, para: str, assunto: str, texto: str) -> None:
+    try:
+        _enviar_com_reenvio(c, suporte.montar_aviso(c.email, para, assunto, texto))
+    except Exception as e:  # noqa: BLE001 (o aviso é um extra; o registro de acesso já guardou o evento)
+        print(f"[conta] AVISO: aviso para {para.split('@')[-1]} não saiu: {type(e).__name__}: {e}", flush=True)
+
+
+# avisos de segurança no e-mail da conta: (assunto, texto); só texto e sem links, como os códigos
+AVISOS = {
+    "conta_excluida": (
+        "sua conta foi excluída",
+        "A sua conta do Render2Go foi excluída, como você pediu. O e-mail saiu do serviço; ficam só os registros "
+        "que a lei manda guardar, pelo prazo legal.",
+    ),
+    "conta_desativada": (
+        "sua conta foi desativada",
+        "A sua conta do Render2Go foi desativada, como você pediu. O saldo continua guardado. Para reativar, é só "
+        "entrar de novo com o código do e-mail.",
+    ),
+    "mfa_ligado": (
+        "verificação em duas etapas ligada",
+        "A verificação em duas etapas foi ligada na sua conta. Daqui em diante, a entrada pede também o código do "
+        "aplicativo autenticador.",
+    ),
+    "mfa_desligado": (
+        "verificação em duas etapas desligada",
+        "A verificação em duas etapas foi desligada na sua conta. A entrada volta a pedir só o código do e-mail.",
+    ),
+    "mfa_suporte": (
+        "verificação em duas etapas desligada pelo suporte",
+        "O suporte do Render2Go desligou a verificação em duas etapas da sua conta, a seu pedido. A entrada volta a "
+        "pedir só o código do e-mail; ligue de novo em Configurações quando quiser.",
+    ),
+    "codigos_novos": (
+        "códigos de recuperação novos",
+        "Foram gerados códigos de recuperação novos para a sua conta. Os anteriores deixaram de valer.",
+    ),
+    "recuperacao_usada": (
+        "um código de recuperação foi usado",
+        "Um código de recuperação da verificação em duas etapas foi usado na sua conta. Restam {restantes}. Se você "
+        "está sem o celular, entre e gere códigos novos em Configurações.",
+    ),
+    "email_trocado": (
+        "o e-mail da sua conta mudou",
+        "O e-mail da sua conta do Render2Go foi trocado para {novo}. Este endereço não recebe mais os códigos de "
+        "entrada.",
+    ),
+}
+
+
+def _avisar(c: Config, para: str | None, aviso: str, **valores: Any) -> None:
+    """Aviso de segurança (`AVISOS`) no e-mail da conta, em segundo plano (sem SMTP ou sem e-mail, nada sai)."""
+    if c.email is not None and para:
+        assunto, texto = AVISOS[aviso]
+        c.em_segundo_plano(_enviar_aviso, c, para, assunto, texto.format(**valores), correio=True)
 
 
 def _se_fechou(c: Config, lote_id: str) -> None:
@@ -872,6 +956,42 @@ class ExcluirIn(BaseModel):
     confirmacao: str = Field(max_length=20)
 
 
+class EntrarMfaIn(BaseModel):
+    desafio: str = Field(min_length=20, max_length=200)  # devolvido pela entrada (e-mail ou código de acesso)
+    codigo: str = Field(min_length=1, max_length=40)  # do aplicativo autenticador ou de recuperação
+
+
+class ConfirmarIn(BaseModel):
+    codigo: str = Field(min_length=1, max_length=40)  # do e-mail, do aplicativo ou de recuperação
+
+
+class CodigoAppIn(BaseModel):
+    codigo: str = Field(min_length=1, max_length=12)
+
+
+class TrocarEmailIn(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    codigo: str | None = Field(None, max_length=12)  # o código que chegou no endereço novo (2º passo)
+
+
+class PerfilIn(BaseModel):
+    """Só os campos enviados mudam; vazio apaga o nome."""
+
+    primeiro_nome: str | None = Field(None, max_length=120)
+    ultimo_nome: str | None = Field(None, max_length=120)
+    gravatar: bool | None = None
+
+
+class PreferenciasIn(BaseModel):
+    tema: Literal["claro", "escuro", "auto"]
+
+
+class AceitarIn(BaseModel):
+    """As versões que a página mostrou (se mudaram de novo no meio, a página recarrega)."""
+
+    documentos: dict[str, str] = Field(max_length=5)
+
+
 class AdminEntrarIn(BaseModel):
     token: str = Field(min_length=1, max_length=300)
     totp: str | None = Field(None, max_length=12)
@@ -957,7 +1077,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if request.method not in ("GET", "HEAD") and request.headers.get(CABECALHO_PAGINA) != "1":
             raise HTTPException(403, "pedido sem o cabeçalho da página")
         cli = s["cliente"]
-        cli["_sessao"] = tok
+        # a sessão do navegador: o que as configurações da conta precisam (confirmação recente, aparelho atual)
+        cli["_sessao"], cli["_sessao_id"] = tok, s["id"]
+        cli["_sessao_criada"], cli["_confirmada_ate"] = float(s["criado"]), s.get("confirmada_ate")
         return cli
 
     def cliente(request: Request, authorization: str | None = Header(None), c: Config = Depends(config)) -> dict:
@@ -976,6 +1098,35 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(401, "entre na sua conta para continuar", headers=cab)
         c.limitar(cli["id"])
         return cli
+
+    def cliente_sessao(request: Request, authorization: str | None = Header(None), c: Config = Depends(config)) -> dict:
+        """Só a sessão do navegador: as configurações da conta (e-mail, verificação em duas etapas, aparelhos,
+        desativar e excluir) não aceitam o código de acesso antigo no cabeçalho."""
+        cli = cliente(request, authorization, c)
+        if "_sessao" not in cli:
+            raise HTTPException(403, "use a página da sua conta para isto (o código de acesso não vale aqui)")
+        return cli
+
+    def _confirmada_s(cli: dict) -> int:
+        """Segundos que faltam da confirmação recente desta sessão (a sessão nova já conta como confirmada)."""
+        if "_sessao" not in cli:
+            return 0
+        ate = max(float(cli.get("_confirmada_ate") or 0), cli["_sessao_criada"] + contas.CONFIRMACAO_S)
+        return max(0, int(ate - time.time()))
+
+    def _exigir_confirmacao(cli: dict) -> None:
+        if _confirmada_s(cli) <= 0:
+            raise HTTPException(403, "confirme que é você para continuar", headers={"X-Render2Go-Motivo": "confirmar"})
+
+    def _exigir_aceite(cli: dict) -> None:
+        """Termos ou privacidade em versão nova: quem está na página aceita antes de pedir ou pagar (o código de
+        acesso das integrações segue valendo: o aceite delas é combinado com o dono do serviço)."""
+        if "_sessao" in cli and contas.documentos_pendentes(cli):
+            raise HTTPException(
+                428,
+                "os Termos de Uso e a Política de Privacidade mudaram: leia e aceite a versão nova para continuar",
+                headers={"X-Render2Go-Motivo": "aceite"},
+            )
 
     def cliente_opcional(
         request: Request, authorization: str | None = Header(None), c: Config = Depends(config)
@@ -1124,12 +1275,63 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 raise HTTPException(422, str(e)) from e
 
     def _abrir_sessao(c: Config, conta: dict, origem: dict, evento: str, detalhe: dict) -> JSONResponse:
+        """Fim da entrada (e-mail, código de acesso e, com a verificação em duas etapas, o aplicativo): a conta
+        pausada pelo cliente volta a valer, o aceite dos documentos é gravado e a sessão vai para o cookie."""
+        if conta.get("pausada_em") and c.banco.reativar_pausada(conta["id"]):
+            c.banco.registrar_acesso(conta["id"], "conta_reativada", origem)
+            detalhe = {**detalhe, "reativada": True}
         c.banco.registrar_aceite(conta["id"], contas.DOCUMENTOS, origem)
         token = c.banco.criar_sessao("cliente", contas.SESSAO_CLIENTE_S, origem, cliente_id=conta["id"])
         c.banco.registrar_acesso(conta["id"], evento, origem, detalhe)
-        resp = JSONResponse({"ok": True, **detalhe, "conta": _resumo_conta(c, c.banco.cliente(conta["id"]))})
+        atual = c.banco.conta(conta["id"]) or conta
+        resp = JSONResponse({"ok": True, **detalhe, "conta": _resumo_conta(c, atual, sessao_nova=True)})
         definir_cookie(resp, c, "cliente", token, contas.SESSAO_CLIENTE_S)
         return resp
+
+    def _entrar(c: Config, conta: dict, origem: dict, detalhe: dict) -> JSONResponse:
+        """Com a verificação em duas etapas ligada, a sessão só abre depois do código do aplicativo (ou de
+        recuperação): aqui sai só o desafio, que vale 5 minutos e nunca é uma sessão de uso."""
+        if conta.get("mfa_segredo"):
+            desafio = c.banco.criar_sessao(
+                "mfa", contas.MFA_DESAFIO_S, origem, cliente_id=conta["id"], contexto={"detalhe": detalhe}
+            )
+            return JSONResponse({"ok": True, "mfa": True, "desafio": desafio, "validade_s": contas.MFA_DESAFIO_S})
+        return _abrir_sessao(c, conta, origem, "entrada", detalhe)
+
+    def _limite_erros(c: Config, chave: str, mensagem: str) -> None:
+        """Erros de um código (do aplicativo, de recuperação, de confirmação) por conta: 5 em 15 min, 20 por dia."""
+        if c.banco.contar(chave, 900, somar=False) >= 5 or c.banco.contar(chave, 86400, somar=False) >= 20:
+            raise HTTPException(429, mensagem)
+
+    def _errou(c: Config, chave: str) -> None:
+        c.banco.contar(chave, 900)
+        c.banco.contar(chave, 86400)
+
+    def _segundo_fator(c: Config, conta: dict, codigo: str, origem: dict) -> str | None:
+        """Confere o código do aplicativo autenticador (uma vez só) ou um de recuperação (gasta o código e avisa
+        no e-mail). Devolve o meio usado ou None. Segredo que não abre (chave trocada): recusa (fail-closed)."""
+        try:
+            segredo = contas.decifrar(c.chave_segredos, conta.get("mfa_segredo"), f"cliente:{conta['id']}")
+        except ValueError as e:
+            print(f"[conta] ALERTA: segredo do autenticador de {conta['id']} não abre: {e}", flush=True)
+            raise HTTPException(
+                503, "não foi possível conferir a verificação em duas etapas agora; fale com o suporte"
+            ) from e
+        digitos = re.sub(r"[\s-]", "", codigo or "")
+        if re.fullmatch(r"[0-9]{6}", digitos):
+            contador = contas.totp_confere(segredo, digitos)
+            return "autenticador" if contador is not None and c.banco.mfa_usar_contador(conta["id"], contador) else None
+        rec = contas.limpar_recuperacao(codigo)
+        if rec is None:
+            return None
+        restantes = c.banco.usar_codigo_recuperacao(
+            conta["id"], contas.resumo_recuperacao(c.chave_codigos, conta["id"], rec)
+        )
+        if restantes is None:
+            return None
+        c.banco.registrar_acesso(conta["id"], "codigo_recuperacao_usado", origem, {"restantes": restantes})
+        _avisar(c, conta.get("email"), "recuperacao_usada", restantes=restantes)
+        return "recuperacao"
 
     @app.post("/api/conta/entrar")
     def entrar(body: EntrarIn, request: Request, c: Config = Depends(config)):
@@ -1156,7 +1358,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         )
         if not conta["ativo"]:
             raise HTTPException(403, "esta conta está desativada; fale com o suporte")
-        return _abrir_sessao(c, conta, origem, "entrada", {"nova": nova})
+        return _entrar(c, conta, origem, {"nova": nova})
 
     @app.post("/api/conta/entrar-codigo")
     def entrar_codigo(body: EntrarCodigoIn, request: Request, c: Config = Depends(config)):
@@ -1166,11 +1368,30 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(422, "para continuar, aceite os Termos de Uso e a Política de Privacidade")
         if c.banco.contar(f"falha:codigo-acesso:{origem['rede']}", 600, somar=False) > 20:
             raise HTTPException(429, "muitas tentativas recusadas desta rede; tente de novo mais tarde")
-        conta = c.banco.cliente_por_token(body.codigo.strip())
+        conta = c.banco.cliente_por_token(body.codigo.strip(), pausadas=True)
         if conta is None:
             _contar_falha(c, origem, "codigo-acesso", 600, 20)
             raise HTTPException(401, "código de acesso inválido ou desativado")
-        return _abrir_sessao(c, conta, origem, "entrada", {"nova": False, "codigo_acesso": True})
+        return _entrar(c, conta, origem, {"nova": False, "codigo_acesso": True})
+
+    @app.post("/api/conta/entrar-mfa")
+    def entrar_mfa(body: EntrarMfaIn, request: Request, c: Config = Depends(config)):
+        """2º passo da entrada com a verificação em duas etapas: o código do aplicativo ou um de recuperação."""
+        origem = origem_de(request)
+        d = c.banco.desafio_mfa(body.desafio)
+        if d is None:
+            _contar_falha(c, origem, "mfa-desafio")
+            raise HTTPException(401, "a verificação venceu; entre de novo pelo código do e-mail")
+        conta = d["cliente"]
+        erros = f"mfa:erro:{conta['id']}"
+        _limite_erros(c, erros, "muitos códigos errados; espere 15 minutos e entre de novo")
+        meio = _segundo_fator(c, conta, body.codigo, origem)
+        if meio is None:
+            _errou(c, erros)
+            raise HTTPException(401, "código inválido; confira no aplicativo autenticador (ou use um de recuperação)")
+        if not c.banco.revogar_sessao(body.desafio):  # o desafio vale uma vez só (outro pedido usou antes)
+            raise HTTPException(401, "a verificação venceu; entre de novo pelo código do e-mail")
+        return _abrir_sessao(c, conta, origem, "entrada", {**d["contexto"].get("detalhe", {}), "mfa": meio})
 
     @app.post("/api/conta/sair")
     def sair(request: Request, c: Config = Depends(config)):
@@ -1192,19 +1413,43 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         apagar_cookie(resp, c, "cliente")
         return resp
 
-    def _resumo_conta(c: Config, cli: dict) -> dict:
+    def _foto_url(c: Config, cli: dict) -> str | None:
+        """Endereço da foto do Gravatar (só com a escolha da pessoa). O ?v= muda com o e-mail (o navegador guarda
+        a foto por um dia) e é um HMAC: o registro de acesso do Caddy não ganha um resumo do e-mail."""
+        if not cli.get("gravatar") or not cli.get("email"):
+            return None
+        v = hmac.new(c.chave_codigos, f"foto:{cli['email']}".encode(), hashlib.sha256).hexdigest()[:12]
+        return f"/api/conta/foto?v={v}"
+
+    def _resumo_conta(c: Config, cli: dict, sessao_nova: bool = False) -> dict:
+        """A conta como toda página do cliente vê (pedida no <head> de cada uma): uma transação só no banco."""
+        mfa = bool(cli.get("mfa_segredo"))
+        extra = c.banco.resumo_conta(cli["id"], teste=cli["plano"] == "teste", mfa=mfa)
         teste = None
         if cli["plano"] == "teste":
-            teste = {"usado": c.banco.pedidos_ativos(cli["id"]) > 0, **{k: TESTE[k] for k in ("fotos", "duracao")}}
+            teste = {"usado": extra["teste_usado"], **{k: TESTE[k] for k in ("fotos", "duracao")}}
         return {
             "id": cli["id"],
             "email": cli.get("email"),
             "nome": cli.get("nome"),
             "plano": cli["plano"],
             "criado": cli.get("criado"),
-            "saldo": c.banco.saldo(cli["id"]),
+            "saldo": extra["saldo"],
             "teste": teste,
             "pagamento": {"ativo": c.mp is not None, "minimo": c.mp.minimo, "maximo": c.mp.maximo} if c.mp else None,
+            "perfil": {
+                "primeiro_nome": cli.get("primeiro_nome"),
+                "ultimo_nome": cli.get("ultimo_nome"),
+                "gravatar": bool(cli.get("gravatar")),
+                "foto": _foto_url(c, cli),
+            },
+            "tema": cli.get("tema") or "auto",
+            "mfa": {"ativo": mfa, "desde": cli.get("mfa_ativo_em"), "codigos": extra.get("codigos")},
+            # confirmação recente ("é você mesmo?"): quantos segundos ainda valem nesta sessão
+            "confirmada_s": contas.CONFIRMACAO_S if sessao_nova else _confirmada_s(cli),
+            "sessao": sessao_nova or "_sessao" in cli,  # False: código de acesso no cabeçalho (integração)
+            "documentos": {"atuais": contas.DOCUMENTOS, "pendentes": contas.documentos_pendentes(cli)},
+            "interesses": extra["interesses"],
         }
 
     @app.get("/api/conta")
@@ -1224,9 +1469,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         )
 
     @app.post("/api/conta/excluir")
-    def excluir_conta(body: ExcluirIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+    def excluir_conta(
+        body: ExcluirIn, request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)
+    ):
         if body.confirmacao.strip().upper() != "EXCLUIR":
             raise HTTPException(422, 'para excluir, escreva "EXCLUIR"')
+        _exigir_confirmacao(cli)
         resumo = None
         if cli.get("email"):  # o mesmo e-mail não ganha outro teste grátis depois
             resumo = contas.resumo_email(c.chave_codigos, contas.normalizar(cli["email"], exigir_dominio=False)[1])
@@ -1235,9 +1483,290 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
         c.banco.registrar_acesso(cli["id"], "conta_excluida", origem_de(request))
+        _avisar(c, cli.get("email"), "conta_excluida")
         resp = JSONResponse({"ok": True})
         apagar_cookie(resp, c, "cliente")
         return resp
+
+    # -- configurações da conta (10/10/2026) --------------------------------------------------------
+
+    @app.post("/api/conta/confirmar/codigo")
+    def pedir_confirmacao(request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)):
+        """Confirmação recente pelo e-mail (sem a verificação em duas etapas): um código com chave própria, que
+        não invalida um código de entrada pedido em outro aparelho."""
+        if cli.get("mfa_segredo"):
+            raise HTTPException(409, "confirme com o código do aplicativo autenticador ou um código de recuperação")
+        if not cli.get("email"):
+            raise HTTPException(409, "a conta não tem e-mail: saia e entre de novo para confirmar")
+        if c.email is None:
+            raise HTTPException(503, "o envio de e-mail está indisponível agora; tente de novo mais tarde")
+        for janela, maximo in ((3600, 5), (86400, 10)):
+            if c.banco.contar(f"confirmar:codigo:{cli['id']}", janela) > maximo:
+                raise HTTPException(429, "muitos códigos pedidos; tente de novo mais tarde")
+        codigo = contas.novo_codigo()
+        chave = f"confirmar:{cli['id']}"
+        resumo = contas.resumo_codigo(c.chave_codigos, chave, codigo)
+        c.banco.criar_codigo(chave, cli["email"], resumo, contas.CODIGO_VALIDADE_S, origem_de(request))
+        c.em_segundo_plano(_enviar_codigo, c, cli["email"], codigo, "confirmar", correio=True)
+        return {"ok": True, "email": cli["email"], "validade_s": contas.CODIGO_VALIDADE_S}
+
+    @app.post("/api/conta/confirmar")
+    def confirmar(
+        body: ConfirmarIn, request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)
+    ):
+        """Confirma que é a pessoa (10 min): com a verificação em duas etapas, o código do aplicativo ou um de
+        recuperação (o do e-mail sozinho não basta: quem tomou o e-mail não desliga a proteção); sem ela, o código
+        que chegou no e-mail."""
+        origem = origem_de(request)
+        erros = f"confirmar:erro:{cli['id']}"
+        _limite_erros(c, erros, "muitos códigos errados; espere 15 minutos")
+        meio = None
+        if cli.get("mfa_segredo"):
+            meio = _segundo_fator(c, cli, body.codigo, origem)
+        else:
+            codigo, chave = contas.limpar_codigo(body.codigo), f"confirmar:{cli['id']}"
+            if contas.CODIGO.match(codigo) and c.banco.conferir_codigo(
+                chave, contas.resumo_codigo(c.chave_codigos, chave, codigo), contas.CODIGO_TENTATIVAS
+            ):
+                meio = "email"
+        if meio is None:
+            _errou(c, erros)
+            raise HTTPException(401, "código inválido ou vencido; confira o código ou peça outro")
+        c.banco.confirmar_sessao(cli["_sessao"], time.time() + contas.CONFIRMACAO_S)
+        c.banco.registrar_acesso(cli["id"], "confirmacao", origem, {"meio": meio})
+        return {"ok": True, "confirmada_s": contas.CONFIRMACAO_S}
+
+    @app.post("/api/conta/mfa/iniciar")
+    def mfa_iniciar(cli: dict = Depends(cliente_sessao), c: Config = Depends(config)):
+        """1º passo para ligar a verificação em duas etapas: o segredo novo (para o aplicativo), a URI e o QR Code.
+        Só liga de fato quando a pessoa confirmar um código dele (`/api/conta/mfa/ativar`)."""
+        _exigir_confirmacao(cli)
+        if cli.get("mfa_segredo"):
+            raise HTTPException(409, "a verificação em duas etapas já está ligada")
+        if c.banco.contar(f"mfa:iniciar:{cli['id']}", 3600) > 10:
+            raise HTTPException(429, "muitas tentativas; tente de novo mais tarde")
+        segredo = contas.novo_segredo_totp()
+        if not c.banco.mfa_iniciar(cli["id"], contas.cifrar(c.chave_segredos, segredo, f"cliente:{cli['id']}")):
+            raise HTTPException(409, "a verificação em duas etapas já está ligada")
+        uri = contas.uri_totp(segredo, cli.get("email") or cli["id"])
+        return {"segredo": segredo, "uri": uri, "qr_svg": contas.qr_svg(uri), "validade_s": contas.MFA_PENDENTE_S}
+
+    @app.post("/api/conta/mfa/ativar")
+    def mfa_ativar(
+        body: CodigoAppIn, request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)
+    ):
+        """2º passo: um código do aplicativo confere com o segredo novo; liga e devolve os códigos de recuperação
+        (mostrados uma vez só: o banco guarda só o HMAC de cada um). Sem pedir a confirmação de novo: o segredo
+        pendente só existe porque o 1º passo foi confirmado, e só a tela que o recebeu tem o código dele."""
+        erros = f"mfa:ativar:{cli['id']}"
+        _limite_erros(c, erros, "muitos códigos errados; espere 15 minutos e comece de novo")
+        conta = c.banco.conta(cli["id"]) or {}
+        pendente = conta.get("mfa_pendente")
+        if conta.get("mfa_segredo"):
+            raise HTTPException(409, "a verificação em duas etapas já está ligada")
+        if not pendente or float(conta.get("mfa_pendente_em") or 0) < time.time() - contas.MFA_PENDENTE_S:
+            raise HTTPException(409, "o QR Code venceu; comece de novo")
+        try:
+            segredo = contas.decifrar(c.chave_segredos, pendente, f"cliente:{cli['id']}")
+        except ValueError as e:
+            raise HTTPException(409, "o QR Code venceu; comece de novo") from e
+        contador = contas.totp_confere(segredo, re.sub(r"\s", "", body.codigo))
+        if contador is None:
+            _errou(c, erros)
+            raise HTTPException(401, "o código não confere: confira se o aplicativo leu o QR Code desta tela")
+        codigos = contas.novos_codigos_recuperacao()
+        resumos = [contas.resumo_recuperacao(c.chave_codigos, cli["id"], k) for k in codigos]
+        if not c.banco.mfa_ativar(cli["id"], pendente, contador, resumos, contas.MFA_PENDENTE_S):
+            raise HTTPException(409, "o QR Code mudou em outra aba; comece de novo")
+        c.banco.registrar_acesso(cli["id"], "mfa_ligado", origem_de(request))
+        _avisar(c, cli.get("email"), "mfa_ligado")
+        return {"ok": True, "codigos": [contas.formatar_recuperacao(k) for k in codigos]}
+
+    @app.post("/api/conta/mfa/desligar")
+    def mfa_desligar(request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)):
+        _exigir_confirmacao(cli)
+        if not c.banco.mfa_desligar(cli["id"]):
+            raise HTTPException(409, "a verificação em duas etapas já está desligada")
+        c.banco.registrar_acesso(cli["id"], "mfa_desligado", origem_de(request))
+        _avisar(c, cli.get("email"), "mfa_desligado")
+        return {"ok": True}
+
+    @app.post("/api/conta/mfa/codigos")
+    def mfa_codigos(request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)):
+        """Códigos de recuperação novos; os anteriores deixam de valer."""
+        _exigir_confirmacao(cli)
+        codigos = contas.novos_codigos_recuperacao()
+        resumos = [contas.resumo_recuperacao(c.chave_codigos, cli["id"], k) for k in codigos]
+        if not c.banco.trocar_codigos_recuperacao(cli["id"], resumos):
+            raise HTTPException(409, "ligue a verificação em duas etapas antes")
+        c.banco.registrar_acesso(cli["id"], "codigos_recuperacao_novos", origem_de(request))
+        _avisar(c, cli.get("email"), "codigos_novos")
+        return {"ok": True, "codigos": [contas.formatar_recuperacao(k) for k in codigos]}
+
+    def _email_novo(c: Config, cli: dict, texto: str) -> tuple[str, str]:
+        email, norm = _email_valido(texto)
+        try:
+            contas.normalizar(texto)
+        except contas.DominioRecusado as e:
+            raise HTTPException(422, str(e)) from e
+        if norm == cli.get("email_norm"):
+            raise HTTPException(422, "este já é o e-mail da sua conta")
+        return email, norm
+
+    @app.post("/api/conta/email/codigo")
+    def email_codigo(
+        body: TrocarEmailIn, request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)
+    ):
+        """Troca de e-mail, 1º passo: com a confirmação recente, um código vai para o endereço novo. Pode dizer que
+        o endereço já é de outra conta: a pessoa está conectada, e há limite de 5 por hora e 10 por dia."""
+        _exigir_confirmacao(cli)
+        for janela, maximo in ((3600, 5), (86400, 10)):
+            if c.banco.contar(f"email-novo:{cli['id']}", janela) > maximo:
+                raise HTTPException(429, "muitas trocas de e-mail pedidas; tente de novo mais tarde")
+        email, norm = _email_novo(c, cli, body.email)
+        dono = c.banco.conta_por_email(norm)
+        if dono and dono["id"] != cli["id"]:
+            raise HTTPException(409, "este e-mail já é de outra conta")
+        if c.email is None:
+            raise HTTPException(503, "o envio de e-mail está indisponível agora; tente de novo mais tarde")
+        codigo, chave = contas.novo_codigo(), f"email-novo:{cli['id']}"
+        resumo = contas.resumo_codigo(c.chave_codigos, f"{chave}:{norm}", codigo)  # o código só vale para este e-mail
+        c.banco.criar_codigo(chave, email, resumo, contas.CODIGO_VALIDADE_S, origem_de(request))
+        c.em_segundo_plano(_enviar_codigo, c, email, codigo, "email-novo", correio=True)
+        return {"ok": True, "email": email, "validade_s": contas.CODIGO_VALIDADE_S}
+
+    @app.post("/api/conta/email")
+    def trocar_email(
+        body: TrocarEmailIn, request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)
+    ):
+        """Troca de e-mail, 2º passo: o código que chegou no endereço novo (só existe se o 1º passo foi confirmado,
+        por isso a confirmação não é pedida de novo: o e-mail pode demorar). O endereço antigo recebe um aviso."""
+        email, norm = _email_novo(c, cli, body.email)
+        codigo, chave = contas.limpar_codigo(body.codigo or ""), f"email-novo:{cli['id']}"
+        if not contas.CODIGO.match(codigo) or not c.banco.conferir_codigo(
+            chave, contas.resumo_codigo(c.chave_codigos, f"{chave}:{norm}", codigo), contas.CODIGO_TENTATIVAS
+        ):
+            raise HTTPException(401, "código inválido ou vencido; confira o código ou peça outro")
+        antigo_norm = cli.get("email_norm")
+        resumo_antigo = contas.resumo_email(c.chave_codigos, antigo_norm) if antigo_norm else None
+        try:
+            antigo = c.banco.trocar_email(cli["id"], email, norm, resumo_antigo)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        mascaras = {"de": contas.mascarar_email(antigo), "para": contas.mascarar_email(email)}
+        c.banco.registrar_acesso(cli["id"], "email_trocado", origem_de(request), mascaras)
+        _avisar(c, antigo, "email_trocado", novo=mascaras["para"])
+        return {"ok": True, "email": email}
+
+    @app.get("/api/conta/sessoes")
+    def minhas_sessoes(cli: dict = Depends(cliente_sessao), c: Config = Depends(config)):
+        """Aparelhos conectados (até 50): o aparelho pelo navegador, o IP, quando entrou e o último uso. A
+        referência de cada um é derivada do id da sessão, que nunca sai do servidor."""
+        return {
+            "sessoes": [
+                {
+                    "ref": contas.ref_sessao(s["id"]),
+                    "aparelho": contas.aparelho(s["agente"]),
+                    "ip": s["ip"],
+                    "criada": s["criado"],
+                    "ultimo_uso": s["ultimo_uso"],
+                    "atual": s["id"] == cli["_sessao_id"],
+                }
+                for s in c.banco.sessoes_ativas(cli["id"], cli["_sessao_id"])
+            ]
+        }
+
+    @app.post("/api/conta/sessoes/encerrar-outras")
+    def encerrar_outras(request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)):
+        n = c.banco.revogar_outras(cli["id"], cli["_sessao_id"])
+        c.banco.registrar_acesso(cli["id"], "saida_outras", origem_de(request), {"sessoes": n})
+        return {"ok": True, "sessoes": n}
+
+    @app.post("/api/conta/sessoes/{ref}/encerrar")
+    def encerrar_sessao(ref: str, request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)):
+        alvo = next((s for s in c.banco.sessoes_ativas(cli["id"], cli["_sessao_id"])
+                     if contas.iguais(contas.ref_sessao(s["id"]), ref[:40])), None)  # fmt: skip
+        if alvo is None or not c.banco.revogar_sessao_id(cli["id"], alvo["id"]):
+            raise HTTPException(404, "aparelho não encontrado (a sessão pode já ter terminado)")
+        atual = alvo["id"] == cli["_sessao_id"]
+        c.banco.registrar_acesso(
+            cli["id"], "sessao_encerrada", origem_de(request), {"aparelho": contas.aparelho(alvo["agente"])}
+        )
+        resp = JSONResponse({"ok": True, "atual": atual})
+        if atual:
+            apagar_cookie(resp, c, "cliente")
+        return resp
+
+    @app.post("/api/conta/desativar")
+    def desativar_conta(
+        body: ExcluirIn, request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)
+    ):
+        """O cliente pausa a própria conta: as sessões caem, o saldo fica, e entrar de novo pelo código do e-mail
+        reativa. (A desativação feita pelo painel é outra coisa: só o suporte desfaz.)"""
+        if body.confirmacao.strip().upper() != "DESATIVAR":
+            raise HTTPException(422, 'para desativar, escreva "DESATIVAR"')
+        try:
+            r = c.banco.pausar_conta(cli["id"])
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        for lid in r["lotes"]:  # fotos de um envio que não terminou saem do armazenamento
+            c.em_segundo_plano(_apagar_fotos, c, lid)
+        c.banco.registrar_acesso(cli["id"], "conta_desativada", origem_de(request), {"sessoes": r["sessoes"]})
+        _avisar(c, cli.get("email"), "conta_desativada")
+        resp = JSONResponse({"ok": True})
+        apagar_cookie(resp, c, "cliente")
+        return resp
+
+    @app.post("/api/conta/perfil")
+    def mudar_perfil(body: PerfilIn, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)):
+        """Nome, sobrenome e a escolha da foto do Gravatar (só os campos enviados)."""
+        campos: dict[str, Any] = {}
+        for campo in ("primeiro_nome", "ultimo_nome"):
+            if campo in body.model_fields_set:
+                try:
+                    campos[campo] = perfil.nome_pessoa(getattr(body, campo))
+                except ValueError as e:
+                    rotulo = "nome" if campo == "primeiro_nome" else "sobrenome"
+                    raise HTTPException(422, f"{rotulo}: {e}") from e
+        if "gravatar" in body.model_fields_set:
+            campos["gravatar"] = 1 if body.gravatar else None
+        if not campos:
+            raise HTTPException(422, "nada para mudar")
+        c.banco.atualizar_perfil(cli["id"], campos)
+        return _resumo_conta(c, {**cli, **campos})
+
+    @app.post("/api/conta/preferencias")
+    def mudar_preferencias(body: PreferenciasIn, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)):
+        c.banco.definir_tema(cli["id"], None if body.tema == "auto" else body.tema)
+        return {"ok": True, "tema": body.tema}
+
+    @app.get("/api/conta/foto")
+    def minha_foto(request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """A foto do Gravatar, servida daqui (o navegador não fala com terceiros). 404: sem foto (a página mostra
+        a inicial)."""
+        if not cli.get("gravatar") or not cli.get("email"):
+            raise HTTPException(404, "sem foto")
+        foto = c.fotos.foto(cli["email"])
+        if foto is None:
+            raise HTTPException(404, "sem foto no Gravatar")
+        dados, tipo = foto
+        etag = '"' + hashlib.sha256(dados).hexdigest()[:32] + '"'
+        cab = {"Cache-Control": "private, max-age=86400", "ETag": etag}
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers=cab)
+        return Response(dados, media_type=tipo, headers=cab)
+
+    @app.post("/api/conta/aceitar")
+    def aceitar_documentos(
+        body: AceitarIn, request: Request, cli: dict = Depends(cliente_sessao), c: Config = Depends(config)
+    ):
+        """Quem já estava conectado quando os termos ou a privacidade mudaram aceita a versão nova aqui."""
+        if body.documentos != contas.DOCUMENTOS:
+            raise HTTPException(409, "os documentos mudaram de novo; recarregue a página para ler a versão atual")
+        origem = origem_de(request)
+        c.banco.registrar_aceite(cli["id"], contas.DOCUMENTOS, origem)
+        c.banco.registrar_acesso(cli["id"], "aceite", origem, contas.DOCUMENTOS)
+        return {"ok": True, "documentos": contas.DOCUMENTOS}
 
     # -- cliente ------------------------------------------------------------------------
 
@@ -1303,8 +1832,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @app.post("/api/interesses")
     def registrar_interesse(body: InteresseIn, cli: dict = Depends(cliente), c: Config = Depends(config)):
-        """ "Tenho interesse" numa finalidade em breve: aparece no painel (total e cada clique)."""
-        if body.finalidade not in modelos.IDS_FINALIDADES:
+        """ "Tenho interesse" numa finalidade ou num recurso em breve (Mix, Projetos, indicação, telefone, nome de
+        usuário): aparece no painel (total e cada clique)."""
+        if body.finalidade not in modelos.IDS_FINALIDADES and body.finalidade not in modelos.RECURSOS:
             raise HTTPException(422, "finalidade desconhecida")
         if modelos.disponivel(body.finalidade):
             raise HTTPException(422, "esta finalidade já está disponível")
@@ -1313,6 +1843,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @app.post("/api/lotes")
     def criar_lote(body: LoteIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        _exigir_aceite(cli)
         origem = origem_de(request)
         origem["impressao"] = impressao_navegador(origem, body.navegador)
         if body.modelo not in {m["id"] for m in modelos.disponiveis()}:
@@ -1805,6 +2336,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @app.post("/api/pagamentos/pix")
     def criar_pix(body: PixIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        _exigir_aceite(cli)
         if c.mp is None:
             raise HTTPException(503, "a recarga por Pix ainda não está disponível; fale com o suporte")
         if cli["plano"] == "interno":
@@ -2127,6 +2659,21 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         _auditar(c, request, quem, "reativar", cliente_id)
         return {"cliente": cliente_id, "ativo": True}
 
+    @rotas.post("/api/clientes/{cliente_id}/mfa/desligar")
+    def desligar_mfa_cliente(
+        cliente_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)
+    ):
+        """Para quem perdeu o celular e os códigos de recuperação (depois de o suporte conferir que é a pessoa):
+        a entrada volta a pedir só o código do e-mail, e o e-mail da conta recebe um aviso."""
+        cli = c.banco.conta(cliente_id)
+        if cli is None or not c.banco.mfa_desligar(cliente_id):
+            raise HTTPException(404, "cliente não encontrado ou sem a verificação em duas etapas")
+        # no registro da conta, sem IP (não foi um acesso dela); quem fez e de onde ficam na auditoria do painel
+        c.banco.registrar_acesso(cliente_id, "mfa_desligado", {}, {"por": "suporte"})
+        _auditar(c, request, quem, "mfa_desligado", cliente_id)
+        _avisar(c, cli.get("email"), "mfa_suporte")
+        return {"cliente": cliente_id, "mfa": False}
+
     @rotas.get("/api/historico")
     def historico(grupo: str = "todos", _: str = Depends(admin), c: Config = Depends(config)):
         try:
@@ -2212,12 +2759,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     @rotas.get("/api/interesses")
     def interesses(_: str = Depends(admin), c: Config = Depends(config)):
-        """ "Tenho interesse": quantos clientes em cada opção e cada clique (conta, e-mail e quando)."""
-        titulos = {f["id"]: f for f in modelos.FINALIDADES}
+        """ "Tenho interesse": quantos clientes em cada opção (finalidades e recursos em breve) e cada clique."""
 
         def titulo(i: dict) -> dict:
-            f = titulos.get(i["finalidade"], {})
-            return {**i, "titulo": f.get("titulo", i["finalidade"]), "tipo": f.get("tipo", "")}
+            return {**i, **modelos.titulo_interesse(i["finalidade"])}
 
         return {
             "resumo": [titulo(i) for i in c.banco.interesses()],

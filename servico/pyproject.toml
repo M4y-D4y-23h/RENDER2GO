@@ -9,6 +9,9 @@ dependencies = [
     "psycopg[binary]==3.2.10",
     "psycopg-pool==3.2.8",  # conexões reaproveitadas (antes: uma conexão nova por transação)
     "opencv-python-headless==4.12.0.88",  # aviso de pessoas no /aprovar (pessoas.py)
+    # segredos do aplicativo autenticador cifrados no banco (AES-GCM): clientes e acessos do painel
+    "cryptography==50.0.2",
+    "segno==1.6.6",  # QR Code (SVG) do aplicativo autenticador, gerado no servidor
     "render2go-worker",
 ]
 

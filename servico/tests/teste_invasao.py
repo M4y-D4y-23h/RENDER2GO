@@ -52,6 +52,8 @@ PAINEL = "/painel-" + secrets.token_urlsafe(18)
 WORKER = secrets.token_urlsafe(32)
 SEGREDO_MP = "segredo-webhook-" + secrets.token_hex(8)
 TABELAS = [
+    "codigos_recuperacao",
+    "emails_antigos",
     "auditoria_admin",
     "pagamentos",
     "tokens_worker",

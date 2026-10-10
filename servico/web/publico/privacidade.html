@@ -55,7 +55,8 @@
 <article class="recipiente estreito texto-legal com-indice">
 <div class="cab-pagina">
 <h1>Política de Privacidade</h1>
-<p class="lead">Versão privacidade-v1, em vigor desde 9 de outubro de 2026. Explica como tratamos dados pessoais, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).</p>
+<p class="lead">Versão privacidade-v2, de 10 de outubro de 2026 (a anterior, privacidade-v1, valeu desde 9 de outubro de 2026). Explica como tratamos dados pessoais, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).</p>
+<p>O que mudou nesta versão: nome e sobrenome no perfil, foto do Gravatar (só se você ligar), verificação em duas etapas, troca de e-mail, lista de aparelhos conectados, desativar a conta e preferência de tema.</p>
 </div>
 <nav aria-labelledby="t-indice" class="indice">
 <h2 id="t-indice">Nesta página</h2>
@@ -85,6 +86,11 @@
 <thead><tr><th scope="col">Dados</th><th scope="col">Para quê</th><th scope="col">Base legal (LGPD, art. 7º)</th></tr></thead>
 <tbody>
 <tr><td>E-mail, data de criação da conta, plano e saldo</td><td>Criar e manter a conta, enviar o código de entrada, cobrar e devolver pedidos</td><td>Execução do contrato (V)</td></tr>
+<tr><td>Nome e sobrenome (opcionais), o tema escolhido e a data em que você desativou a conta</td><td>Mostrar o seu nome na conta, abrir o site do jeito que você escolheu e reativar a conta quando você voltar</td><td>Execução do contrato (V)</td></tr>
+<tr><td>Foto do Gravatar, só se você ligar no perfil: um resumo (SHA-256) do seu e-mail vai ao Gravatar, que devolve a foto</td><td>Mostrar a sua foto no perfil</td><td>Consentimento (I), que você retira desligando a opção</td></tr>
+<tr><td>Verificação em duas etapas (opcional): o segredo do aplicativo autenticador, guardado cifrado, e os códigos de recuperação, guardados só como um resumo irreversível</td><td>Proteger a entrada na conta</td><td>Execução do contrato (V) e legítimo interesse (IX)</td></tr>
+<tr><td>Aparelhos conectados: o navegador, o IP, quando cada sessão começou e o último uso</td><td>Mostrar onde a sua conta está aberta, para você encerrar o que não reconhecer; segurança</td><td>Legítimo interesse (IX)</td></tr>
+<tr><td>Troca de e-mail: o endereço novo; no registro de acesso, os dois endereços mascarados (ex.: fu***@gmail.com); um resumo irreversível do endereço anterior</td><td>Segurança da conta (o endereço anterior recebe um aviso) e impedir que o endereço anterior ganhe outro teste gratuito</td><td>Legítimo interesse (IX), prevenção a fraude</td></tr>
 <tr><td>Aceite dos termos e desta política (versão, data, IP)</td><td>Provar o que foi aceito e quando</td><td>Exercício regular de direitos (VI)</td></tr>
 <tr><td>Registros de acesso: IP, porta de origem, data e hora, navegador; entradas, saídas, pedidos e recargas</td><td>Cumprir o Marco Civil da Internet (art. 15), segurança e investigação de fraudes</td><td>Obrigação legal (II) e legítimo interesse (IX)</td></tr>
 <tr><td>Identificador aleatório do aparelho, idioma, tela, fuso e outros sinais do navegador (e um resumo deles); verificação “não sou um robô”</td><td>Prevenir robôs, contas falsas e abuso do teste gratuito</td><td>Legítimo interesse (IX)</td></tr>
@@ -108,8 +114,9 @@
 <li><strong>Hetzner</strong> (servidor e banco de dados; Alemanha, União Europeia);</li>
 <li><strong>Cloudflare</strong> (DNS, armazenamento das fotos e vídeos e a verificação “não sou um robô”; Estados Unidos e rede global);</li>
 <li><strong>RunPod</strong> (GPUs que geram os vídeos; Estados Unidos e outros países), que recebe cada foto só durante a geração do vídeo;</li>
-<li><strong>Amazon Web Services</strong> (envio dos e-mails com os códigos de entrada e das mensagens do suporte; Estados Unidos);</li>
-<li><strong>Mercado Pago</strong> (processamento dos pagamentos por Pix; Brasil).</li>
+<li><strong>Amazon Web Services</strong> (envio dos e-mails com os códigos de entrada, dos avisos de segurança da conta e das mensagens do suporte; Estados Unidos);</li>
+<li><strong>Mercado Pago</strong> (processamento dos pagamentos por Pix; Brasil);</li>
+<li><strong>Gravatar</strong> (Automattic; Estados Unidos), só se você ligar a foto do Gravatar no perfil: recebe o resumo (SHA-256) do seu e-mail, nunca o e-mail. Quem consulta é o nosso servidor; o seu navegador não fala com o Gravatar.</li>
 </ul>
 <p><strong>Transferência internacional:</strong> parte desses fornecedores fica fora do Brasil. A transferência é necessária para executar o contrato (LGPD, art. 33, IX) e é feita com as garantias contratuais de proteção de dados oferecidas por eles (art. 33, II).</p>
 </section>
@@ -122,14 +129,16 @@
 <li><strong>Registros de acesso:</strong> 6 meses (Marco Civil da Internet), depois apagados.</li>
 <li><strong>Extrato, recargas e pagamentos:</strong> 5 anos (obrigações fiscais e de consumo).</li>
 <li><strong>Pedidos, autorizações de imagem e mensagens de suporte:</strong> pelo tempo necessário para defender direitos (até 5 anos).</li>
-<li><strong>Conta:</strong> enquanto existir. Ao excluir a conta, o e-mail é apagado e a conta deixa de existir para a entrada; ficam só os registros que a lei manda guardar, pelos prazos acima, e um resumo irreversível do e-mail, que serve só para o mesmo e-mail não ganhar outro teste gratuito (legítimo interesse, prevenção a fraude).</li>
+<li><strong>Segredo do aplicativo autenticador e códigos de recuperação:</strong> enquanto a verificação em duas etapas estiver ligada; apagados quando você a desliga ou exclui a conta.</li>
+<li><strong>Nome, sobrenome, tema e a escolha do Gravatar:</strong> enquanto a conta existir. A foto do Gravatar não é guardada: fica algumas horas na memória do servidor, para não consultar o Gravatar a cada página.</li>
+<li><strong>Conta:</strong> enquanto existir; desativada por você, ela fica guardada, com o saldo, até você entrar de novo. Ao excluir a conta, o e-mail, o nome e as configurações são apagados e a conta deixa de existir para a entrada; ficam só os registros que a lei manda guardar, pelos prazos acima, e um resumo irreversível do e-mail, que serve só para o mesmo e-mail não ganhar outro teste gratuito (legítimo interesse, prevenção a fraude). O mesmo resumo fica do e-mail que você trocar por outro.</li>
 </ul>
 </section>
 <section id="direitos" aria-labelledby="t-direitos">
 <h2 id="t-direitos">5. Seus direitos (LGPD, art. 18)</h2>
 <p>Você pode pedir: confirmação de que tratamos seus dados; acesso e cópia (portabilidade); correção; anonimização, bloqueio ou eliminação de dados desnecessários; eliminação dos dados tratados com consentimento; informação sobre com quem compartilhamos; revogação do consentimento; oposição a um tratamento; e revisão de decisões automatizadas.</p>
 <ul>
-<li><strong>Na sua conta</strong> (“Sua conta”): baixar uma cópia dos seus dados, sair de todos os aparelhos e excluir a conta.</li>
+<li><strong>Na sua conta</strong> (Perfil e Configurações): baixar uma cópia dos seus dados, corrigir o nome, trocar o e-mail, ligar ou desligar a foto do Gravatar, ver e encerrar os aparelhos conectados, desativar ou excluir a conta.</li>
 <li><strong>Por e-mail:</strong> [[EMAIL_PRIVACIDADE]]. Respondemos em até 15 dias e podemos pedir uma confirmação de que o pedido é seu.</li>
 <li>Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).</li>
 </ul>
@@ -140,7 +149,7 @@
 </section>
 <section id="seguranca" aria-labelledby="t-seguranca">
 <h2 id="t-seguranca">7. Segurança</h2>
-<p>Usamos conexão criptografada (HTTPS), sessão em cookie protegido (inacessível a scripts), códigos de entrada de uso único, verificação em duas etapas na administração, endereços de envio e de download assinados e de curta duração, acesso restrito aos dados e apagamento das fotos ao fim de cada pedido. Se acontecer um incidente de segurança que possa causar risco relevante, avisamos você e a ANPD (LGPD, art. 48).</p>
+<p>Usamos conexão criptografada (HTTPS), sessão em cookie protegido (inacessível a scripts), códigos de entrada de uso único, verificação em duas etapas opcional para a sua conta (aplicativo autenticador), confirmação por código antes de trocar o e-mail, mexer na verificação em duas etapas ou excluir a conta, aviso no seu e-mail quando algo importante muda na conta, endereços de envio e de download assinados e de curta duração e apagamento das fotos ao fim de cada pedido. Na administração, cada pessoa da equipe tem um acesso próprio, com senha e aplicativo autenticador, só às funções do seu papel, e tudo o que ela faz fica registrado (quem, o quê, quando e de onde). Se acontecer um incidente de segurança que possa causar risco relevante, avisamos você e a ANPD (LGPD, art. 48).</p>
 </section>
 <section id="criancas" aria-labelledby="t-criancas">
 <h2 id="t-criancas">8. Crianças e adolescentes</h2>
@@ -152,7 +161,7 @@
 </section>
 <section id="mudancas" aria-labelledby="t-mudancas-priv">
 <h2 id="t-mudancas-priv">10. Mudanças nesta política</h2>
-<p>Quando esta política mudar, a versão nova fica nesta página e avisamos na próxima entrada.</p>
+<p>Quando esta política mudar, a versão nova fica nesta página e pedimos que você a leia e aceite na próxima vez que usar o serviço.</p>
 </section>
 </div>
 </article>

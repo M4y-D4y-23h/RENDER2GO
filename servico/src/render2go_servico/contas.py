@@ -8,9 +8,11 @@ fica de fora, salvo se o dono do serviço acrescentar em RENDER2GO_EMAIL_DOMINIO
 conta pelo painel. Os apelidos de uma mesma caixa (pontos e "+" no Gmail, "+" nos
 outros, "-palavra" no Yahoo) são a mesma conta: um teste gratuito por caixa de e-mail.
 
-Também aqui: o código do aplicativo autenticador do painel (TOTP, RFC 6238), a verificação "não sou
-um robô" (Cloudflare Turnstile, conferida no servidor) e a chave de rede dos limites (IPv6 pelo /64).
-Só biblioteca padrão.
+Também aqui: o código do aplicativo autenticador (TOTP, RFC 6238) do painel e da verificação em duas
+etapas do cliente, com o segredo cifrado no banco (AES-GCM, preso à conta) e os códigos de recuperação
+guardados só como HMAC; a verificação "não sou um robô" (Cloudflare Turnstile, conferida no servidor);
+o aparelho legível de uma sessão (pelo User-Agent); e a chave de rede dos limites (IPv6 pelo /64).
+Biblioteca padrão, salvo a cifra (cryptography).
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import io
 import ipaddress
 import json
 import os
@@ -30,6 +33,9 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
+
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 # provedores que pedem verificação (telefone, desafio) para abrir uma caixa; todos com donos conhecidos
 DOMINIOS_PADRAO = frozenset(
@@ -62,9 +68,18 @@ CODIGO_VALIDADE_S = 10 * 60
 CODIGO_TENTATIVAS = 5
 SESSAO_CLIENTE_S = 30 * 86400
 SESSAO_ADMIN_S = 12 * 3600
-# versões dos documentos que a pessoa aceita ao entrar (páginas /termos e /privacidade)
-DOCUMENTOS = {"termos": "termos-v1", "privacidade": "privacidade-v1"}
+# versões dos documentos que a pessoa aceita ao entrar (páginas /termos e /privacidade). Versão nova: quem
+# já estava conectado aceita na própria página (GET /api/conta traz os pendentes; POST /api/conta/aceitar)
+DOCUMENTOS = {"termos": "termos-v2", "privacidade": "privacidade-v2"}
 TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+# confirmação recente ("é você mesmo?") antes de ações sensíveis; a sessão aberta há menos que isso já conta
+CONFIRMACAO_S = 10 * 60
+MFA_DESAFIO_S = 5 * 60  # entre o código do e-mail e o do aplicativo, na entrada com verificação em duas etapas
+MFA_PENDENTE_S = 15 * 60  # para ler o QR Code e confirmar o 1º código
+CODIGOS_RECUPERACAO = 10
+# sem letras e números que se confundem (0/o, 1/l/i): a pessoa copia de um papel
+ALFABETO_RECUPERACAO = "abcdefghjkmnpqrstuvwxyz23456789"
+RECUPERACAO = re.compile(r"^[a-hj-km-np-z2-9]{10}$")
 
 
 class EmailRecusado(ValueError):
@@ -187,6 +202,120 @@ def iguais(a: str, b: str) -> bool:
 def uri_totp(segredo: str, conta: str = "painel", emissor: str = "Render2Go") -> str:
     rotulo = urllib.parse.quote(f"{emissor}:{conta}")
     return f"otpauth://totp/{rotulo}?secret={segredo}&issuer={urllib.parse.quote(emissor)}&digits=6&period=30"
+
+
+def qr_svg(texto: str) -> str:
+    """QR Code em SVG (preto no branco, com a margem de 4 módulos que os leitores pedem; o tamanho fica com
+    a página). A página mostra por uma URL blob:, sem innerHTML."""
+    import segno
+
+    saida = io.BytesIO()
+    segno.make(texto, error="m").save(
+        saida, kind="svg", scale=1, border=4, dark="#000", light="#fff", xmldecl=False, omitsize=True, nl=False
+    )
+    return saida.getvalue().decode()
+
+
+# -- segredos do autenticador no banco e códigos de recuperação ------------------------------------
+
+
+def chave_segredos(segredo_contas: str | None, segredo_aprovacao: str) -> bytes:
+    """Chave AES-256 dos segredos do aplicativo autenticador guardados no banco (com separação de domínio
+    da chave dos códigos de entrada). Trocar RENDER2GO_SEGREDO_CONTAS depois de haver verificação em duas
+    etapas ligada faz esses segredos deixarem de abrir: a entrada que depende deles é recusada (docs/13)."""
+    base = segredo_contas or segredo_aprovacao
+    return hmac.new(base.encode(), b"render2go:segredos-totp:v1", hashlib.sha256).digest()
+
+
+def cifrar(chave: bytes, texto: str, contexto: str) -> str:
+    """AES-GCM com nonce aleatório. `contexto` (ex.: "cliente:cli_x") entra como dado associado: o valor
+    copiado para a linha de outra conta, no próprio banco, não abre."""
+    nonce = secrets.token_bytes(12)
+    cifrado = AESGCM(chave).encrypt(nonce, texto.encode(), contexto.encode())
+    return "v1:" + base64.urlsafe_b64encode(nonce + cifrado).decode()
+
+
+def decifrar(chave: bytes, valor: str | None, contexto: str) -> str:
+    """O texto de `cifrar`; ValueError se a chave, o contexto ou o valor não conferem (quem chama recusa)."""
+    if not valor or not valor.startswith("v1:"):
+        raise ValueError("segredo em formato desconhecido")
+    try:
+        bruto = base64.urlsafe_b64decode(valor[3:])
+        return AESGCM(chave).decrypt(bruto[:12], bruto[12:], contexto.encode()).decode()
+    except (InvalidTag, ValueError) as e:  # binascii.Error e UnicodeDecodeError são ValueError
+        raise ValueError("segredo não confere (chave trocada ou valor alterado)") from e
+
+
+def novos_codigos_recuperacao(n: int = CODIGOS_RECUPERACAO) -> list[str]:
+    """Códigos de uso único para entrar sem o celular: 10 letras e números (~49 bits cada)."""
+    return ["".join(secrets.choice(ALFABETO_RECUPERACAO) for _ in range(10)) for _ in range(n)]
+
+
+def formatar_recuperacao(codigo: str) -> str:
+    return f"{codigo[:5]}-{codigo[5:]}"
+
+
+def limpar_recuperacao(texto: str | None) -> str | None:
+    """O código de recuperação como a pessoa digitou ("ABCDE-FGHJK", com espaços) → as 10 letras e números."""
+    t = re.sub(r"[\s-]", "", texto or "").lower()
+    return t if RECUPERACAO.match(t) else None
+
+
+def resumo_recuperacao(chave: bytes, dono: str, codigo: str) -> str:
+    """O banco guarda só este HMAC de cada código de recuperação (preso à conta)."""
+    return hmac.new(chave, f"recuperacao:{dono}:{codigo}".encode(), hashlib.sha256).hexdigest()
+
+
+# -- sessões e avisos --------------------------------------------------------------------------------
+
+
+def ref_sessao(sid: str) -> str:
+    """Referência pública de uma sessão (lista de aparelhos): derivada do id, que nunca sai do servidor."""
+    return hashlib.sha256(f"ref:{sid}".encode()).hexdigest()[:20]
+
+
+# a ordem importa: o Edge e o Opera também dizem "Chrome"; o Chrome também diz "Safari"; o Android, "Linux"
+NAVEGADORES = (
+    (r"Edg(e|A|iOS)?/", "Edge"),
+    (r"OPR/|Opera", "Opera"),
+    (r"SamsungBrowser/", "Samsung Internet"),
+    (r"Firefox/|FxiOS/", "Firefox"),
+    (r"Chrome/|CriOS/", "Chrome"),
+    (r"Version/[0-9.]+.*Safari/", "Safari"),
+)
+SISTEMAS = (
+    (r"iPhone", "iPhone"),
+    (r"iPad", "iPad"),
+    (r"Android", "Android"),
+    (r"CrOS", "ChromeOS"),
+    (r"Windows", "Windows"),
+    (r"Macintosh|Mac OS X", "macOS"),
+    (r"Linux", "Linux"),
+)
+
+
+def aparelho(agente: str | None) -> str:
+    """ "Chrome no Android", "Safari no iPhone"...: só para a pessoa reconhecer o aparelho na lista."""
+    ua = (agente or "")[:300]
+    nav = next((nome for padrao, nome in NAVEGADORES if re.search(padrao, ua)), None)
+    so = next((nome for padrao, nome in SISTEMAS if re.search(padrao, ua)), None)
+    if nav and so:
+        return f"{nav} no {so}"
+    return nav or so or "Aparelho não identificado"
+
+
+def mascarar_email(email: str | None) -> str | None:
+    """ "fulana@gmail.com" → "fu***@gmail.com": registros e avisos sem o endereço inteiro."""
+    if not email or "@" not in email:
+        return None
+    local, dominio = email.rsplit("@", 1)
+    return f"{local[:2] if len(local) > 2 else local[:1]}***@{dominio}"
+
+
+def documentos_pendentes(conta: dict) -> list[str]:
+    """Documentos (termos, privacidade) cuja versão atual a conta ainda não aceitou."""
+    aceitos = {"termos": conta.get("termos_versao"), "privacidade": conta.get("privacidade_versao")}
+    return [doc for doc, versao in DOCUMENTOS.items() if aceitos.get(doc) != versao]
 
 
 # -- "não sou um robô" (Cloudflare Turnstile) ----------------------------------------------------
