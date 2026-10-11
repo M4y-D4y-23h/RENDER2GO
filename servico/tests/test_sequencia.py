@@ -76,9 +76,11 @@ def test_photo_texts_are_reviewed_compiled_once_per_distinct_text_and_used_only_
     ]
     assert _job(api) is None
 
-    # o cliente vê quais vídeos usaram um texto próprio; a cópia dos dados (LGPD) traz os textos
+    # o cliente vê quais vídeos usaram um texto próprio (no pedido e na lista); a cópia dos dados (LGPD) traz os textos
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
     assert [v["texto"] for v in lote["videos"]] == [None, TEXTO, TEXTO]
+    (na_lista,) = api.get("/api/lotes", headers=h(tok)).json()
+    assert [v["texto"] for v in na_lista["videos"]] == [None, TEXTO, TEXTO]
     auditoria = api.get(f"{PAINEL}/api/lotes/{lid}/auditoria", headers=ADM).json()
     assert [f["texto"] for f in auditoria["fotos"]] == [None, TEXTO, TEXTO]
     dados = api.banco.dados_da_conta(api.banco.lote(lid)["cliente_id"])

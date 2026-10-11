@@ -2060,7 +2060,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         return {"lote": lote_id, "status": "aguardando_aprovacao"}
 
     def _resumo(
-        lt: dict, c: Config, cliente_id: str, jobs: list[dict] | None = None, cobranca: dict | None = None
+        lt: dict,
+        c: Config,
+        cliente_id: str,
+        jobs: list[dict] | None = None,
+        cobranca: dict | None = None,
+        pedido: dict | None = None,
     ) -> dict:
         if jobs is None:
             jobs = [j for j in c.banco.jobs(lt["id"]) if j["tipo"] == "render"]
@@ -2078,7 +2083,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     extra={"response-content-disposition": f'attachment; filename="{j["arquivo"]}"'},
                 )
             videos.append(item)
-        pedido = json.loads(lt["pedido"])
+        pedido = pedido if pedido is not None else json.loads(lt["pedido"])
         if lt["preco_video"] is not None and cobranca is None:
             cobranca = c.banco.cobranca(lt["id"])
         return {
@@ -2185,10 +2190,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     @app.get("/api/lotes")
     def meus_lotes(cli: dict = Depends(cliente), c: Config = Depends(config)):
         lotes = c.banco.lotes(cliente_id=cli["id"], limite=20)
+        pedidos = {lt["id"]: json.loads(lt["pedido"]) for lt in lotes}
         ids = [lt["id"] for lt in lotes]
-        jobs = c.banco.jobs_de(ids)  # uma consulta para os jobs de todos os pedidos da página
+        # uma consulta para os jobs de todos os pedidos da página; o texto de cada foto, só nos pedidos em sequência
+        jobs = c.banco.jobs_de(ids, com_texto=[i for i in ids if pedidos[i].get("textos_por_foto")])
         cobr = c.banco.cobrancas([lt["id"] for lt in lotes if lt["preco_video"] is not None])
-        return [_resumo(lt, c, cli["id"], jobs[lt["id"]], cobr.get(lt["id"])) for lt in lotes]
+        return [_resumo(lt, c, cli["id"], jobs[lt["id"]], cobr.get(lt["id"]), pedidos[lt["id"]]) for lt in lotes]
 
     @app.get("/api/saldo")
     def meu_saldo(cli: dict = Depends(cliente), c: Config = Depends(config)):

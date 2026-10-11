@@ -2858,20 +2858,31 @@ class Banco:
                 (lote_id,),
             )
 
-    def jobs_de(self, lotes: list[str]) -> dict[str, list[dict]]:
-        """Os jobs de render de vários lotes numa consulta só (lista de pedidos do cliente)."""
+    def jobs_de(self, lotes: list[str], com_texto: list[str] | tuple = ()) -> dict[str, list[dict]]:
+        """Os jobs de render de vários lotes numa consulta só (lista de pedidos do cliente). O texto próprio de cada
+        foto (pedido em sequência) vem numa 2ª consulta, só para os lotes de `com_texto`: a lista de quem não usa
+        textos por foto, a rota mais pedida do serviço, fica numa consulta simples (sem juntar as fotos)."""
         if not lotes:
             return {}
         with self.tx() as c:
             linhas = c.all(
-                "SELECT j.id, j.lote_id, j.tipo, j.arquivo, j.status, j.aviso, j.excluido_em, f.prompt AS texto"
-                " FROM jobs j"
-                " LEFT JOIN fotos f ON f.id = j.foto_id"
-                f" WHERE j.lote_id IN ({', '.join('?' * len(lotes))}) AND j.tipo = 'render' ORDER BY j.arquivo",
+                "SELECT id, lote_id, tipo, arquivo, status, aviso, excluido_em, foto_id FROM jobs"
+                f" WHERE lote_id IN ({', '.join('?' * len(lotes))}) AND tipo = 'render' ORDER BY arquivo",
                 tuple(lotes),
             )
+            textos: dict[str, str] = {}
+            if com_texto:
+                textos = {
+                    f["id"]: f["prompt"]
+                    for f in c.all(
+                        f"SELECT id, prompt FROM fotos WHERE lote_id IN ({', '.join('?' * len(com_texto))})"
+                        " AND prompt IS NOT NULL",
+                        tuple(com_texto),
+                    )
+                }
         por: dict[str, list[dict]] = {lid: [] for lid in lotes}
         for j in linhas:
+            j["texto"] = textos.get(j.pop("foto_id"))
             por[j["lote_id"]].append(j)
         return por
 
