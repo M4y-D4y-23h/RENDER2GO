@@ -69,7 +69,7 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
 
 5. **Teste gratuito barato e sem abuso** (08/10/2026):
    - um pedido só, 480p e 3 s, com até 5 fotos (eram 10 até 09/10/2026);
-   - até 5 fotos de teste por dispositivo e 50 por IP;
+   - até 5 fotos de teste por dispositivo (o teto de 50 por IP saiu em 11/10/2026, a pedido do dono; `RENDER2GO_TESTE_FOTOS_IP` liga de novo);
    - testes esperam juntar 20 vídeos ou 10 min antes de subir um pod (`docs/09`, seção 5.1).
 6. **Fotos de entrada apagadas quando o lote fecha** (`docs/09`, seção 5.2).
 

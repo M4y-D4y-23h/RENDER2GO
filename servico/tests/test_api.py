@@ -288,7 +288,7 @@ def test_video_that_swaps_the_product_midway_is_redone_with_another_seed_then_re
     assert lote["status"] == "concluido_com_falhas" and lote["cobranca"] == {"cobrado": 100, "devolvido": 100}
 
 
-D1, D2, D3 = (f"{n}{n}{n}{n}{n}{n}{n}{n}-0000-4000-8000-000000000000" for n in "123")
+D1, D2, D3, D4 = (f"{n}{n}{n}{n}{n}{n}{n}{n}-0000-4000-8000-000000000000" for n in "1234")
 
 
 def _pedir(api, token, n=1, dispositivo=None, ip=None, **pedido):
@@ -340,7 +340,13 @@ def test_free_trial_limits(api, monkeypatch):
     r = _pedir(api, tok3, n=5, dispositivo=D2)
     assert r.status_code == 200
     _enviar_tudo(api, tok3, r.json()["lote"], r.json()["envios"])
-    # teto por rede (IP): segura quem troca de navegador para juntar testes
+    # sem teto por rede por padrão (11/10/2026, pedido do dono): nem com 10 mil fotos de teste no mesmo IP
+    assert api_mod.TESTE["fotos_ip"] == 0
+    with monkeypatch.context() as m:
+        m.setattr(api.banco, "fotos_teste_ip", lambda *a, **k: 10_000)
+        tok5 = _cliente(api, "Teste 5", plano="teste")
+        assert _pedir(api, tok5, n=1, dispositivo=D4).status_code == 200
+    # com o teto configurado (RENDER2GO_TESTE_FOTOS_IP), ele segura quem troca de navegador
     monkeypatch.setitem(api_mod.TESTE, "fotos_ip", 8)
     tok4 = _cliente(api, "Teste 4", plano="teste")
     r = _pedir(api, tok4, n=2, dispositivo=D3)

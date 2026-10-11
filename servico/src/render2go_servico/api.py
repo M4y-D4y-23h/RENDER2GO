@@ -67,7 +67,8 @@ caminho do painel (12 h); RENDER2GO_ADMIN_IPS limita de onde. Sem o caminho, nã
     GET  <painel>/api/seguranca        o que está configurado e o que o painel fez (auditoria)
 
 Teste gratuito (docs/08): um pedido só, até 5 fotos, vídeos de 3 s em 480p; no máximo 5 fotos de
-teste por dispositivo (navegador) e 50 por rede (IP; IPv6 pelo /64), somando as contas de teste.
+teste por dispositivo (navegador). Sem teto por rede desde 11/10/2026, a pedido do dono
+(`RENDER2GO_TESTE_FOTOS_IP` > 0 liga de novo: IP, IPv6 pelo /64, somando as contas de teste).
 Plano pago (pré-pago, docs/11): saldo recarregado e preço por segundo de vídeo (`precos`); vídeos de
 4 a 7 s. O pedido é cobrado quando as fotos chegam; recusa e vídeo que não sai voltam para o saldo.
 A 1ª recarga por Pix passa a conta do teste para o plano pago.
@@ -136,15 +137,15 @@ MAX_BYTES_FOTO = 50 * 1024**2
 URL_ENVIO_S = 3600
 URL_DOWNLOAD_S = 24 * 3600
 # teste gratuito (docs/08): um pedido só, qualidade rápida (480p), vídeos de 3 s, uma variação,
-# até 5 fotos (eram 10 até 09/10/2026); no máximo 5 fotos de teste por dispositivo e 50 por rede,
-# somando todos os clientes de teste
+# até 5 fotos (eram 10 até 09/10/2026); no máximo 5 fotos de teste por dispositivo. O teto por rede
+# (somando todos os clientes de teste) saiu em 11/10/2026, a pedido do dono: 0 = sem teto (o padrão)
 TESTE = {
     "qualidade": "rapida",
     "duracao": 3,
     "variacoes": 1,
     "fotos": 5,
     "fotos_dispositivo": 5,
-    "fotos_ip": int(os.environ.get("RENDER2GO_TESTE_FOTOS_IP", 50)),
+    "fotos_ip": int(os.environ.get("RENDER2GO_TESTE_FOTOS_IP", 0)),
 }
 # texto da caixa de autorização: a página mostra este, e o registro guarda o texto e o SHA-256.
 # Mudou o texto = versão nova (o registro antigo continua apontando para o texto que a pessoa viu).
@@ -806,8 +807,8 @@ def _se_fechou(c: Config, lote_id: str) -> None:
 
 
 def _limites_teste(c: Config, cli: dict, origem: dict, n_fotos: int, exceto: str | None = None) -> None:
-    """Teste gratuito: um pedido só (todas as fotos de uma vez), até 5 fotos por dispositivo e 50
-    por rede (várias pessoas de uma empresa dividem o IP; o teto por rede segura quem troca de navegador)."""
+    """Teste gratuito: um pedido só (todas as fotos de uma vez) e até 5 fotos por dispositivo. O teto por
+    rede (RENDER2GO_TESTE_FOTOS_IP) só vale se configurado: desde 11/10/2026, o padrão é sem teto."""
     if c.banco.pedidos_ativos(cli["id"], exceto) > 0:
         raise HTTPException(
             429,
@@ -816,7 +817,8 @@ def _limites_teste(c: Config, cli: dict, origem: dict, n_fotos: int, exceto: str
     disp = origem.get("dispositivo")
     if disp and c.banco.fotos_teste_dispositivo(disp, exceto) + n_fotos > TESTE["fotos_dispositivo"]:
         raise HTTPException(429, f"este dispositivo já usou o teste gratuito ({TESTE['fotos_dispositivo']} fotos)")
-    if c.banco.fotos_teste_ip(origem["ip"], exceto, rede=origem.get("rede")) + n_fotos > TESTE["fotos_ip"]:
+    teto_rede = TESTE["fotos_ip"]
+    if teto_rede > 0 and c.banco.fotos_teste_ip(origem["ip"], exceto, rede=origem.get("rede")) + n_fotos > teto_rede:
         raise HTTPException(429, "esta rede já usou todos os testes gratuitos disponíveis; fale com a gente")
 
 

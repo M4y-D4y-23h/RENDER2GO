@@ -225,7 +225,7 @@ function migrarChave(chave: string): void {
 }
 
 // identificador deste navegador (limite do teste por dispositivo e registro de auditoria);
-// janela anônima ou dados apagados geram outro, e a API mantém um teto por rede
+// janela anônima ou dados apagados geram outro (o teto por rede, RENDER2GO_TESTE_FOTOS_IP, vem desligado)
 function uuid4(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   const b = crypto.getRandomValues(new Uint8Array(16));

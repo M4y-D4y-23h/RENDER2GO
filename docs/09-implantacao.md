@@ -511,7 +511,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
   - um pedido só, com até 5 fotos (eram 10 até 09/10/2026);
   - vídeos de 3 s em 480p (3 s existe só no teste; nos outros planos, de 4 a 7 s);
   - no máximo 5 fotos de teste **por dispositivo** (navegador);
-  - no máximo 50 fotos de teste **por IP** (`RENDER2GO_TESTE_FOTOS_IP`). Assim cinco pessoas da mesma empresa, na mesma rede, conseguem fazer o teste cada uma, e quem troca de navegador para juntar testes esbarra no teto da rede.
+  - **sem teto por IP** desde 11/10/2026, a pedido do dono (eram 50 fotos de teste por rede). Para ligar de novo, `RENDER2GO_TESTE_FOTOS_IP=50` no `.env` e `docker compose up -d api`; o painel (seção Histórico, aba "Uso por IP") mostra as redes que mais usam o teste.
 - **Dispositivo:** a página cria um identificador aleatório e guarda no próprio navegador. Janela anônima ou dados apagados geram outro; por isso existe o teto por IP.
 - **Sinais no painel, tabela "Dispositivos":** um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com vários códigos de cliente, alguém pode estar juntando testes; fusos horários diferentes também são sinal de VPN.
 - **Pedido recusado libera o teste** do cliente, para ele corrigir e mandar de novo.
