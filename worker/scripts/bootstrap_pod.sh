@@ -29,14 +29,18 @@
 # Volume não POSIX: só rsync --inplace e cp, sem rename nem chmod.
 #
 # Pod que hiberna (ADR 0011): com RENDER2GO_LOCAL (ex.: /workspace/r2g, o disco de volume do próprio
-# pod: local, e fica no host quando o pod é parado), venv, ComfyUI, Ollama, modelos e o cache do apt
-# ficam lá, e /opt aponta para eles. As pastas de dados do ComfyUI (fotos e vídeos dos clientes) ficam no
-# disco do contêiner, que a parada apaga. No fim, $L/instalado guarda a versão ($R/versao_hib, mandada
-# pelo orquestrador). Na volta, com a mesma versão: links, apt do cache do volume (sem rede), bytes dos
-# modelos e PRONTO; o SHA-256 de todos os modelos é refeito em segundo plano (e lê os arquivos para a
-# memória antes do 1º vídeo). Arquivo que não confere: FALHOU, o marcador sai e o pod é encerrado.
+# pod, que fica no datacenter quando o pod é parado; em 11/10/2026, no US-NC-1, era MooseFS, de rede):
+# - 1ª subida: tudo como sem volume (disco do contêiner, rápido); depois do PRONTO, em segundo plano,
+#   venv, ComfyUI (com os modelos), Ollama e o modelo do compilador são copiados para $L, e
+#   $L/instalado recebe a versão ($R/versao_hib, mandada pelo orquestrador). Só então GUARDADO: o
+#   orquestrador espera isso para hibernar. Gravar e conferir os 37 GB direto no MooseFS levou ~10 min
+#   em 11/10 (contra ~3 min no disco do contêiner).
+# - volta, com a mesma versão: /opt aponta para $L, as pastas de dados do ComfyUI (fotos e vídeos dos
+#   clientes) ficam no contêiner, que a parada apaga; apt do cache do volume (sem rede), bytes dos
+#   modelos e PRONTO. O SHA-256 de todos os modelos é refeito em segundo plano (e traz os arquivos para
+#   a memória antes do 1º vídeo). Arquivo que não confere: FALHOU, o marcador sai e o pod é encerrado.
 set -uo pipefail
-LAYOUT_HIB=1  # mude ao mudar onde as coisas ficam no disco de volume: os pods hibernados ficam velhos
+LAYOUT_HIB=2  # mude ao mudar onde as coisas ficam no disco de volume: os pods hibernados ficam velhos
 REPO_TGZ=$1 MODEL_SET=${2:-i2v_r1v2}
 R=/root/render2go EST=/root/render2go/estado
 mkdir -p $R/ok $R/vol && echo INSTALANDO > $EST && : > $R/tempos && rm -f $R/guardado
@@ -150,9 +154,9 @@ if [[ -n "$L" ]] && retomada; then
   echo GUARDADO > $R/guardado
   exit 0
 fi
-if [[ -n "$L" ]]; then  # 1ª subida (ou volume velho/incompleto): instala tudo no disco de volume
+if [[ -n "$L" ]]; then  # 1ª subida (ou volume velho/incompleto): o volume só é gravado no fim
   rm -f $L/instalado
-  links || falha "disco de volume"
+  mkdir -p $L/apt/archives/partial $L/apt/lists/partial || falha "disco de volume"
 fi
 
 "${APT[@]}" update -qq && "${APT[@]}" install -y -qq --no-install-recommends \
@@ -239,11 +243,9 @@ modelos() {
 }
 
 instalar_ambiente() {
-  local venv=/opt/venv
-  [[ -n "$L" ]] && venv=$L/venv  # /opt/venv é o link para ele
-  rm -rf "$venv"
+  rm -rf /opt/venv
   pip install -q "uv==$(arg UV_IMAGE | sed 's/.*://')" || return 1
-  uv venv -q "$venv" --python python3.12 || return 1
+  uv venv -q /opt/venv --python python3.12 || return 1
   uv pip install -q --require-hashes -r $W/requirements.lock \
     --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cu128 \
     --index-strategy unsafe-best-match || return 1
@@ -257,11 +259,7 @@ instalar_ambiente() {
   local v; v=$(arg OLLAMA_VERSION)
   curl -fsSL -o /tmp/ollama.tar.zst "https://github.com/ollama/ollama/releases/download/$v/ollama-linux-amd64.tar.zst" || return 1
   echo "$(arg OLLAMA_SHA256)  /tmp/ollama.tar.zst" | sha256sum -c --quiet - || return 1
-  if [[ -n "$L" ]]; then  # no volume; /usr/local/{bin,lib}/ollama são links (links())
-    rm -rf $L/ollama/usr && mkdir -p $L/ollama/usr && tar --zstd -xf /tmp/ollama.tar.zst -C $L/ollama/usr || return 1
-  else
-    tar --zstd -xf /tmp/ollama.tar.zst -C /usr/local || return 1
-  fi
+  tar --zstd -xf /tmp/ollama.tar.zst -C /usr/local || return 1
   rm -f /tmp/ollama.tar.zst /tmp/umt5.zip
 }
 
@@ -308,6 +306,27 @@ ambiente() {
   [[ "${SKIP_GPU_CHECK:-0}" == "1" ]] || /opt/venv/bin/python $W/scripts/gpu_check.py  # 1: só testes sem GPU
 }
 
+# pod que hiberna, depois do PRONTO: tudo o que a volta usa, copiado do disco do contêiner (já
+# conferido) para $L; o marcador só no fim, com os bytes de cada modelo conferidos no volume
+guardar_local() {
+  rm -f $L/instalado
+  mkdir -p $L/venv $L/comfyui $L/ollama/usr/bin $L/ollama/usr/lib/ollama $L/ollama/models || return 1
+  nice -n 10 rsync -a --delete /opt/venv/ $L/venv/ || return 1
+  # as pastas de dados (fotos e vídeos dos clientes) nunca vão para o volume
+  nice -n 10 rsync -a --delete --exclude=/input/ --exclude=/output/ --exclude=/temp/ --exclude=/user/ \
+    /opt/comfyui/ $L/comfyui/ || return 1
+  nice -n 10 rsync -a /usr/local/bin/ollama $L/ollama/usr/bin/ollama || return 1
+  nice -n 10 rsync -a --delete /usr/local/lib/ollama/ $L/ollama/usr/lib/ollama/ || return 1
+  nice -n 10 rsync -a --delete $OLLAMA_MODELS/ $L/ollama/models/ || return 1
+  local dest bytes
+  while IFS=$'\t' read -r _ dest bytes _; do
+    [ "$(stat -c %s "$L/comfyui/models/${dest#/opt/comfyui/models/}" 2>/dev/null)" = "$bytes" ] \
+      || { echo "bytes errados no volume: $dest"; return 1; }
+  done < $R/modelos.tsv
+  echo "$VERSAO $(date +%s)" > $L/instalado
+  echo "disco de volume gravado ($VERSAO)"
+}
+
 # depois do PRONTO, no pod gravador: o que falta no volume (tudo já conferido no disco local)
 guardar() {
   [[ -n "$CACHE" && $GRAVA == 1 ]] || return 0
@@ -334,15 +353,16 @@ MPID=$!
   || { kill $MPID 2>/dev/null; falha "apt"; }
 marca apt
 ambiente > $R/ambiente.log 2>&1 || { kill $MPID 2>/dev/null; falha "ambiente (ver ambiente.log)"; }
-[[ -n "$L" ]] && { links_dados || { kill $MPID 2>/dev/null; falha "pastas de dados do ComfyUI"; }; }
 marca ambiente_pronto
 echo AMBIENTE > $EST
 wait $MPID || falha "modelos (ver modelos.log)"
 marca pronto
-# pod que hiberna: o disco de volume tem tudo desta versão, conferido (bytes e SHA-256 na instalação)
-[[ -n "$L" && -n "$VERSAO" ]] && echo "$VERSAO $(date +%s)" > $L/instalado
 echo PRONTO > $EST
 echo PRONTO
 guardar > $R/guardar.log 2>&1
+if [[ -n "$L" && -n "$VERSAO" ]]; then  # pod que hiberna: copia para o disco de volume (com o pod no ar)
+  guardar_local > $R/guardar_local.log 2>&1 || echo "AVISO: disco de volume incompleto" >> $R/guardar_local.log
+  marca volume_gravado
+fi
 marca guardado
 echo GUARDADO > $R/guardado

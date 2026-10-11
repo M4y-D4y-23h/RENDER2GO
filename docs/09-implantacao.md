@@ -6,9 +6,39 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há. Para pôr o servidor em dia, comece pela entrada mais recente: ela diz de que versão parte e quais anteriores já traz junto.
 
+### 11/10/2026 (2): pods (prazo pelo preço real, motivo da saída, saldo no painel, hibernação) e filtro de imagem nos vídeos
+
+**É a atualização a fazer agora.** Parte da versão de 11/10/2026 (a entrada abaixo) e está na branch `claude/magical-lamport-4rrms9` até ir para a `main` (pull request no GitHub). Muda a API, o orquestrador e o código que vai para os pods; o banco ganha só duas colunas (`jobs.nsfw` e `jobs.barrado_em`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entradas 11/10/2026 (2) e (3); [ADR 0011](adr/0011-pods-hibernados.md) e [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md).
+
+**1) Nada gerando?** Igual ao bloco 1 da entrada abaixo: o bloco 3 recria o orquestrador, que desliga os pods ligados ao parar.
+
+**2) Backup e código novo** (depois de a branch entrar na `main`):
+```bash
+cd ~/GPU2GO && git log -1 --format='%h %ad %s' --date=short | tee ~/versao-antes-$(date +%F).txt
+cd servico/implantacao
+docker compose exec -T postgres pg_dump -U gpu2go gpu2go | gzip > ~/backup-antes-hibernacao-$(date +%F).sql.gz
+git pull && git log -1 --format='%h %ad %s' --date=short
+```
+
+**3) Saldo do RunPod (antes de subir):** com saldo baixo, os pods saem cedo (foi o pod que saiu aos ~40 min). Deixe pelo menos ~US$ 10 por pod que pode ficar ligado ao mesmo tempo e ligue a recarga automática no RunPod (Billing). Com `RENDER2GO_MAX_PODS=4`, ~US$ 40.
+
+**4) Hibernação (opcional, recomendada):** no `.env`, `RENDER2GO_PODS_HIBERNADOS=2` (cada pod hibernado custa ~US$ 14/mês parado; 0 desliga). Sem ela, tudo funciona como antes, com a subida de 4–5 min.
+
+**5) Imagem nova e os contêineres:**
+```bash
+cd ~/GPU2GO/servico/implantacao
+docker compose up -d --build
+docker compose ps --format "table {{.Service}}\t{{.Status}}"
+docker compose logs --since 10m orquestrador | tail -20
+```
+
+- **Conferir depois:** no painel, seção **Pods**, a 2ª linha mostra o saldo do RunPod e o prazo que um pod novo teria ("Saldo ok", "Saldo baixo" ou "Sem saldo") e os hibernados. No 1º pedido, o relatório de **GPUs** mostra o pod e, quando ele sair, o motivo ("fila vazia", "limite de tempo do pod" ou "hibernado (fila vazia)"). Quem entra no site vê a política de privacidade v3 para aceitar.
+- **1º pod depois da atualização:** o espelho dos modelos no R2 já tem os 2 arquivos do filtro de imagem (enviados em 11/10); se não tiver, o 1º pod os envia, como na entrada 08/10 (noite).
+- **Se algo der errado:** `cd ~/GPU2GO && git checkout <versão do bloco 2> && cd servico/implantacao && docker compose up -d --build`. As duas colunas novas ficam no banco sem uso. Os pods hibernados (se ligou o bloco 4) ficam parados no RunPod: encerre-os pelo painel do RunPod (nome `render2go-fila-...`), porque a versão antiga não os conhece.
+
 ### 11/10/2026: área do cliente, painel em seções e acessos por pessoa
 
-**É a atualização a fazer agora, e traz junto a revisão do front-end de 10/10 (2), se ela ainda não foi feita.** Vale para o servidor na versão de 10/10 (a 09/10 (4)) ou em qualquer uma depois dela; os commits depois do `c93336d`, que trouxe os termos e a privacidade v2, só mudam a documentação e os testes. O `.env` não ganha variável nova. A imagem ganha duas dependências (`cryptography`, para cifrar os segredos dos aplicativos autenticadores, e `segno`, para o QR Code): sem o `--build`, a API não sobe. As tabelas e colunas novas são criadas sozinhas na partida da API e só se somam às de antes. Tudo o que muda roda na API: o orquestrador, o analisador e o código que vai para os pods são os mesmos de 10/10.
+**Já feita no servidor em 11/10/2026 (o dono confirmou o `curl` com 200).** Trazia junto a revisão do front-end de 10/10 (2). Vale para o servidor na versão de 10/10 (a 09/10 (4)) ou em qualquer uma depois dela; os commits depois do `c93336d`, que trouxe os termos e a privacidade v2, só mudam a documentação e os testes. O `.env` não ganha variável nova. A imagem ganha duas dependências (`cryptography`, para cifrar os segredos dos aplicativos autenticadores, e `segno`, para o QR Code): sem o `--build`, a API não sobe. As tabelas e colunas novas são criadas sozinhas na partida da API e só se somam às de antes. Tudo o que muda roda na API: o orquestrador, o analisador e o código que vai para os pods são os mesmos de 10/10.
 
 No PowerShell, entre no servidor com o `ssh` de sempre e cole um bloco de cada vez. **Tem um passo a mais: o seu acesso por pessoa (bloco 5).**
 

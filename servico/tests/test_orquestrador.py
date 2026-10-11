@@ -410,13 +410,22 @@ def test_why_the_worker_left_goes_to_the_gpu_report(orq, banco):
     assert (g["estado"], g["motivo"]) == ("encerrado", "limite de tempo do pod")
 
 
+def _instala_no_volume(o, completo=True):
+    """Bootstrap falso do pod que hiberna: PRONTO e, depois, a cópia para o disco de volume (o marcador
+    com a versão) e o GUARDADO, que o orquestrador espera antes de hibernar."""
+    o.remoto.local_hib = vol = f"{o.remoto.raiz}/vol"
+    marcador = f"mkdir -p {vol}; echo {ln.versao_hibernacao()} 1 > {vol}/instalado; " if completo else ""
+    o.remoto.instalar = "echo PRONTO > {raiz}/estado; " + marcador + "echo GUARDADO > {raiz}/guardado"
+
+
 def test_idle_pods_hibernate_and_come_back_without_a_new_pod(orq, banco):
     _lote(banco, 2, plano="pago")
     o = orq(hibernados=1, fila_cmd="echo ocioso > {raiz}/fila.motivo")
+    _instala_no_volume(o)
     o.ciclo()
     assert _esperar(lambda: len(o.ativos) == 1)
     env = o.provedor.envs[0]
-    assert o.provedor.volumes["p1"] == 70 and env["RENDER2GO_LOCAL"] == ln.LOCAL_HIB
+    assert o.provedor.volumes["p1"] == 70 and env["RENDER2GO_LOCAL"] == o.remoto.local_hib
     assert env["DEADMAN_ACAO"] == "parar" and int(env["DEADMAN_S"]) <= ln.PISO_HIB_S  # o real vem depois
     (pf,) = o.ativos.values()
     assert pf.pod.deadman_s > ln.PISO_HIB_S and o.prefixo in pf.pod.info.descricao
@@ -424,7 +433,9 @@ def test_idle_pods_hibernate_and_come_back_without_a_new_pod(orq, banco):
     with banco.tx() as c:
         c.run("UPDATE jobs SET status = 'ok'")
     o.ciclo()
-    # sem pedidos: o pod para (a GPU deixa de cobrar) com ambiente e modelos no disco de volume
+    # sem pedidos: o pod para (a GPU deixa de cobrar) com ambiente e modelos no disco de volume; na 1ª
+    # subida, isso espera a cópia para o volume, fora do ciclo
+    assert _esperar(lambda: not o.encerrando)
     assert o.provedor.parados == ["p1"] and o.provedor.encerrados == [] and not o.ativos
     assert set(o.hib) == {"p1"} and o.hib["p1"]["versao"] == ln.versao_hibernacao()
     assert (o.cfg.estado / "hibernados.json").stat().st_mode & 0o777 == 0o600  # tem o token do agente
@@ -475,9 +486,28 @@ def test_emergency_and_old_versions_terminate_hibernated_pods(orq, banco):
     assert "1 hibernado(s) encerrado(s)" in cmd["resultado"]
 
 
+def test_a_pod_whose_volume_copy_did_not_finish_is_terminated(orq, banco, monkeypatch):
+    monkeypatch.setattr(ln, "ESPERA_GUARDAR_S", 1)
+    _lote(banco, 1, plano="pago")
+    o = orq(hibernados=1, fila_cmd="echo ocioso > {raiz}/fila.motivo")
+    _instala_no_volume(o, completo=False)
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    (pf,) = o.ativos.values()
+    assert _esperar(lambda: _fim(o, pf))
+    with banco.tx() as c:
+        c.run("UPDATE jobs SET status = 'ok'")
+    o.ciclo()
+    assert _esperar(lambda: not o.encerrando)
+    assert o.provedor.encerrados == ["p1"] and o.provedor.parados == [] and not o.hib
+    (g,) = banco.relatorio_geradores(0)["geradores"]
+    assert g["motivo"].endswith("disco de volume incompleto")
+
+
 def test_stopping_the_orchestrator_hibernates_what_fits(orq, banco):
     _lote(banco, 50, plano="pago")  # 2 pods; cabe 1 no conjunto
     o = orq(hibernados=1, fila_cmd="sleep 30")
+    _instala_no_volume(o)
     o.ciclo()
     assert _esperar(lambda: len(o.ativos) == 2)
     o.encerrar_todos("orquestrador parou", hibernar=True)

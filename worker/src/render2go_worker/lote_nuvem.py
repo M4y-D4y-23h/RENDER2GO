@@ -419,6 +419,7 @@ class Remoto:
     """Comandos executados no pod (os testes trocam por equivalentes locais)."""
 
     raiz: str = "/root/render2go"
+    local_hib: str = LOCAL_HIB  # disco de volume do pod que hiberna (RENDER2GO_LOCAL, ADR 0011)
     verificar_cuda: bool = True
     instalar: str = (
         "bash {raiz}/bootstrap_pod.sh {raiz}/repo.tgz i2v_r1v2 > {raiz}/bootstrap.log 2>&1"
@@ -685,7 +686,7 @@ class Orquestrador:
             env |= {
                 "DEADMAN_S": str(deadman_s),
                 "DEADMAN_ACAO": "parar",
-                "RENDER2GO_LOCAL": LOCAL_HIB,
+                "RENDER2GO_LOCAL": self.remoto.local_hib,
             }
         esp = getattr(self.a, "espelho", None)
         with self.lock:  # o 1º pod (ou o substituto dele) grava o cache no volume e no espelho

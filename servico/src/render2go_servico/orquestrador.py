@@ -503,7 +503,8 @@ class Orquestrador:
                     pf.pod.vivo, pf.pod.fim = False, time.monotonic()
                     self.pods_ln._salvar_estado()
                 motivo, texto = "limite", "limite de tempo do pod (parado pelo desligamento automático)"
-            if pf.pod.grava_volume or pf.pod.espelhando:  # o envio ao espelho pode levar minutos
+            # o envio ao espelho e a 1ª cópia para o disco de volume (ADR 0011) podem levar minutos
+            if pf.pod.grava_volume or pf.pod.espelhando or (pf.pod.hibernavel and not pf.pod.retomado):
                 with self.lock:
                     self.encerrando[pid] = pf
                 threading.Thread(target=self._fim_do_pod, args=(pf, motivo, texto), daemon=True).start()
@@ -519,16 +520,29 @@ class Orquestrador:
         except Exception:  # noqa: BLE001
             return False
 
-    def _fim_do_pod(self, pf: PodFila, motivo: str, texto: str) -> None:
-        """Hiberna (ADR 0011) se pode; senão encerra."""
-        if not self._pode_hibernar(pf.pod, motivo):
+    def _volume_gravado(self, pod: ln.Pod, esperar: bool) -> bool:
+        """O disco de volume do pod tem tudo desta versão (ADR 0011)? Na 1ª subida, a cópia termina
+        depois do PRONTO, com o pod no ar; `esperar`: espera o GUARDADO (com prazo) antes de olhar."""
+        if pod.retomado:
+            return True  # voltou da hibernação com o marcador desta versão (o bootstrap conferiu)
+        if esperar:
+            self.pods_ln._esperar_guardar(pod)
+        try:
+            _, out = pod.agente.exec(f"cat {self.remoto.local_hib}/instalado 2>/dev/null", 30)
+        except (ln.NuvemError, OSError):
+            return False
+        return out.split()[:1] == [ln.versao_hibernacao()]
+
+    def _fim_do_pod(self, pf: PodFila, motivo: str, texto: str, esperar: bool = True) -> None:
+        """Hiberna (ADR 0011) se pode e se o disco de volume está completo; senão encerra."""
+        if not self._pode_hibernar(pf.pod, motivo) or (pf.pod.vivo and not self._volume_gravado(pf.pod, esperar)):
             self._tirar_hibernado(pf.pod.info.id)
-            self._encerrar_pod(pf, texto)
+            if self._pode_hibernar(pf.pod, motivo):
+                texto = f"{texto}; disco de volume incompleto"
+            self._encerrar_pod(pf, texto, esperar_espelho=esperar)
             return
         self._registrar_token(pf)
         try:
-            if pf.pod.grava_volume and pf.pod.vivo:  # o gravador termina o envio ao espelho antes
-                self.pods_ln._esperar_guardar(pf.pod)
             # o pod que o desligamento automático já parou (vivo=False em _revisar) só entra no conjunto
             ok = self.pods_ln.hibernar(pf.pod, texto) if pf.pod.vivo else True
             if ok:
@@ -560,6 +574,7 @@ class Orquestrador:
             with self.lock:
                 self.encerrando.pop(pf.pod.info.id, None)
             self._registrar("gerador_fim", pf.gerador, motivo)
+            self._registrar("gerador_motivo", pf.gerador, motivo)  # o _revisar pode ter gravado um antes
             self._registrar("gerador_desligado", pf.gerador)  # fim da cobrança do pod
 
     def _registrar_token(self, pf: PodFila) -> None:
@@ -832,7 +847,7 @@ class Orquestrador:
             conhecidos = {p.pod.info.id for p in pods}
         for pf in pods:
             if hibernar and not pf.pod.grava_volume and self._pode_hibernar(pf.pod, "ocioso"):
-                self._fim_do_pod(pf, "ocioso", motivo)
+                self._fim_do_pod(pf, "ocioso", motivo, esperar=False)  # sem esperar cópia nenhuma
                 continue
             self._tirar_hibernado(pf.pod.info.id)
             self._registrar_token(pf)

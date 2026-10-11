@@ -69,6 +69,7 @@ def main() -> int:
     p.add_argument("--orcamento-usd", type=float, required=True)
     p.add_argument("--saida", type=Path, default=AQUI / "saida")
     p.add_argument("--espera-parado-s", type=float, default=30)
+    p.add_argument("--sem-video-a", action="store_true", help="não gera vídeo na 1ª subida")
     a = p.parse_args()
     prov = ln.RunPod()
     saldo = prov.saldo()
@@ -137,8 +138,18 @@ def main() -> int:
             "du -sh /workspace/r2g/* 2>/dev/null; df -h /workspace | tail -1", 120
         )
         resultados["A_volume"] = du.strip().splitlines()
-        resultados["A_video"] = video(orq, pod, "video_a")
-        marca("A_video_pronto", t0)
+        if not a.sem_video_a:
+            resultados["A_video"] = video(orq, pod, "video_a")
+            marca("A_video_pronto", t0)
+        # a cópia para o disco de volume termina depois do PRONTO (bootstrap, guardar_local)
+        orq._esperar_guardar(pod)
+        marca("A_volume_gravado", t0)
+        _, gl = pod.agente.exec(
+            f"cat {orq.remoto.raiz}/guardar_local.log; cat {orq.remoto.local_hib}/instalado; "
+            f"tail -2 {orq.remoto.raiz}/tempos; du -sh {orq.remoto.local_hib}/* 2>/dev/null",
+            120,
+        )
+        resultados["A_guardar_local"] = gl.strip().splitlines()
         # 2. hiberna e volta
         t_ligado += time.monotonic() - pod.criado
         gasto["usd"] = t_ligado / 3600 * info.usd_h
