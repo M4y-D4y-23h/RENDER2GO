@@ -22,7 +22,9 @@ git pull && git log -1 --format='%h %ad %s' --date=short
 
 **3) Saldo do RunPod (antes de subir):** com saldo baixo, os pods saem cedo (foi o pod que saiu aos ~40 min). Deixe pelo menos ~US$ 10 por pod que pode ficar ligado ao mesmo tempo e ligue a recarga automática no RunPod (Billing). Com `RENDER2GO_MAX_PODS=4`, ~US$ 40.
 
-**4) Hibernação (opcional; leia antes o [ADR 0011](adr/0011-pods-hibernados.md), que muda uma regra técnica e depende do seu aceite):** no `.env`, `RENDER2GO_PODS_HIBERNADOS=2` (ou 3, para mais chance de algum host ter a GPU livre na volta). Cada pod hibernado custa ~US$ 14/mês parado; 0 desliga. Medido: volta em ~1 min até o pod pronto quando o host tem a GPU livre; quando não tem, a subida do zero de sempre (~3 min). Sem a opção, tudo funciona como antes.
+**4) Hibernação ([ADR 0011](adr/0011-pods-hibernados.md), aceito em 11/10):** **durante os testes, deixe como está** (`RENDER2GO_PODS_HIBERNADOS` ausente ou 0): sem pedidos, cada pod é encerrado depois dos 3 min de espera, como antes, e nada fica cobrando. **Na divulgação**, no `.env`, `RENDER2GO_PODS_HIBERNADOS=2` (ou 3, para mais chance de algum host ter a GPU livre na volta) e `docker compose up -d orquestrador`. Cada pod hibernado custa ~US$ 14/mês parado. Medido: volta em ~1 min até o pod pronto quando o host tem a GPU livre; quando não tem, a subida do zero de sempre (~3 min).
+   - **Voltar para 0 (ou diminuir):** o mesmo `docker compose up -d orquestrador`; no ciclo seguinte, o orquestrador encerra os hibernados a mais (o disco de volume vai junto). O que estiver ligado é encerrado quando a fila esvaziar.
+   - **Encerrar todos na hora:** painel, seção Pods, parada de emergência (encerra também os hibernados); depois, "Retomar".
 
 **5) Imagem nova e os contêineres:**
 ```bash

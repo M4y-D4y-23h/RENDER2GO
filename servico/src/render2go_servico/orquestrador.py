@@ -678,7 +678,8 @@ class Orquestrador:
 
     def _estado_runpod(self) -> None:
         """Para o painel: saldo do RunPod (a cada 5 min), o prazo que um pod novo teria por ele e os
-        pods hibernados, sem os tokens. Também encerra os hibernados de uma versão anterior."""
+        pods hibernados, sem os tokens. Também encerra os hibernados de uma versão anterior e os que
+        passam de RENDER2GO_PODS_HIBERNADOS (o dono diminuiu o número ou voltou a 0)."""
         agora = time.time()
         if agora - self._saldo_em >= SALDO_S:
             self._saldo_em = agora
@@ -694,6 +695,13 @@ class Orquestrador:
             velhos = [k for k, h in self.hib.items() if h.get("versao") != versao and not h.get("em_uso")]
         for pid in velhos:
             self._descartar_hibernado(pid, "versão anterior do ambiente ou dos modelos")
+        # parados a mais saem, os parados há mais tempo primeiro; o que está ligado agora é encerrado
+        # (em vez de hibernado) quando a fila esvaziar, porque o conjunto já está cheio
+        with self.lock:
+            parados = sorted((h.get("parado_em") or 0, k) for k, h in self.hib.items() if not h.get("em_uso"))
+            sobra = len(self.hib) - self.cfg.hibernados
+        for _, pid in parados[: max(0, sobra)]:
+            self._descartar_hibernado(pid, "acima de RENDER2GO_PODS_HIBERNADOS")
         with self.lock:
             campos = ("id", "gpu", "usd_h", "datacentro", "criado", "parado_em", "voltas", "falhas", "em_uso")
             hib = [{k: h.get(k) for k in campos} for h in self.hib.values()]

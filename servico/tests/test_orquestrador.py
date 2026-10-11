@@ -486,6 +486,25 @@ def test_emergency_and_old_versions_terminate_hibernated_pods(orq, banco):
     assert "1 hibernado(s) encerrado(s)" in cmd["resultado"]
 
 
+def test_lowering_the_hibernated_limit_terminates_the_extra_stopped_pods(orq, banco):
+    """O dono testa com a hibernação ligada e volta para 0 (ou diminui o número): nenhum pod fica
+    parado cobrando o disco de volume sem uso."""
+    o = orq(hibernados=0)
+    base = {"url": "http://127.0.0.1:9", "token": "t" * 40, "usd_h": 2.0, "gpu": "x", "gpus": 1}
+    v = ln.versao_hibernacao()
+    o.hib["antigo"] = {"id": "antigo", "versao": v, "parado_em": 100.0, **base}
+    o.hib["recente"] = {"id": "recente", "versao": v, "parado_em": 200.0, **base}
+    o.hib["ligado"] = {"id": "ligado", "versao": v, "parado_em": 50.0, "em_uso": True, **base}
+    o.cfg.hibernados = 2
+    o._estado_runpod()  # 3 no conjunto, cabem 2: sai o parado há mais tempo; o ligado fica
+    assert o.provedor.encerrados == ["antigo"] and set(o.hib) == {"recente", "ligado"}
+    o.cfg.hibernados = 0
+    o._estado_runpod()  # hibernação desligada: o parado sai; o ligado é encerrado quando a fila esvaziar
+    assert o.provedor.encerrados == ["antigo", "recente"] and set(o.hib) == {"ligado"}
+    painel = json.loads(banco.ler_estado("runpod")["valor"])
+    assert [h["id"] for h in painel["hibernados"]] == ["ligado"] and painel["hibernados_max"] == 0
+
+
 def test_a_pod_whose_volume_copy_did_not_finish_is_terminated(orq, banco, monkeypatch):
     monkeypatch.setattr(ln, "ESPERA_GUARDAR_S", 1)
     _lote(banco, 1, plano="pago")

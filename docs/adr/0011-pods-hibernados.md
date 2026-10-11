@@ -1,6 +1,6 @@
 # ADR 0011: pods hibernados (subida em ~1 min) e prazo pelo preço real da GPU
 
-- **Status:** proposto (11/10/2026), implementado atrás de `RENDER2GO_PODS_HIBERNADOS` (padrão 0 = desligado). Aceitar é decisão do dono do projeto, depois da medição em GPU (seção "Medição").
+- **Status:** **aceito pelo dono em 11/10/2026**, depois da medição em GPU (seção "Medição"). Implementado atrás de `RENDER2GO_PODS_HIBERNADOS` (padrão 0 = desligado). Plano do dono: 0 durante os testes (os pods são encerrados como antes) e 2 ou 3 a partir da divulgação; voltar para 0 (ou diminuir) encerra os hibernados a mais no ciclo seguinte do orquestrador.
 - **Contexto:** o dono pediu a subida dos pods de 4–5 min para ~1 min. Medido em 08/10 (`worker/evals/gpu-2026-10-08-subida/`): agente, CUDA e rede ~60 s; ambiente (venv, ComfyUI, Ollama) 60–190 s; modelos (37 GB do espelho R2) 44–175 s; serviços e tradução ~1 min. Baixar 37 GB não cabe em 1 min em host nenhum, e o cache de modelos do RunPod é só para Serverless, com um modelo por endpoint (nós usamos quatro arquivos e o Ollama). Também em 11/10: um pod do dono saiu aos ~40 min, depois do último vídeo, porque o saldo do RunPod estava baixo (US$ 2,32 na conferência) e o desligamento automático era calculado pelo preço da GPU mais cara da lista (US$ 2,49/h da RTX PRO 6000), mesmo com o pod numa L40S.
 
 ## Decisão
