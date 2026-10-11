@@ -48,10 +48,12 @@ W=/opt/render2go/worker COMFY_DIR=/opt/comfyui OLLAMA_MODELS=/opt/ollama/models
 export OLLAMA_MODELS R
 L=${RENDER2GO_LOCAL:-}
 VERSAO=$(cat $R/versao_hib 2>/dev/null || true)
-APT=(apt-get)
+# sem fsync no dpkg: o disco do contêiner é descartável. Na volta, o apt do ffmpeg (~200 pacotes, ~20 s)
+# roda em paralelo com a subida dos serviços (o AMBIENTE sai antes dele)
+APT=(apt-get -o Dpkg::Options::=--force-unsafe-io)
 if [[ -n "$L" ]]; then
-  APT=(apt-get -o "Dir::Cache::archives=$L/apt/archives" -o "Dir::State::lists=$L/apt/lists"
-       -o APT::Keep-Downloaded-Packages=true)
+  APT+=(-o "Dir::Cache::archives=$L/apt/archives" -o "Dir::State::lists=$L/apt/lists"
+        -o APT::Keep-Downloaded-Packages=true)
 fi
 
 # /opt e /usr/local apontam para o disco de volume
@@ -303,7 +305,7 @@ ambiente() {
   fi
   bash $W/scripts/pull_compiler_model.sh "$(arg COMPILER_MODEL)" "$(arg COMPILER_MODEL_DIGEST)" || return 1
   marca compilador
-  /opt/venv/bin/python $W/scripts/gpu_check.py
+  [[ "${SKIP_GPU_CHECK:-0}" == "1" ]] || /opt/venv/bin/python $W/scripts/gpu_check.py  # 1: só testes sem GPU
 }
 
 # depois do PRONTO, no pod gravador: o que falta no volume (tudo já conferido no disco local)
