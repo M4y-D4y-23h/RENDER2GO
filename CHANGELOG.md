@@ -2,6 +2,18 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 11/10/2026: área do cliente, partes 2 a 5 (configurações, acessos do painel por pessoa e as páginas novas)
+
+Motivo: o pedido do dono de 10/10 (área do cliente com menu lateral, pedido em sequência, painel em seções com visual novo, acessos por pessoa e auditoria). Publicação: [`docs/09`](docs/09-implantacao.md), seção 0, "11/10/2026" (backup, `docker compose up -d --build api` e o primeiro convite pelo terminal). A documentação detalhada ainda está sendo terminada: o que falta está em `docs/continuacao-2026-10-10.md`.
+
+- **Configurações da conta (servidor e página):** tema (claro, escuro ou automático), troca de e-mail, verificação em duas etapas por aplicativo autenticador (QR Code e 10 códigos de recuperação), aparelhos conectados, pausar e excluir a conta, com um código de confirmação antes das ações importantes; perfil com nome, sobrenome e a foto do Gravatar, só se a pessoa ligar; telefone, nome de usuário e indicação como "Em breve".
+- **Área do cliente:** menu lateral (Pedidos, Modelos de IA, Extratos, Logs, Perfil, Configurações; Mix e Projetos "Em breve"), cada tela no próprio endereço; pedido em sequência, com um texto padrão e textos próprios para as fotos escolhidas; extrato por rodada com planilha; logs das últimas 24 horas (assistir, baixar, excluir).
+- **Painel:** 12 seções em 5 grupos, cada uma com endereço, rolagem e dados próprios; visão geral; **acessos por pessoa** ([ADR 0009](docs/adr/0009-acessos-do-painel-por-pessoa.md), aceito): convite de uso único (QR Code → código do aplicativo → senha), papéis dono e operador, chave do servidor como emergência; **auditoria** com quem, quando, IP, navegador, antes e depois, filtros e planilha CSV.
+- **Mix e Projetos:** proposta no [ADR 0010](docs/adr/0010-mix-e-projetos.md) (cada passo do Mix como um pedido comum, custo antes de começar, sem troca de rosto).
+- **Termos e privacidade v2**, aceitos de novo na próxima entrada.
+- **Dependências novas:** `cryptography==50.0.2` e `segno==1.6.6` (reconstruir a imagem da API). `RENDER2GO_SEGREDO_CONTAS` não pode mais mudar.
+- **Testes:** suíte do serviço nos dois bancos (268), navegador com `test_paginas_conta.py` e `test_paginas_painel.py` novos (45 ao todo), teste de invasão 88/88 (eram 73) e medição de carga equivalente à versão de antes na mesma máquina.
+
 ## 10/10/2026 (3): área do cliente, parte 1 (só o servidor): textos por foto, extrato por rodada e logs de geração
 
 Motivo: o dono pediu uma área do cliente com menu lateral (perfil, projetos, extratos, logs, modelos de IA, mix e configurações), um pedido em sequência com textos próprios por foto e mudanças no painel (seções, acessos por pessoa, auditoria). **Esta entrega traz só a parte do servidor de três itens**, compatível com as páginas atuais (nada muda para quem usa o site hoje); as telas e o resto seguem em andamento, com o plano e as decisões já tomadas em [`docs/continuacao-2026-10-10.md`](docs/continuacao-2026-10-10.md). Para publicar: `git pull` e `docker compose up -d --build api` (as colunas novas são criadas sozinhas na subida; o worker dos pods não muda).

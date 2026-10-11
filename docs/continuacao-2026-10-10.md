@@ -1,8 +1,8 @@
-# Continuação: área do cliente e acessos do painel (trabalho em andamento desde 10/10/2026)
+# Continuação: área do cliente e acessos do painel (atualizado em 11/10/2026)
 
-Este documento passa o trabalho para a próxima sessão. Ele junta o pedido do dono, o que já foi entregue, as decisões de projeto já tomadas e a ordem dos próximos passos. Quando tudo estiver pronto e documentado nos lugares de sempre (docs/09, docs/10, docs/13, ADRs, CHANGELOG), apague este arquivo ou deixe nele só um apontamento.
+Este documento passa o trabalho para a próxima sessão. **Código, páginas e validação estão prontos e na main desde 11/10/2026; falta só terminar a documentação (seção 3).** Quando a seção 3 estiver feita, apague este arquivo e tire a menção a ele do `CLAUDE.md`.
 
-## 1. O pedido do dono (texto original)
+## 1. O pedido do dono (texto original, 10/10/2026)
 
 > Seguem algumas mudanças que eu gostaria que fossem feitas na parte do usuário:
 >
@@ -26,76 +26,27 @@ Este documento passa o trabalho para a próxima sessão. Ele junta o pedido do d
 > Preciso que as seguintes mudanças sejam aplicadas, muitos pedidos com foco no front-end, mas alguns pedidos também incluindo mudanças no back-end, na arquiteturas e em outros sistemas e funcionalidades do projeto, preciso que você seja cauteloso, meticuloso, preciso, pondere minhas idéias e minhas sugestões a serem adicionadas no site, aperfeiçoe as minhas idéias que são aplicaveis e otimize os processos de cada uma delas, para que o site não seja lento e venha operar sempre pronto para altissima escala.
 > Após tudo isso, documente tudo, atualize as documentações, me explique as mudanças e pode subir na main.
 
-## 2. O que já está pronto (na main, CHANGELOG "10/10/2026 (3)")
+## 2. O que está pronto (na main)
 
-Só o servidor, compatível com as páginas atuais. Testes: `servico/tests/test_sequencia.py` e `servico/tests/test_extrato.py`, nos dois bancos.
+Commits: `b4f9c7b` (parte 1, servidor: textos por foto, extrato por rodada, logs), `07e317c` (parte 2, servidor: configurações da conta), `72decf0` (parte 3, servidor: acessos do painel por pessoa, ADR 0009), `0278d7c` (parte 4, páginas do cliente), `d221cda` (parte 5, páginas do painel), `421c8f2` (lista de pedidos: texto de cada foto só nos pedidos em sequência, para não pesar na rota quente) e o commit desta atualização (documentação).
 
-1. **Pedido em sequência (textos por foto).** `POST /api/lotes` aceita `fotos[].prompt` (opcional, até 600 caracteres; `api.py`: `FotoIn`, `_textos_por_foto`, `MAX_TEXTOS_FOTO = 100`). Banco: `fotos.prompt` e `fotos.prompt_en`. Na aprovação (`db.aprovar`), um job `compilar` a mais por texto distinto, ligado à primeira foto com aquele texto (`foto_id`, `arquivo "<foto>-v0"`). Na fila (`db.reivindicar`), o render de uma foto com texto espera o `prompt_en` dela; a compilação do texto padrão continua passando na frente (`ORDER BY CASE WHEN j.tipo = 'compilar' AND j.foto_id IS NULL ...`) e a do texto próprio entra na vez do cliente. O worker do pod não muda: `api.reivindicar` troca `pedido["prompt"]` pelo texto da foto no job de compilação e manda o `prompt_en` da foto no render. `api.prompt` grava pelo `db.definir_prompt_foto`; texto compilado que cai no filtro cancela e devolve só as fotos com esse texto (`db._fechar_lote`). Painel: cada foto do pendente traz `texto` e `filtro_c1`. O pedido guarda `pedido["textos_por_foto"]` (quantos textos distintos).
-2. **Extrato por rodada.** `GET /api/extrato?dias=7|30|90|365|0&antes=<quando>` e `GET /api/extrato.csv?dias=&fuso_min=` (fuso em minutos a leste de UTC: no navegador, `-new Date().getTimezoneOffset()`). Cada pedido é uma rodada: `tipo: "rodada"`, `lote`, `quando`, `modelo`, `modelo_id`, `finalidade`, `tipo_modelo`, `videos`, `duracao`, `resolucao`, `cobrado`, `devolvido`, `liquido`, `status` (`null` depois da limpeza do histórico); recargas e ajustes vêm como `tipo: "recarga" | "ajuste"` com `valor` e `descricao`. Resumo: `gasto`, `devolvido`, `liquido`, `rodadas`, `recargas`, `ajustes`, `saldo`; `por_modelo`; `proximo` (o `antes` da página seguinte, ou `null`). Valores em centavos. O modelo fica em `movimentos.modelo` (`db._movimento`, `_cobrar` e os dois estornos).
-3. **Logs de geração.** `GET /api/geracoes?horas=24` (1 a 168): `id`, `arquivo`, `lote`, `gerado_em`, `modelo`, `finalidade`, `tipo_modelo`, `duracao`, `resolucao`, `texto`, `texto_proprio`, `url` (assistir) e `baixar` (com `Content-Disposition: attachment`), assinadas por 24 h. `POST /api/geracoes/{id}/excluir`: apaga o vídeo e `conferencia/<nome>.jpg` do armazenamento, marca `jobs.excluido_em` e grava `video_excluido` em `acessos`. Em `GET /api/lotes/{id}`, cada vídeo traz `id`, `texto` e `excluido` (sem endereços quando excluído).
-4. `modelos.info(id)` devolve `id`, `nome`, `finalidade`, `titulo` e `tipo` (usado no extrato e nos logs).
+- **Servidor:** confirmação recente antes de ações sensíveis; verificação em duas etapas do cliente (TOTP cifrado com AES-GCM, `cryptography==50.0.2`; QR em SVG pelo `segno==1.6.6`; 10 códigos de recuperação); entrada com o passo do autenticador; troca de e-mail; aparelhos conectados; pausar a conta; perfil (nome, sobrenome, Gravatar por escolha, servido pelo próprio servidor); tema; interesses por recurso (`recurso:mix`, `recurso:projetos`…); acessos do painel por pessoa (tabelas `admins` e `admin_convites`, convite em fragmento → QR → código → senha, papéis dono e operador com `PERMISSOES_PAINEL` fail-closed, chave do servidor como emergência), auditoria com antes/depois, agente, filtros, página seguinte e CSV, e `GET <painel>/api/resumo`. CLI `admin-convite`.
+- **Páginas do cliente:** moldura com menu lateral (Pedidos, Modelos de IA, Extratos, Logs, Perfil, Configurações; Mix e Projetos "Em breve"), endereços próprios, pedido em sequência (texto por foto), tema manual (`data-tema`), CLS zero em cada tela.
+- **Páginas do painel:** 12 seções em 5 grupos, cada uma com endereço `#`, rolagem e dados próprios (carregados só quando a seção abre; a aberta se atualiza a cada 30 s); entrada em três modos (pessoa, emergência, convite com QR); telas de acessos e de auditoria; visão geral; operador sem o que o papel não abre.
+- **Validação (etapa 7), feita:** suíte do serviço nos dois bancos (268 testes), navegador (`test_paginas.py`, `test_paginas_conta.py`, `test_paginas_painel.py`: 45 testes, com axe-core nos dois temas, 320 px, teclado e CLS com a API lenta), ruff, build reproduzível; teste de invasão com o Caddy 2.10: **88/88** (eram 73; casos novos de força bruta por pessoa e por nome, convite reaproveitado, código repetido, operador barrado). Carga (nesta máquina, 2 processos, 3 conexões, 30 s), versão de antes (`87b12c6`) × nova: lotes ~380–389 × ~374–379 pedidos/s, misto ~400–422 × ~400–411, página ~1830–1958 × ~1900–1935: equivalentes (os números de 09/10 do `docs/13`, 475/520/1470, são de outra máquina). Em sequência, 1 processo: `/api/lotes` 5,26 × 5,33 ms, `/api/conta` 2,53 × 3,12 ms, `/` 1,07 × 0,98 ms. O `421c8f2` tirou um JOIN de `fotos` da lista de pedidos (só os pedidos em sequência buscam os textos).
+- **Documentação já feita:** ADR 0009 (aceito) e ADR 0010 (Mix e Projetos, proposto); `docs/09` (seção 0, "11/10/2026": backup, `--build api`, o primeiro convite pelo terminal, chave de emergência, `RENDER2GO_SEGREDO_CONTAS` que não pode mudar, o que muda para clientes e painel, como voltar; e as linhas de operação, variáveis, segurança e "o que ainda não existe"); termos e privacidade v2 (as opções "Em breve" e a exclusão de vídeo pela tela Logs, também no resumo da janela de novo aceite); `docs/10`: introdução, testes, revisões, tema escolhido (1.3), 33 pares de contraste, 44 ícones, regras de layout 1, 3, 7 e 15 (nova: "uma tela por vez"), tabela de componentes e células da tabela de atributos (scripts, URLs, navegação, teste de invasão).
 
-## 3. O que falta, na ordem
+## 3. O que falta (documentação), na ordem
 
-Cada etapa termina com testes passando nos dois bancos, lint e formatação. As etapas 3 e 4 mudam a entrada (passo do autenticador) e a exclusão (confirmação recente), que as páginas de hoje não conhecem: só vão para a main junto com as páginas das etapas 5 e 6, depois da validação (etapa 7).
-
-### Etapa 3: configurações da conta (servidor)
-
-Decisões já tomadas (ponderadas com o pedido do dono):
-
-- **Confirmação recente ("modo confirmado")** antes de ações sensíveis: trocar e-mail, ligar ou desligar o MFA, gerar códigos de recuperação novos e excluir a conta. Coluna `sessoes.confirmada_ate`; uma sessão aberta há menos de 10 min já conta como confirmada (a pessoa acabou de provar o e-mail e o MFA). `POST /api/conta/confirmar/codigo` manda um código ao e-mail atual, com chave própria em `codigos` (ex.: `confirmar:<email_norm>`, para não invalidar um código de entrada); `POST /api/conta/confirmar` aceita esse código, o do autenticador ou um de recuperação e vale 10 min. Essas rotas só aceitam a sessão do cookie: o código de acesso antigo (cabeçalho `Authorization`) recebe 403 ("use a página").
-- **MFA do cliente (aplicativo autenticador, TOTP):** colunas `clientes.mfa_segredo` (cifrado no banco; não há `cryptography` no serviço hoje: acrescentar com versão fixada e usar AES-GCM com chave derivada de `RENDER2GO_SEGREDO_CONTAS`, como `contas.chave_contas`), `mfa_ativo_em` e `mfa_ultimo` (reuso do código barrado de forma atômica: `UPDATE clientes SET mfa_ultimo = ? WHERE id = ? AND (mfa_ultimo IS NULL OR mfa_ultimo < ?)`). Ativação em dois passos (`/api/conta/mfa/iniciar` devolve o segredo, a URI `otpauth://` e o QR em SVG; `/api/conta/mfa/ativar` confere um código e devolve 10 códigos de recuperação, mostrados uma vez, guardados só como HMAC numa tabela `codigos_recuperacao`). QR: `segno` com versão fixada (gera SVG no servidor; a página mostra por `blob:` URL, sem `innerHTML`). Dependência nova = reconstruir a imagem da API (docs/09).
-- **Entrada com MFA:** `entrar` e `entrar-codigo` não abrem a sessão quando a conta tem MFA; devolvem `{"mfa": true, "desafio": <token>}`, uma linha em `sessoes` com `tipo = "mfa"` (5 min; acrescentar "mfa" em `SESSAO_TIPOS`). `POST /api/conta/entrar-mfa {desafio, codigo}` aceita o código do autenticador ou um de recuperação e abre a sessão. Limite por conta: 5 erros em 15 min e 20 por dia.
-- **Troca de e-mail:** com confirmação recente; `POST /api/conta/email/codigo {email}` confere formato, provedor aceito (`_dominio_aceito`) e se já é de outra conta (pode responder que está em uso: a pessoa está conectada e há limite de 5 por hora e 10 por dia por conta) e manda o código ao endereço novo; `POST /api/conta/email {email, codigo}` troca `email`/`email_norm` (único), grava em `acessos`, avisa o endereço antigo e acerta `clientes.nome` quando ele era o e-mail antigo.
-- **Aparelhos conectados:** `GET /api/conta/sessoes` (até 50 sessões ativas do tipo cliente) com `ref` (derivada: `sha256("ref:" + id)[:20]`; nunca o `id`), aparelho legível tirado do User-Agent ("Chrome no Android"), IP, criada, último uso e `atual`; `POST /api/conta/sessoes/{ref}/encerrar` e `POST /api/conta/sessoes/encerrar-outras`.
-- **Desativação pelo próprio cliente ("pausar a conta"):** `POST /api/conta/desativar {confirmacao: "DESATIVAR"}`; recusada com pedido em andamento; grava `clientes.pausada_em` e encerra todas as sessões; o saldo fica. Entrar de novo pelo código do e-mail reativa (limpa `pausada_em`, evento `reativada`, aviso na página). A desativação feita pelo painel (`ativo = 0`) continua separada e só o suporte desfaz; o painel mostra "pausada pelo cliente".
-- **Exclusão:** a rota atual, agora com confirmação recente.
-- **Perfil:** `clientes.primeiro_nome` e `clientes.ultimo_nome` (1 a 60 caracteres, letras, espaço, apóstrofo, hífen e ponto) em `PUT /api/conta/perfil`. Foto: não há como pegar a foto do Gmail ou do Outlook sem "Entrar com Google/Microsoft" (OAuth); o caminho viável é o **Gravatar, por escolha da pessoa** (`clientes.gravatar`), servido pelo próprio servidor em `GET /api/conta/foto` (host fixo `gravatar.com`, SHA-256 do e-mail em minúsculas, `d=404&s=160`, 5 s, até 200 KB, só PNG/JPEG, `Cache-Control: private, max-age=86400`, cache em memória): o navegador nunca fala com terceiros e a CSP não muda. Sem foto, a inicial maiúscula do e-mail. "Nome de usuário" e "Ganhos por indicação" aparecem como "Em breve", com "Tenho interesse".
-- **Tema:** claro, escuro ou automático; `clientes.tema` em `PUT /api/conta/preferencias`; a página aplica antes de desenhar pelo `localStorage` (script do `<head>`) e acerta pelo `/api/conta`.
-- **Telefone:** "Em breve" (SMS depende de escolher e pagar um provedor: decisão do dono), com "Tenho interesse".
-- **Interesse em recursos em breve:** ampliar `POST /api/interesses` para ids de recurso (`recurso:indicacao`, `recurso:mix`, `recurso:projetos`, `recurso:telefone`, `recurso:nome-usuario`), com título no `GET {painel}/api/interesses`.
-- **Painel:** `POST {painel}/api/clientes/{id}/mfa/desligar` (com auditoria) para quem perdeu o celular e os códigos.
-- `GET /api/conta` passa a trazer nome, sobrenome, tema, gravatar, `mfa` e o que a página de configurações precisa; `dados_da_conta` traz os campos novos (nunca o segredo do MFA).
-- **Documentos:** privacidade v2 (Gravatar por escolha, MFA, troca de e-mail, aparelhos) e termos v2 se preciso; subir as versões em `contas.DOCUMENTOS` e conferir como uma sessão aberta antes da versão nova aceita a versão nova.
-- Testes novos: `tests/test_conta_config.py`.
-
-### Etapa 4: acessos do painel (servidor), ADR 0009 (aceito, pedido do dono)
-
-- Tabelas `admins` (id, `usuario` único, `senha_hash` com `hashlib.scrypt` (n = 2^15, r = 8, p = 1, sal de 16 bytes), `totp_segredo` cifrado como o do cliente, `totp_ultimo`, `papel` dono ou operador, `ativo`, criado, criado_por, desativado_em, ultimo_acesso) e `admin_convites` (id = SHA-256 do token, `usuario`, `papel`, criado, criado_por, `expira` em 24 h, `usado_em`).
-- Entrada: usuário + senha + código do autenticador da própria pessoa; reuso do código barrado de forma atômica por pessoa; a mesma mensagem para qualquer erro; os limites por rede de hoje e mais 5 erros em 15 min por usuário.
-- "Senha depois do código do aplicativo validado" e "código de uso único e intransferível": o dono cria um **convite** (usuário + papel), de uso único, que vale 24 h e só cria aquele usuário. No primeiro acesso, a pessoa lê o QR (segredo novo, só dela), confirma um código do aplicativo e **só então** cria a senha (12+ caracteres, sem o nome de usuário, fora de uma lista curta de senhas comuns). Cada código do aplicativo vale uma vez; o convite é consumido de forma atômica.
-- A chave do servidor de hoje (`RENDER2GO_ADMIN_TOKENS` + `RENDER2GO_ADMIN_TOTP`) fica como acesso de emergência, auditado como tal.
-- Papéis: dono (tudo, inclusive acessos, saldo e parada de emergência) e operador (revisão de pedidos e consultas); mapa de permissões por rota.
-- Gestão: listar, desativar (encerra as sessões da pessoa) e emitir convite novo (troca senha e autenticador). CLI `render2go-servico admin-convite --usuario X --papel dono` para o primeiro acesso, pelo terminal do servidor.
-- Auditoria: coluna `agente` (User-Agent), índice `(admin, quando)`, filtros (pessoa, ação, alvo, período), página seguinte por `antes`, CSV, e "antes → depois" nas mudanças (plano, saldo, e-mail, desativar/reativar, acessos). `GET {painel}/api/auditoria`.
-- `GET {painel}/api/resumo` para a seção "Visão geral" (revisões pendentes, pedidos em andamento, pods, fila, cobrado e devolvido hoje, contas novas, interesses).
-- Testes novos (`tests/test_painel_acessos.py`) e casos novos no `tests/teste_invasao.py` (força bruta na entrada, convite reaproveitado, código repetido).
-
-### Etapa 5: páginas do cliente
-
-- Moldura com menu lateral: Pedidos, Modelos de IA, Extratos, Logs, Perfil, Configurações, e Projetos e Mix "Em breve". Endereços próprios (`/modelos`, `/extratos`, `/logs`, `/perfil`, `/configuracoes`, `/projetos`, `/mix`) servidos pela API com a mesma página, `noindex` e fora do `sitemap.xml`; o script do `<head>` (`ts/inicio.ts`) marca `data-vista` pelo endereço e pede de antemão só o que a tela usa. Computador: menu fixo com rolagem própria; celular: menu numa janela de baixo, com o foco preso nela. CLS zero em cada tela (lugar reservado, esqueletos), como manda o CLAUDE.md.
-- Modelos de IA: o catálogo de `/api/receitas` (`finalidades`); o disponível leva a Pedidos com aquela finalidade escolhida; os em breve com "Tenho interesse".
-- Extratos: período, resumo, total por modelo, lista de rodadas e o botão da planilha. Logs: assistir, baixar e excluir (com confirmação). Perfil e Configurações: como na etapa 3. Mix e Projetos: páginas "Em breve" com a explicação e "Tenho interesse" (o Mix vira o ADR 0010, proposto: encadear modelos a partir de um pedido inicial, como no exemplo do dono).
-- Pedidos: duas abas, "Mesmo texto para todas" e "Sequência (texto por foto)": texto padrão e a grade de fotos, com seleção de várias fotos para dar a elas um texto próprio; contador ("5 fotos com texto próprio; as outras 95 seguem o texto padrão"); limites (600 caracteres, 100 textos distintos); os textos aparecem na revisão antes de enviar.
-- Entrada com o passo do autenticador; aviso de conta reativada.
-- Tema manual: `data-tema` no `<html>`; `tokens.css` com o tema claro em `:root`, o escuro em `@media (prefers-color-scheme: dark) { :root:not([data-tema="claro"]) }` e em `:root[data-tema="escuro"]`; ajustar o leitor de pares de contraste do `tests/test_web.py`.
-- Regras de sempre: editar só `servico/web/src/`, `npm run build`, sem `innerHTML`/`style=`/script embutido, cor só por token nos dois temas, partes `<!--@sessao-->`, `<!--@topo-->`, `<!--@rodape-->` e `iniciarTopo()` em página nova.
-
-### Etapa 6: páginas do painel
-
-- Seções separadas, cada uma com a própria rolagem e endereço por `#` (visão geral, revisão, clientes, histórico, pods, GPUs, interesses, suporte, pagamentos, acessos, auditoria, segurança), com subseções; dados carregados só quando a seção abre. Visual novo seguindo o docs/10 (textos, botões, cores, campos, títulos).
-- Entrada em três modos: usuário + senha + código; chave do servidor (emergência); primeiro acesso por convite, com o QR. Telas de acessos e de auditoria (filtros, página seguinte, CSV) e a visão geral.
-- Arquivos: `servico/web/src/paginas/painel.html` e `servico/web/src/ts/painel.ts` (sai em `publico/privado/painel.js`; nenhuma página pública cita o endereço nem o arquivo).
-
-### Etapa 7: validação
-
-- Suíte inteira do serviço nos dois bancos; `tests/test_paginas.py` com telas novas (axe-core nos dois temas, 320 px, teclado, CLS com a API lenta); teste de invasão com os casos novos (Caddy 2.10); medição de carga se a fila ou as rotas quentes mudarem.
-- Medição de CLS e LCP: a ferramenta de 10/10 ficou fora do repositório. Para refazer: Playwright com o Chromium do ambiente, latência pelo CDP (`Network.emulateNetworkConditions`; atraso com `time.sleep` dentro de uma rota do Python enfileira os pedidos), hosts bloqueados por `--host-resolver-rules` (uma rota do Playwright desliga o cache HTTP) e `limite_por_minuto` alto na configuração de teste (o limite de 120 por minuto por conta dá 429).
-
-### Etapa 8: documentação e publicação
-
-- ADR 0009 (acessos do painel, aceito) e ADR 0010 (Mix e Projetos, proposto); docs/10 (área do cliente, menu, endereços, temas), docs/09 (passos de publicação: dependências novas exigem reconstruir a imagem da API; primeiro convite pelo terminal), docs/13 (MFA, confirmação recente, acessos do painel, resultado do teste de invasão), docs/11 se o extrato mudar algo de preços; CHANGELOG; CLAUDE.md (status e regras novas); apagar este arquivo.
-- Commit, push no ramo de trabalho e na main, conferir o CI (`servico.yml` roda a suíte, o build conferido e o `test_paginas.py`; `worker.yml`) e explicar as mudanças ao dono em pt-BR.
+1. **`docs/10`:**
+   - seção **4.2 "Área do cliente e painel em seções (11/10/2026)"**: o que entrou (os itens da seção 2 acima, vistos pelo front-end), como cada atributo foi mantido (CLS zero com lugar reservado e esqueletos, `data-antecipar` só com os dados da tela, `aria-current`, foco no `h1` ao trocar de tela, título da aba, Voltar do navegador, janela de baixo com foco preso no celular, operador com `.so-dono` escondido e o servidor conferindo de novo) e as ideias do dono ponderadas (foto do perfil pelo Gravatar por escolha, porque o Gmail e o Outlook não dão a foto sem "Entrar com Google/Microsoft"; telefone, nome de usuário e indicação "Em breve"; troca de rosto fora, ADR 0010);
+   - seção **5.2 "Área do cliente e painel (11/10/2026)"** com as medições da seção 5 abaixo (a versão de antes é a `87b12c6`); se quiser completar, medir de novo as telas `painel`, `painel-revisao` e `painel-clientes` da versão nova (a rodada foi interrompida antes delas);
+   - seção 6 **"Como mexer nas páginas"**: tela nova na área do cliente (`<section class="vista" id="vista-<nome>">` no `index.html`, link no menu com `data-vista`, `TELAS_CONTA` em `api.py`, chave em `data-antecipar` do `inicio.js`, script da tela em `src/ts/<tela>.ts` chamado pela `moldura.ts`); seção nova no painel (`<section class="secao-painel" id="sec-<nome>">` com `h1#t-<nome>`, item no menu com `data-secao` e `data-rota`, `SECOES` em `painel.ts`, controle no `painel-*.ts` do grupo, rota em `PERMISSOES_PAINEL`, chave em `data-antecipar` e, se for só do dono, em `data-so-dono`); os arquivos `painel-base.ts`, `painel-entrada.ts`, `painel-pedidos.ts`, `painel-clientes.ts`, `painel-operacao.ts` e `painel-seguranca.ts`; e o comando dos testes com os três arquivos do navegador.
+2. **`docs/13`:** verificação em duas etapas do cliente e confirmação recente; acessos do painel por pessoa (ADR 0009: scrypt, segredo cifrado, convite em fragmento, limites por rede e por nome, papéis fail-closed, emergência, auditoria); teste de invasão 88/88 com os casos novos; carga de 11/10 (seção 2 acima), deixando claro que é outra máquina que a de 09/10.
+3. **`CHANGELOG.md`:** a entrada "11/10/2026" já tem um resumo; completar com os detalhes (rotas novas, tabelas e colunas, medições) e tirar a frase "a documentação detalhada ainda está sendo terminada".
+4. **`CLAUDE.md`:** o status, a lista de ADRs e o comando do navegador já foram acertados; falta: regras novas (nunca trocar o `RENDER2GO_SEGREDO_CONTAS`; rota nova do painel só com entrada em `PERMISSOES_PAINEL`; tela nova da área do cliente e seção nova do painel como no item 1) e tirar a menção a este arquivo.
+5. **Investigar (pode virar item do `docs/10`, seção 7):** na visita de volta, a medição transfere 13–16 KB nas telas com sessão e 13 KB na entrada, nas duas versões, o que parece o HTML inteiro (`index.html` tem 11,5 KB comprimido; antes, 6,5 KB). Conferir no navegador, pelo Caddy, se a revalidação do HTML volta 304 (a API compara o `If-None-Match` com a ETag; o `encode` do Caddy pode mudar a ETag da resposta comprimida). Se não voltar, acertar a comparação (aceitar a ETag com o sufixo do Caddy) e medir de novo.
+6. Apagar este arquivo, commit, push na main, conferir o CI (`servico.yml` e `worker.yml`) e explicar as mudanças ao dono em pt-BR.
 
 ## 4. Ambiente de testes num contêiner novo
 
@@ -108,4 +59,32 @@ Decisões já tomadas (ponderadas com o pedido do dono):
   su postgres -c "/usr/lib/postgresql/16/bin/createdb -h /var/tmp -p 55432 render2go_teste"
   su postgres -c "/usr/lib/postgresql/16/bin/createdb -h /var/tmp -p 55432 render2go_invasao"  # teste de invasão
   ```
-- Páginas: `cd servico/web && npm ci && npm run build`; navegador: `cd servico && uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py` (o Chromium já vem instalado no ambiente; não rodar `playwright install`).
+- Páginas: `cd servico/web && npm ci && npm run build`; navegador: `cd servico && uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py tests/test_paginas_conta.py tests/test_paginas_painel.py` (o Chromium já vem instalado no ambiente; não rodar `playwright install`).
+- **Medição de FCP, LCP e CLS** (a ferramenta ficou fora do repositório): subir a API (`criar_app` com `limite_por_minuto` alto, `turnstile_desligado`, Postgres próprio) atrás do Caddy 2.10 com o `Caddyfile` de produção (trocando o domínio por `localhost:<porta>` com `tls internal`, `api:8000` pelo endereço local e o log por um arquivo); semear uma conta do pré-pago com 3 pedidos (pronto, na fila e em revisão) e as sessões do cliente e do painel; Chromium 141 pelo Playwright, com a sessão em cookie e as marcas no `localStorage` por `add_init_script`, `PerformanceObserver` de LCP, CLS e FCP, e rede e CPU pelo CDP (`Network.emulateNetworkConditions`, `Emulation.setCPUThrottlingRate` 4×); mediana de 5. Dois cenários: rede lenta para tudo (1,6 Mbps, 150 ms, 390 × 844 px; 1ª visita e de volta) e visita de volta com o cache cheio (ida e volta de 0, 120 e 250 ms; 390 e 1280 px).
+
+## 5. Medições de 11/10/2026 (versão `87b12c6` → nova, mediana de 5)
+
+Rede lenta para tudo (celular, 4G lenta, CPU 4×):
+
+| Tela | Visita | FCP | LCP | CLS | Transferido |
+|---|---|---|---|---|---|
+| Entrada (sem sessão) | 1ª | 0,57 → 0,59 s | 0,57 → 0,59 s | 0 → 0,006 | 55 → 82 KB |
+| Entrada (sem sessão) | de volta | 0,28 → 0,28 s | 0,28 → 0,30 s | 0,006 → 0,006 | 8 → 13 KB |
+| Pedidos (com sessão) | 1ª | 0,52 → 0,59 s | 0,84 → 1,04 s | 0 → 0 | 58 → 85 KB |
+| Pedidos (com sessão) | de volta | 0,28 → 0,30 s | 0,46 → 0,48 s | 0 → 0 | 11 → 16 KB |
+| Extratos (nova) | 1ª / de volta | 0,56 / 0,29 s | 0,56 / 0,32 s | 0 / 0 | 82 / 14 KB |
+| Configurações (nova) | 1ª / de volta | 0,54 / 0,28 s | 0,59 / 0,34 s | 0 / 0 | 82 / 13 KB |
+| Painel do dono (antes: tela única) | 1ª / de volta | 0,59 / 0,29 s (antes) | 0,59 / 0,29 s (antes) | 0 / **0,314** (antes) | 49 / 8 KB (antes) |
+
+Visita de volta com o cache cheio (CPU 4×), LCP e CLS:
+
+| Tela | Ida e volta | 390 px | 1280 px |
+|---|---|---|---|
+| Pedidos | 0 ms | 0,22 → 0,27 s, CLS 0 → 0 | 0,15 → 0,21 s, CLS 0 → 0 |
+| Pedidos | 120 ms | 0,38 → 0,38 s, CLS 0 → 0 | 0,38 → 0,38 s, CLS 0 → 0 |
+| Pedidos | 250 ms | 0,65 → 0,65 s, CLS 0 → 0 | 0,62 → 0,60 s, CLS 0 → 0 |
+| Extratos (nova) | 0 / 120 / 250 ms | 0,14 / 0,26 / 0,38 s, CLS 0 | 0,13 / 0,26 / 0,36 s, CLS 0 |
+| Configurações (nova) | 0 / 120 ms | 0,17 / 0,28 s, CLS 0 | 0,13 / 0,24 s, CLS 0 |
+| Painel do dono, versão de antes | 0 / 120 / 250 ms | 0,08 / 0,25 / 0,35 s, **CLS 0,347 / 0,314 / 0,346** | 0,09 / 0,27 / 0,41 s, **CLS 0,096 / 0,075 / 0,075** |
+
+Leitura: o painel de antes deslocava o layout na visita de volta (CLS "ruim" no celular); o novo foi medido sem deslocamento nos testes de navegador (`test_paginas_painel.py`, CLS com a API lenta, 6 seções em 390 e 1280 px, e o convite), e falta só a rodada desta ferramenta para ele. As telas do cliente seguem com CLS zero e LCP bem dentro da faixa "bom" (até 2,5 s); a 1ª visita ficou ~27 KB maior (o script da área do cliente: 18,6 → 33,1 KB comprimido; o HTML: 6,5 → 11,5 KB), tudo em cache por versão, e o painel tem o próprio script (13,7 → 26,9 KB comprimido), que só o dono baixa.

@@ -6,6 +6,45 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há.
 
+### 11/10/2026: área do cliente, painel em seções e acessos por pessoa
+
+**Tem um passo a mais: o seu acesso por pessoa (bloco 3).** A API ganha duas dependências (`cryptography`, para cifrar os segredos dos aplicativos autenticadores, e `segno`, para o QR Code): sem o `--build`, ela não sobe. As tabelas e colunas novas são criadas sozinhas na partida da API e só se somam às de antes. O orquestrador e o analisador não mudaram: os pods ligados seguem.
+
+**1) Backup do banco e API nova:**
+```bash
+cd ~/GPU2GO && git pull && cd servico/implantacao
+docker compose exec -T postgres pg_dump -U gpu2go gpu2go | gzip > ~/backup-antes-acessos-$(date +%F).sql.gz
+ls -lh ~/backup-antes-acessos-*.sql.gz
+docker compose up -d --build api
+docker compose ps --format "table {{.Service}}\t{{.Status}}"
+docker compose logs --since 10m api | grep AVISO      # o que ainda falta configurar (também no painel, seção "Configuração")
+```
+
+**2) A chave de sempre continua valendo:** a entrada do painel agora pede nome de acesso, senha e código. Abra **"Acesso de emergência (chave do servidor)"**, logo abaixo, e entre com o token e o código de antes (`RENDER2GO_ADMIN_TOKENS` e `RENDER2GO_ADMIN_TOTP`). O painel abre na "Visão geral", com o que pede atenção agora e os números de hoje; cada seção tem o próprio endereço (`#revisao`, `#clientes`, `#pods`…).
+
+**3) O seu acesso por pessoa.** Com o celular à mão, no servidor:
+```bash
+cd ~/GPU2GO/servico/implantacao
+docker compose exec api render2go-servico admin-convite --usuario <seu nome de acesso> --papel dono
+```
+- O comando mostra um endereço `https://app.render2go.com<painel>/#convite=…`, que vale **24 horas e uma vez só**. Abra no computador e siga os três passos: (a) leia o QR Code no aplicativo autenticador (fica uma conta nova no aplicativo, separada da chave de emergência); (b) digite um código do aplicativo; (c) só então crie a senha: 12 a 128 caracteres, sem o nome de acesso (o gerenciador de senhas pode gerar e guardar). Daí em diante, a entrada é nome + senha + código, e cada código vale uma vez.
+- Nome de acesso: 3 a 32 letras minúsculas, números, `.`, `-` ou `_`, começando por letra (ex.: `ricardo`); `admin-…` fica reservado.
+- **Outras pessoas** (um revisor, um sócio): painel, seção **"Acessos"**, "Convidar uma pessoa". Papel **operador** para quem só revisa os pedidos e consulta (histórico, contas, suporte, interesses e pods); **dono** para quem também mexe em saldo, pods, pagamentos, acessos e auditoria. Mande o endereço do convite por um canal seguro (em mãos, gerenciador de senhas ou mensagem que se apaga), nunca por e-mail aberto nem print.
+- **Celular perdido ou senha esquecida:** "Convite novo" na linha da pessoa, em "Acessos" (refaz a senha e o autenticador, e as sessões dela caem). Se for o seu e não houver outro dono, use a chave de emergência ou o comando acima de novo.
+- **A chave do servidor fica como acesso de emergência** (aparece na Auditoria como "Entrada de emergência"): guarde no gerenciador de senhas e use só quando nenhum dono conseguir entrar. Se preferir sem ela, apague `RENDER2GO_ADMIN_TOKENS` e `RENDER2GO_ADMIN_TOTP` do `.env` e rode `docker compose up -d api`: a sessão aberta por ela cai, e a volta passa a ser só o comando acima, pelo terminal.
+
+**Atenção:** a partir de agora, **nunca troque o `RENDER2GO_SEGREDO_CONTAS`**. Os segredos dos aplicativos autenticadores (das pessoas do painel e dos clientes com a verificação em duas etapas) são cifrados com ele: trocado, essas entradas passam a ser recusadas, e a saída é um convite novo para cada pessoa e, para cada cliente, desligar a verificação pelo painel.
+
+- **O que muda para os clientes:**
+  - menu lateral com Pedidos, Modelos de IA, Extratos, Logs, Perfil, Configurações e, "Em breve", Mix e Projetos; cada tela tem o próprio endereço (`/extratos`, `/logs`, `/configuracoes`…);
+  - pedido em sequência: um texto padrão para todas as fotos e um texto próprio para as fotos escolhidas (até 100 textos diferentes por pedido);
+  - Configurações: tema, troca de e-mail, verificação em duas etapas (aplicativo autenticador e 10 códigos de recuperação), aparelhos conectados, desativar a conta (pausar; entrar de novo reativa) e excluir, com um código de confirmação antes das ações importantes;
+  - Extratos por rodada (com a planilha) e Logs das últimas 24 horas (assistir, baixar e excluir um vídeo);
+  - Termos e Privacidade v2: quem entra vê o que mudou e aceita a versão nova para continuar fazendo pedidos e recargas.
+- **O que muda no painel:** seções separadas, cada uma com a própria rolagem e endereço; "Visão geral", "Acessos" e "Auditoria" (filtros por pessoa, ação, alvo e período, "Mostrar mais" e planilha CSV); a conta do cliente abre numa janela (saldo, plano, e-mail, extrato, desativar) com "Desligar a verificação em duas etapas", para quem perdeu o celular e os códigos de recuperação. Antes de desligar, confirme que é a pessoa (a mensagem tem de vir do e-mail da conta, e ela confirma um dado de um pedido ou de uma recarga).
+- **Conferir depois:** numa janela anônima, entre no site com o seu e-mail: o menu lateral aparece e `/extratos` mostra o extrato; no painel, "Auditoria" mostra a sua entrada e o convite criado pelo terminal.
+- **Se algo der errado:** volte para o commit anterior (`git checkout b4f9c7b`) e rode `docker compose up -d --build api`; o banco aceita a versão anterior. Só por pouco tempo: nela não existem os acessos por pessoa (só a chave de emergência entra) e a verificação em duas etapas dos clientes deixa de ser pedida na entrada. Para voltar à versão nova: `git checkout main && git pull` e o mesmo comando.
+
 ### 10/10/2026 (2): revisão do front-end
 
 Só as páginas mudam (HTML, CSS e JavaScript, que vão dentro da imagem): sem passo extra e sem mudança no banco. Basta reconstruir e recriar a API; o orquestrador não reinicia, então os pods ligados seguem:
@@ -275,7 +314,7 @@ Navegador do cliente ──fotos (URL assinada)──►  R2 (Cloudflare)  ◄�
 
 | Peça | Onde | O que faz |
 |---|---|---|
-| API e páginas | contêiner `api` (`render2go-servico api`, `RENDER2GO_API_WORKERS` processos) | Contas e sessões, lotes, URLs assinadas, Pix, painel do dono no endereço secreto (ADR 0007) |
+| API e páginas | contêiner `api` (`render2go-servico api`, `RENDER2GO_API_WORKERS` processos) | Contas e sessões, lotes, URLs assinadas, Pix, painel do dono no endereço secreto (ADR 0007 e 0009) |
 | Análise das fotos | contêiner `analisador` (mesma imagem) | Aviso de pessoas nas fotos, fora da API |
 | Orquestrador | contêiner `orquestrador` (mesma imagem) | Lê a fila, sobe e encerra pods, executa os comandos do painel; só um manda por vez |
 | Banco | Postgres 16 (contêiner ou gerenciado) | Contas, sessões, lotes, jobs, saldo, pagamentos, limites, registros |
@@ -346,10 +385,10 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 | `POSTGRES_PASSWORD` | Senha do Postgres local |
 | `RENDER2GO_R2_ENDPOINT`, `_BUCKET`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY` | R2; os mesmos valores do ambiente do Claude |
 | `RENDER2GO_SEGREDO_APROVACAO` | Assina o carimbo de aprovação (HMAC); vai também para os pods |
-| `RENDER2GO_SEGREDO_CONTAS` | Chave dos códigos de entrada e do resumo dos e-mails excluídos (só a API). Defina na 1ª subida e não troque |
+| `RENDER2GO_SEGREDO_CONTAS` | Chave dos códigos de entrada, do resumo dos e-mails excluídos e da cifra dos segredos dos aplicativos autenticadores (painel e clientes; só a API). Defina na 1ª subida e nunca troque: trocada, as entradas com autenticador são recusadas |
 | `RENDER2GO_ADMIN_CAMINHO` | Endereço secreto do painel: `/` + 12 a 64 letras, números, `_` ou `-`. Sem ele, o painel fica desligado |
-| `RENDER2GO_ADMIN_TOKENS` | Token(s) de entrada no painel, separados por vírgula (32+ caracteres) |
-| `RENDER2GO_ADMIN_TOTP` | Segredo do aplicativo autenticador do painel (`render2go-servico totp-novo`) |
+| `RENDER2GO_ADMIN_TOKENS` | Chave do servidor: acesso de emergência ao painel (papel dono), separadas por vírgula (32+ caracteres). No dia a dia, cada pessoa entra com o próprio acesso (seção "Acessos", ADR 0009) |
+| `RENDER2GO_ADMIN_TOTP` | Segredo do aplicativo autenticador da chave do servidor (`render2go-servico totp-novo`) |
 | `RENDER2GO_ADMIN_IPS` | Opcional: só estes IPs ou redes abrem o painel, separados por vírgula |
 | `RENDER2GO_WORKER_TOKENS` | Só para testes manuais: cada pod recebe um token próprio. Deixe vazio |
 | `RENDER2GO_SMTP_*`, `RENDER2GO_EMAIL_DE` | E-mail transacional: servidor, porta 587, usuário, senha e o remetente dos códigos |
@@ -372,14 +411,15 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 
 ## 5. Operação do dia a dia
 
-- **Painel do dono:** `https://<domínio><RENDER2GO_ADMIN_CAMINHO>/`, com o token e o código do aplicativo autenticador (ADR 0007). Cinco erros bloqueiam a rede por 15 min.
-- **Contas:** os clientes se cadastram sozinhos, pelo e-mail. Para criar a conta de um e-mail de empresa (fora da lista de provedores) ou já no plano pago: painel, seção "Nova conta". Pelo terminal:
+- **Painel do dono:** `https://<domínio><RENDER2GO_ADMIN_CAMINHO>/`. Cada pessoa entra com o nome de acesso, a senha e o código do aplicativo autenticador dela (ADR 0009); a chave do servidor (token + código do autenticador do `.env`) fica em "Acesso de emergência" (ADR 0007). Cinco erros bloqueiam a rede por 15 min, e cinco erros num nome de acesso o bloqueiam por 15 min, de qualquer rede.
+- **Acessos e auditoria:** seção "Acessos" (só dono): convidar, mudar o papel, tirar o acesso e convite novo. Seção "Auditoria": cada ação do painel com quem fez, quando, o IP, o navegador e o antes e depois; filtros, "Mostrar mais" e planilha CSV. O primeiro dono sai pelo terminal: `docker compose exec api render2go-servico admin-convite --usuario <nome> --papel dono`.
+- **Contas:** os clientes se cadastram sozinhos, pelo e-mail. Para criar a conta de um e-mail de empresa (fora da lista de provedores) ou já no plano pago: painel, seção "Contas e saldo", botão "Nova conta". Pelo terminal:
   ```bash
   docker compose exec api render2go-servico cliente "Padaria do Bairro" --email dono@padariadobairro.com.br --plano pago
   ```
 - **Recarregar o saldo de um cliente pago:** sozinho, por Pix, quando o Mercado Pago está configurado; à mão, no painel, seção "Contas e saldo" (seção 5.1.7).
-- **Histórico:** no painel, abaixo dos pendentes. Mostra todos os pedidos (filtros: em revisão, aprovados, recusados), com cliente, IP, fotos, quem aprovou, motivo da recusa e andamento. A tabela "Uso por IP" soma as fotos por IP.
-- **Conta comprometida:** no painel, "Desativar" (seção "Contas e saldo" ou no histórico). As sessões e o código antigo deixam de valer na hora.
+- **Histórico:** no painel, seção "Histórico". A aba "Pedidos" mostra todos os pedidos (filtros: em revisão, aprovados, recusados), com cliente, IP, fotos, quem aprovou, motivo da recusa e andamento; "Uso por IP" soma as fotos por IP, e "Dispositivos" mostra os aparelhos.
+- **Conta comprometida:** no painel, "Desativar a conta" (seção "Contas e saldo", clicando na conta, ou "Desativar esta conta" no histórico). As sessões e o código antigo deixam de valer na hora.
 - **Aprovar pedidos:** no painel. Nada vai para a GPU sem aprovação (ADR 0004). O cliente acompanha em `/`.
   - Cada foto ganha um selo "contém pessoas" ou "sem pessoas detectadas" segundos depois do envio (detector no próprio servidor, sem custo de GPU). Com pessoas e sem a caixa de autorização marcada, o lote mostra um aviso em vermelho.
   - O selo é uma ajuda: confira sempre as miniaturas.
@@ -420,7 +460,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 
 ## 5.1.1 Acesso interno (só o dono)
 
-Para testar sem os limites do teste gratuito e sem esperar revisão, crie uma conta com o plano **Interno** no painel ("Nova conta"), com um e-mail seu.
+Para testar sem os limites do teste gratuito e sem esperar revisão, crie uma conta com o plano **Interno** no painel ("Contas e saldo", "Nova conta"), com um e-mail seu.
 - Os pedidos desse código são aprovados automaticamente no envio e sobem pods na hora, sem a janela de agrupamento.
 - O filtro de conteúdo (C1), o aviso de pessoas e o registro de autorização continuam valendo.
 - Não entregue esse código a clientes; se vazar, desative no histórico.
@@ -568,11 +608,11 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 
 ## 7. Segurança (resumo)
 
-Revisão completa, teste de invasão e a lista do dono: `docs/13`. Decisões: ADR 0006 (páginas), ADR 0007 (contas, sessões, painel e pods) e ADR 0008 (Pix).
+Revisão completa, teste de invasão e a lista do dono: `docs/13`. Decisões: ADR 0006 (páginas), ADR 0007 (contas, sessões, painel e pods), ADR 0008 (Pix) e ADR 0009 (acessos do painel por pessoa).
 - **Chaves só no servidor (`.env`, chmod 600)**, e cada contêiner só com as que usa (o compose esvazia as outras):
   - o pod recebe só o token dele (válido até o desligamento automático e revogado no fim), a URL da API e os hosts permitidos;
   - o navegador recebe só URLs assinadas, uma por arquivo, que expiram; a de envio só aceita o tamanho declarado.
-- **Contas e painel:** sessões em cookie HttpOnly guardadas só como SHA-256; códigos de entrada de uso único; painel no endereço secreto com 2 fatores, bloqueio por tentativas e auditoria. Para trocar o token ou o autenticador do painel, edite o `.env` e rode `docker compose up -d api`.
+- **Contas e painel:** sessões em cookie HttpOnly guardadas só como SHA-256; códigos de entrada de uso único; verificação em duas etapas opcional para os clientes, com confirmação por código antes das ações importantes; painel no endereço secreto com um acesso por pessoa (senha e autenticador próprios, papéis dono e operador), bloqueio por tentativas e auditoria com o antes e o depois. Para trocar a chave de emergência ou o autenticador dela, edite o `.env` e rode `docker compose up -d api`.
 - **Páginas (ADR 0006, docs/10):**
   - CSP estrita: scripts e estilos só do próprio domínio, nada embutido, Trusted Types obrigatório; a página fala só com a própria API e com o R2;
   - SRI nos scripts e no CSS; COOP, CORP e `Permissions-Policy` (câmera, microfone, localização e pagamento desligados);
@@ -589,3 +629,5 @@ Revisão completa, teste de invasão e a lista do dono: `docs/13`. Decisões: AD
 - **Grupo de pods por modelo:** só quando entrar o 2º modelo (`docs/13`, seção 5).
 - **Download do lote inteiro em um .zip:** hoje são links por vídeo.
 - **Medição da fila com vários clientes em pods reais:** depende desta implantação.
+- **Mix e Projetos:** páginas "Em breve", que só contam o interesse; a proposta está no ADR 0010.
+- **Chaves de acesso (passkeys) no painel e na conta:** o próximo passo depois do autenticador (ADR 0009, alternativas).
