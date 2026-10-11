@@ -51,8 +51,9 @@ L40S secure (US$ 1,09/h), US-NC-1, com o vídeo de 3 s em 832×480 da foto `fixt
 
 - Volta: ~24 s até o agente responder (o RunPod liga o contêiner no mesmo host), ~40 s até os serviços (ComfyUI e Ollama lendo do volume); o apt do cache do volume (~16 s) corre junto.
 - **2º teste, com a 1ª subida no disco do contêiner:** pronto em **175 s** desde o pedido (era 581 s instalando no MooseFS) e a cópia para o volume em 42 s depois do PRONTO (nesse host o volume era local, `md0`). **A volta, 30 s depois, falhou:** "There are not enough free GPUs on the host machine": a L40S do host foi alugada por outra pessoa logo depois da parada.
-- **Leitura:** quando o host tem a GPU livre, ~1 min até pronto; quando não tem (1 das 2 voltas tentadas), a subida do zero de sempre. A falha custa ~1 s e nada de GPU. Com 2–3 hibernados em hosts diferentes, a chance de algum voltar é maior; a taxa real fica no painel (voltas e falhas). Duas tentativas não dão uma taxa confiável.
-- **Custo dos testes:** ~US$ 0,36 no total (saldo de US$ 2,32 para US$ 1,96); nenhum pod ficou ligado ou parado.
+- **3º teste, o ciclo inteiro com a cópia depois do PRONTO** (volta 5 s depois da parada, host com `md0`): pronto em 208 s do zero, cópia para o volume em 36 s, **volta em 66,5 s até o pod pronto e 108 s até o 1º vídeo** (render de 31 s), SHA-256 de tudo conferido em segundo plano; ~US$ 0,10.
+- **Leitura:** quando o host tem a GPU livre, ~1 min até pronto (64 e 66,5 s); quando não tem (1 das 3 voltas tentadas), a subida do zero de sempre. A falha custa ~1 s e nada de GPU. Com 2–3 hibernados em hosts diferentes, a chance de algum voltar é maior; a taxa real fica no painel (voltas e falhas). Três tentativas não dão uma taxa confiável.
+- **Custo dos testes:** ~US$ 0,46 no total (saldo de US$ 2,32 para US$ 1,82); nenhum pod ficou ligado ou parado.
 
 ## Alternativa a medir se a taxa de volta for baixa: volume de rede do RunPod com tudo instalado
 

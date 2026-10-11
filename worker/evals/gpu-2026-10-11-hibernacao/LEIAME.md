@@ -52,10 +52,25 @@ L40S secure (US$ 1,09/h), outro host: o `/workspace` era **local** (`/dev/md0`, 
 - **O risco da hibernação apareceu na prática:** ao parar, a GPU volta para o mercado na hora, e a L40S desse host foi alugada por outra pessoa em menos de 30 s. No serviço, o orquestrador tenta o próximo hibernado e, sem nenhum, sobe um pod do zero (~3 min até pronto); a falha custa ~1 s e não cobra GPU. Depois de 3 falhas seguidas no mesmo host, o pod sai do conjunto.
 - **Custo:** ~US$ 0,07 (224 s ligados). O pod foi encerrado na falha (o disco de volume foi junto).
 
+## Teste 3: o ciclo inteiro com a cópia depois do PRONTO (volta 5 s depois da parada)
+
+L40S secure (US$ 1,09/h), `/workspace` local (`/dev/md0`). `teste_hibernacao.py --orcamento-usd 0.5 --espera-parado-s 5 --sem-video-a`: o caminho que o teste 2 não chegou a cobrir (a volta de um volume gravado pela cópia depois do PRONTO).
+
+| Etapa | Tempo |
+|---|---|
+| Pod pronto (serviços e PRONTO), desde o pedido | 208 s (modelos do espelho em 83 s; PRONTO aos 129 s do bootstrap) |
+| Cópia para o disco de volume depois do PRONTO | 36 s (bootstrap 129 → 165 s) |
+| **Volta: pod pronto, desde o pedido de volta** | **66,5 s** (links em 0 s, apt do cache do volume em 13 s) |
+| **1º vídeo pronto depois da volta** | **108 s** (render do vídeo de 3 s com a carga dos modelos: 31 s) |
+| SHA-256 de todos os modelos (segundo plano) | conferido aos 23 s do bootstrap da volta (110 s desde o pedido de volta) |
+
+- **Nota do filtro** nos 13 quadros: 0,021 (limiar 0,35). Nada barrado. A conferência da continuidade aprovou (deriva 19,2, salto 1,6).
+- **Custo:** ~US$ 0,10 (335 s ligados). O pod foi encerrado no fim (o disco de volume foi junto).
+
 ## O que ficou
 
-- **Quando o host tem a GPU livre, a volta leva ~1 min até o pod pronto** (64 s medidos) e ~2 min até o 1º vídeo (115 s), contra 3–5 min de uma subida do zero.
-- **Quando não tem (1 das 2 voltas tentadas), vale a subida do zero**, que continua igual à de antes (175 s até pronto no teste 2). Com 2 ou 3 pods hibernados, em hosts diferentes, a chance de algum voltar é maior; a taxa real aparece no painel (seção Pods: voltas e falhas de cada hibernado).
+- **Quando o host tem a GPU livre, a volta leva ~1 min até o pod pronto** (64 s no teste 1 e 66,5 s no teste 3, já com a cópia depois do PRONTO) e menos de 2 min até o 1º vídeo (115 s e 108 s), contra 3–5 min de uma subida do zero.
+- **Quando não tem (1 das 3 voltas tentadas: a de 30 s depois da parada), vale a subida do zero**, que continua igual à de antes (175 e 208 s até pronto nos testes 2 e 3). Com 2 ou 3 pods hibernados, em hosts diferentes, a chance de algum voltar é maior; a taxa real aparece no painel (seção Pods: voltas e falhas de cada hibernado).
 - **Disco de volume:** pode ser local (`md0`) ou de rede (MooseFS), conforme o host. Por isso a 1ª subida instala no disco do contêiner e só copia para o volume depois; na volta, o SHA-256 de tudo é refeito em segundo plano.
 - **Filtro de imagem na GPU:** 0,3 s por vídeo de 3 s (13 quadros) depois de carregado; a 1ª chamada levava 11–17 s e agora é feita no PRONTO, em segundo plano.
-- **Custo total dos testes:** ~US$ 0,36 (saldo do RunPod de US$ 2,32 para US$ 1,96). Nenhum pod ficou ligado ou parado.
+- **Custo total dos testes:** ~US$ 0,46 (saldo do RunPod de US$ 2,32 para US$ 1,82). Nenhum pod ficou ligado ou parado.
