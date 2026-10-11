@@ -71,8 +71,11 @@ function estadoRunPod(r: RunPod | null): (Node | string)[] {
   if (!r || r.saldo_usd == null) return ["Saldo do RunPod: o orquestrador ainda não consultou."];
   const prazo = r.prazo_novo_pod_s ?? 0;
   const gpus = r.hibernados.map((h) => (h.gpu ?? "GPU").replace(/^NVIDIA (GeForce )?/, ""));
+  const voltas = r.hibernados.reduce((t, h) => t + (h.voltas ?? 0), 0);
+  const falhas = r.hibernados.reduce((t, h) => t + (h.falhas ?? 0), 0);
+  const historico = r.hibernados.length ? ` Voltaram ${plural(voltas, "vez", "vezes")}; agora, ${plural(falhas, "tentativa seguida", "tentativas seguidas")} sem GPU livre no host.` : "";
   const hib = r.hibernados_max
-    ? `Hibernados: ${r.hibernados.length} de ${r.hibernados_max}${gpus.length ? ` (${gpus.join(", ")})` : ""}; voltam em ~1 min. Disco de volume: ${r.volume_gb} GB por pod, ~${dolares(r.volume_gb * 0.2)} por mês parado.`
+    ? `Hibernados: ${r.hibernados.length} de ${r.hibernados_max}${gpus.length ? ` (${gpus.join(", ")})` : ""}; voltam em ~1 min quando o host tem a GPU livre.${historico} Disco de volume: ${r.volume_gb} GB por pod, ~${dolares(r.volume_gb * 0.2)} por mês parado.`
     : "Hibernação desligada (RENDER2GO_PODS_HIBERNADOS=0): todo pod sobe do zero.";
   const saldo = `Saldo no RunPod: ${dolares(r.saldo_usd)}.`;
   if (prazo < 15 * 60) return [criar("span", { className: "selo erro" }, [icone("alerta"), "Sem saldo"]), `${saldo} Não paga 15 min de um pod: nenhum pod novo sobe. Recarregue no RunPod. ${hib}`];

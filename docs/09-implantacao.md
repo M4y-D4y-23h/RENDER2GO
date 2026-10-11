@@ -22,7 +22,7 @@ git pull && git log -1 --format='%h %ad %s' --date=short
 
 **3) Saldo do RunPod (antes de subir):** com saldo baixo, os pods saem cedo (foi o pod que saiu aos ~40 min). Deixe pelo menos ~US$ 10 por pod que pode ficar ligado ao mesmo tempo e ligue a recarga automática no RunPod (Billing). Com `RENDER2GO_MAX_PODS=4`, ~US$ 40.
 
-**4) Hibernação (opcional, recomendada):** no `.env`, `RENDER2GO_PODS_HIBERNADOS=2` (cada pod hibernado custa ~US$ 14/mês parado; 0 desliga). Sem ela, tudo funciona como antes, com a subida de 4–5 min.
+**4) Hibernação (opcional; leia antes o [ADR 0011](adr/0011-pods-hibernados.md), que muda uma regra técnica e depende do seu aceite):** no `.env`, `RENDER2GO_PODS_HIBERNADOS=2` (ou 3, para mais chance de algum host ter a GPU livre na volta). Cada pod hibernado custa ~US$ 14/mês parado; 0 desliga. Medido: volta em ~1 min até o pod pronto quando o host tem a GPU livre; quando não tem, a subida do zero de sempre (~3 min). Sem a opção, tudo funciona como antes.
 
 **5) Imagem nova e os contêineres:**
 ```bash

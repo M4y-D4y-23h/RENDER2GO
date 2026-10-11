@@ -14,7 +14,7 @@ Projeto Render2Go (antes GPU2GO): serviço de vídeos curtos com IA para pequeno
 - ComfyUI fixado em **v0.38.0**. Template de workflow e versão do ComfyUI mudam juntos.
 - Wan2.2 I2V R1 v2: **sem LoRA Lightning**; turbo ligado; 4 passos, CFG 1, troca de expert no passo 2 (8 passos e CFG 1,5–2 testados na Etapa 2: até 3,3× o tempo sem ganho).
 - Largura e altura múltiplas de 16; duração inteira de 3 a 7 s a 16 fps (16·d + 1 frames).
-- Nunca carregar modelos direto de volume de rede ou de objetos: embutir na imagem ou copiar para o disco local e conferir bytes e SHA-256.
+- Nunca carregar modelos direto de volume de rede ou de objetos: embutir na imagem ou copiar para o disco local e conferir bytes e SHA-256. (Exceção **proposta** no ADR 0011, para a volta do pod hibernado, cujo disco de volume pode ser MooseFS: SHA-256 refeito a cada volta, fail-closed. Só vale com o ADR aceito pelo dono e `RENDER2GO_PODS_HIBERNADOS` > 0.)
 - Em volumes que não são POSIX (Global Volume): sem `rename` nem `chmod`; `rsync --inplace`; conferir bytes depois de copiar.
 - Ollama em processo separado do ComfyUI; compilar antes de renderizar; reservar VRAM (`--reserve-vram`).
 - PyTorch `+cu128` (driver ≥ 570); não usar as wheels CUDA 13 do PyPI.
