@@ -430,7 +430,7 @@ html:not(.com-sessao) body[data-pagina="cliente"] {
   margin-top: var(--esp-5);
 }
 
-/* -- aprovador ------------------------------------------------------------------------------ */
+/* -- painel do dono: entrada, números do menu e revisão --------------------------------------- */
 
 .entrar-admin {
   display: grid;
@@ -438,49 +438,6 @@ html:not(.com-sessao) body[data-pagina="cliente"] {
   gap: var(--esp-4);
   max-width: 28rem;
   margin: var(--esp-6) auto 0;
-}
-
-.admin-grade {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--esp-5);
-}
-
-.secoes {
-  position: sticky;
-  top: var(--altura-topo);
-  z-index: 10;
-  display: flex;
-  gap: var(--esp-1);
-  margin-inline: calc(-1 * var(--margem));
-  padding: var(--esp-2) var(--margem);
-  overflow-x: auto;
-  background: var(--cor-fundo);
-  border-bottom: 1px solid var(--cor-borda);
-  scrollbar-width: none;
-}
-
-.secoes::-webkit-scrollbar {
-  display: none;
-}
-
-.secoes a {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--esp-2);
-  min-height: var(--alvo);
-  padding: 0 var(--esp-3);
-  border-radius: var(--raio-md);
-  color: var(--cor-texto-2);
-  font-weight: 600;
-  font-size: var(--texto-sm);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.secoes a:hover {
-  background: var(--cor-superficie-2);
-  color: var(--cor-texto);
 }
 
 .contagem {
@@ -499,46 +456,6 @@ html:not(.com-sessao) body[data-pagina="cliente"] {
 
 .contagem:empty {
   display: none;
-}
-
-.admin-conteudo {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--esp-7);
-  min-width: 0;
-}
-
-.admin-conteudo > section {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--esp-4);
-  align-content: start;
-}
-
-.admin-conteudo .cab-secao {
-  margin-bottom: 0;
-}
-
-@media (min-width: 64em) {
-  .admin-grade {
-    grid-template-columns: 13rem minmax(0, 1fr);
-    align-items: start;
-    gap: var(--esp-6);
-  }
-
-  .secoes {
-    top: calc(var(--altura-topo) + var(--esp-5));
-    flex-direction: column;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    background: none;
-    overflow: visible;
-  }
-
-  .secoes a {
-    justify-content: space-between;
-  }
 }
 
 .lista {
@@ -627,48 +544,6 @@ html:not(.com-sessao) body[data-pagina="cliente"] {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-width: none;
-}
-
-.form-cliente {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--esp-4);
-}
-
-/* relatório de GPUs no /aprovar: período, totais e tabela por pod */
-.barra-gpus {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--esp-3);
-  margin-block: var(--esp-4);
-}
-
-.resumo-gpus {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: var(--esp-3);
-  margin: 0 0 var(--esp-4);
-}
-
-.resumo-gpus div {
-  padding: var(--esp-3) var(--esp-4);
-  border: 1px solid var(--cor-borda);
-  border-radius: var(--raio-md);
-  background: var(--cor-superficie);
-}
-
-.resumo-gpus dt {
-  color: var(--cor-texto-2);
-  font-size: var(--texto-sm);
-}
-
-.resumo-gpus dd {
-  margin: 0;
-  font-size: var(--texto-lg);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
 /* tela de finalidades antes do pedido: o que o cliente quer criar (blocos, "Ver todas" e a escolhida) */
@@ -1807,4 +1682,444 @@ html[data-vista="mix"] .menu-conta a[data-vista="mix"] .icone {
 .passos-mix li::marker {
   color: var(--cor-marca);
   font-weight: 700;
+}
+
+/* -- painel do dono: uma seção por endereço (#pods, #acessos...), menu lateral e visual (10/10/2026) ---------
+   A mesma moldura da área do cliente: no computador, o menu das seções fica ao lado do conteúdo (fixo, com
+   rolagem própria); no celular, "Seções" abre uma cópia numa janela de baixo. A seção do endereço já vem marcada
+   no <html> (data-secao, pelo inicio.js): o CSS mostra só ela e destaca o item do menu desde o primeiro quadro, e
+   o que o papel de operador não abre (.so-dono) some antes de desenhar (data-papel). */
+
+.secao-painel {
+  display: none;
+}
+
+html:not([data-secao]) #sec-visao-geral,
+html[data-secao="visao-geral"] #sec-visao-geral,
+html[data-secao="revisao"] #sec-revisao,
+html[data-secao="historico"] #sec-historico,
+html[data-secao="clientes"] #sec-clientes,
+html[data-secao="suporte"] #sec-suporte,
+html[data-secao="interesses"] #sec-interesses,
+html[data-secao="pods"] #sec-pods,
+html[data-secao="gpus"] #sec-gpus,
+html[data-secao="pagamentos"] #sec-pagamentos,
+html[data-secao="acessos"] #sec-acessos,
+html[data-secao="auditoria"] #sec-auditoria,
+html[data-secao="seguranca"] #sec-seguranca {
+  display: block;
+}
+
+html:not([data-secao]) .menu-painel a[data-secao="visao-geral"],
+html[data-secao="visao-geral"] .menu-painel a[data-secao="visao-geral"],
+html[data-secao="revisao"] .menu-painel a[data-secao="revisao"],
+html[data-secao="historico"] .menu-painel a[data-secao="historico"],
+html[data-secao="clientes"] .menu-painel a[data-secao="clientes"],
+html[data-secao="suporte"] .menu-painel a[data-secao="suporte"],
+html[data-secao="interesses"] .menu-painel a[data-secao="interesses"],
+html[data-secao="pods"] .menu-painel a[data-secao="pods"],
+html[data-secao="gpus"] .menu-painel a[data-secao="gpus"],
+html[data-secao="pagamentos"] .menu-painel a[data-secao="pagamentos"],
+html[data-secao="acessos"] .menu-painel a[data-secao="acessos"],
+html[data-secao="auditoria"] .menu-painel a[data-secao="auditoria"],
+html[data-secao="seguranca"] .menu-painel a[data-secao="seguranca"] {
+  background: var(--cor-marca-suave);
+  color: var(--cor-marca-texto);
+}
+
+html:not([data-secao]) .menu-painel a[data-secao="visao-geral"] .icone,
+html[data-secao="visao-geral"] .menu-painel a[data-secao="visao-geral"] .icone,
+html[data-secao="revisao"] .menu-painel a[data-secao="revisao"] .icone,
+html[data-secao="historico"] .menu-painel a[data-secao="historico"] .icone,
+html[data-secao="clientes"] .menu-painel a[data-secao="clientes"] .icone,
+html[data-secao="suporte"] .menu-painel a[data-secao="suporte"] .icone,
+html[data-secao="interesses"] .menu-painel a[data-secao="interesses"] .icone,
+html[data-secao="pods"] .menu-painel a[data-secao="pods"] .icone,
+html[data-secao="gpus"] .menu-painel a[data-secao="gpus"] .icone,
+html[data-secao="pagamentos"] .menu-painel a[data-secao="pagamentos"] .icone,
+html[data-secao="acessos"] .menu-painel a[data-secao="acessos"] .icone,
+html[data-secao="auditoria"] .menu-painel a[data-secao="auditoria"] .icone,
+html[data-secao="seguranca"] .menu-painel a[data-secao="seguranca"] .icone {
+  color: var(--cor-marca-texto);
+}
+
+html[data-papel="operador"] .so-dono {
+  display: none !important;
+}
+
+@media (max-width: 63.99em) {
+  .com-sessao body[data-pagina="painel"] .navegacao .so-menu {
+    display: inline-flex;
+  }
+}
+
+/* os grupos do menu (Hoje, Pedidos, Clientes, Operação, Segurança) */
+.menu-painel .grupo {
+  display: grid;
+  gap: var(--esp-1);
+}
+
+.menu-painel .grupo-menu {
+  margin-top: 0;
+}
+
+.menu-painel .grupo + .grupo {
+  margin-top: var(--esp-3);
+}
+
+.lateral .tema-painel {
+  padding-top: var(--esp-3);
+  border-top: 1px solid var(--cor-borda);
+}
+
+.lateral .tema-painel label {
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+}
+
+/* títulos das seções: menores que os das páginas do cliente (o painel é denso) */
+.area-painel .cab-pagina h1 {
+  font-size: clamp(1.5rem, 1.25rem + 1vw, 2rem);
+}
+
+.area-painel .cab-pagina {
+  margin-bottom: var(--esp-4);
+}
+
+.area-painel .barra-filtros .busca {
+  flex: 1 1 20rem;
+  margin: 0;
+}
+
+.dados-vista > p.fraco {
+  margin-bottom: var(--esp-3);
+}
+
+.dados-vista > .tabela + p,
+.lista-checagem + p {
+  margin-top: var(--esp-4);
+}
+
+/* um bloco com título dentro do que chega da API (ex.: "O que falta configurar") */
+.subsecao-dados > h2 {
+  margin: var(--esp-6) 0 var(--esp-3);
+  font-size: var(--titulo-3);
+}
+
+.lista-checagem.cartao {
+  padding: var(--esp-4);
+}
+
+@media (min-width: 40em) {
+  .lista-checagem.cartao {
+    padding: var(--esp-4) var(--esp-5);
+  }
+}
+
+/* tabelas do painel: os títulos das colunas quebram a linha (mais colunas cabem na tela) */
+.area-painel .tabela thead th {
+  white-space: normal;
+  vertical-align: bottom;
+}
+
+/* a conta, na 1ª coluna da tabela, abre a janela dela */
+.botao-linha {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--cor-marca);
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+
+.botao-linha:hover {
+  color: var(--cor-marca-forte);
+}
+
+@media (pointer: coarse) {
+  .botao-linha {
+    min-height: var(--alvo);
+  }
+}
+
+/* auditoria: cada ação numa linha; o antes e o depois em destaque */
+.linha.registro .linha-titulo code {
+  color: var(--cor-texto-2);
+  font-size: var(--texto-xs);
+  font-weight: 400;
+}
+
+.linha-mudanca {
+  grid-column: 1 / -1;
+  color: var(--cor-texto);
+  font-size: var(--texto-sm);
+  overflow-wrap: anywhere;
+}
+
+.linha.sinal {
+  border-left: 4px solid var(--cor-alerta-borda);
+}
+
+.abas-painel {
+  margin-bottom: var(--esp-5);
+}
+
+.nota-tabela {
+  margin-bottom: var(--esp-3);
+}
+
+.tabela > .nota-tabela {
+  margin: 0;
+  padding: var(--esp-3) var(--esp-4);
+  border-top: 1px solid var(--cor-borda);
+}
+
+.tabela tr.apagada td {
+  color: var(--cor-texto-3);
+}
+
+/* erro numa atualização em segundo plano: flutua no pé da tela, sem empurrar a seção */
+.aviso-flutuante {
+  position: fixed;
+  z-index: 40;
+  left: var(--esp-3);
+  right: var(--esp-3);
+  bottom: calc(var(--esp-3) + env(safe-area-inset-bottom, 0px));
+  max-width: 32rem;
+  margin: 0 auto;
+  box-shadow: var(--sombra-3);
+}
+
+.aviso-flutuante > div {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-2);
+  min-width: 0;
+}
+
+/* entrada: a pessoa, o convite de primeiro acesso (no lugar do formulário) e a chave de emergência */
+html[data-convite] #form-admin,
+html[data-convite] #entrada-emergencia {
+  display: none;
+}
+
+html:not([data-convite]) #convite {
+  display: none;
+}
+
+.convite-quem {
+  min-height: calc(3 * var(--entrelinha) * 1em);
+}
+
+@media (min-width: 40em) {
+  .convite-quem {
+    min-height: calc(2 * var(--entrelinha) * 1em);
+  }
+}
+
+/* o lugar do QR Code já tem o tamanho dele: nada se mexe quando a imagem chega */
+.qr-lugar {
+  width: 13.75rem;
+  height: 13.75rem;
+  border-radius: var(--raio-sm);
+  background: var(--cor-superficie-2);
+}
+
+.emergencia-entrada {
+  padding-top: var(--esp-2);
+  border-top: 1px solid var(--cor-borda);
+}
+
+.emergencia-entrada summary {
+  min-height: var(--alvo);
+  padding-block: var(--esp-3);
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.emergencia-entrada[open] summary {
+  margin-bottom: var(--esp-3);
+}
+
+/* visão geral: o que pede atenção agora (cada cartão leva à seção) e os números de hoje */
+.cartoes-resumo {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: var(--esp-3);
+  margin-bottom: var(--esp-2);
+}
+
+.cartao-resumo {
+  display: grid;
+  align-content: start;
+  gap: var(--esp-1);
+  padding: var(--esp-4);
+  border: 1px solid var(--cor-borda);
+  border-left-width: 4px;
+  border-radius: var(--raio-lg);
+  background: var(--cor-superficie);
+  box-shadow: var(--sombra-1);
+  color: var(--cor-texto);
+  text-decoration: none;
+  transition: border-color var(--rapido) var(--curva), box-shadow var(--rapido) var(--curva);
+}
+
+.cartao-resumo:hover {
+  border-color: var(--cor-marca);
+  box-shadow: var(--sombra-2);
+  color: var(--cor-texto);
+}
+
+.cartao-resumo.alerta {
+  border-left-color: var(--cor-alerta-borda);
+}
+
+.cartao-resumo.erro {
+  border-left-color: var(--cor-erro-borda);
+}
+
+.rotulo-resumo {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-2);
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+  font-weight: 650;
+}
+
+.rotulo-resumo .icone {
+  color: var(--cor-marca-texto);
+}
+
+.valor-resumo {
+  font: 700 clamp(1.75rem, 1.5rem + 1vw, 2.25rem) / 1.1 var(--fonte-titulos);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.detalhe-resumo {
+  color: var(--cor-texto-3);
+  font-size: var(--texto-sm);
+}
+
+.dados-vista > .atualizado {
+  margin-top: var(--esp-5);
+}
+
+/* pods: o estado do orquestrador numa linha de altura reservada (o texto muda a cada 30 s) */
+.estado-orquestrador {
+  min-height: calc(3 * var(--entrelinha) * 1em);
+  margin-bottom: var(--esp-2);
+}
+
+@media (min-width: 40em) {
+  .estado-orquestrador {
+    min-height: calc(2 * var(--entrelinha) * 1em);
+  }
+}
+
+.estado-orquestrador .selo {
+  margin-right: var(--esp-1);
+  vertical-align: middle;
+}
+
+/* revisão: a miniatura e, embaixo, o texto próprio da foto (pedido em sequência) */
+.pendente .grade {
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+}
+
+.foto-revisao {
+  display: grid;
+  align-content: start;
+  gap: var(--esp-1);
+  min-width: 0;
+  margin: 0;
+}
+
+.foto-revisao.com-texto .foto img {
+  border: 2px solid var(--cor-acento);
+}
+
+.texto-foto {
+  color: var(--cor-acento-texto);
+  font-size: var(--texto-xs);
+  overflow-wrap: anywhere;
+}
+
+/* contas: a janela de cada conta */
+.dados-conta {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  gap: var(--esp-3) var(--esp-4);
+  margin: 0;
+}
+
+.dados-conta dt {
+  color: var(--cor-texto-3);
+  font-size: var(--texto-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dados-conta dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.subsecao-conta {
+  padding-top: var(--esp-4);
+  border-top: 1px solid var(--cor-borda);
+}
+
+.subsecao-conta h3 {
+  font-size: var(--texto-md);
+}
+
+.linha-campo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.linha-campo > :first-child {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/* acessos e auditoria */
+.form-convite {
+  margin-bottom: var(--esp-6);
+}
+
+.filtros-auditoria {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+  align-items: end;
+  gap: var(--esp-3) var(--esp-4);
+  margin-bottom: var(--esp-5);
+}
+
+.filtros-auditoria > .acoes {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 40em) {
+  dialog.conta-cliente,
+  dialog.convite-criado {
+    width: min(100% - 2rem, 40rem);
+  }
 }

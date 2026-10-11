@@ -77,19 +77,23 @@ def _totp_limpo():
 def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  # noqa: F811 (fixture)
     erros: list[str] = []
     ambiente.cfg.analisar = _analisar
-    # o dono entra no painel (endereço secreto, token + autenticador)
+    # o dono entra no painel (endereço secreto) pela chave do servidor (acesso de emergência)
     adm = _pagina(navegador, erros)
     adm.goto(f"{ambiente.url}{PAINEL}")  # sem a barra final: vai para o endereço com a barra
     adm.wait_for_url(f"**{PAINEL}/")
+    pw.expect(adm.locator("#admin-usuario")).to_be_focused()  # o modo de sempre: nome de acesso, senha e código
+    adm.click("#entrada-emergencia summary")
     adm.fill("#admin-token", ADMIN)
     adm.fill("#admin-totp", "000000")
     adm.click("#admin-entrar")
-    adm.wait_for_selector("#msg-entrada:not([hidden])")
-    assert "inválido" in adm.locator("#msg-entrada").inner_text()
+    adm.wait_for_selector("#msg-emergencia:not([hidden])")
+    assert "inválido" in adm.locator("#msg-emergencia").inner_text()
     adm.fill("#admin-token", ADMIN)
     adm.fill("#admin-totp", _totp_novo())
     adm.click("#admin-entrar")
-    adm.wait_for_selector("#titulo-painel:visible")
+    adm.wait_for_selector("#t-visao-geral:visible")
+    assert adm.url.endswith(f"{PAINEL}/#visao-geral") and adm.title() == "Visão geral · Painel · Render2Go"
+    pw.expect(adm.locator("#quem-nome")).to_have_text("Chave do servidor")
     assert adm.locator("#aviso-cookies").count() == 0  # o painel (só o dono) não mostra o aviso
 
     # cliente novo: cria a conta pelo e-mail, com o código que chega nele
@@ -160,29 +164,39 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     # o dono vê as miniaturas, o aviso de pessoas por foto e o resumo do lote, e aprova
     ambiente.cfg.analises.esperar()
     adm.click("#atualizar")
-    adm.wait_for_selector(".grade img")
-    assert adm.locator(".grade img").count() == 2
+    pw.expect(adm.locator("#n-pendentes")).to_have_text(re.compile(r"^1 aguardando$"))  # o número no menu
+    assert adm.title() == "(1) Visão geral · Painel · Render2Go"
+    adm.click("#menu-painel a[data-secao=revisao]")
+    adm.wait_for_selector("#pendentes .grade img")
+    assert adm.locator("#pendentes .grade img").count() == 2
     assert adm.locator(".selo.pessoas").count() == 1
-    assert "sem pessoas detectadas" in adm.locator(".grade").inner_text()
+    assert "sem pessoas detectadas" in adm.locator("#pendentes .grade").inner_text()
     assert "Autorização marcada em" in adm.locator("#pendentes .autorizacao").inner_text()
     assert "marcou ter autorização" in adm.locator("#pendentes .aviso.alerta").inner_text()
     _capturar(adm, "painel")
     adm.click("#pendentes [data-acao=aprovar]")
     adm.wait_for_selector("text=Nada aguardando revisão.")
-    hist = adm.locator("#historico .hist").first
-    assert "padaria.bairro@gmail.com" in hist.inner_text() and "IP 127.0.0.1" in hist.inner_text()
-    assert "Na fila" in hist.inner_text()
-    assert "127.0.0.1" in adm.locator("#ips table").inner_text()
-    assert adm.locator("#dispositivos table tbody tr").count() == 1  # o navegador do cliente
+    pw.expect(adm.locator("#n-pendentes")).to_be_empty()
+    adm.click("#menu-painel a[data-secao=historico]")
+    hist = adm.locator("#historico-lista .hist").first
+    pw.expect(hist).to_contain_text("padaria.bairro@gmail.com")
+    assert "IP 127.0.0.1" in hist.inner_text() and "Na fila" in hist.inner_text()
     with adm.expect_download() as baixado:
-        adm.click("#historico .hist button:has-text('auditoria')")
+        adm.click("#historico-lista .hist button:has-text('auditoria')")
     registro = json.loads(Path(baixado.value.path()).read_text())
     aut = registro["autorizacao"]
     assert aut["dispositivo"] and aut["sinais"]["marcado_em"] and aut["sinais"]["impressao"]
     adm.click("#filtros-historico button[data-grupo=recusados]")
     adm.wait_for_selector("text=Nenhum pedido neste filtro.")
     adm.click("#filtros-historico button[data-grupo=todos]")
-    adm.wait_for_selector("#historico .hist")
+    adm.wait_for_selector("#historico-lista .hist")
+    # as subseções do histórico, em abas: uso por IP e dispositivos
+    adm.click("#aba-hist-ips")
+    pw.expect(adm.locator("#ips table")).to_contain_text("127.0.0.1")
+    assert adm.locator("#historico-lista").is_hidden()
+    adm.keyboard.press("ArrowRight")  # as setas trocam de aba
+    pw.expect(adm.locator("#aba-hist-dispositivos")).to_be_focused()
+    pw.expect(adm.locator("#dispositivos table tbody tr")).to_have_count(1)  # o navegador do cliente
 
     # o worker termina (simulado no banco) e o cliente vê os links
     (lote,) = ambiente.banco.lotes()
@@ -212,9 +226,9 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     cli.fill("#suporte-mensagem", "Preciso de ajuda com o meu pedido de teste.")
     cli.click("#suporte-enviar")
     cli.wait_for_selector("#suporte-msg.ok")
-    adm.click("#atualizar")
-    adm.wait_for_selector("#suporte .msg-suporte")
-    assert "Preciso de ajuda" in adm.locator("#suporte").inner_text()
+    adm.click("#menu-painel a[data-secao=suporte]")
+    adm.wait_for_selector("#suporte-lista .msg-suporte")
+    assert "Preciso de ajuda" in adm.locator("#suporte-lista").inner_text()
     _capturar(cli, "cliente")
     # sair: a sessão termina no servidor e a página volta para a entrada
     cli.goto(ambiente.url)
@@ -274,14 +288,28 @@ def test_legal_pages_are_linked_from_every_footer(ambiente, navegador):  # noqa:
 # -- acessibilidade, celular, teclado e sessão (docs/10) ------------------------------------------
 
 AXE = Path(__file__).resolve().parents[1] / "web" / "node_modules" / "axe-core" / "axe.min.js"
+SECOES_PAINEL = [
+    "visao-geral",
+    "revisao",
+    "historico",
+    "clientes",
+    "suporte",
+    "interesses",
+    "pods",
+    "gpus",
+    "pagamentos",
+    "acessos",
+    "auditoria",
+    "seguranca",
+]
 REGRAS_AXE = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"]
-PAINEIS: dict[str, object] = {}  # sessão do painel (requests) de cada ambiente
 
 
 def _painel(amb):
-    if amb.url not in PAINEIS:
-        PAINEIS[amb.url] = entrar_painel(amb.url)
-    return PAINEIS[amb.url]
+    """A sessão do painel (requests, pela chave do servidor) deste ambiente, aberta uma vez só."""
+    if getattr(amb, "sessao_painel", None) is None:
+        amb.sessao_painel = entrar_painel(amb.url)
+    return amb.sessao_painel
 
 
 def _api(amb, metodo, caminho, token=None, **kw):
@@ -342,7 +370,8 @@ def _com_sessao(contexto, amb, token=None, admin=False, fixa=True):
 
     host = amb.url.split("//")[1].split(":")[0]
     if admin:
-        valor = entrar_painel(amb.url).cookies["render2go-painel"]
+        # a mesma sessão do painel do ambiente (a entrada tem limite por rede: 10 tentativas em 15 min)
+        valor = _painel(amb).cookies["render2go-painel"]
         contexto.add_cookies([{"name": "render2go-painel", "value": valor, "domain": host, "path": PAINEL}])
         marca = "render2go-painel-conectado"
     else:
@@ -461,17 +490,41 @@ def test_pages_have_no_accessibility_violations(ambiente, navegador, tmp_path, t
     cli.close()
     g = ambiente.banco.gerador_subindo("NVIDIA L40S")  # relatório de GPUs e pods com uma GPU ligada
     ambiente.banco.gerador_criado(g, "pod-abc123", "NVIDIA L40S", 1.09, "EU-RO-1")
+    _api(ambiente, "POST", f"{PAINEL}/api/acessos/convites", json={"usuario": "maria.revisora", "papel": "operador"})
     adm = navegador.new_context(color_scheme=tema, reduced_motion="reduce", bypass_csp=True)
     _com_sessao(adm, ambiente, admin=True)
     pg = adm.new_page()
     pg.goto(f"{ambiente.url}{PAINEL}/")
-    pg.wait_for_selector("#pendentes .selo.pessoas")
-    pg.wait_for_selector("#ips table")
-    pg.wait_for_selector("#gpus table")
-    pg.wait_for_selector("#pods table")
-    pg.wait_for_selector("#checagem li")
-    conferir(pg, "painel-dono")
+    # cada seção do painel, com os dados já na tela (e as abas das que têm subseções)
+    for secao in SECOES_PAINEL:
+        pg.click(f"#menu-painel a[data-secao='{secao}']")
+        pg.wait_for_selector(f"#sec-{secao} .dados-vista[aria-busy=false]")
+        if secao == "revisao":
+            pg.wait_for_selector("#pendentes .selo.pessoas")
+        conferir(pg, f"painel-{secao}")
+        for aba in pg.locator(f"#sec-{secao} [role=tab][aria-selected=false]").all():
+            aba.click()
+            conferir(pg, f"painel-{secao}-{aba.get_attribute('id')}")
+    # as janelas: a conta (com o saldo) e o convite criado
+    pg.click("#menu-painel a[data-secao=clientes]")
+    pg.locator("#clientes-tabela .botao-linha").first.click()
+    pg.wait_for_selector("dialog.conta-cliente[open]")
+    conferir(pg, "painel-janela-conta")
+    pg.keyboard.press("Escape")
+    pg.click("#menu-painel a[data-secao=acessos]")
+    pg.fill("#convite-novo-usuario", "joao.operador")
+    pg.click("#convite-novo-enviar")
+    pg.wait_for_selector("dialog.convite-criado[open]")
+    conferir(pg, "painel-janela-convite")
     adm.close()
+    # o primeiro acesso por convite (o QR Code e os três passos)
+    conv = navegador.new_context(color_scheme=tema, reduced_motion="reduce", bypass_csp=True)
+    pg = conv.new_page()
+    endereco = _api(ambiente, "POST", f"{PAINEL}/api/acessos/convites", json={"usuario": "ana.dona", "papel": "dono"})
+    pg.goto(f"{ambiente.url}{endereco['endereco']}")
+    pg.wait_for_selector("#convite-qr:not([hidden])")
+    conferir(pg, "painel-convite")
+    conv.close()
     assert violacoes == {}
 
 
@@ -492,7 +545,7 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
         (None, "/suporte", "suporte"),
         (None, "/termos", "termos"),
         ("cliente", "/", "painel"),
-        ("admin", f"{PAINEL}/", "painel-dono"),
+        *[("admin", f"{PAINEL}/#{secao}", f"painel-{secao}") for secao in SECOES_PAINEL],
     ]:
         ctx = navegador.new_context(**celular)
         if sessao:
@@ -522,8 +575,25 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
             _escolher_finalidade(pg)
             pg.set_input_files("#fotos", [str(_salvar(tmp_path, "c.png", _png((90, 160, 40), "circulo")))])
             pw.expect(pg.locator("#previa .miniatura :is(canvas, img)")).to_have_count(1)
-        if estado == "painel-dono":
-            pg.wait_for_selector("#checagem li")
+        if estado.startswith("painel-"):
+            secao = estado.removeprefix("painel-")
+            pg.wait_for_selector(f"#sec-{secao} .dados-vista[aria-busy=false]")
+            if secao == "visao-geral":  # o menu das seções sobe de baixo, como o da conta do cliente
+                assert pg.locator("#lateral").is_hidden() and pg.locator("#abrir-menu").is_visible()
+                pg.click("#abrir-menu")
+                pg.wait_for_function(
+                    "() => document.querySelector('dialog.menu-celular[open]')?.getAnimations()"
+                    ".every((a) => a.playState === 'finished')"
+                )
+                caixa = pg.locator("dialog.menu-celular[open]").bounding_box()
+                assert caixa["x"] == 0 and round(caixa["width"]) == largura, caixa
+                assert pg.evaluate("document.activeElement.dataset.secao") == "visao-geral"
+                pg.click("dialog.menu-celular[open] a[data-secao=pods]")
+                pg.wait_for_selector("dialog.menu-celular", state="detached")
+                pw.expect(pg.locator("#t-pods")).to_be_focused()
+                assert pg.url.endswith("#pods")
+                pg.go_back()
+                pw.expect(pg.locator("#sec-visao-geral")).to_be_visible()
         largura_pagina = pg.evaluate("document.documentElement.scrollWidth")
         assert largura_pagina <= largura, (estado, largura_pagina, _transbordando(pg, largura))
         # com uma fonte larga (a padrão de muitos Linux e de alguns Android), também sem rolagem lateral
@@ -534,8 +604,8 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
         largura_pagina = pg.evaluate("document.documentElement.scrollWidth")
         assert largura_pagina <= largura, (estado, "fonte larga", largura_pagina, _transbordando(pg, largura))
         # alvos de toque: botões, campos e a navegação com pelo menos 44 px de altura (WCAG 2.5.5)
-        alvos = ".navegacao :is(a, button), .botao, .filtros button, .secoes a, .menu-conta a, [role=tab]"
-        alvos += ", select, textarea, input"
+        alvos = ".navegacao :is(a, button), .botao, .filtros button, .menu-conta a, [role=tab], .botao-linha"
+        alvos += ", .cartao-resumo, select, textarea, input"
         pequenos = pg.evaluate(
             """(alvos) => [...document.querySelectorAll(alvos)]
                 .filter((e) => e.offsetParent !== null && !['file', 'checkbox'].includes(e.type))
@@ -722,38 +792,43 @@ def test_prepaid_balance_price_and_top_up_by_the_owner(ambiente, navegador, tmp_
     pw.expect(pg.locator("#extrato-lista li").first).to_contain_text("Pedido: 2 vídeo(s) de 4 s em 480p")
     pw.expect(pg.locator("#extrato-lista li").first).to_contain_text("-R$ 2,00")
 
-    # o dono lança uma recarga pelo painel e baixa o extrato
+    # o dono lança uma recarga pelo painel (a janela da conta) e baixa o extrato
     adm_ctx = navegador.new_context()
     _com_sessao(adm_ctx, ambiente, admin=True)
     adm = _pagina(adm_ctx, erros)
-    adm.goto(f"{ambiente.url}{PAINEL}/")
-    adm.wait_for_selector("#clientes table")
-    assert "R$ 1,00" in _texto(adm, "#clientes table")
+    adm.goto(f"{ambiente.url}{PAINEL}/#clientes")
+    adm.wait_for_selector("#clientes-tabela table")
+    assert "R$ 1,00" in _texto(adm, "#clientes-tabela table")
     assert "720p a R$ 0,50" in _texto(adm, "#precos-info")
-    adm.click("#form-saldo button[type=submit]")
-    assert "Escolha a conta" in adm.locator("#saldo-msg").inner_text()
-    adm.select_option("#saldo-cliente", index=1)
+    adm.click("#clientes-tabela .botao-linha")
+    janela = adm.locator("dialog.conta-cliente[open]")
+    pw.expect(janela.locator("h2")).to_have_text("Café da Esquina")
+    pw.expect(janela.locator(".dados-conta")).to_contain_text("R$ 1,00")
+    adm.click("#saldo-enviar")
+    pw.expect(adm.locator("#saldo-msg")).to_contain_text("Escreva o valor em reais")
+    pw.expect(adm.locator("#saldo-valor")).to_be_focused()
     adm.fill("#saldo-valor", "20")
     adm.fill("#saldo-descricao", "Pix de 09/10")
     adm.fill("#saldo-referencia", "E2026100912345")
-    adm.click("#form-saldo button[type=submit]")
-    adm.click("dialog[open] button:has-text('Lançar')")
-    adm.wait_for_selector("#saldo-msg.ok")
-    assert "R$ 21,00" in _texto(adm, "#saldo-msg")
-    pw.expect(adm.locator("#clientes table")).to_contain_text("R$ 21,00")
+    adm.click("#saldo-enviar")
+    adm.click("dialog.confirmacao[open] button:has-text('Lançar')")
+    pw.expect(janela.locator(".aviso.ok")).to_contain_text("R$ 21,00")
+    pw.expect(janela.locator(".aviso.ok")).to_be_focused()  # o leitor de tela ouve o resultado
+    pw.expect(janela.locator(".dados-conta")).to_contain_text("R$ 21,00")
+    pw.expect(adm.locator("#clientes-tabela table")).to_contain_text("R$ 21,00")
     with adm.expect_download() as baixado:
-        adm.click("#clientes button:has-text('Extrato')")
+        janela.locator("button:has-text('Baixar o extrato')").click()
     extrato = json.loads(Path(baixado.value.path()).read_text())
     assert extrato["saldo"] == 2100 and extrato["movimentos"][0]["descricao"] == "Pix de 09/10"
     # o mesmo Pix de novo: recusado
-    adm.select_option("#saldo-cliente", index=1)
     adm.fill("#saldo-valor", "20")
     adm.fill("#saldo-descricao", "Pix de 09/10")
     adm.fill("#saldo-referencia", "E2026100912345")
-    adm.click("#form-saldo button[type=submit]")
-    adm.click("dialog[open] button:has-text('Lançar')")
-    adm.wait_for_selector("#saldo-msg.erro")
-    assert "já registrado" in adm.locator("#saldo-msg").inner_text()
+    adm.click("#saldo-enviar")
+    adm.click("dialog.confirmacao[open] button:has-text('Lançar')")
+    pw.expect(adm.locator("#saldo-msg")).to_contain_text("já registrado")
+    adm.keyboard.press("Escape")  # fecha a janela: o foco volta para a conta, na tabela
+    pw.expect(adm.locator("#clientes-tabela .botao-linha")).to_be_focused()
     _capturar(pg, "pre-pago-cliente")
     _capturar(adm, "pre-pago-painel")
     ctx.close()
@@ -855,30 +930,37 @@ def test_owner_panel_pods_emergency_interest_clicks_and_security(ambiente, naveg
     )
     b.registrar_interesse(cid, "texto-video")
     ctx = navegador.new_context()
-    _com_sessao(ctx, ambiente, admin=True)
+    _com_sessao(ctx, ambiente, admin=True, fixa=False)  # a saída tira a marca, e ela não volta ao recarregar
     adm = _pagina(ctx, erros)
-    adm.goto(f"{ambiente.url}{PAINEL}/")
-    adm.wait_for_selector("#pods table")
-    assert "pod-abc123" in _texto(adm, "#pods table")
-    pw.expect(adm.locator("#n-pods")).to_have_text("1")
-    adm.click("#pods button:has-text('Desligar')")
+    adm.goto(f"{ambiente.url}{PAINEL}/#pods")
+    adm.wait_for_selector("#pods-tabela table")
+    assert "pod-abc123" in _texto(adm, "#pods-tabela table")
+    pw.expect(adm.locator("#n-pods")).to_have_text(re.compile(r"^1 ligado$"))
+    pw.expect(adm.locator("#estado-orquestrador")).to_contain_text("Sem sinal")  # (nenhum orquestrador no teste)
+    adm.click("#pods-tabela button:has-text('Desligar')")
     adm.click("dialog[open] button:has-text('Desligar')")
     pw.expect(adm.locator("#comandos")).to_contain_text("aguardando o orquestrador")
     (cmd,) = b.comandos_pendentes()
     assert (cmd["tipo"], cmd["alvo"]) == ("desligar_pod", g)
     adm.click("#emergencia")
     adm.click("dialog[open] button:has-text('Parar tudo')")
-    pw.expect(adm.locator("#estado-orquestrador")).to_contain_text("PAUSADO")
+    pw.expect(adm.locator("#estado-orquestrador")).to_contain_text("Pausado")
     pw.expect(adm.locator("#retomar")).to_be_visible()
     adm.click("#retomar")
-    pw.expect(adm.locator("#estado-orquestrador")).to_contain_text("Funcionando")
-    # cada clique em "Tenho interesse", com o e-mail da conta
+    pw.expect(adm.locator("#estado-orquestrador")).not_to_contain_text("Pausado")
+    pw.expect(adm.locator("#retomar")).to_be_hidden()
+    # cada clique em "Tenho interesse", com o e-mail da conta (subseção "Cada clique")
+    adm.click("#menu-painel a[data-secao=interesses]")
+    adm.click("#aba-int-cliques")
     pw.expect(adm.locator("#cliques table")).to_contain_text("loja.interesse@gmail.com")
     pw.expect(adm.locator("#cliques table")).to_contain_text("Vídeo a partir de um texto")
-    # segurança: o que falta configurar aparece em destaque; as ações do painel ficam registradas
+    # configuração: o que falta aparece em destaque; as ações do painel ficam na auditoria
+    adm.click("#menu-painel a[data-secao=seguranca]")
     pw.expect(adm.locator("#checagem li.falta").first).to_be_visible()
-    pw.expect(adm.locator("#checagem")).to_contain_text("Painel com código do autenticador")
-    pw.expect(adm.locator("#auditoria table")).to_contain_text("emergencia")
+    pw.expect(adm.locator("#checagem")).to_contain_text("Chave de emergência ligada, com o código do autenticador")
+    adm.click("#menu-painel a[data-secao=auditoria]")
+    pw.expect(adm.locator("#auditoria-lista")).to_contain_text("Parada de emergência")
+    pw.expect(adm.locator("#auditoria-lista")).to_contain_text("pausado: — → sim")
     _capturar(adm, "painel-pods")
     # sair do painel
     adm.click("#sair")
@@ -943,9 +1025,9 @@ def test_small_photo_warning_order_help_and_gpu_report(ambiente, navegador, tmp_
     adm_ctx = navegador.new_context()
     _com_sessao(adm_ctx, ambiente, admin=True)
     adm = _pagina(adm_ctx, erros)
-    adm.goto(f"{ambiente.url}{PAINEL}/")
-    adm.wait_for_selector("#gpus table")
-    tabela = _texto(adm, "#gpus table")
+    adm.goto(f"{ambiente.url}{PAINEL}/#gpus")
+    adm.wait_for_selector("#gpus-tabela table")
+    tabela = _texto(adm, "#gpus-tabela table")
     assert "pod-abc123" in tabela and "EU-RO-1" in tabela and "1,09" in tabela and "10 min" in tabela
     assert "falhou na subida: não subiu" in tabela
     resumo = _texto(adm, "#resumo-gpus")
@@ -1031,9 +1113,9 @@ def test_purpose_screen_blocks_full_list_interest_and_choice(ambiente, navegador
     adm_ctx = navegador.new_context()
     _com_sessao(adm_ctx, ambiente, admin=True)
     adm = _pagina(adm_ctx, erros)
-    adm.goto(f"{ambiente.url}{PAINEL}/")
-    adm.wait_for_selector("#interesses table")
-    tabela = _texto(adm, "#interesses table")
+    adm.goto(f"{ambiente.url}{PAINEL}/#interesses")
+    adm.wait_for_selector("#interesses-tabela table")
+    tabela = _texto(adm, "#interesses-tabela table")
     assert "Vídeo a partir de um texto" in tabela and "Trilha sonora a partir de um texto" in tabela
     pw.expect(adm.locator("#cliques tbody tr")).to_have_count(3)
     adm_ctx.close()
@@ -1053,12 +1135,20 @@ def test_stored_xss_payloads_show_as_text_in_the_owner_panel(ambiente, navegador
     adm = _pagina(ctx, erros)
     dialogos: list[str] = []
     adm.on("dialog", lambda d: (dialogos.append(d.message), d.dismiss()))
-    adm.goto(f"{ambiente.url}{PAINEL}/")
-    pw.expect(adm.locator("#n-pendentes")).to_have_text("1")
+    adm.goto(f"{ambiente.url}{PAINEL}/#revisao")
+    pw.expect(adm.locator("#n-pendentes")).to_have_text(re.compile(r"^1 aguardando$"))
     pw.expect(adm.locator("#pendentes")).to_contain_text(carga)
-    adm.wait_for_selector("#suporte .msg-suporte")
-    pw.expect(adm.locator("#suporte")).to_contain_text(carga)
-    assert adm.locator("#pendentes img[src='x'], #suporte img[src='x'], svg[onload]").count() == 0
+    adm.click("#menu-painel a[data-secao=suporte]")
+    adm.wait_for_selector("#suporte-lista .msg-suporte")
+    pw.expect(adm.locator("#suporte-lista")).to_contain_text(carga)
+    adm.click("#menu-painel a[data-secao=clientes]")  # o nome da conta, na tabela e no título da janela
+    pw.expect(adm.locator("#clientes-tabela")).to_contain_text(carga)
+    adm.locator("#clientes-tabela .botao-linha").first.click()
+    pw.expect(adm.locator("dialog.conta-cliente[open] h2")).to_have_text(carga)
+    adm.keyboard.press("Escape")
+    adm.click("#menu-painel a[data-secao=historico]")
+    pw.expect(adm.locator("#historico-lista")).to_contain_text(carga)
+    assert adm.locator("main img[src='x'], dialog img[src='x'], svg[onload], script:not([src])").count() == 0
     assert adm.evaluate("window.__xss === undefined") and dialogos == []
     ctx.close()
     assert erros == [], erros  # nem um aviso da CSP: o texto nunca virou HTML

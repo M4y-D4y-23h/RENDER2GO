@@ -121,6 +121,8 @@ def test_security_overview_accounts_and_audit(banco):
     seg = api.get(f"{PAINEL}/api/seguranca").json()
     assert seg["totp"] is True and seg["turnstile"] is False and seg["turnstile_desligado"] is True
     assert seg["pagamento"] is False and seg["cookie_seguro"] is True and seg["contas"]["total"] == 0
+    # a identificação da empresa (páginas legais e rodapé): o que falta no .env, para a lista da configuração
+    assert "RENDER2GO_EMPRESA_DOCUMENTO" in seg["empresa_faltando"]
     tok = _cliente(api, "Antiga", plano="teste")
     (k,) = api.get(f"{PAINEL}/api/clientes?busca=antiga").json()["clientes"]
     assert k["nome"] == "Antiga" and k["email"] is None

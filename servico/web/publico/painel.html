@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Painel · Render2Go</title>
 <meta name="robots" content="noindex, nofollow">
+<script src="/estatico/inicio.js?v=ac8a0489bb76" integrity="sha384-jcgOXWliJEmWFt5OI2ubr/+4nqocPN6RohZTaMKiUnxmU1R8syI0PpqQr/H7/g2w" data-chave="render2go-painel-conectado" data-papel="render2go-painel-papel" data-so-dono="gpus pagamentos acessos auditoria seguranca" data-secoes data-antecipar="visao-geral=api/sessao,api/resumo revisao=api/sessao,api/resumo,api/lotes historico=api/sessao,api/resumo,api/historico?grupo=todos clientes=api/sessao,api/resumo,api/clientes suporte=api/sessao,api/resumo,api/suporte interesses=api/sessao,api/resumo,api/interesses pods=api/sessao,api/resumo,api/pods gpus=api/sessao,api/resumo,api/geradores?dias=30 pagamentos=api/sessao,api/resumo,api/pagamentos acessos=api/sessao,api/resumo,api/acessos auditoria=api/sessao,api/resumo,api/auditoria seguranca=api/sessao,api/resumo,api/seguranca"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
@@ -11,7 +12,7 @@
 <meta name="format-detection" content="telephone=no">
 <meta name="application-name" content="Render2Go">
 <meta name="apple-mobile-web-app-title" content="Render2Go">
-<link rel="stylesheet" href="/estatico/estilo.css?v=5e15244108d1" integrity="sha384-jWb6+NmlNM3YMKOKZxUymf18ncnEQtbezadgAStyB9BB0b1O56wvedDWw/VcQ9kK">
+<link rel="stylesheet" href="/estatico/estilo.css?v=8cebde00b066" integrity="sha384-PirxU0jzmIcFwyOi+WZrL9u9BRl+qSln5zPPcKFUQiAVxim7GTCtKPtisYJSYYMm">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -25,7 +26,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="painel.js?v=20fcc817eec2" integrity="sha384-OhhhLetucB5KdmXhL2RSIw4FbEv3yCb0/Q5N6mSpZL2idR8zJGr4rlgV8f4+OCb2" defer></script>
+<script src="painel.js?v=0ca50c6f84c9" integrity="sha384-vktksGTvpLTWpREAP1+qywScOLemNaDb8leJeOvFIf8Khj+C7wv9X6FnJsIWfo/Q" defer></script>
 </head>
 <body data-pagina="painel">
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
@@ -43,90 +44,285 @@
 <span class="marca-area">Painel</span>
 </span>
 <nav class="navegacao" aria-label="Ações do painel">
-<button type="button" id="atualizar" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.4 5.7M20 5v6h-6"/></svg><span class="rotulo-nav">Atualizar</span></button>
-<button type="button" id="sair" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16.5 14.5 12 10 7.5M14.5 12H4"/></svg><span class="rotulo-nav">Sair</span></button>
+<button type="button" class="so-com-sessao so-menu" id="abrir-menu" aria-haspopup="dialog" aria-expanded="false"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span class="rotulo-nav">Seções</span></button>
+<button type="button" class="so-com-sessao" id="atualizar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.4 5.7M20 5v6h-6"/></svg><span class="rotulo-nav">Atualizar</span></button>
+<button type="button" class="so-com-sessao" id="sair"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16.5 14.5 12 10 7.5M14.5 12H4"/></svg><span class="rotulo-nav">Sair</span></button>
 </nav>
 </div>
 </header>
+<div class="moldura">
+<aside class="lateral so-com-sessao" id="lateral" aria-label="Painel">
+<div class="quem" id="quem">
+<span class="avatar" id="avatar" aria-hidden="true"><span class="avatar-inicial"></span></span>
+<div class="quem-texto">
+<p class="quem-nome" id="quem-nome"></p>
+<p class="quem-plano fraco" id="quem-papel"></p>
+</div>
+</div>
+<nav class="menu-conta menu-painel" id="menu-painel" aria-label="Seções do painel">
+<div class="grupo">
+<p class="grupo-menu" id="menu-hoje">Hoje</p>
+<ul aria-labelledby="menu-hoje">
+<li data-rota="GET /api/resumo"><a href="#visao-geral" data-secao="visao-geral"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span>Visão geral</span></a></li>
+</ul>
+</div>
+<div class="grupo">
+<p class="grupo-menu" id="menu-pedidos">Pedidos</p>
+<ul aria-labelledby="menu-pedidos">
+<li data-rota="GET /api/lotes"><a href="#revisao" data-secao="revisao"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z"/></svg><span>Revisão</span><span class="contagem" id="n-pendentes"></span></a></li>
+<li data-rota="GET /api/historico"><a href="#historico" data-secao="historico"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4v4.5H8M12 7.5V12l3 2"/></svg><span>Histórico</span></a></li>
+</ul>
+</div>
+<div class="grupo">
+<p class="grupo-menu" id="menu-clientes">Clientes</p>
+<ul aria-labelledby="menu-clientes">
+<li data-rota="GET /api/clientes"><a href="#clientes" data-secao="clientes"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0"/></svg><span>Contas e saldo</span></a></li>
+<li data-rota="GET /api/suporte"><a href="#suporte" data-secao="suporte"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM3.5 7l8.5 6 8.5-6"/></svg><span>Suporte</span><span class="contagem" id="n-suporte"></span></a></li>
+<li data-rota="GET /api/interesses"><a href="#interesses" data-secao="interesses"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/></svg><span>Interesse</span></a></li>
+</ul>
+</div>
+<div class="grupo">
+<p class="grupo-menu" id="menu-operacao">Operação</p>
+<ul aria-labelledby="menu-operacao">
+<li data-rota="GET /api/pods"><a href="#pods" data-secao="pods"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12 4 7.5"/></svg><span>Pods</span><span class="contagem" id="n-pods"></span></a></li>
+<li class="so-dono" data-rota="GET /api/geradores"><a href="#gpus" data-secao="gpus"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7.5V12l3 2"/></svg><span>GPUs</span></a></li>
+<li class="so-dono" data-rota="GET /api/pagamentos"><a href="#pagamentos" data-secao="pagamentos"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3h12v18l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5zM9 8h6M9 12h6M9 16h3.5"/></svg><span>Pagamentos</span></a></li>
+</ul>
+</div>
+<div class="grupo so-dono">
+<p class="grupo-menu" id="menu-seguranca">Segurança</p>
+<ul aria-labelledby="menu-seguranca">
+<li data-rota="GET /api/acessos"><a href="#acessos" data-secao="acessos"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3a6 6 0 0 1-2.2 11.6L11 16.5H9v2H7v2H3v-3.6l6.2-6.2A6 6 0 0 1 15 3zM16.5 7.5h.01"/></svg><span>Acessos</span></a></li>
+<li data-rota="GET /api/auditoria"><a href="#auditoria" data-secao="auditoria"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Auditoria</span></a></li>
+<li data-rota="GET /api/seguranca"><a href="#seguranca" data-secao="seguranca"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4"/></svg><span>Configuração</span></a></li>
+</ul>
+</div>
+</nav>
+<div class="campo tema-painel">
+<label for="tema-painel">Tema neste navegador</label>
+<select id="tema-painel">
+<option value="auto">Automático (o do aparelho)</option>
+<option value="claro">Claro</option>
+<option value="escuro">Escuro</option>
+</select>
+</div>
+</aside>
 <main id="conteudo" class="conteudo" tabindex="-1">
-<div class="recipiente">
 <noscript><p class="aviso erro">Esta página precisa de JavaScript.</p></noscript>
-<form id="form-admin" class="cartao elevado entrar-admin so-sem-sessao" aria-labelledby="titulo-entrar" novalidate>
+<div class="entrada-painel so-sem-sessao" id="entrada-painel">
+<section class="cartao elevado entrar-admin" aria-labelledby="titulo-entrar">
 <h1 id="titulo-entrar">Painel do Render2Go</h1>
+<form id="form-admin" class="pilha" novalidate>
+<p class="fraco">Entre com o seu nome de acesso, a sua senha e o código do seu aplicativo autenticador. Cada código vale uma vez.</p>
 <div class="campo">
-<label for="admin-token">Token de administração</label>
+<label for="admin-usuario">Nome de acesso</label>
+<input id="admin-usuario" autocomplete="username" required maxlength="32" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="next">
+</div>
+<div class="campo">
+<label for="admin-senha">Senha</label>
 <div class="senha">
-<input id="admin-token" type="password" autocomplete="current-password" required spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="next">
+<input id="admin-senha" type="password" autocomplete="current-password" required maxlength="128" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="next">
+<button type="button" class="botao fantasma pequeno" id="mostrar-senha" aria-controls="admin-senha" aria-pressed="false">Mostrar</button>
+</div>
+</div>
+<div class="campo">
+<label for="admin-codigo">Código do aplicativo autenticador</label>
+<input id="admin-codigo" inputmode="numeric" autocomplete="one-time-code" required maxlength="7" spellcheck="false" enterkeyhint="go" aria-describedby="admin-codigo-dica">
+<p class="dica" id="admin-codigo-dica">Os 6 dígitos que aparecem agora no aplicativo (Google Authenticator, Microsoft Authenticator, Authy, 1Password…).</p>
+</div>
+<button type="submit" class="botao primario largo" id="entrar-pessoa"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3a6 6 0 0 1-2.2 11.6L11 16.5H9v2H7v2H3v-3.6l6.2-6.2A6 6 0 0 1 15 3zM16.5 7.5h.01"/></svg>Entrar</button>
+<div id="msg-entrada" class="aviso erro" role="alert" hidden></div>
+</form>
+<div id="convite" class="pilha">
+<p class="sobretitulo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3a6 6 0 0 1-2.2 11.6L11 16.5H9v2H7v2H3v-3.6l6.2-6.2A6 6 0 0 1 15 3zM16.5 7.5h.01"/></svg>Primeiro acesso</p>
+<p class="convite-quem" id="convite-quem">Conferindo o convite…</p>
+<div id="msg-convite" class="aviso erro" role="alert" hidden></div>
+<div class="passos convite-passos" id="convite-passos">
+<fieldset class="passo" id="convite-passo-qr">
+<legend>Leia o QR Code</legend>
+<p class="fraco">Abra o aplicativo autenticador do seu celular e leia este QR Code. Ele é só seu: não mande para ninguém.</p>
+<div class="qr-lugar" id="convite-qr-lugar"><img class="qr-mfa" id="convite-qr" alt="QR Code para cadastrar o seu acesso ao painel no aplicativo autenticador" width="220" height="220" hidden></div>
+<details class="chave-manual">
+<summary>Não consigo ler o QR Code</summary>
+<p class="dica">No aplicativo, escolha digitar uma chave (baseada em tempo) e use esta:</p>
+<div class="codigo-gerado"><code id="convite-chave"></code></div>
+</details>
+</fieldset>
+<fieldset class="passo" id="convite-passo-codigo" disabled>
+<legend>Confirme um código do aplicativo</legend>
+<form id="form-convite-codigo" class="pilha" novalidate>
+<div class="campo">
+<label for="convite-codigo">Código de 6 dígitos</label>
+<input id="convite-codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="7" spellcheck="false" enterkeyhint="go" aria-describedby="convite-codigo-dica">
+<p class="dica" id="convite-codigo-dica">O código muda a cada 30 segundos.</p>
+</div>
+<button type="submit" class="botao primario" id="convite-confirmar">Confirmar o código</button>
+</form>
+</fieldset>
+<fieldset class="passo" id="convite-passo-senha" disabled>
+<legend>Crie a senha</legend>
+<form id="form-convite-senha" class="pilha" novalidate>
+<input type="text" id="convite-usuario" autocomplete="username" hidden>
+<div class="campo">
+<label for="convite-senha">Senha nova</label>
+<input id="convite-senha" type="password" autocomplete="new-password" minlength="12" maxlength="128" spellcheck="false" autocapitalize="off" autocorrect="off" aria-describedby="convite-senha-dica">
+<p class="dica" id="convite-senha-dica">Pelo menos 12 caracteres, sem o nome de acesso. Uma frase que só você saiba funciona bem.</p>
+</div>
+<div class="campo">
+<label for="convite-senha-2">Repita a senha</label>
+<input id="convite-senha-2" type="password" autocomplete="new-password" maxlength="128" spellcheck="false" autocapitalize="off" autocorrect="off">
+</div>
+<button type="submit" class="botao primario" id="convite-criar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Criar a senha e entrar</button>
+</form>
+</fieldset>
+</div>
+<p class="fraco"><a href="./" id="convite-sair">Não é o seu convite? Voltar para a entrada</a></p>
+</div>
+<details class="emergencia-entrada" id="entrada-emergencia">
+<summary>Acesso de emergência (chave do servidor)</summary>
+<form id="form-emergencia" class="pilha" novalidate>
+<p class="fraco">Só para quando ninguém consegue entrar: a chave do .env (RENDER2GO_ADMIN_TOKENS) e o código do RENDER2GO_ADMIN_TOTP. Fica registrado na auditoria como acesso de emergência.</p>
+<div class="campo">
+<label for="admin-token">Chave do servidor</label>
+<div class="senha">
+<input id="admin-token" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="next">
 <button type="button" class="botao fantasma pequeno" id="mostrar-token" aria-controls="admin-token" aria-pressed="false">Mostrar</button>
 </div>
 </div>
 <div class="campo">
-<label for="admin-totp">Código do aplicativo autenticador</label>
-<input id="admin-totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" enterkeyhint="go" aria-describedby="admin-totp-dica">
-<p class="dica" id="admin-totp-dica">6 dígitos do Google Authenticator, Authy ou 1Password (render2go-servico totp-novo).</p>
+<label for="admin-totp">Código do autenticador do servidor</label>
+<input id="admin-totp" inputmode="numeric" autocomplete="one-time-code" maxlength="7" spellcheck="false" enterkeyhint="go">
 </div>
-<p id="msg-entrada" class="aviso erro" hidden></p>
-<button type="submit" class="botao primario largo" id="admin-entrar">Entrar</button>
+<button type="submit" class="botao largo" id="admin-entrar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 11h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM8 11V8a4 4 0 1 1 8 0v3M12 15v1.5"/></svg>Entrar com a chave</button>
+<div id="msg-emergencia" class="aviso erro" role="alert" hidden></div>
 </form>
-<div class="painel so-com-sessao" id="painel">
+</details>
+</section>
+</div>
+<div class="area-conta area-painel so-com-sessao" id="painel">
+<div id="msg" class="aviso aviso-flutuante" role="status" hidden></div>
+<section class="secao-painel" id="sec-visao-geral" aria-labelledby="t-visao-geral">
 <div class="cab-pagina">
-<h1 id="titulo-painel" tabindex="-1">Painel</h1>
-<p class="fraco">Nada vai para a GPU sem aprovação (ADR 0004). Confira se as fotos e o pedido são apropriados e se as pessoas nas fotos têm autorização.</p>
+<h1 id="t-visao-geral" tabindex="-1">Visão geral</h1>
+<p class="fraco">O que pede atenção agora e os números de hoje (horário de Brasília).</p>
 </div>
-<div class="admin-grade">
-<nav class="secoes" aria-label="Seções do painel">
-<a href="#sec-pendentes">Aguardando <span class="contagem" id="n-pendentes"></span></a>
-<a href="#sec-pods">Pods <span class="contagem" id="n-pods"></span></a>
-<a href="#sec-historico">Histórico</a>
-<a href="#sec-gpus">GPUs</a>
-<a href="#sec-interesse">Interesse</a>
-<a href="#sec-pagamentos">Pagamentos</a>
-<a href="#sec-suporte">Suporte <span class="contagem" id="n-suporte"></span></a>
-<a href="#sec-clientes">Contas e saldo</a>
-<a href="#sec-cliente">Nova conta</a>
-<a href="#sec-seguranca">Segurança</a>
-<a href="#sec-ips">Uso por IP</a>
-<a href="#sec-dispositivos">Dispositivos</a>
-</nav>
-<div class="admin-conteudo">
-<p id="msg" class="aviso" hidden></p>
-<section id="sec-pendentes" aria-labelledby="t-pendentes">
-<div class="cab-secao">
-<h2 id="t-pendentes">Aguardando revisão</h2>
-<span class="fraco" id="atualizado"></span>
+<div class="dados-vista" id="visao-geral-dados" aria-busy="true">
+<div class="esqueleto-numeros" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span></div>
 </div>
-<div id="pendentes" class="lista" aria-busy="true">
+</div>
+</section>
+<section class="secao-painel" id="sec-revisao" aria-labelledby="t-revisao">
+<div class="cab-pagina">
+<h1 id="t-revisao" tabindex="-1">Revisão dos pedidos</h1>
+<p class="fraco">Nada vai para a GPU sem aprovação (ADR 0004). Confira as fotos, o texto do pedido e o texto próprio de cada foto, e se as pessoas nas fotos têm autorização.</p>
+</div>
+<div id="pendentes" class="lista dados-vista" aria-busy="true">
 <div class="cartao esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
 </div>
 </section>
-<section id="sec-pods" aria-labelledby="t-pods">
-<h2 id="t-pods">Pods ligados agora</h2>
-<p class="fraco">Cada pod é uma GPU alugada no RunPod. "Desligar" encerra um pod; a parada de emergência encerra todos e impede que o orquestrador ligue outros até você retomar. O orquestrador executa em até ~10 s; o pod também perde na hora a permissão de pegar trabalho.</p>
-<p id="estado-orquestrador" class="fraco"></p>
-<div class="acoes">
-<button type="button" class="botao perigo" id="emergencia"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.6 5.6l12.8 12.8"/></svg>Parada de emergência: desligar todos</button>
-<button type="button" class="botao sucesso" id="retomar" hidden><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Retomar (liberar pods de novo)</button>
+<section class="secao-painel" id="sec-historico" aria-labelledby="t-historico">
+<div class="cab-pagina">
+<h1 id="t-historico" tabindex="-1">Histórico</h1>
+<p class="fraco">Os pedidos dos últimos dias, de onde vieram e o que aconteceu com eles.</p>
 </div>
-<div id="pods" class="tabela" role="region" aria-label="Tabela de pods ligados (role para o lado)" tabindex="0"></div>
-<details class="extrato">
-<summary>Últimos comandos</summary>
-<ul class="extrato-lista" id="comandos" aria-label="Últimos comandos enviados ao orquestrador"></ul>
-</details>
-</section>
-<section id="sec-historico" aria-labelledby="t-historico">
-<h2 id="t-historico">Histórico</h2>
-<div class="filtros" id="filtros-historico" role="group" aria-label="Filtrar o histórico">
+<div class="abas abas-painel" id="abas-historico" role="tablist" aria-label="Partes do histórico">
+<button type="button" role="tab" id="aba-hist-pedidos" aria-selected="true" aria-controls="hist-pedidos">Pedidos</button>
+<button type="button" role="tab" id="aba-hist-ips" aria-selected="false" aria-controls="hist-ips" tabindex="-1">Uso por IP</button>
+<button type="button" role="tab" id="aba-hist-dispositivos" aria-selected="false" aria-controls="hist-dispositivos" tabindex="-1">Dispositivos</button>
+</div>
+<div class="dados-vista" id="historico-dados" aria-busy="true">
+<div role="tabpanel" id="hist-pedidos" aria-labelledby="aba-hist-pedidos">
+<div class="barra-filtros">
+<div class="filtros" id="filtros-historico" role="group" aria-label="Filtrar os pedidos">
 <button type="button" data-grupo="todos" aria-pressed="true">Todos</button>
 <button type="button" data-grupo="revisao" aria-pressed="false">Em revisão</button>
 <button type="button" data-grupo="aprovados" aria-pressed="false">Aprovados</button>
 <button type="button" data-grupo="recusados" aria-pressed="false">Recusados</button>
 </div>
-<div id="historico" class="lista"></div>
+</div>
+<div id="historico-lista" class="lista">
+<div class="cartao esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
+</div>
+</div>
+<div role="tabpanel" id="hist-ips" aria-labelledby="aba-hist-ips" hidden>
+<p class="fraco nota-tabela">Fotos de pedidos dos últimos 90 dias que passaram do envio e não foram recusados. O teste gratuito vale até 50 fotos por rede (IP; IPv6 pelo /64), somando todas as contas de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
+<div id="ips" class="tabela" role="region" aria-label="Uso por IP" tabindex="0"></div>
+</div>
+<div role="tabpanel" id="hist-dispositivos" aria-labelledby="aba-hist-dispositivos" hidden>
+<p class="fraco nota-tabela">Cada navegador recebe um identificador guardado nele mesmo. Um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com várias contas, alguém pode estar juntando testes.</p>
+<div id="dispositivos" class="tabela" role="region" aria-label="Dispositivos" tabindex="0"></div>
+</div>
+</div>
 </section>
-<section id="sec-gpus" aria-labelledby="t-gpus">
-<h2 id="t-gpus">GPUs</h2>
-<p class="fraco">Cada GPU (pod do RunPod) que o orquestrador ligou: identificação, quanto tempo ficou ligada, os vídeos que gerou e o custo estimado (preço por hora × tempo ligado; o RunPod cobra pelo tempo). A cobrança começa quando o RunPod cria o pod e termina quando ele é encerrado, inclusive no pod que falhou na instalação.</p>
-<div class="barra-gpus">
+<section class="secao-painel" id="sec-clientes" aria-labelledby="t-clientes">
+<div class="cab-pagina">
+<h1 id="t-clientes" tabindex="-1">Contas e saldo</h1>
+<p class="fraco">As contas dos clientes: plano, saldo do pré-pago e situação. Clique na conta para ver o que dá para fazer nela.</p>
+</div>
+<div class="barra-filtros">
+<form id="form-busca" class="busca" role="search" novalidate>
+<label for="busca-cliente" class="visualmente-oculto">Buscar conta por e-mail, nome ou id</label>
+<input id="busca-cliente" type="search" maxlength="100" placeholder="Buscar por e-mail, nome ou id" autocomplete="off" spellcheck="false">
+<button type="submit" class="botao pequeno" id="buscar-cliente"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Buscar</button>
+</form>
+<button type="button" class="botao primario pequeno so-dono" id="nova-conta" data-rota="POST /api/clientes"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0"/></svg>Nova conta</button>
+</div>
+<div class="dados-vista" id="clientes-dados" aria-busy="true">
+<div class="esqueleto-linhas" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span><span></span></div>
+</div>
+</div>
+</section>
+<section class="secao-painel" id="sec-suporte" aria-labelledby="t-suporte">
+<div class="cab-pagina">
+<h1 id="t-suporte" tabindex="-1">Mensagens de suporte</h1>
+<p class="fraco">As mensagens enviadas pela página /suporte, com a conta, o e-mail para a resposta e de onde vieram.</p>
+</div>
+<div class="dados-vista" id="suporte-dados" aria-busy="true">
+<div class="cartao esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
+</div>
+</section>
+<section class="secao-painel" id="sec-interesses" aria-labelledby="t-interesses">
+<div class="cab-pagina">
+<h1 id="t-interesses" tabindex="-1">Interesse nas opções em breve</h1>
+<p class="fraco">Cada clique em “Tenho interesse” (modelos de IA em breve, Mix, Projetos, indicação, telefone e nome de usuário). Cada conta conta uma vez por opção; em “Cada clique”, o e-mail da conta, para avisar quando a opção sair (licenças em docs/12).</p>
+</div>
+<div class="abas abas-painel" id="abas-interesses" role="tablist" aria-label="Partes do interesse">
+<button type="button" role="tab" id="aba-int-resumo" aria-selected="true" aria-controls="int-resumo">Por opção</button>
+<button type="button" role="tab" id="aba-int-cliques" aria-selected="false" aria-controls="int-cliques" tabindex="-1">Cada clique</button>
+</div>
+<div class="dados-vista" id="interesses-dados" aria-busy="true">
+<div role="tabpanel" id="int-resumo" aria-labelledby="aba-int-resumo">
+<div id="interesses-tabela" class="tabela" role="region" aria-label="Interesse por opção" tabindex="0">
+<div class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
+</div>
+</div>
+<div role="tabpanel" id="int-cliques" aria-labelledby="aba-int-cliques" hidden>
+<div id="cliques" class="tabela" role="region" aria-label="Cada clique em Tenho interesse" tabindex="0"></div>
+</div>
+</div>
+</section>
+<section class="secao-painel" id="sec-pods" aria-labelledby="t-pods">
+<div class="cab-pagina">
+<h1 id="t-pods" tabindex="-1">Pods ligados agora</h1>
+<p class="fraco">Cada pod é uma GPU alugada no RunPod. “Desligar” encerra um pod; a parada de emergência encerra todos e impede que o orquestrador ligue outros até você retomar. O orquestrador executa em até ~10 s; o pod também perde na hora a permissão de pegar trabalho.</p>
+</div>
+<div class="dados-vista" id="pods-dados" aria-busy="true">
+<div class="esqueleto-linhas" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span><span></span></div>
+</div>
+</div>
+</section>
+<section class="secao-painel" id="sec-gpus" aria-labelledby="t-gpus">
+<div class="cab-pagina">
+<h1 id="t-gpus" tabindex="-1">GPUs</h1>
+<p class="fraco">Cada GPU (pod do RunPod) que o orquestrador ligou: quanto tempo ficou ligada, os vídeos que gerou e o custo estimado (preço por hora × tempo ligado). A cobrança vai da criação do pod ao encerramento, inclusive no pod que falhou na instalação.</p>
+</div>
+<div class="barra-filtros">
 <div class="filtros" id="filtros-gpus" role="group" aria-label="Período do relatório de GPUs">
 <button type="button" data-dias="1" aria-pressed="false">24 h</button>
 <button type="button" data-dias="7" aria-pressed="false">7 dias</button>
@@ -135,115 +331,111 @@
 </div>
 <button type="button" class="botao pequeno" id="baixar-gpus"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>Baixar relatório</button>
 </div>
-<dl class="resumo-gpus" id="resumo-gpus"></dl>
-<div id="gpus" class="tabela" role="region" aria-label="Tabela de GPUs (role para o lado)" tabindex="0"></div>
+<div class="dados-vista" id="gpus-dados" aria-busy="true">
+<div class="esqueleto-numeros" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span></div>
+<div class="esqueleto"><span></span><span></span></div>
+</div>
+</div>
 </section>
-<section id="sec-interesse" aria-labelledby="t-interesse">
-<h2 id="t-interesse">Interesse nas opções em breve</h2>
-<p class="fraco">Na tela "O que você quer criar?", o cliente marca "Tenho interesse" nas opções que ainda não existem. Cada conta conta uma vez por opção. Abaixo do total, cada clique, com o e-mail da conta, para avisar quando a opção sair (licenças em docs/12).</p>
-<div id="interesses" class="tabela" role="region" aria-label="Tabela de interesse por opção (role para o lado)" tabindex="0"></div>
-<h3>Cada clique</h3>
-<div id="cliques" class="tabela" role="region" aria-label="Tabela de cliques em Tenho interesse (role para o lado)" tabindex="0"></div>
+<section class="secao-painel" id="sec-pagamentos" aria-labelledby="t-pagamentos">
+<div class="cab-pagina">
+<h1 id="t-pagamentos" tabindex="-1">Recargas por Pix</h1>
+<p class="fraco">Cada Pix pago entra sozinho no saldo, uma vez só, depois da confirmação do Mercado Pago. “Conferir” pergunta de novo ao Mercado Pago.</p>
+</div>
+<div class="dados-vista" id="pagamentos-dados" aria-busy="true">
+<div class="esqueleto-linhas" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span><span></span></div>
+</div>
+</div>
 </section>
-<section id="sec-pagamentos" aria-labelledby="t-pagamentos">
-<h2 id="t-pagamentos">Recargas por Pix</h2>
-<p id="pagamentos-config" class="fraco"></p>
-<div id="pagamentos" class="tabela" role="region" aria-label="Tabela de recargas por Pix (role para o lado)" tabindex="0"></div>
-</section>
-<section id="sec-suporte" aria-labelledby="t-suporte">
-<h2 id="t-suporte">Mensagens de suporte</h2>
-<p id="suporte-config" class="fraco"></p>
-<div id="suporte" class="lista"></div>
-</section>
-<section id="sec-clientes" aria-labelledby="t-clientes">
-<h2 id="t-clientes">Contas e saldo</h2>
-<p class="fraco" id="precos-info">Pré-pago: a conta do plano pago recarrega o saldo e paga por segundo de vídeo. O pedido é cobrado quando as fotos chegam; pedido recusado e vídeo que não sai voltam sozinhos para o saldo.</p>
-<p class="fraco" id="resumo-contas"></p>
-<form id="form-busca" class="busca" role="search" novalidate>
-<label for="busca-cliente" class="visualmente-oculto">Buscar conta por e-mail, nome ou id</label>
-<input id="busca-cliente" type="search" maxlength="100" placeholder="Buscar por e-mail, nome ou id" autocomplete="off" spellcheck="false">
-<button type="submit" class="botao pequeno">Buscar</button>
-</form>
-<form id="form-saldo" class="cartao form-cliente" novalidate>
+<section class="secao-painel" id="sec-acessos" aria-labelledby="t-acessos">
+<div class="cab-pagina">
+<h1 id="t-acessos" tabindex="-1">Acessos ao painel</h1>
+<p class="fraco">Quem entra no painel e com que papel, e os convites de primeiro acesso. Cada pessoa tem o próprio nome de acesso, a própria senha e o próprio aplicativo autenticador (ADR 0009).</p>
+</div>
+<form id="form-convite" class="cartao pilha form-convite" novalidate aria-labelledby="t-convidar">
+<h2 id="t-convidar">Convidar uma pessoa</h2>
+<p class="fraco">O convite vale 24 horas e uma vez só. No primeiro acesso, a pessoa lê o QR Code no aplicativo autenticador dela, confirma um código e só então cria a senha. Mande o endereço por um canal seguro (de preferência em mãos, ou por uma mensagem que se apaga).</p>
 <div class="duas">
 <div class="campo">
-<label for="saldo-cliente">Conta (plano pago)</label>
-<select id="saldo-cliente"></select>
+<label for="convite-novo-usuario">Nome de acesso</label>
+<input id="convite-novo-usuario" maxlength="32" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off" aria-describedby="convite-novo-usuario-dica">
+<p class="dica" id="convite-novo-usuario-dica">De 3 a 32 letras minúsculas, números, ponto, hífen ou sublinhado, começando por letra (ex.: maria.silva). Um nome que já existe ganha senha e autenticador novos.</p>
 </div>
 <div class="campo">
-<label for="saldo-valor">Valor em reais</label>
-<input id="saldo-valor" inputmode="decimal" maxlength="12" placeholder="50,00" autocomplete="off" aria-describedby="saldo-valor-dica">
-<p class="dica" id="saldo-valor-dica">Lançamento manual (recarga). Valor negativo desconta (ajuste). As recargas por Pix entram sozinhas.</p>
-</div>
-</div>
-<div class="duas">
-<div class="campo">
-<label for="saldo-descricao">Descrição (o cliente vê no extrato)</label>
-<input id="saldo-descricao" maxlength="200" placeholder="Pix de 09/10" autocomplete="off">
-</div>
-<div class="campo">
-<label for="saldo-referencia">Identificador do pagamento (opcional)</label>
-<input id="saldo-referencia" maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="saldo-referencia-dica">
-<p class="dica" id="saldo-referencia-dica">Ex.: o código do Pix. O mesmo pagamento não entra duas vezes.</p>
-</div>
-</div>
-<div class="acoes">
-<button type="submit" class="botao primario" id="saldo-enviar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Lançar no saldo</button>
-</div>
-<div id="saldo-msg" class="aviso" hidden></div>
-</form>
-<div id="clientes" class="tabela" role="region" aria-label="Tabela de contas e saldo (role para o lado)" tabindex="0"></div>
-</section>
-<section id="sec-cliente" aria-labelledby="t-cliente">
-<h2 id="t-cliente">Nova conta</h2>
-<p class="fraco">As pessoas criam a conta sozinhas no primeiro acesso (teste gratuito). Use aqui para abrir uma conta já no plano pago ou interno, ou com e-mail de empresa (fora da lista de provedores aceitos): a pessoa entra com o código que chega no e-mail.</p>
-<form id="form-cliente" class="cartao form-cliente" novalidate>
-<div class="duas">
-<div class="campo">
-<label for="cliente-email">E-mail</label>
-<input id="cliente-email" type="email" required maxlength="254" autocomplete="off" spellcheck="false">
-</div>
-<div class="campo">
-<label for="cliente-plano">Plano</label>
-<select id="cliente-plano">
-<option value="pago">Pago (pré-pago: saldo e preço por segundo, vídeos de 4 a 7 s)</option>
-<option value="teste">Teste gratuito (um pedido, até 5 fotos, 3 s, 480p)</option>
-<option value="interno">Interno (só você: sem limites e sem revisão)</option>
+<label for="convite-novo-papel">Papel</label>
+<select id="convite-novo-papel" aria-describedby="convite-novo-papel-dica">
+<option value="operador">Operador</option>
+<option value="dono">Dono</option>
 </select>
+<p class="dica dica-papel" id="convite-novo-papel-dica">Revisão dos pedidos e consultas (histórico, contas, suporte, interesses e pods), sem mexer em dinheiro, pods ou acessos.</p>
 </div>
-</div>
-<div class="campo">
-<label for="cliente-cota">Fotos por dia</label>
-<input id="cliente-cota" type="number" inputmode="numeric" min="1" max="100000" value="500">
 </div>
 <div class="acoes">
-<button type="submit" class="botao primario" id="cliente-enviar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0"/></svg>Criar a conta</button>
+<button type="submit" class="botao primario" id="convite-novo-enviar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3a6 6 0 0 1-2.2 11.6L11 16.5H9v2H7v2H3v-3.6l6.2-6.2A6 6 0 0 1 15 3zM16.5 7.5h.01"/></svg>Criar o convite</button>
 </div>
-<div id="cliente-msg" class="aviso" hidden></div>
 </form>
-</section>
-<section id="sec-seguranca" aria-labelledby="t-seguranca">
-<h2 id="t-seguranca">Segurança e configuração</h2>
-<p class="fraco">O que está ligado no servidor (o .env) e as últimas ações feitas pelo painel, com o IP de quem fez.</p>
-<ul class="lista-checagem" id="checagem"></ul>
-<h3>Ações do painel</h3>
-<div id="auditoria" class="tabela" role="region" aria-label="Tabela das ações do painel (role para o lado)" tabindex="0"></div>
-</section>
-<section id="sec-ips" aria-labelledby="t-ips">
-<h2 id="t-ips">Uso por IP</h2>
-<p class="fraco">Fotos de pedidos dos últimos 90 dias que passaram do envio e não foram recusados. O teste gratuito vale até 50 fotos por rede (IP; IPv6 pelo /64), somando todas as contas de teste. Vários clientes podem dividir um IP (escritórios, redes de celular) e uma VPN troca o IP: use como sinal, não como prova.</p>
-<div id="ips" class="tabela" role="region" aria-label="Tabela de uso por IP (role para o lado)" tabindex="0"></div>
-</section>
-<section id="sec-dispositivos" aria-labelledby="t-dispositivos">
-<h2 id="t-dispositivos">Dispositivos</h2>
-<p class="fraco">Cada navegador recebe um identificador guardado nele mesmo. Um dispositivo com vários IPs trocou de rede (celular, VPN ou proxy); com várias contas, alguém pode estar juntando testes. Uma janela anônima ou limpar os dados do navegador gera um identificador novo, mas o teto por rede continua valendo.</p>
-<div id="dispositivos" class="tabela" role="region" aria-label="Tabela de dispositivos (role para o lado)" tabindex="0"></div>
-</section>
+<div class="dados-vista" id="acessos-dados" aria-busy="true">
+<div class="esqueleto-linhas" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span><span></span></div>
 </div>
 </div>
+</section>
+<section class="secao-painel" id="sec-auditoria" aria-labelledby="t-auditoria">
+<div class="cab-pagina">
+<h1 id="t-auditoria" tabindex="-1">Auditoria</h1>
+<p class="fraco">Tudo o que foi feito no painel: quem, o quê, em quem, quando, de qual IP e de qual navegador. Cada mudança traz o antes e o depois.</p>
 </div>
+<form id="form-auditoria" class="cartao filtros-auditoria" novalidate aria-label="Filtrar a auditoria">
+<div class="campo">
+<label for="aud-pessoa">Pessoa</label>
+<select id="aud-pessoa"><option value="">Todas</option></select>
+</div>
+<div class="campo">
+<label for="aud-acao">Ação</label>
+<select id="aud-acao"><option value="">Todas</option></select>
+</div>
+<div class="campo">
+<label for="aud-alvo">Alvo</label>
+<input id="aud-alvo" maxlength="120" autocomplete="off" spellcheck="false" placeholder="conta, pedido ou pod" aria-describedby="aud-alvo-dica">
+<p class="visualmente-oculto" id="aud-alvo-dica">O identificador exato: conta (cli_…), pedido (lote_…), pod ou nome de acesso.</p>
+</div>
+<div class="campo">
+<label for="aud-desde">De</label>
+<input id="aud-desde" type="date">
+</div>
+<div class="campo">
+<label for="aud-ate">Até</label>
+<input id="aud-ate" type="date">
+</div>
+<div class="acoes">
+<button type="submit" class="botao primario pequeno" id="aud-filtrar"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Filtrar</button>
+<button type="button" class="botao pequeno" id="aud-limpar">Limpar os filtros</button>
+<a class="botao pequeno" id="aud-csv" href="api/auditoria.csv" download><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>Baixar planilha (CSV)</a>
+</div>
+</form>
+<div class="dados-vista" id="auditoria-dados" aria-busy="true">
+<div class="esqueleto-linhas" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span><span></span></div>
+</div>
+</div>
+</section>
+<section class="secao-painel" id="sec-seguranca" aria-labelledby="t-seguranca">
+<div class="cab-pagina">
+<h1 id="t-seguranca" tabindex="-1">Configuração do servidor</h1>
+<p class="fraco">O que está ligado no servidor (o .env) e o que falta, com o estado do orquestrador e da análise das fotos.</p>
+</div>
+<div class="dados-vista" id="seguranca-dados" aria-busy="true">
+<div class="esqueleto-linhas" aria-hidden="true">
+<div class="esqueleto"><span></span><span></span><span></span></div>
+</div>
+</div>
+</section>
 </div>
 </main>
+</div>
 <div id="anuncio" class="visualmente-oculto" aria-live="polite" aria-atomic="true"></div>
 <div id="anuncio-urgente" class="visualmente-oculto" aria-live="assertive" aria-atomic="true"></div>
 </body>

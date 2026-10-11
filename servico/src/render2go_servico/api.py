@@ -3196,6 +3196,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 "chave_emergencia": bool(c.admin_tokens),
             },
             "avisos": avisos_de_configuracao(c),
+            # identificação da empresa nas páginas legais e no rodapé (Decreto 7.962/2013): o que falta no .env
+            "empresa_faltando": [v for v in EMPRESA.values() if not os.environ.get(v, "").strip()],
             "auditoria": c.banco.auditoria_admin(50),
         }
 
