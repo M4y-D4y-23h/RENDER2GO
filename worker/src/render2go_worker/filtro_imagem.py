@@ -123,6 +123,13 @@ class Freepik:
         m.load_state_dict(load_file(str(pesos)))  # strict: arquivo errado não carrega
         self._modelo = (m.eval().to(disp, tipo), torch, disp, tipo)
 
+    def carregar(self) -> None:
+        """Carrega já (o worker chama em segundo plano no PRONTO: na 1ª chamada, importar o PyTorch
+        e carregar o modelo levou 11–17 s em 11/10/2026, e o 1º vídeo esperava)."""
+        with self._lock:
+            if self._modelo is None:
+                self._carregar()
+
     def probabilidades(self, quadros: list[bytes]) -> list[tuple[float, float, float, float]]:
         with self._lock:  # um ComfyUI por GPU, mas um classificador só no processo
             if self._modelo is None:

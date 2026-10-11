@@ -119,9 +119,6 @@ ESTADO = ".nuvem"
 # host quando o pod é parado, cobrado à parte). Na volta, nada é baixado nem instalado.
 VOLUME_HIB = "/workspace"
 LOCAL_HIB = "/workspace/r2g"
-DISCO_HIB_GB = (
-    40  # disco do contêiner (apagado na parada): apt, cache do uv, fotos e vídeos dos jobs
-)
 PISO_HIB_S = 20 * 60  # prazo inicial do pod que hiberna, até o orquestrador mandar o de verdade
 
 
@@ -308,8 +305,9 @@ class RunPod:
         """`volume_gb`: disco de volume do próprio pod em /workspace (pod que hiberna, ADR 0011)."""
         tentativas = []
         for opcao in opcoes:
-            disco = DISCO_HIB_GB if volume_gb else 120
-            corpo = runpod_pods.corpo_pod(opcao, self.IMAGEM, nome, disco, env, ["8888/http"])
+            # 120 GB também no pod que hiberna: a 1ª subida instala tudo no disco do contêiner
+            # (rápido) e só depois copia para o volume (com 40 GB, em 11/10, o disco encheu)
+            corpo = runpod_pods.corpo_pod(opcao, self.IMAGEM, nome, 120, env, ["8888/http"])
             corpo["gpuCount"] = gpus
             corpo["dockerStartCmd"] = ["bash", "-c", AGENTE_CMD]
             if volume_gb and not self.volume:
@@ -887,8 +885,13 @@ class Orquestrador:
         fins = ("AMBIENTE", "PRONTO", "FALHOU") if cedo else ("PRONTO", "FALHOU")
         estado = self._esperar(pod, f"cat {r.raiz}/estado 2>/dev/null", fins, ESPERA_INSTALACAO_S)
         if not estado.startswith(fins[:-1]):
-            _, log = ag.exec(f"tail -5 {r.raiz}/bootstrap.log {r.raiz}/*.log 2>/dev/null", 30)
-            raise NuvemError(f"instalação: {estado.strip()} | {log[-300:]}")
+            # o disco cheio e o fim dos logs (sem os \r do progresso do aria2)
+            _, log = ag.exec(
+                f"df -h / | tail -1; tail -n 4 {r.raiz}/ambiente.log {r.raiz}/bootstrap.log 2>&1"
+                " | tr '\\r' '\\n' | tail -n 12",
+                30,
+            )
+            raise NuvemError(f"instalação: {estado.strip()} | {log[-700:]}")
         modelos_prontos = estado.startswith("PRONTO")
         if modelos_prontos:
             if pod.grava_volume and esp and esp.faltando():
@@ -930,10 +933,13 @@ class Orquestrador:
             tmp.unlink(missing_ok=True)
 
     def _url_teste_espelho(self) -> str | None:
+        """O maior modelo do espelho: o teste lê 4 trechos a partir de 0, 1, 2 e 3 GiB (com o
+        config.json de 989 bytes do filtro de imagem, o 1º em ordem, dava 0 MB/s em 11/10/2026)."""
         esp = getattr(self.a, "espelho", None)
         if not esp:
             return None
-        return next((u for m in esp.modelos if (u := esp.url(m))), None)
+        presentes = [m for m in esp.modelos if esp.url(m)]
+        return esp.url(max(presentes, key=lambda m: m.bytes)) if presentes else None
 
     def _espelhar(self, pod: Pod) -> None:
         """Pod gravador: envia ao espelho, em segundo plano, os modelos que faltam lá."""

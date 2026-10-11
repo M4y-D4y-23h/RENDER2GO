@@ -198,11 +198,28 @@ class WorkerFila:
                     self.modelos_ok = True
                     self.ultimo_job = time.monotonic()  # o pod quente conta a partir daqui
                     _log("modelos prontos: renderizando")
+                    self._precarregar_filtro()
             return "ok"
         if self.cfg.modelos_ate and time.time() > self.cfg.modelos_ate:
             _log("os modelos não ficaram prontos no prazo: o worker sai")
             return "falhou"
         return "esperando"
+
+    def _precarregar_filtro(self) -> None:
+        """Carrega o filtro de imagem em segundo plano, para o 1º vídeo não esperar o PyTorch. Se
+        falhar, o 1º vídeo tenta de novo e, sem filtro, não sai (fail-closed)."""
+        carregar = getattr(self.classificador, "carregar", None)
+        if carregar is None:
+            return
+
+        def rodar() -> None:
+            try:
+                carregar()
+                _log("filtro de imagem carregado")
+            except Exception as e:  # noqa: BLE001 (o 1º vídeo tenta de novo)
+                _log(f"AVISO: filtro de imagem não carregou ainda: {e}")
+
+        threading.Thread(target=rodar, daemon=True, name="filtro").start()
 
     # -- jobs -----------------------------------------------------------------------------
 
@@ -424,6 +441,8 @@ class WorkerFila:
             f"{len(self.cfg.comfy)} GPU(s); filtros {self.filtros.mode}; sai após "
             f"{self.cfg.ocioso_s:.0f} s sem jobs"
         )
+        if self.modelos_ok:  # sem o estado da instalação: os modelos já estão no disco
+            self._precarregar_filtro()
         ts = [threading.Thread(target=self._laco, args=(c,), daemon=True) for c in self.cfg.comfy]
         for t in ts:
             t.start()

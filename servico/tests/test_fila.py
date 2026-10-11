@@ -439,3 +439,27 @@ def test_without_the_frame_filter_nothing_is_delivered_and_the_worker_leaves(amb
     assert job["status"] == "pendente" and "filtro de imagem" in job["erro"]  # outro pod tenta
     assert not any(k.startswith("saida/") for k in ambiente.objetos)
     assert requests.get(f"{ambiente.url}/api/lotes/{lid}", headers=hc).json()["prontos"] == 0
+
+
+def test_the_image_filter_is_preloaded_when_the_models_are_ready(monkeypatch, tmp_path):
+    """Na 1ª chamada, o filtro levava 11–17 s (PyTorch e modelo): agora carrega no PRONTO."""
+    monkeypatch.setenv("RENDER2GO_SAFETY", "c1-revisao-humana")
+    estado = tmp_path / "estado"
+    estado.write_text("AMBIENTE\n")
+
+    class Previo(Classificador):
+        def __init__(self):
+            super().__init__()
+            self.carregado = threading.Event()
+
+        def carregar(self):
+            self.carregado.set()
+
+    class Api:
+        pass
+
+    c = Previo()
+    w = fila.WorkerFila(Api(), fila.Config(comfy=["x"], modelos=estado), classificador=c)
+    assert w.estado_modelos() == "esperando" and not c.carregado.is_set()
+    estado.write_text("PRONTO\n")
+    assert w.estado_modelos() == "ok" and c.carregado.wait(5)

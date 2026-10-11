@@ -505,3 +505,23 @@ def test_package_without_git_has_worker_and_tools(tmp_path, monkeypatch):
         nomes = set(t.getnames())
     assert "worker/scripts/bootstrap_pod.sh" in nomes and "tools/lote.py" in nomes
     assert not any(".venv" in n for n in nomes)
+
+
+def test_the_mirror_network_test_reads_the_largest_model(tmp_path):
+    """O teste lê 4 trechos a partir de 0, 1, 2 e 3 GiB: com o config.json de 989 bytes do filtro de
+    imagem (o 1º em ordem alfabética), dava 0 MB/s e o espelho era reprovado (11/10/2026)."""
+    from argparse import Namespace
+    from types import SimpleNamespace
+
+    class Espelho:
+        modelos = [
+            SimpleNamespace(nome="config", bytes=989),
+            SimpleNamespace(nome="grande", bytes=14_803_879_958),
+            SimpleNamespace(nome="ausente", bytes=20_000_000_000),
+        ]
+
+        def url(self, m):
+            return None if m.nome == "ausente" else f"https://r2.teste/{m.nome}"
+
+    orq = ln.Orquestrador(Namespace(espelho=Espelho(), saida=tmp_path), [], None, ln.Remoto())
+    assert orq._url_teste_espelho() == "https://r2.teste/grande"
