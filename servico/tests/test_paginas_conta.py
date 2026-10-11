@@ -144,8 +144,8 @@ def test_menu_opens_each_screen_by_address_without_reloading(ambiente, navegador
     # Ctrl+clique abre a tela noutra aba (os itens do menu são links de verdade); esta aba fica onde estava
     with ctx.expect_page() as nova:
         pg.click(".menu-conta a[data-vista=logs]", modifiers=["Control"])
-    nova.value.wait_for_load_state()
-    assert nova.value.url == f"{ambiente.url}/logs"
+    # a aba nasce em about:blank e só depois navega: esperar pelo endereço (o "load" do documento vazio já valeria)
+    nova.value.wait_for_url(f"{ambiente.url}/logs")
     pw.expect(pg.locator("#vista-mix")).to_be_visible()
     # links dentro de uma tela também trocam de tela (no Mix, "Modelos de IA")
     pg.click("#vista-mix a[data-vista=modelos]")
