@@ -4,25 +4,46 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 ## 0. Atualizações do servidor (a mais recente primeiro)
 
-Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há.
+Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há. Para pôr o servidor em dia, comece pela entrada mais recente: ela diz de que versão parte e quais anteriores já traz junto.
 
 ### 11/10/2026: área do cliente, painel em seções e acessos por pessoa
 
-**Tem um passo a mais: o seu acesso por pessoa (bloco 3).** A API ganha duas dependências (`cryptography`, para cifrar os segredos dos aplicativos autenticadores, e `segno`, para o QR Code): sem o `--build`, ela não sobe. As tabelas e colunas novas são criadas sozinhas na partida da API e só se somam às de antes. O orquestrador e o analisador não mudaram: os pods ligados seguem.
+**É a atualização a fazer agora, e traz junto a revisão do front-end de 10/10 (2), se ela ainda não foi feita.** Vale para o servidor na versão de 10/10 (a 09/10 (4)) ou em qualquer uma depois dela; os commits depois do `c93336d`, que trouxe os termos e a privacidade v2, só mudam a documentação e os testes. O `.env` não ganha variável nova. A imagem ganha duas dependências (`cryptography`, para cifrar os segredos dos aplicativos autenticadores, e `segno`, para o QR Code): sem o `--build`, a API não sobe. As tabelas e colunas novas são criadas sozinhas na partida da API e só se somam às de antes. Tudo o que muda roda na API: o orquestrador, o analisador e o código que vai para os pods são os mesmos de 10/10.
 
-**1) Backup do banco e API nova:**
+No PowerShell, entre no servidor com o `ssh` de sempre e cole um bloco de cada vez. **Tem um passo a mais: o seu acesso por pessoa (bloco 5).**
+
+**1) Nada gerando?** O bloco 3 recria o orquestrador, que desliga os pods ligados ao parar:
 ```bash
-cd ~/GPU2GO && git pull && cd servico/implantacao
+cd ~/GPU2GO/servico/implantacao
+docker compose exec -T postgres psql -U gpu2go gpu2go -c "SELECT (SELECT count(*) FROM lotes WHERE status IN ('aprovado', 'processando')) AS pedidos_gerando, (SELECT count(*) FROM geradores WHERE estado IN ('subindo', 'pronto') AND criado > extract(epoch FROM now()) - 8100) AS pods_ligados"
+```
+Com `pedidos_gerando` em 0, siga: um pod ligado sem pedido só espera o próximo e desliga sem perda. Com pedido gerando, espere terminar e confira de novo, ou use, no bloco 3, a variação que só recria a API.
+
+**2) Versão de agora, backup do banco e código novo:**
+```bash
+cd ~/GPU2GO && git log -1 --format='%h %ad %s' --date=short | tee ~/versao-antes-$(date +%F).txt
+cd servico/implantacao
 docker compose exec -T postgres pg_dump -U gpu2go gpu2go | gzip > ~/backup-antes-acessos-$(date +%F).sql.gz
 ls -lh ~/backup-antes-acessos-*.sql.gz
-docker compose up -d --build api
+git pull && git log -1 --format='%h %ad %s' --date=short
+```
+A 1ª linha mostra a versão que estava no servidor (fica guardada em `~/versao-antes-<data>.txt`); a última, a nova. O backup tem de ter alguns KB ou mais: com poucos bytes, o `pg_dump` falhou, e é melhor não seguir. Se o `git pull` disser que o repositório não existe, aponte para o nome novo (`RENDER2GO`; seção 0.2) e puxe de novo: `git remote set-url origin "$(git remote get-url origin | sed 's/GPU2GO/RENDER2GO/')" && git pull`.
+
+**3) Imagem nova e os três contêineres.** A construção leva alguns minutos, com o site no ar; na troca, a página fica fora do ar por alguns segundos, enquanto a API reinicia:
+```bash
+cd ~/GPU2GO/servico/implantacao
+docker compose up -d --build
 docker compose ps --format "table {{.Service}}\t{{.Status}}"
 docker compose logs --since 10m api | grep AVISO      # o que ainda falta configurar (também no painel, seção "Configuração")
+curl -s -o /dev/null -w '%{http_code}\n' https://app.render2go.com/extratos      # 200: versão nova no ar (404: ainda a antiga)
 ```
+- Em `ps`, os cinco aparecem "Up": `api`, `analisador` e `orquestrador` há poucos segundos (os dois últimos passam de "health: starting" para "healthy" em 1 a 3 min); `postgres` e `caddy` não reiniciam.
+- Avisos esperados enquanto faltarem (cada um sai uma vez por processo da API): a recarga por Pix (Mercado Pago) e, se o bloco 3 da entrada 09/10 (4) ainda não foi feito, a identificação da empresa.
+- **Com pedido gerando:** troque a 2ª linha por `docker compose up -d --build api`. Só a API é recriada, e os pods seguem. Mais tarde, sem pedido gerando, `docker compose up -d` recria o analisador e o orquestrador na imagem nova (o código deles não mudou: é só para os três ficarem na mesma imagem).
 
-**2) A chave de sempre continua valendo:** a entrada do painel agora pede nome de acesso, senha e código. Abra **"Acesso de emergência (chave do servidor)"**, logo abaixo, e entre com o token e o código de antes (`RENDER2GO_ADMIN_TOKENS` e `RENDER2GO_ADMIN_TOTP`). O painel abre na "Visão geral", com o que pede atenção agora e os números de hoje; cada seção tem o próprio endereço (`#revisao`, `#clientes`, `#pods`…).
+**4) A chave de sempre continua valendo:** a entrada do painel agora pede nome de acesso, senha e código. Abra **"Acesso de emergência (chave do servidor)"**, logo abaixo, e entre com o token e o código de antes (`RENDER2GO_ADMIN_TOKENS` e `RENDER2GO_ADMIN_TOTP`). O painel abre na "Visão geral", com o que pede atenção agora e os números de hoje; cada seção tem o próprio endereço (`#revisao`, `#clientes`, `#pods`…).
 
-**3) O seu acesso por pessoa.** Com o celular à mão, no servidor:
+**5) O seu acesso por pessoa.** Com o celular à mão, no servidor:
 ```bash
 cd ~/GPU2GO/servico/implantacao
 docker compose exec api render2go-servico admin-convite --usuario <seu nome de acesso> --papel dono
@@ -42,10 +63,13 @@ docker compose exec api render2go-servico admin-convite --usuario <seu nome de a
   - Extratos por rodada (com a planilha) e Logs das últimas 24 horas (assistir, baixar e excluir um vídeo);
   - Termos e Privacidade v2: quem entra vê o que mudou e aceita a versão nova para continuar fazendo pedidos e recargas.
 - **O que muda no painel:** seções separadas, cada uma com a própria rolagem e endereço; "Visão geral", "Acessos" e "Auditoria" (filtros por pessoa, ação, alvo e período, "Mostrar mais" e planilha CSV); a conta do cliente abre numa janela (saldo, plano, e-mail, extrato, desativar) com "Desligar a verificação em duas etapas", para quem perdeu o celular e os códigos de recuperação. Antes de desligar, confirme que é a pessoa (a mensagem tem de vir do e-mail da conta, e ela confirma um dado de um pedido ou de uma recarga).
-- **Conferir depois:** numa janela anônima, entre no site com o seu e-mail: o menu lateral aparece e `/extratos` mostra o extrato; no painel, "Auditoria" mostra a sua entrada e o convite criado pelo terminal.
-- **Se algo der errado:** volte para o commit anterior (`git checkout b4f9c7b`) e rode `docker compose up -d --build api`; o banco aceita a versão anterior. Só por pouco tempo: nela não existem os acessos por pessoa (só a chave de emergência entra) e a verificação em duas etapas dos clientes deixa de ser pedida na entrada. Para voltar à versão nova: `git checkout main && git pull` e o mesmo comando.
+- **Conferir depois:** numa janela anônima, entre no site com o seu e-mail: abre a janela "Os nossos termos mudaram" (aceite, ou "Agora não"), o menu lateral aparece e `/extratos` mostra o extrato. No painel, a "Visão geral" abre com os números de hoje, e a "Auditoria" mostra a sua entrada e o convite criado pelo terminal.
+- **Espaço em disco (opcional):** `docker image prune -f` apaga a imagem antiga, que fica sem uso depois do bloco 3. Com a variação só da API, ela segue em uso pelo analisador e pelo orquestrador, e fica.
+- **Se algo der errado:** `cd ~/GPU2GO && git checkout b4f9c7b && cd servico/implantacao && docker compose up -d --build api`. Volte para essa versão, e não para a de antes da atualização: ela já tem a revisão do front-end de 10/10 (2) e gera do mesmo jeito os pedidos em sequência feitos na versão nova (a fila, a cobrança e os estornos são os mesmos; só mudam as contas, as sessões e o painel). O banco aceita a versão anterior, porque as tabelas e colunas novas só se somam. Use só por pouco tempo: nela não existem os acessos por pessoa (só a chave de emergência entra), a verificação em duas etapas dos clientes deixa de ser pedida na entrada e as telas novas do menu dão 404. Para voltar à versão nova: `cd ~/GPU2GO && git checkout main && git pull && cd servico/implantacao && docker compose up -d --build api`. O backup do bloco 2 é só para o pior caso.
 
 ### 10/10/2026 (2): revisão do front-end
+
+**Vem junto na atualização de 11/10, logo acima:** quem ainda não fez esta segue só aquela.
 
 Só as páginas mudam (HTML, CSS e JavaScript, que vão dentro da imagem): sem passo extra e sem mudança no banco. Basta reconstruir e recriar a API; o orquestrador não reinicia, então os pods ligados seguem:
 

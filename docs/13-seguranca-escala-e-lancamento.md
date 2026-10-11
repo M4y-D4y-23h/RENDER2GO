@@ -386,7 +386,7 @@ Siga o `docs/09`, seção 0, "09/10/2026 (4)". A atualização leva poucos minut
 
 ### 6.8 Acessos do painel (11/10/2026)
 
-O passo a passo está no `docs/09`, seção 0, "11/10/2026" (bloco 3). Os cuidados de segurança:
+O passo a passo está no `docs/09`, seção 0, "11/10/2026" (bloco 5). Os cuidados de segurança:
 - **O seu acesso por pessoa primeiro:** pelo terminal do servidor (`render2go-servico admin-convite --usuario <nome> --papel dono`). Daí em diante, entre com nome, senha e código; a chave do servidor fica guardada no gerenciador de senhas, só para emergência (sem ela, a volta é o mesmo comando, pelo terminal).
 - **Um acesso por pessoa, com o menor papel que basta:** operador para quem só revisa e consulta. Ninguém divide nome, senha ou o QR Code.
 - **O endereço do convite é tão sensível quanto uma senha** enquanto vale (24 horas): mande em mãos, pelo gerenciador de senhas ou numa mensagem que se apaga, nunca por e-mail aberto nem print.
