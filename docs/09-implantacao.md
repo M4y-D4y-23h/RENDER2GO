@@ -430,6 +430,8 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 | `RENDER2GO_CICLO_S` | Opcional: de quantos em quantos segundos o orquestrador olha a fila (padrão 10, mínimo 5) |
 | `RENDER2GO_PRECO_480P_S`, `RENDER2GO_PRECO_720P_S` | Opcional: preço do pré-pago em reais por segundo de vídeo (padrões 0,25 e 0,50). Vale para os pedidos novos; o pedido já cobrado devolve pelo preço que pagou. Depois de mudar: `docker compose up -d api` |
 | `RENDER2GO_POD_OCIOSO_MIN` | Opcional: minutos que o pod fica ligado esperando o próximo pedido depois que a fila esvazia (padrão 3). Mais tempo = menos subidas, mais custo parado |
+| `RENDER2GO_PODS_HIBERNADOS` | Opcional: quantos pods ficam **hibernados** (parados, com ambiente e modelos no disco de volume) para voltar em ~1 min em vez de subir do zero em 4–5 min ([ADR 0011](adr/0011-pods-hibernados.md)). Padrão 0 (desligado). Cada um custa ~US$ 14/mês parado (70 GB a US$ 0,20/GB/mês) |
+| `RENDER2GO_POD_VOLUME_GB` | Opcional: disco de volume de cada pod que pode hibernar (padrão 70, mínimo 40) |
 
 **Banco gerenciado (opcional):** troque o Postgres local por um serviço como Neon ou Supabase. Basta pôr `RENDER2GO_DB_URL` no `.env` e apagar as linhas `RENDER2GO_DB_URL` do `compose.yaml`. O esquema é criado sozinho na primeira subida.
 
@@ -466,6 +468,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
   ```
   Antes de usar com clientes de verdade, confira os termos de uso: o registro de autorização (auditoria) também é apagado.
 - **Gasto:** o painel do RunPod mostra os pods. O orquestrador respeita `RENDER2GO_MAX_USD_H` e o saldo da conta, e cada pod se desliga sozinho em no máximo 2 h.
+- **Saldo do RunPod e prazo dos pods (desde 11/10/2026):** o desligamento automático de cada pod é o menor entre 2 h e o que o saldo paga (menos a reserva de US$ 1 ou 10% e o que os outros pods ligados ainda podem gastar), e o worker para de pegar pedidos 10 min antes. Com saldo baixo, o pod sai cedo: em 11/10, com ~US$ 3 de saldo, um pod saiu aos ~40 min. A seção **Pods** do painel mostra o saldo, o prazo que um pod novo teria agora ("Saldo baixo" abaixo de 1 h) e os pods hibernados; o relatório de **GPUs** mostra por que cada pod saiu ("fila vazia", "limite de tempo do pod", "hibernado (...)"). **Mantenha no RunPod pelo menos ~US$ 10 por pod que pode ficar ligado ao mesmo tempo** (2 h de L40S ≈ US$ 2,20, mais a reserva) e ligue a recarga automática do RunPod.
 - **Trocar a GPU:** `RENDER2GO_GPUS` no `.env` e `docker compose up -d orquestrador`. Os preços do dia saem em `docker compose exec orquestrador python -m render2go_worker.runpod_pods disponibilidade --gpu "NVIDIA L40S"`.
 
 ## 5.1 Teste gratuito e custo

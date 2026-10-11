@@ -12,7 +12,16 @@ A cada ciclo (RENDER2GO_CICLO_S, padrão 10 s):
    `lote_nuvem.GPUS_PADRAO`). Os serviços e o worker sobem assim que o ambiente fica pronto, e o
    pedido é traduzido enquanto os modelos de vídeo terminam de baixar (`subir_pod(cedo=True)`);
 4. encerra os pods cujo worker terminou (fila vazia por RENDER2GO_POD_OCIOSO_MIN, padrão 3 min =
-   "pod quente" vencido).
+   "pod quente" vencido) ou, com RENDER2GO_PODS_HIBERNADOS > 0, para até esse número deles em vez de
+   encerrar (ADR 0011): o pod hibernado guarda ambiente e modelos no disco de volume próprio e volta em
+   ~1 min, sem download. Quando a fila pede pods, os hibernados são ligados primeiro; o host sem GPU
+   livre faz o orquestrador tentar o próximo e, no fim, criar um pod novo.
+
+O desligamento automático de cada pod é recalculado assim que o agente responde, com o preço real da
+GPU (na criação ainda não se sabe qual GPU veio, e vale o preço da mais cara da lista) e com o que os
+outros pods ligados ainda podem gastar até o prazo deles. O worker escreve por que saiu (sem pedidos,
+limite de tempo do pod, modelos, GPU) e o motivo vai para o relatório de GPUs do painel. O saldo do
+RunPod e os pods hibernados ficam na tabela `estado` ("runpod"), para o painel.
 
 Cada pod fica registrado na tabela `geradores` (subindo, pronto, encerrado): a API usa esse estado
 e as subidas medidas para a previsão mostrada ao cliente, e o painel do dono mostra o relatório de cada
@@ -27,7 +36,8 @@ pod quente) e um vídeo de teste ~US$ 0,015: dez testes de 1 foto em horários d
 pagariam dez subidas; juntos, pagam uma. Pedidos pagos sobem na hora.
 
 Proteções:
-- cada pod nasce com desligamento automático (≤ 2 h e o que o saldo paga);
+- cada pod nasce com desligamento automático (≤ 2 h por subida e o que o saldo paga; o pod que hiberna
+  nasce com 20 min e recebe o prazo real quando o agente responde; na hora, ele para em vez de encerrar);
 - o worker para de pegar jobs 10 min antes;
 - o estado fica em disco para `render2go-servico limpar`; na partida, os pods que um processo anterior
   deixou ligados (ele caiu sem encerrá-los) são encerrados;
@@ -48,6 +58,7 @@ ou do RunPod).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -69,12 +80,23 @@ FILA_CMD = (
     "set -a; . {raiz}/fila.env; set +a; cd /opt/render2go/worker && "
     "PATH=/opt/venv/bin:$PATH PYTHONPATH=/opt/render2go/worker/src "
     "python -m render2go_worker.fila --api {api} --worker {worker} --gpus {gpus} --ate {ate} "
-    "--ocioso {ocioso} --modelos-prontos {raiz}/estado --modelos-ate {modelos_ate}"
+    "--ocioso {ocioso} --modelos-prontos {raiz}/estado --modelos-ate {modelos_ate} "
+    "--motivo {raiz}/fila.motivo"
 )
 VIVO = "vivo"  # tocado a cada ciclo bem-sucedido (healthcheck do contêiner)
 TRAVA_ORQUESTRADOR = 20261009  # trava do Postgres: um orquestrador por vez manda nos pods
 PREFIXO_PODS = "render2go-"  # nome dos pods que o orquestrador cria (a parada de emergência procura por ele)
 LIMPEZA_S = 3600  # a cada hora: registros de acesso vencidos, códigos e limites antigos (Banco.purgar)
+SALDO_S = 300  # a cada 5 min: saldo do RunPod para o painel (estado "runpod")
+HIBERNADOS = "hibernados.json"  # pods parados com ambiente e modelos (ADR 0011); tem os tokens dos agentes
+FALHAS_RETOMADA = 3  # o host ficou sem GPU livre tantas vezes seguidas: o pod hibernado é encerrado
+# por que o worker saiu (fila.motivo, render2go_worker.fila.MOTIVOS), para o relatório do painel
+MOTIVOS = {
+    "ocioso": "fila vazia",
+    "limite": "limite de tempo do pod",
+    "modelos": "modelos não ficaram prontos",
+    "gpu": "GPU inacessível",
+}
 
 
 def _gpus_do_ambiente() -> list[str]:
@@ -104,6 +126,8 @@ class ConfigOrq:
     agrupar_teste_s: float = 10 * 60
     agrupar_teste_videos: int = 20
     ocioso_s: float = 180  # pod quente: sem jobs por esse tempo, o worker sai e o pod é encerrado
+    hibernados: int = 0  # pods parados com tudo instalado, prontos para voltar em ~1 min (ADR 0011)
+    volume_gb: int = 70  # disco de volume de cada pod que pode hibernar (cobrado parado: US$ 0,20/GB/mês)
 
     @classmethod
     def do_ambiente(cls) -> ConfigOrq:
@@ -128,6 +152,8 @@ class ConfigOrq:
             agrupar_teste_s=float(os.environ.get("RENDER2GO_AGRUPAR_TESTE_MIN", 10)) * 60,
             agrupar_teste_videos=int(os.environ.get("RENDER2GO_AGRUPAR_TESTE_VIDEOS", 20)),
             ocioso_s=max(60.0, float(os.environ.get("RENDER2GO_POD_OCIOSO_MIN", 3)) * 60),
+            hibernados=max(0, int(os.environ.get("RENDER2GO_PODS_HIBERNADOS", 0))),
+            volume_gb=max(40, int(os.environ.get("RENDER2GO_POD_VOLUME_GB", 70))),
         )
 
 
@@ -175,7 +201,16 @@ class Orquestrador:
         self.cancelados: set[str] = set()  # geradores desligados pelo painel enquanto subiam
         self.pausado = False
         self._limpeza = 0.0
+        self._saldo_em = 0.0
+        self._saldo: float | None = None  # saldo do RunPod (consultado a cada SALDO_S, para o painel)
+        self._prazo_novo: int | None = None
         self._revisor = ThreadPoolExecutor(max_workers=16, thread_name_prefix="revisar")
+        # pods hibernados (ADR 0011): id → PodInfo + versão, voltas e falhas; em disco (0600) porque
+        # guarda o token de cada agente, sem o qual o pod parado não serve para nada
+        self.hib_arquivo = cfg.estado / HIBERNADOS
+        self.hib: dict[str, dict] = self._ler_hibernados()
+        # nome dos pods deste serviço: o hash da API separa ambientes que usem a mesma conta do RunPod
+        self.prefixo = "render2go-fila-" + hashlib.sha256(cfg.api_url.encode()).hexdigest()[:6]
 
     # -- decisão --------------------------------------------------------------------------
 
@@ -219,20 +254,45 @@ class Orquestrador:
         precos = [x for o in self.pods_ln.a.opcoes if (x := self.provedor.preco(o.gpu, o.nuvem)) is not None]
         return max(precos) if precos else ln.PRECO_RESERVA_USD_H
 
-    def _deadman(self, usd_h: float) -> int | None:
-        """Prazo do desligamento automático do próximo pod; None se o saldo não paga 15 min."""
+    def _comprometido(self, excluir: str | None = None) -> float:
+        """US$ que os pods ligados (e os que estão subindo) ainda podem gastar até o desligamento
+        automático de cada um: o pior caso, que o saldo precisa cobrir antes de um pod novo."""
+        agora = time.monotonic()
+        with self.pods_ln.lock:
+            pods = [p for p in self.pods_ln.pods if p.vivo and p.info.id != excluir]
+        return sum(p.info.usd_h * max(0.0, (p.deadman_s or ln.MAX_POD_S) - (agora - p.criado)) / 3600 for p in pods)
+
+    def _deadman(
+        self, usd_h: float, reservado: float = 0.0, excluir: str | None = None, saldo: float | None = None
+    ) -> int | None:
+        """Prazo (s a partir de agora) do desligamento automático de um pod que custa `usd_h`; None se
+        o saldo não paga 15 min. `reservado`: US$ já prometidos a pods deste mesmo ciclo."""
         limite = ln.MAX_POD_S
-        saldo = self.provedor.saldo() if hasattr(self.provedor, "saldo") else None
+        if saldo is None:
+            saldo = self.provedor.saldo() if hasattr(self.provedor, "saldo") else None
         if saldo is not None:
-            disponivel = saldo - max(ln.RESERVA_SALDO_USD, 0.1 * saldo)
-            disponivel -= sum(p.pod.info.usd_h for p in self.ativos.values()) * 2  # já comprometido
-            limite = min(limite, max(0.0, disponivel) / usd_h * 3600)
+            disponivel = saldo - max(ln.RESERVA_SALDO_USD, 0.1 * saldo) - reservado
+            disponivel -= self._comprometido(excluir)
+            limite = min(limite, max(0.0, disponivel) / max(usd_h, 0.01) * 3600)
         return int(limite) if limite >= ln.MIN_POD_S else None
+
+    def _ajustar_deadman(self, pod: ln.Pod) -> None:
+        """Assim que o agente responde: o prazo com o preço real da GPU (na criação valeu o da mais
+        cara da lista; até 08/10/2026 ficava esse, e com saldo baixo o pod durava ~40 min)."""
+        vivo_s = time.monotonic() - pod.criado
+        total = self._deadman(pod.info.usd_h or self._preco(), excluir=pod.info.id)
+        if total is None:  # o saldo não paga nem 15 min: fica o prazo com que o pod nasceu
+            _log(f"pod {pod.nome}: saldo baixo; desligamento automático mantido em {pod.deadman_s // 60} min")
+            return
+        em = pod.agente.deadman(min(total, ln.MAX_POD_S - vivo_s))
+        pod.deadman_s = int(vivo_s + em)
+        _log(f"pod {pod.nome}: desligamento automático em {em / 60:.0f} min (US$ {pod.info.usd_h:.2f}/h)")
 
     # -- pods -----------------------------------------------------------------------------
 
-    def _iniciar_worker(self, pod: ln.Pod, deadman_s: int, gerador: str | None = None) -> PodFila:
+    def _iniciar_worker(self, pod: ln.Pod, gerador: str | None = None) -> PodFila:
         r, ag = self.remoto, pod.agente
+        deadman_s = pod.deadman_s  # já com o preço real (_ajustar_deadman)
         env = self.cfg.estado / f"fila-{pod.info.id}.env"
         worker = f"pod-{pod.info.id}"
         # token só deste pod, válido até o desligamento automático (com folga); revogado no fim
@@ -272,27 +332,37 @@ class Orquestrador:
             with self.lock:
                 self.n += 1
                 i = self.n
-            # serviços já durante o download dos modelos: o pedido é traduzido enquanto ele termina
-            pod = self.pods_ln.subir_pod(
-                i,
-                deadman_s,
-                cedo=True,
-                ao_criar=lambda info: self._registrar(
-                    "gerador_criado", gerador, f"pod-{info.id}", info.gpu, info.usd_h, info.datacentro
-                ),
-            )
+
+            def criado(info: ln.PodInfo) -> None:  # o pod passa a custar: id, GPU e preço no relatório
+                self._registrar("gerador_criado", gerador, f"pod-{info.id}", info.gpu, info.usd_h, info.datacentro)
+
+            # 1º os pods hibernados (~1 min, nada a baixar); sem nenhum que volte, um pod novo
+            pod = self._retomar_algum(criado)
+            if pod is None:
+                # serviços já durante o download dos modelos: o pedido é traduzido enquanto ele termina
+                pod = self.pods_ln.subir_pod(
+                    i,
+                    deadman_s,
+                    cedo=True,
+                    ao_criar=criado,
+                    ao_agente=self._ajustar_deadman,
+                    volume_gb=self.cfg.volume_gb if self.cfg.hibernados else 0,
+                    prefixo=self.prefixo,
+                )
             if pod is None:  # o lote_nuvem já encerrou o pod que não subiu (se chegou a existir)
                 return
             with self.lock:
                 cancelado = gerador in self.cancelados or self.pausado
             if cancelado:  # desligado pelo painel (ou parada de emergência) enquanto subia
                 _log(f"pod {pod.nome}: desligado pelo painel durante a subida")
+                self._tirar_hibernado(pod.info.id)
                 self.pods_ln.encerrar(pod, "desligado pelo painel", esperar_espelho=False)
                 return
             try:
-                pf = self._iniciar_worker(pod, deadman_s, gerador)
+                pf = self._iniciar_worker(pod, gerador)
             except (ln.NuvemError, OSError, BancoError) as e:
                 _log(f"pod {pod.nome}: worker não iniciou ({e})")
+                self._tirar_hibernado(pod.info.id)
                 self.pods_ln.encerrar(pod, "worker não iniciou")
                 return
             with self.lock:
@@ -306,6 +376,93 @@ class Orquestrador:
             with self.lock:
                 self.subindo -= 1
 
+    # -- pods hibernados (ADR 0011) --------------------------------------------------------------
+
+    def _ler_hibernados(self) -> dict[str, dict]:
+        try:
+            dados = json.loads(self.hib_arquivo.read_text()) if self.hib_arquivo.is_file() else {}
+        except (OSError, ValueError):
+            dados = {}
+        for h in dados.values():
+            h["em_uso"] = False  # nenhum está em uso quando o processo começa
+        return dados
+
+    def _salvar_hibernados(self) -> None:
+        """Grava o conjunto (0600: tem os tokens dos agentes) e o resumo sem tokens para o painel.
+        Chamar com self.lock."""
+        tmp = self.hib_arquivo.with_name(self.hib_arquivo.name + ".tmp")
+        tmp.write_text(json.dumps(self.hib, indent=1))
+        tmp.chmod(0o600)
+        tmp.replace(self.hib_arquivo)
+
+    def _tirar_hibernado(self, pod_id: str) -> None:
+        with self.lock:
+            if self.hib.pop(pod_id, None) is not None:
+                self._salvar_hibernados()
+
+    def _pode_hibernar(self, pod: ln.Pod, motivo: str) -> bool:
+        if not (self.cfg.hibernados and pod.hibernavel and motivo in ("ocioso", "limite")) or self.pausado:
+            return False
+        versao = ln.versao_hibernacao()
+        with self.lock:
+            if (self.hib.get(pod.info.id) or {}).get("versao", versao) != versao:
+                return False  # o disco do pod é de uma versão anterior (dependências, modelos, agente)
+            return sum(1 for k in self.hib if k != pod.info.id) < self.cfg.hibernados
+
+    def _retomar_algum(self, ao_criar) -> ln.Pod | None:
+        """Liga o primeiro pod hibernado que conseguir (GPU na ordem de RENDER2GO_GPUS, menos falhas
+        antes); None se não há nenhum ou todos estão sem GPU livre no host agora."""
+        if not self.cfg.hibernados:
+            return None
+        versao = ln.versao_hibernacao()
+        ordem = {g: n for n, g in enumerate(self.cfg.gpus)}
+        while True:
+            with self.lock:
+                livres = [h for h in self.hib.values() if not h.get("em_uso") and h.get("versao") == versao]
+                if not livres:
+                    return None
+                h = min(livres, key=lambda x: (ordem.get(x.get("gpu"), 99), x.get("falhas", 0)))
+                h["em_uso"] = True
+            info = ln.PodInfo(
+                h["id"], h["url"], h["token"], float(h["usd_h"]), h.get("descricao", ""),
+                int(h.get("gpus", 1)), h.get("gpu", ""), h.get("datacentro"),
+            )  # fmt: skip
+            try:
+                pod = self.pods_ln.retomar_pod(info, cedo=True, ao_agente=self._ajustar_deadman, ao_criar=ao_criar)
+            except runpod_pods.SemVaga as e:  # o host está sem GPU livre: o pod continua parado
+                with self.lock:
+                    h["em_uso"] = False
+                    h["falhas"] = h.get("falhas", 0) + 1
+                    desiste = h["falhas"] >= FALHAS_RETOMADA
+                    self._salvar_hibernados()
+                _log(f"pod hibernado {info.id}: {e}")
+                if desiste:  # host cheio demais: o disco sai junto, e um pod novo ocupa a vaga depois
+                    self._descartar_hibernado(info.id, f"{FALHAS_RETOMADA} vezes sem GPU livre no host")
+                continue
+            except (ln.NuvemError, runpod_pods.RunPodError, OSError) as e:
+                _log(f"pod hibernado {info.id} não voltou: {e}")
+                self._descartar_hibernado(info.id, "não voltou da hibernação")
+                continue
+            with self.lock:
+                h["falhas"] = 0
+                h["voltas"] = h.get("voltas", 0) + 1
+                self._salvar_hibernados()
+            return pod
+
+    def _descartar_hibernado(self, pod_id: str, motivo: str) -> None:
+        """Encerra de vez um pod do conjunto (o disco de volume vai junto)."""
+        self._tirar_hibernado(pod_id)
+        with self.pods_ln.lock:
+            pod = next((p for p in self.pods_ln.pods if p.info.id == pod_id and p.vivo), None)
+        try:
+            if pod:
+                self.pods_ln.encerrar(pod, motivo, esperar_espelho=False)
+            else:
+                self.provedor.encerrar(pod_id)
+            _log(f"pod hibernado {pod_id} encerrado ({motivo})")
+        except Exception as e:  # noqa: BLE001 (parado, o pod não cobra GPU; a limpeza tenta de novo)
+            _log(f"AVISO: encerrar o pod hibernado {pod_id}: {e}")
+
     def _registrar(self, acao: str, gerador: str | None, *args, **kw) -> None:
         """Registro do pod na tabela geradores (previsão para o cliente): nunca derruba o fluxo."""
         if not gerador:
@@ -315,31 +472,83 @@ class Orquestrador:
         except Exception as e:  # noqa: BLE001 (só a previsão depende disso)
             _log(f"AVISO: registro do gerador ({acao}): {e}")
 
-    def _terminou(self, pf: PodFila) -> bool:
+    def _terminou(self, pf: PodFila) -> str | None:
+        """Por que o worker saiu (chave de MOTIVOS ou "agente"), ou None se ele ainda roda."""
+        r = self.remoto.raiz
         try:
-            _, out = pf.pod.agente.exec(f"cat {self.remoto.raiz}/fila.fim 2>/dev/null", 30)
-            return "FIM" in out
+            _, out = pf.pod.agente.exec(f"cat {r}/fila.fim {r}/fila.motivo 2>/dev/null", 30)
         except (ln.NuvemError, OSError) as e:
             _log(f"pod {pf.pod.nome}: agente inacessível ({e})")
-            return True
+            return "agente"
+        if "FIM" not in out:
+            return None
+        return next((m for m in MOTIVOS if m in out.split()), "ocioso")
 
     def _revisar(self) -> None:
-        """Encerra pods cujo worker terminou ou cujo agente sumiu. Os agentes são consultados ao mesmo
-        tempo: com dezenas de pods, um agente lento (até 30 s) não atrasa o ciclo inteiro."""
+        """Hiberna ou encerra pods cujo worker terminou ou cujo agente sumiu. Os agentes são consultados
+        ao mesmo tempo: com dezenas de pods, um agente lento (até 30 s) não atrasa o ciclo inteiro."""
         pods = list(self.ativos.items())
         terminados = list(self._revisor.map(lambda item: self._terminou(item[1]), pods)) if pods else []
-        for (pid, pf), fim in zip(pods, terminados, strict=True):
-            if fim:
+        for (pid, pf), motivo in zip(pods, terminados, strict=True):
+            if motivo is None:
+                continue
+            with self.lock:
+                self.ativos.pop(pid, None)
+            texto = MOTIVOS.get(motivo, "agente inacessível")
+            # o worker saiu: o pod já não gera vídeos (a previsão não pode contar com ele)
+            self._registrar("gerador_fim", pf.gerador, texto)
+            if motivo == "agente" and self._parado_pelo_prazo(pf):
+                with self.pods_ln.lock:  # o próprio pod já se parou: nada a parar nem encerrar
+                    pf.pod.vivo, pf.pod.fim = False, time.monotonic()
+                    self.pods_ln._salvar_estado()
+                motivo, texto = "limite", "limite de tempo do pod (parado pelo desligamento automático)"
+            if pf.pod.grava_volume or pf.pod.espelhando:  # o envio ao espelho pode levar minutos
                 with self.lock:
-                    self.ativos.pop(pid, None)
-                # o worker saiu: o pod já não gera vídeos (a previsão não pode contar com ele)
-                self._registrar("gerador_fim", pf.gerador, "fila vazia")
-                if pf.pod.grava_volume:  # o envio ao espelho pode levar minutos: fora do ciclo
-                    with self.lock:
-                        self.encerrando[pid] = pf
-                    threading.Thread(target=self._encerrar_pod, args=(pf, "fila vazia"), daemon=True).start()
-                else:
-                    self._encerrar_pod(pf, "fila vazia")
+                    self.encerrando[pid] = pf
+                threading.Thread(target=self._fim_do_pod, args=(pf, motivo, texto), daemon=True).start()
+            else:
+                self._fim_do_pod(pf, motivo, texto)
+
+    def _parado_pelo_prazo(self, pf: PodFila) -> bool:
+        """O agente sumiu porque o desligamento automático parou o pod (que hiberna)?"""
+        if not (pf.pod.hibernavel and hasattr(self.provedor, "situacao")):
+            return False
+        try:
+            return self.provedor.situacao(pf.pod.info.id) == "EXITED"
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _fim_do_pod(self, pf: PodFila, motivo: str, texto: str) -> None:
+        """Hiberna (ADR 0011) se pode; senão encerra."""
+        if not self._pode_hibernar(pf.pod, motivo):
+            self._tirar_hibernado(pf.pod.info.id)
+            self._encerrar_pod(pf, texto)
+            return
+        self._registrar_token(pf)
+        try:
+            if pf.pod.grava_volume and pf.pod.vivo:  # o gravador termina o envio ao espelho antes
+                self.pods_ln._esperar_guardar(pf.pod)
+            # o pod que o desligamento automático já parou (vivo=False em _revisar) só entra no conjunto
+            ok = self.pods_ln.hibernar(pf.pod, texto) if pf.pod.vivo else True
+            if ok:
+                i = pf.pod.info
+                with self.lock:
+                    h = self.hib.setdefault(i.id, {"criado": time.time(), "voltas": 0, "falhas": 0})
+                    h |= {
+                        "id": i.id, "url": i.url, "token": i.token, "usd_h": i.usd_h, "descricao": i.descricao,
+                        "gpus": i.gpus, "gpu": i.gpu, "datacentro": i.datacentro, "em_uso": False,
+                        "versao": ln.versao_hibernacao(), "parado_em": time.time(),
+                    }  # fmt: skip
+                    self._salvar_hibernados()
+                texto = f"hibernado ({texto})"
+            else:
+                self._tirar_hibernado(pf.pod.info.id)
+        finally:
+            with self.lock:
+                self.encerrando.pop(pf.pod.info.id, None)
+            self._registrar("gerador_fim", pf.gerador, texto)
+            self._registrar("gerador_motivo", pf.gerador, texto)  # o _revisar já tirou da previsão
+            self._registrar("gerador_desligado", pf.gerador)  # fim da cobrança da GPU
 
     def _encerrar_pod(self, pf: PodFila, motivo: str, esperar_espelho: bool = True) -> None:
         """Encerra o pod; o gravador antes termina o envio ao espelho (com prazo)."""
@@ -368,13 +577,15 @@ class Orquestrador:
                 self.ativos.pop(pf.pod.info.id, None)
             else:
                 self.cancelados.add(gerador)  # ainda subindo: encerrado assim que o RunPod devolver o pod
-        if pf:
+        if pf:  # pedido explícito do dono: encerra de vez, mesmo se o pod pudesse hibernar
+            self._tirar_hibernado(pf.pod.info.id)
             self._encerrar_pod(pf, "desligado pelo painel", esperar_espelho=False)
             return f"pod {pf.pod.info.id} encerrado"
         try:  # subindo: se o RunPod já criou o pod, encerra agora mesmo pelo id registrado
             with self.banco.tx() as c:
                 g = c.one("SELECT worker FROM geradores WHERE id = ?", (gerador,))
             if g and g["worker"]:
+                self._tirar_hibernado(g["worker"].removeprefix("pod-"))
                 self.provedor.encerrar(g["worker"].removeprefix("pod-"))
                 self._registrar("gerador_fim", gerador, "desligado pelo painel")
                 self._registrar("gerador_desligado", gerador)
@@ -417,9 +628,14 @@ class Orquestrador:
                     self.pausado = True
                     with self.lock:
                         n = len(self.ativos) + len(self.encerrando) + self.subindo
+                        hib = list(self.hib)
                     self.encerrar_todos("parada de emergência")
+                    for pid in hib:  # parada de emergência: os hibernados também saem (com o disco)
+                        self._descartar_hibernado(pid, "parada de emergência")
                     sobras = self._sobras_runpod()
                     resultado = f"{n} pod(s) encerrados" + (f" e {sobras} sobra(s) no RunPod" if sobras else "")
+                    if hib:
+                        resultado += f"; {len(hib)} hibernado(s) encerrado(s)"
                 else:  # retomar: a pausa sai do estado (a API já gravou)
                     resultado = "pods liberados"
                 _log(f"painel: {cmd['tipo']} ({cmd['por']}): {resultado}")
@@ -437,11 +653,48 @@ class Orquestrador:
             with self.lock:
                 self.cancelados.clear()
         self.banco.definir_estado("orquestrador_vivo", str(time.time()))
+        self._estado_runpod()
         if time.time() - self._limpeza > LIMPEZA_S:
             self._limpeza = time.time()
             n = self.banco.purgar()
             if any(n.values()):
                 _log("limpeza: " + ", ".join(f"{k} {v}" for k, v in n.items() if v))
+
+    def _estado_runpod(self) -> None:
+        """Para o painel: saldo do RunPod (a cada 5 min), o prazo que um pod novo teria por ele e os
+        pods hibernados, sem os tokens. Também encerra os hibernados de uma versão anterior."""
+        agora = time.time()
+        if agora - self._saldo_em >= SALDO_S:
+            self._saldo_em = agora
+            self._saldo = self.provedor.saldo() if hasattr(self.provedor, "saldo") else None
+            self._prazo_novo = None
+            if self._saldo is not None:
+                try:
+                    self._prazo_novo = self._deadman(self._preco(), saldo=self._saldo) or 0
+                except Exception as e:  # noqa: BLE001 (só o painel depende disso)
+                    _log(f"AVISO: prazo de um pod novo: {e}")
+        versao = ln.versao_hibernacao()
+        with self.lock:
+            velhos = [k for k, h in self.hib.items() if h.get("versao") != versao and not h.get("em_uso")]
+        for pid in velhos:
+            self._descartar_hibernado(pid, "versão anterior do ambiente ou dos modelos")
+        with self.lock:
+            campos = ("id", "gpu", "usd_h", "datacentro", "criado", "parado_em", "voltas", "falhas", "em_uso")
+            hib = [{k: h.get(k) for k in campos} for h in self.hib.values()]
+        self.banco.definir_estado(
+            "runpod",
+            json.dumps(
+                {
+                    "saldo_usd": self._saldo,
+                    "saldo_em": self._saldo_em or None,
+                    "prazo_novo_pod_s": self._prazo_novo,
+                    "margem_s": ln.MARGEM_S,
+                    "hibernados": hib,
+                    "hibernados_max": self.cfg.hibernados,
+                    "volume_gb": self.cfg.volume_gb,
+                }
+            ),
+        )
 
     def ciclo(self) -> dict:
         self._estado_do_painel()
@@ -459,14 +712,16 @@ class Orquestrador:
             return {"desejados": querem, "ativos": len(self.ativos), "subindo": self.subindo}
         usd_h = self._preco()
         gasto_h = sum(p.pod.info.usd_h for p in self.ativos.values()) + self.subindo * usd_h
+        reservado = 0.0  # o pior caso dos pods que este ciclo já mandou subir
         for _ in range(faltam):
             if gasto_h + usd_h > self.cfg.max_usd_h:
                 _log(f"teto de US$ {self.cfg.max_usd_h:.2f}/h: não sobe mais pods agora")
                 break
-            deadman = self._deadman(usd_h)
+            deadman = self._deadman(usd_h, reservado)
             if deadman is None:
                 _log("saldo da conta não paga mais um pod: não sobe")
                 break
+            reservado += usd_h * deadman / 3600
             try:  # registro para a previsão do cliente; sem ele, o pod sobe do mesmo jeito
                 gerador = self.banco.gerador_subindo(self.cfg.gpus[0])
             except Exception as e:  # noqa: BLE001
@@ -490,6 +745,7 @@ class Orquestrador:
         except (OSError, ValueError):
             sobras = []
         for p in sobras:
+            self._tirar_hibernado(p["id"])  # estava ligado quando o processo caiu: sai do conjunto
             try:
                 self.provedor.encerrar(p["id"])
                 _log(f"pod {p['id']} de um processo anterior encerrado")
@@ -497,6 +753,36 @@ class Orquestrador:
                 _log(f"AVISO: encerrar a sobra {p.get('id')}: {e}")
         if sobras:
             est.write_text("[]")
+        self._conferir_hibernados()
+
+    def _conferir_hibernados(self) -> None:
+        """Na partida: tira do conjunto o pod que o RunPod já não tem e encerra os pods parados deste
+        serviço que não estão no conjunto (o arquivo se perdeu: sem o token do agente, não servem)."""
+        chave = getattr(self.provedor, "chave", None)
+        if chave is None or not (self.hib or self.cfg.hibernados):
+            return
+        try:
+            r = runpod_pods._rest("GET", "/pods", chave)
+            pods = r.json() if r.ok else None
+        except Exception as e:  # noqa: BLE001
+            _log(f"AVISO: listar os pods do RunPod: {e}")
+            return
+        if not isinstance(pods, list):
+            return
+        existem = {p.get("id"): p for p in pods}
+        with self.lock:
+            sumiram = [k for k in self.hib if existem.get(k, {}).get("desiredStatus") in (None, "TERMINATED")]
+        for pid in sumiram:
+            self._tirar_hibernado(pid)
+            _log(f"pod hibernado {pid} não existe mais no RunPod: saiu do conjunto")
+        for pid, p in existem.items():
+            nome = str(p.get("name", ""))
+            if nome.startswith(self.prefixo) and p.get("desiredStatus") == "EXITED" and pid not in self.hib:
+                try:
+                    self.provedor.encerrar(pid)
+                    _log(f"pod parado {pid} fora do conjunto de hibernados: encerrado")
+                except Exception as e:  # noqa: BLE001
+                    _log(f"AVISO: encerrar o pod parado {pid}: {e}")
 
     def rodar(self) -> None:
         trava = None
@@ -533,15 +819,21 @@ class Orquestrador:
                     _log(f"AVISO: ciclo falhou: {e}")
                 self.parar.wait(self.cfg.intervalo_s)
         finally:
-            self.encerrar_todos("orquestrador parou")
+            self.encerrar_todos("orquestrador parou", hibernar=True)
 
-    def encerrar_todos(self, motivo: str) -> None:
+    def encerrar_todos(self, motivo: str, hibernar: bool = False) -> None:
         """Encerra tudo na hora, inclusive o gravador no meio do envio (o espelho completa depois) e os
-        pods que ainda estão subindo (o RunPod já os criou: estão em `pods_ln.pods`)."""
+        pods que ainda estão subindo (o RunPod já os criou: estão em `pods_ln.pods`). Com `hibernar`
+        (o orquestrador parou, ex.: atualização), os pods ativos que cabem no conjunto hibernam: os
+        vídeos em andamento voltam para a fila do mesmo jeito, e a próxima subida leva ~1 min."""
         with self.lock:
             pods = list(self.ativos.values()) + list(self.encerrando.values())
             conhecidos = {p.pod.info.id for p in pods}
         for pf in pods:
+            if hibernar and not pf.pod.grava_volume and self._pode_hibernar(pf.pod, "ocioso"):
+                self._fim_do_pod(pf, "ocioso", motivo)
+                continue
+            self._tirar_hibernado(pf.pod.info.id)
             self._registrar_token(pf)
             self.pods_ln.encerrar(pf.pod, motivo, esperar_espelho=False)
             self._registrar("gerador_fim", pf.gerador, motivo)
@@ -549,6 +841,7 @@ class Orquestrador:
         with self.pods_ln.lock:
             subindo = [p for p in self.pods_ln.pods if p.vivo and p.info.id not in conhecidos]
         for pod in subindo:  # a subida em andamento vê o pod encerrado e desiste
+            self._tirar_hibernado(pod.info.id)
             self.pods_ln.encerrar(pod, motivo, esperar_espelho=False)
         with self.lock:
             self.ativos.clear()

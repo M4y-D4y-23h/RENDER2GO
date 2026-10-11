@@ -36,6 +36,8 @@ from __future__ import annotations
 import argparse
 import base64
 import csv
+import dataclasses
+import hashlib
 import json
 import os
 import queue
@@ -113,6 +115,14 @@ ESPERA_GUARDAR_S = 15 * 60  # pod gravador: prazo para terminar o cache no volum
 CONSULTA_S = 3
 FOTOS_POR_GPU = 2
 ESTADO = ".nuvem"
+# Pods que hibernam (ADR 0011): ambiente e modelos no disco de volume do próprio pod (local; fica no
+# host quando o pod é parado, cobrado à parte). Na volta, nada é baixado nem instalado.
+VOLUME_HIB = "/workspace"
+LOCAL_HIB = "/workspace/r2g"
+DISCO_HIB_GB = (
+    40  # disco do contêiner (apagado na parada): apt, cache do uv, fotos e vídeos dos jobs
+)
+PISO_HIB_S = 20 * 60  # prazo inicial do pod que hiberna, até o orquestrador mandar o de verdade
 
 
 def _log(msg: str) -> None:
@@ -183,6 +193,14 @@ class Agente:
 
     def bg(self, cmd: str, log: str) -> None:
         self._req("POST", "/bg", json={"cmd": cmd, "log": log})
+
+    def deadman(self, s: float) -> float:
+        """Reprograma o desligamento automático para `s` segundos a partir de agora (o agente nunca
+        passa de 2 h da subida); devolve os segundos que valeram."""
+        r = self._req("POST", "/deadman", json={"s": s}, timeout=30)
+        if r.status_code != 200:
+            raise AgenteError(f"desligamento automático: HTTP {r.status_code} {r.text[:200]}")
+        return float(r.json()["em_s"])
 
     def put(self, local: Path, remoto: str) -> None:
         with local.open("rb") as f:
@@ -279,12 +297,24 @@ class RunPod:
                 return row["usd_hora"]
         return None
 
-    def criar(self, nome: str, opcoes: list[runpod_pods.Opcao], gpus: int, env: dict) -> PodInfo:
+    def criar(
+        self,
+        nome: str,
+        opcoes: list[runpod_pods.Opcao],
+        gpus: int,
+        env: dict,
+        volume_gb: int = 0,
+    ) -> PodInfo:
+        """`volume_gb`: disco de volume do próprio pod em /workspace (pod que hiberna, ADR 0011)."""
         tentativas = []
         for opcao in opcoes:
-            corpo = runpod_pods.corpo_pod(opcao, self.IMAGEM, nome, 120, env, ["8888/http"])
+            disco = DISCO_HIB_GB if volume_gb else 120
+            corpo = runpod_pods.corpo_pod(opcao, self.IMAGEM, nome, disco, env, ["8888/http"])
             corpo["gpuCount"] = gpus
             corpo["dockerStartCmd"] = ["bash", "-c", AGENTE_CMD]
+            if volume_gb and not self.volume:
+                corpo["volumeInGb"] = volume_gb
+                corpo["volumeMountPath"] = VOLUME_HIB
             if self.volume:
                 corpo["networkVolumeId"] = self.volume
                 corpo["env"] = {**env, "RENDER2GO_VOLUME": "1"}
@@ -316,6 +346,19 @@ class RunPod:
 
     def encerrar(self, pod_id: str) -> None:
         runpod_pods.encerrar(pod_id, self.chave)
+
+    def parar(self, pod_id: str) -> None:
+        runpod_pods.parar(pod_id, self.chave)
+
+    def retomar(self, pod_id: str) -> float | None:
+        """Liga de novo o pod parado (SemVaga: o host está sem GPU livre agora); devolve o US$/h."""
+        pod = runpod_pods.retomar(pod_id, self.chave)
+        return float(pod["costPerHr"]) if pod.get("costPerHr") else None
+
+    def situacao(self, pod_id: str) -> str | None:
+        """RUNNING, EXITED (parado) ou TERMINATED; None se o pod não existe mais."""
+        pod = runpod_pods.ler(pod_id, self.chave)
+        return pod.get("desiredStatus") if pod else None
 
     def saldo(self) -> float | None:
         try:
@@ -569,7 +612,9 @@ class Pod:
     vazao: list[float] = field(default_factory=list)
     grava_volume: bool = False
     espelhando: bool = False
-    deadman_s: int = 0  # desligamento automático deste pod (s desde a criação)
+    deadman_s: int = 0  # desligamento automático deste pod (s desde a criação ou a volta)
+    hibernavel: bool = False  # ambiente e modelos no disco de volume do pod (ADR 0011)
+    retomado: bool = False  # voltou da hibernação (nada foi baixado)
 
     @property
     def nome(self) -> str:
@@ -624,6 +669,9 @@ class Orquestrador:
         deadman_s: int,
         cedo: bool = False,
         ao_criar: Callable[[PodInfo], None] | None = None,
+        ao_agente: Callable[[Pod], None] | None = None,
+        volume_gb: int = 0,
+        prefixo: str = "render2go-lote",
     ) -> Pod | None:
         token = secrets.token_urlsafe(32)
         env = {
@@ -632,6 +680,13 @@ class Orquestrador:
             "DEADMAN_S": str(deadman_s),
             "NVIDIA_DRIVER_CAPABILITIES": "compute,utility",
         }
+        if volume_gb:  # hiberna em vez de encerrar; prazo curto até o orquestrador mandar o real
+            deadman_s = min(deadman_s, PISO_HIB_S)
+            env |= {
+                "DEADMAN_S": str(deadman_s),
+                "DEADMAN_ACAO": "parar",
+                "RENDER2GO_LOCAL": LOCAL_HIB,
+            }
         esp = getattr(self.a, "espelho", None)
         with self.lock:  # o 1º pod (ou o substituto dele) grava o cache no volume e no espelho
             grava = bool(getattr(self.a, "volume", None) or (esp and esp.faltando())) and not (
@@ -640,9 +695,10 @@ class Orquestrador:
             self.gravador_pendente |= grava
         if grava:
             env["RENDER2GO_VOLUME_GRAVA"] = "1"
+        extra = {"volume_gb": volume_gb} if volume_gb else {}
         try:
             info = self.provedor.criar(
-                f"render2go-lote-{i}", self.a.opcoes, self.a.gpus_por_pod, env
+                f"{prefixo}-{i}", self.a.opcoes, self.a.gpus_por_pod, env, **extra
             )
         except (runpod_pods.SemVaga, runpod_pods.RunPodError) as e:
             if grava:
@@ -653,7 +709,13 @@ class Orquestrador:
             else:
                 _log(f"pod {i}: o RunPod recusou a criação ({e})")
             return None
-        pod = Pod(info, Agente(info.url, info.token), grava_volume=grava, deadman_s=deadman_s)
+        pod = Pod(
+            info,
+            Agente(info.url, info.token),
+            grava_volume=grava,
+            deadman_s=deadman_s,
+            hibernavel=bool(volume_gb),
+        )
         if ao_criar:  # a partir daqui o pod custa: quem chamou registra id, GPU e preço
             try:
                 ao_criar(info)
@@ -667,7 +729,7 @@ class Orquestrador:
             self._salvar_estado()
         _log(f"pod {pod.nome} criado, US$ {info.usd_h:.2f}/h; esperando o agente...")
         try:
-            self._instalar(pod, cedo)
+            self._instalar(pod, cedo, ao_agente=ao_agente)
         except (NuvemError, OSError) as e:
             _log(f"pod {pod.nome} descartado: {e}")
             if "tempo esgotado" in str(e):
@@ -687,6 +749,9 @@ class Orquestrador:
         deadman_s: int,
         cedo: bool = False,
         ao_criar: Callable[[PodInfo], None] | None = None,
+        ao_agente: Callable[[Pod], None] | None = None,
+        volume_gb: int = 0,
+        prefixo: str = "render2go-lote",
     ) -> Pod | None:
         """Cria, testa (CUDA, rede, datacenter) e instala um pod; None se não conseguiu.
 
@@ -694,8 +759,66 @@ class Orquestrador:
         AMBIENTE), enquanto os modelos ainda baixam, e devolve o pod nesse ponto. Quem usa o pod
         só renderiza depois do estado PRONTO (o worker da fila, com --modelos-prontos).
         `ao_criar(info)`: chamado assim que o RunPod cria o pod, mesmo que a instalação falhe
-        depois (relatório de custo do orquestrador)."""
-        return self._subir_pod(i, deadman_s, cedo, ao_criar)
+        depois (relatório de custo do orquestrador).
+        `ao_agente(pod)`: chamado quando o agente responde (o orquestrador ajusta o desligamento
+        automático pelo preço real da GPU, `Agente.deadman`).
+        `volume_gb`: o pod nasce com disco de volume próprio e instala tudo nele, para hibernar no
+        fim em vez de ser encerrado (ADR 0011, `hibernar` e `retomar_pod`)."""
+        return self._subir_pod(i, deadman_s, cedo, ao_criar, ao_agente, volume_gb, prefixo)
+
+    def retomar_pod(
+        self,
+        info: PodInfo,
+        cedo: bool = True,
+        ao_agente: Callable[[Pod], None] | None = None,
+        ao_criar: Callable[[PodInfo], None] | None = None,
+    ) -> Pod:
+        """Liga de novo um pod hibernado (ADR 0011): sem teste de rede nem download, o bootstrap só
+        refaz os links do disco de volume e confere os modelos. Levanta SemVaga (o host está sem
+        GPU livre) ou NuvemError; quem chama decide se o pod volta a hibernar ou é encerrado.
+        `ao_criar(info)`: chamado quando o RunPod liga o pod (a GPU passa a cobrar)."""
+        preco = self.provedor.retomar(info.id)
+        if preco:  # o preço da volta (o RunPod pode ter mudado o da GPU)
+            info = dataclasses.replace(info, usd_h=float(preco))
+        if ao_criar:
+            try:
+                ao_criar(info)
+            except Exception as e:  # noqa: BLE001 (registro não derruba a subida)
+                _log(f"AVISO: registro do pod {info.id}: {e}")
+        # o agente volta com o prazo curto do ambiente do pod (PISO_HIB_S); ao_agente manda o real
+        pod = Pod(
+            info, Agente(info.url, info.token), deadman_s=PISO_HIB_S, hibernavel=True, retomado=True
+        )
+        with self.lock:
+            self.pods.append(pod)
+            self._salvar_estado()
+        _log(f"pod {pod.nome} voltando da hibernação, US$ {info.usd_h:.2f}/h...")
+        try:
+            self._instalar(pod, cedo, ao_agente=ao_agente)
+        except (NuvemError, OSError):
+            with self.lock:  # quem chama encerra ou hiberna; aqui o pod só sai da lista de ativos
+                self.pods.remove(pod)
+                self._salvar_estado()
+            raise
+        return pod
+
+    def hibernar(self, pod: Pod, motivo: str) -> bool:
+        """Para o pod (a GPU para de cobrar; o disco de volume fica no host). Se o RunPod recusar,
+        encerra. Devolve True se o pod ficou parado."""
+        with self.lock:
+            if not pod.vivo:
+                return False
+        try:
+            self.provedor.parar(pod.info.id)
+        except Exception as e:  # noqa: BLE001 (sem a parada, o pod não pode ficar ligado)
+            _log(f"AVISO: o pod {pod.nome} não hibernou ({e}); encerrando")
+            self._encerrar(pod, f"{motivo}; não hibernou")
+            return False
+        with self.lock:
+            pod.vivo, pod.fim = False, time.monotonic()
+            self._salvar_estado()
+        _log(f"pod {pod.nome} hibernado ({motivo})")
+        return True
 
     def encerrar(self, pod: Pod, motivo: str, esperar_espelho: bool = True) -> None:
         """Encerra; se o pod grava o cache (volume/espelho), espera terminar antes (com prazo).
@@ -704,19 +827,27 @@ class Orquestrador:
             self._esperar_guardar(pod)
         self._encerrar(pod, motivo)
 
-    def _instalar(self, pod: Pod, cedo: bool = False) -> None:
+    def _instalar(
+        self, pod: Pod, cedo: bool = False, ao_agente: Callable[[Pod], None] | None = None
+    ) -> None:
         r, ag = self.remoto, pod.agente
         limite = time.monotonic() + ESPERA_AGENTE_S
         while not ag.saude():
             if time.monotonic() > limite:
                 raise NuvemError(f"agente não respondeu em {ESPERA_AGENTE_S // 60} min")
             time.sleep(CONSULTA_S)
+        if ao_agente:  # ex.: o desligamento automático com o preço real da GPU
+            try:
+                ao_agente(pod)
+            except Exception as e:  # noqa: BLE001 (fica o prazo com que o pod nasceu)
+                _log(f"AVISO: pod {pod.nome}: {e}")
         so_espelho = False  # espelho aprovado no teste de rede: os modelos vêm só dele
         if r.verificar_cuda:
             _, out = ag.exec(CUINIT, 30)
             problema = cuda_ok(out, pod.info.gpus)
             if problema:
                 raise NuvemError(problema)
+        if r.verificar_cuda and not pod.retomado:  # de volta da hibernação: nada a baixar
             # Espelho (R2) primeiro: em 08/10/2026 ele baixou os 37 GB em 40 s (~925 MB/s), com o
             # Hugging Face a 25–39 MB/s nos mesmos hosts. Com ele aprovado, a origem nem é testada.
             url_espelho = self._url_teste_espelho()
@@ -736,9 +867,14 @@ class Orquestrador:
             if problema:
                 raise NuvemError(f"{problema} (datacenter {pod.info.datacentro or '?'})")
             _log(f"pod {pod.nome}: {out.strip()} MB/s")
-        _log(f"pod {pod.nome}: agente, CUDA e rede ok; instalando o worker (~1–3 min)")
+        if pod.retomado:
+            _log(f"pod {pod.nome}: agente e CUDA ok; conferindo o disco de volume")
+        else:
+            _log(f"pod {pod.nome}: agente, CUDA e rede ok; instalando o worker (~1–3 min)")
         ag.put(self.a.repo_tgz, f"{r.raiz}/repo.tgz")
         ag.put(WORKER_DIR / "scripts" / "bootstrap_pod.sh", f"{r.raiz}/bootstrap_pod.sh")
+        if pod.hibernavel:  # o bootstrap marca o disco de volume com esta versão (ADR 0011)
+            self._enviar_texto(pod, versao_hibernacao() + "\n", "versao_hib")
         esp = getattr(self.a, "espelho", None)
         if esp and esp.presentes:  # URLs assinadas do espelho (GET, 6 h), uma por modelo
             self._enviar_texto(pod, esp.tsv(), "espelho.tsv")
@@ -763,8 +899,10 @@ class Orquestrador:
         # sem os modelos ainda, o entrypoint sobe mesmo assim (REQUIRE_MODELS=0): ninguém renderiza
         # antes do PRONTO, e o pedido já pode ser traduzido (Ollama) enquanto o download termina
         sem_modelos = "" if modelos_prontos else "export REQUIRE_MODELS=0; "
+        # na volta da hibernação, a GPU é a mesma em que o PyTorch já rodou (o cuInit confere)
+        sem_teste = "export SKIP_GPU_CHECK=1; " if pod.retomado else ""
         ag.bg(
-            f"export COMFY_POR_GPU={self.a.comfy_por_gpu}; {sem_modelos}{r.servicos}",
+            f"export COMFY_POR_GPU={self.a.comfy_por_gpu}; {sem_modelos}{sem_teste}{r.servicos}",
             f"{r.raiz}/servicos.log",
         )
         self._esperar(
@@ -1122,6 +1260,25 @@ def _interromper(*_: object) -> None:
 
 def pod_agente_path() -> Path:
     return Path(__file__).with_name("pod_agente.py")
+
+
+def versao_hibernacao() -> str:
+    """Versão do que fica no disco de volume de um pod que hiberna (ADR 0011): dependências, versões
+    do ComfyUI e do Ollama, modelos, agente (vai no ambiente do pod, fixado na criação) e o layout
+    do bootstrap. Mudou: o pod hibernado está velho e é encerrado em vez de voltar."""
+    h = hashlib.sha256()
+    for p in (
+        WORKER_DIR / "requirements.lock",
+        WORKER_DIR / "Dockerfile",
+        WORKER_DIR / "models.lock.json",
+        pod_agente_path(),
+    ):
+        h.update(p.read_bytes())
+    layout = re.search(
+        r"^LAYOUT_HIB=(\S+)", (WORKER_DIR / "scripts" / "bootstrap_pod.sh").read_text(), re.M
+    )
+    h.update((layout.group(1) if layout else "?").encode())
+    return h.hexdigest()[:16]
 
 
 def preparar_espelho() -> Espelho | None:

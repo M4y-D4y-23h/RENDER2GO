@@ -3094,12 +3094,18 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         """Pods ligados agora, a pausa e o sinal de vida do orquestrador (quem executa os comandos)."""
         vivo = c.banco.ler_estado("orquestrador_vivo")
         pausa = c.banco.ler_estado("pausado")
+        runpod = c.banco.ler_estado("runpod")  # saldo, prazo de um pod novo e hibernados (ADR 0011)
+        try:
+            runpod_info = json.loads(runpod["valor"]) if runpod else None
+        except ValueError:
+            runpod_info = None
         return {
             "pods": c.banco.geradores_ativos(),
             "pausado": bool(pausa and pausa["valor"] == "1"),
             "pausado_em": pausa["atualizado"] if pausa and pausa["valor"] == "1" else None,
             "orquestrador_visto_s": round(time.time() - float(vivo["atualizado"]), 1) if vivo else None,
             "comandos": c.banco.comandos_recentes(10),
+            "runpod": runpod_info,
         }
 
     @rotas.post("/api/pods/{gerador}/desligar")

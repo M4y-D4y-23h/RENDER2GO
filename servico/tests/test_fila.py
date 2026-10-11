@@ -365,3 +365,27 @@ def test_worker_refuses_a_model_it_does_not_have(monkeypatch):
     monkeypatch.setattr(fila, "carimbo_ok", lambda segredo, job: True)
     assert w.processar({"job_id": "j1", "tipo": "render", "pedido": {"modelo": "outro-modelo"}}, "x") is True
     assert chamadas == [("j1", "erro", {"erro": "modelo outro-modelo não disponível neste gerador"})]
+
+
+def test_worker_writes_why_it_left(monkeypatch, tmp_path):
+    """O orquestrador mostra no painel por que o pod saiu: sem pedidos não é limite de tempo."""
+    monkeypatch.setenv("RENDER2GO_SAFETY", "c1-revisao-humana")
+    monkeypatch.setattr(fila, "ESPERA_S", 0.01)
+
+    class Api:
+        def reivindicar(self, tipos=None):
+            return None
+
+    motivo = tmp_path / "fila.motivo"
+    cfg = fila.Config(comfy=["x"], ocioso_s=0.05, motivo_em=motivo)
+    assert fila.WorkerFila(Api(), cfg).rodar() == 0 and motivo.read_text() == "ocioso\n"
+    # o desligamento automático está perto (2 h ou o que o saldo do RunPod paga): para de pegar jobs
+    cfg = fila.Config(comfy=["x", "y"], ate=time.time() - 1, motivo_em=motivo)
+    assert fila.WorkerFila(Api(), cfg).rodar() == 0 and motivo.read_text() == "limite\n"
+    # na volta da hibernação, o SHA-256 dos modelos termina depois do PRONTO e pode dar errado
+    estado = tmp_path / "estado"
+    estado.write_text("PRONTO\n")
+    w = fila.WorkerFila(Api(), fila.Config(comfy=["x"], modelos=estado, ocioso_s=60, motivo_em=motivo))
+    assert w.estado_modelos() == "ok"
+    estado.write_text("FALHOU disco de volume com arquivo corrompido: /opt/comfyui/models/x\n")
+    assert w.rodar() == 0 and motivo.read_text() == "modelos\n"

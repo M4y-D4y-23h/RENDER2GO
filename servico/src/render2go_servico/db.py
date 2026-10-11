@@ -2510,6 +2510,11 @@ class Banco:
                 ("falhou" if falhou else "encerrado", time.time(), motivo[:300], gid),
             )
 
+    def gerador_motivo(self, gid: str, motivo: str) -> None:
+        """O motivo final de um pod que já saiu da previsão (ex.: "hibernado (fila vazia)", ADR 0011)."""
+        with self.tx() as c:
+            c.run("UPDATE geradores SET motivo = ? WHERE id = ?", (motivo[:300], gid))
+
     def geradores_reiniciar(self, motivo: str = "orquestrador reiniciado") -> int:
         """Na partida do orquestrador: os pods do processo anterior já foram encerrados por ele (ou
         pelo desligamento automático); nenhum continua contando como ligado."""

@@ -39,10 +39,11 @@ export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-0}"
 log() { echo "[render2go] $*"; }
 die() { echo "[render2go] ERRO: $*" >&2; exit 1; }
 
-wait_http() {  # url, segundos, nome
+wait_http() {  # url, segundos, nome (sem curl: na volta da hibernação, o apt ainda está instalando)
   local i
   for ((i = 0; i < $2; i++)); do
-    curl -fsS -o /dev/null "$1" 2>/dev/null && return 0
+    python -c 'import sys, urllib.request; urllib.request.urlopen(sys.argv[1], timeout=2)' "$1" \
+      2>/dev/null && return 0
     sleep 1
   done
   die "$3 não respondeu em $2 s ($1)"

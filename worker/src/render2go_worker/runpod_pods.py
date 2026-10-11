@@ -205,6 +205,51 @@ def encerrar(pod_id: str, chave: str) -> None:
         raise RunPodError(f"encerrar {pod_id}: {r.status_code} {r.text[:300]}")
 
 
+def ler(pod_id: str, chave: str) -> dict[str, Any] | None:
+    """O pod na API REST (desiredStatus RUNNING/EXITED/TERMINATED, gpu.count); None: não existe."""
+    r = _rest("GET", f"/pods/{pod_id}", chave)
+    if r.status_code == 404:
+        return None
+    if r.status_code != 200:
+        raise RunPodError(f"ler {pod_id}: {r.status_code} {r.text[:300]}")
+    return r.json()
+
+
+def parar(pod_id: str, chave: str) -> None:
+    """Para o pod (ADR 0011): a GPU é liberada e o disco de volume fica no host, cobrado à parte."""
+    r = _rest("POST", f"/pods/{pod_id}/stop", chave)
+    if r.status_code not in (200, 204):
+        raise RunPodError(f"parar {pod_id}: {r.status_code} {r.text[:300]}")
+
+
+def retomar(pod_id: str, chave: str, espera_s: float = 90, intervalo: float = 2) -> dict[str, Any]:
+    """Liga de novo um pod parado, no mesmo host. Levanta SemVaga se o host não tem GPU livre
+    (a API recusa, ou o pod volta com 0 GPU: aí ele é parado de novo, para não cobrar à toa)."""
+    r = _rest("POST", f"/pods/{pod_id}/start", chave)
+    texto = r.text[:300]
+    if r.status_code not in (200, 201, 204):
+        if r.status_code >= 500 or any(s in texto.lower() for s in (*SEM_VAGA, "enough free gpu")):
+            raise SemVaga(f"pod {pod_id}: sem GPU livre no host ({r.status_code}): {texto}")
+        raise RunPodError(f"retomar {pod_id}: {r.status_code} {texto}")
+    limite = time.monotonic() + espera_s
+    while True:
+        pod = ler(pod_id, chave) or {}
+        if not pod or pod.get("desiredStatus") == "TERMINATED":
+            raise RunPodError(f"pod {pod_id} não existe mais")
+        if pod.get("desiredStatus") == "RUNNING":
+            # 0 GPU = o host não tinha GPU livre (o RunPod liga o pod assim mesmo); sem o campo,
+            # quem decide é o teste de CUDA dentro do pod (cuInit com o número de GPUs)
+            g = pod.get("gpu")
+            if isinstance(g, dict) and not int(g.get("count") or 0):
+                parar(pod_id, chave)
+                raise SemVaga(f"pod {pod_id}: voltou sem GPU (o host está cheio); parado de novo")
+            return pod
+        if time.monotonic() > limite:
+            parar(pod_id, chave)
+            raise SemVaga(f"pod {pod_id}: não voltou em {espera_s:.0f} s; parado de novo")
+        time.sleep(intervalo)
+
+
 def subir(
     opcoes: list[Opcao],
     corpo_base: dict[str, Any],

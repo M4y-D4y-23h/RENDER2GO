@@ -11,7 +11,9 @@ para o armazenamento (URLs assinadas, uma por arquivo). Por job:
   "ok" sem essas medidas; o vídeo que troca de produto no meio é refeito com outra seed.
 
 Um laço por ComfyUI (uma GPU cada). Sem jobs por `--ocioso` segundos (o "pod quente", docs/08),
-o worker sai e o pod se desliga (desligamento automático do lote_nuvem / orquestrador).
+o worker sai e o pod se desliga (desligamento automático do lote_nuvem / orquestrador). Com
+`--motivo ARQUIVO`, o worker escreve ali por que saiu (MOTIVOS), e o orquestrador registra no
+relatório de GPUs do painel: "sem pedidos" não é o mesmo que "limite de tempo do pod".
 
 Com `--modelos-prontos ESTADO` (o arquivo de estado do bootstrap_pod.sh), o worker começa antes
 de os modelos de vídeo terminarem de baixar: até o estado dizer PRONTO, ele só pega jobs
@@ -57,6 +59,13 @@ MODELOS = {"wan2.2-i2v"}
 ESPERA_S = 5  # fila vazia: tempo entre consultas
 ESPERA_MODELOS_S = 2  # modelos baixando: confere o estado de novo logo
 OCIOSO_S = 180  # ~ o tempo de uma subida de pod: depois disso, sair custa menos que esperar
+# por que o worker saiu (o mais grave entre os laços vale para o pod)
+MOTIVOS = {
+    "modelos": "a instalação dos modelos falhou ou passou do prazo",
+    "gpu": "a GPU ficou inacessível",
+    "limite": "limite de tempo do pod (2 h ou o que o saldo do RunPod paga)",
+    "ocioso": "sem pedidos (pod quente vencido)",
+}
 TIPOS = {"jpg": ".jpg", "png": ".png", "webp": ".webp"}
 
 
@@ -139,6 +148,7 @@ class Config:
     ate: float | None = None  # epoch: não pega job novo depois disso (limite de 2 h do pod)
     modelos: Path | None = None  # estado do bootstrap: renderiza só depois de PRONTO
     modelos_ate: float | None = None  # epoch: modelos não ficaram prontos até aqui = sai
+    motivo_em: Path | None = None  # arquivo onde o worker escreve por que saiu (MOTIVOS)
 
 
 class WorkerFila:
@@ -156,15 +166,23 @@ class WorkerFila:
         self.lock = threading.Lock()
         self.feitos = self.falhas = 0
         self.modelos_ok = cfg.modelos is None
+        self.motivos: list[str] = []  # um por laço que terminou (chaves de MOTIVOS)
 
     def estado_modelos(self) -> str:
-        """Estado dos modelos: "ok" (renderiza), "esperando" (só traduz) ou "falhou" (sai)."""
-        if self.modelos_ok:
+        """Estado dos modelos: "ok" (renderiza), "esperando" (só traduz) ou "falhou" (sai). Lido a
+        cada job, mesmo depois do PRONTO: na volta da hibernação, o SHA-256 dos modelos termina
+        depois dele e pode virar FALHOU (ADR 0011)."""
+        if self.cfg.modelos is None:
             return "ok"
         try:
             estado = self.cfg.modelos.read_text().strip()
         except OSError:
             estado = ""
+        if estado.startswith("FALHOU"):
+            _log(f"a instalação falhou ({estado[:200]}): o worker sai")
+            return "falhou"
+        if self.modelos_ok:
+            return "ok"
         if estado.startswith("PRONTO"):
             with self.lock:
                 if not self.modelos_ok:
@@ -172,9 +190,6 @@ class WorkerFila:
                     self.ultimo_job = time.monotonic()  # o pod quente conta a partir daqui
                     _log("modelos prontos: renderizando")
             return "ok"
-        if estado.startswith("FALHOU"):
-            _log(f"a instalação falhou ({estado[:200]}): o worker sai")
-            return "falhou"
         if self.cfg.modelos_ate and time.time() > self.cfg.modelos_ate:
             _log("os modelos não ficaram prontos no prazo: o worker sai")
             return "falhou"
@@ -325,13 +340,22 @@ class WorkerFila:
     # -- laço -----------------------------------------------------------------------------
 
     def _laco(self, comfy: str) -> None:
+        motivo = self._rodar_laco(comfy)
+        with self.lock:
+            self.motivos.append(motivo)
+
+    def motivo(self) -> str:
+        """O motivo mais grave entre os laços (a ordem de MOTIVOS)."""
+        return next((m for m in MOTIVOS if m in self.motivos), "ocioso")
+
+    def _rodar_laco(self, comfy: str) -> str:
         while True:
             if self.cfg.ate and time.time() > self.cfg.ate:
                 _log("perto do limite de tempo do pod: não pega mais jobs")
-                return
+                return "limite"
             modelos = self.estado_modelos()
             if modelos == "falhou":
-                return
+                return "modelos"
             try:  # modelos ainda baixando: só traduz pedidos
                 job = self.api.reivindicar(None if modelos == "ok" else ["compilar"])
             except FilaError as e:
@@ -344,7 +368,7 @@ class WorkerFila:
                 with self.lock:
                     ocioso = time.monotonic() - self.ultimo_job
                 if ocioso > self.cfg.ocioso_s:
-                    return
+                    return "ocioso"
                 time.sleep(ESPERA_S)
                 continue
             with self.lock:
@@ -352,7 +376,7 @@ class WorkerFila:
             try:
                 if not self.processar(job, comfy):
                     _log(f"GPU {comfy} inacessível; este laço para")
-                    return
+                    return "gpu"
             except FilaError as e:  # a API caiu no meio: o prazo do job o devolve à fila
                 _log(f"AVISO: {e}")
             with self.lock:
@@ -368,7 +392,12 @@ class WorkerFila:
             t.start()
         for t in ts:
             t.join()
-        _log(f"fim: {self.feitos} vídeo(s) ok, {self.falhas} com falha")
+        _log(f"fim: {self.feitos} vídeo(s) ok, {self.falhas} com falha; {MOTIVOS[self.motivo()]}")
+        if self.cfg.motivo_em:
+            try:
+                self.cfg.motivo_em.write_text(self.motivo() + "\n")
+            except OSError as e:
+                _log(f"AVISO: motivo da saída não gravado: {e}")
         return 0
 
 
@@ -386,6 +415,7 @@ def main(argv: list[str] | None = None) -> int:
         help="estado da instalação (bootstrap_pod.sh): até PRONTO, só traduz pedidos",
     )
     p.add_argument("--modelos-ate", type=float, help="epoch: sem PRONTO até aqui, o worker sai")
+    p.add_argument("--motivo", type=Path, help="arquivo onde o worker escreve por que saiu")
     a = p.parse_args(argv)
     token = os.environ.get("RENDER2GO_WORKER_TOKEN", "")
     if len(token) < 32:
@@ -403,6 +433,7 @@ def main(argv: list[str] | None = None) -> int:
         ate=a.ate,
         modelos=a.modelos_prontos,
         modelos_ate=a.modelos_ate,
+        motivo_em=a.motivo,
     )
     return WorkerFila(ApiFila(a.api, token, a.worker), cfg).rodar()
 

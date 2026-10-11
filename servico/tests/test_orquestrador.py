@@ -1,11 +1,13 @@
 """Orquestrador com pods falsos: agentes reais em 127.0.0.1 (como nos testes do lote_nuvem)."""
 
+import json
+import os
 import threading
 import time
 
 import pytest
 from render2go_worker import lote_nuvem as ln
-from render2go_worker import pod_agente
+from render2go_worker import pod_agente, runpod_pods
 
 from render2go_servico.orquestrador import ConfigOrq, Orquestrador
 
@@ -13,9 +15,17 @@ _dormir = time.sleep
 
 
 class Provedor:
-    def __init__(self, saldo=100.0, preco=2.0):
+    """Pods falsos: agentes reais em 127.0.0.1, com desligamento automático reprogramável. `parar` e
+    `retomar` imitam a hibernação (ADR 0011): o agente volta na mesma porta, e o disco do contêiner
+    (a raiz do pod, com fila.fim e o estado) é apagado na parada."""
+
+    def __init__(self, saldo=100.0, preco=2.0, preco_real=None):
         self.criados, self.encerrados, self.envs, self.servidores = [], [], [], {}
+        self.parados, self.retomados, self.volumes, self.deadman = [], [], {}, {}
+        self.sem_gpu: set[str] = set()
         self._saldo, self._preco = saldo, preco
+        self._real = preco if preco_real is None else preco_real
+        self._env, self._porta, self.raiz = {}, {}, None
 
     def preco(self, gpu, nuvem):
         return self._preco
@@ -23,23 +33,51 @@ class Provedor:
     def saldo(self):
         return self._saldo
 
-    def criar(self, nome, opcoes, gpus, env):
+    def _ligar(self, pid, env, porta=0):
+        d = pod_agente.Desligamento(float(env["DEADMAN_S"]), env.get("DEADMAN_ACAO", "encerrar"), log=os.devnull)
+        srv = pod_agente.servidor(env["AGENT_TOKEN"], "127.0.0.1", porta, deadman=d)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.servidores[pid], self.deadman[pid] = srv, d
+        self._porta[pid] = srv.server_address[1]
+
+    def criar(self, nome, opcoes, gpus, env, volume_gb=0):
         assert all(o.nuvem == "secure" for o in opcoes)  # regra do projeto
         pid = f"p{len(self.criados) + 1}"
         self.criados.append(pid)
         self.envs.append(env)
-        srv = pod_agente.servidor(env["AGENT_TOKEN"], "127.0.0.1", 0)
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        self.servidores[pid] = srv
-        return ln.PodInfo(
-            pid, f"http://127.0.0.1:{srv.server_address[1]}", env["AGENT_TOKEN"], self._preco, f"teste/{nome}", gpus
-        )
+        self.volumes[pid], self._env[pid] = volume_gb, env
+        self._ligar(pid, env)
+        url = f"http://127.0.0.1:{self._porta[pid]}"
+        return ln.PodInfo(pid, url, env["AGENT_TOKEN"], self._real, f"teste/{nome}", gpus)
 
     def encerrar(self, pod_id):
         self.encerrados.append(pod_id)
         srv = self.servidores.pop(pod_id, None)
         if srv:
             srv.shutdown()
+            srv.server_close()
+
+    def parar(self, pod_id):
+        assert self.volumes.get(pod_id), "só o pod com disco de volume hiberna"
+        self.parados.append(pod_id)
+        srv = self.servidores.pop(pod_id)
+        srv.shutdown()
+        srv.server_close()
+        if self.raiz:  # a parada apaga o disco do contêiner
+            for nome in ("fila.fim", "fila.motivo", "estado"):
+                (self.raiz / nome).unlink(missing_ok=True)
+
+    def retomar(self, pod_id):
+        if pod_id in self.sem_gpu:
+            raise runpod_pods.SemVaga(f"pod {pod_id}: sem GPU livre no host")
+        self.retomados.append(pod_id)
+        self._ligar(pod_id, self._env[pod_id], self._porta[pod_id])
+        return self._real
+
+    def situacao(self, pod_id):
+        if pod_id in self.encerrados:
+            return "TERMINATED"
+        return "RUNNING" if pod_id in self.servidores else "EXITED"
 
 
 def _lote(banco, n, plano="teste"):
@@ -82,7 +120,9 @@ def orq(banco, tmp_path, monkeypatch):
         )
         repo = tmp_path / "repo.tgz"
         repo.write_bytes(b"repo")
-        return Orquestrador(banco, c, provedor or Provedor(), remoto, repo_tgz=repo)
+        provedor = provedor or Provedor()
+        provedor.raiz = tmp_path / "pod"
+        return Orquestrador(banco, c, provedor, remoto, repo_tgz=repo)
 
     return fazer
 
@@ -327,3 +367,118 @@ def test_pods_left_by_a_crashed_process_are_shut_down_at_start(orq, banco):
     o.parar.set()
     t.join(5)
     assert {"velho1", "velho2"} <= set(o.provedor.encerrados) and sobras.read_text() == "[]"
+
+
+def _fim(o, pf):
+    return "FIM" in pf.pod.agente.exec(f"cat {o.remoto.raiz}/fila.fim 2>/dev/null", 10)[1]
+
+
+def test_deadline_uses_the_real_gpu_price_once_the_agent_answers(orq, banco):
+    # saldo de US$ 4: pela GPU mais cara da lista (US$ 2/h), 1,5 h; pela que veio (US$ 1/h), as 2 h
+    # (até 11/10/2026 ficava o prazo da criação: com saldo baixo, o pod saía aos ~40 min)
+    _lote(banco, 2, plano="pago")
+    o = orq(provedor=Provedor(saldo=4.0, preco=2.0, preco_real=1.0))
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    (pf,) = o.ativos.values()
+    assert int(o.provedor.envs[0]["DEADMAN_S"]) == pytest.approx(5400, abs=5)
+    assert pf.pod.deadman_s > 7100 and o.provedor.deadman["p1"].restante() > 7100
+    assert pf.ate > time.time() + 7100 - ln.MARGEM_S - 60  # o worker para 10 min antes do prazo real
+    o.encerrar_todos("fim do teste")
+
+
+def test_the_balance_is_split_by_what_each_live_pod_can_still_spend(orq, banco):
+    o = orq(provedor=Provedor(saldo=10.0, preco=2.0))
+    assert o._deadman(2.0) == ln.MAX_POD_S  # US$ 9 livres: 4,5 h, limitado a 2 h
+    # US$ 5 já prometidos a pods deste ciclo: sobra US$ 4 = 2 h; US$ 8: sobra US$ 1 = 30 min
+    assert o._deadman(2.0, reservado=5.0) == ln.MAX_POD_S
+    assert o._deadman(2.0, reservado=8.0) == pytest.approx(1800, abs=1)
+    assert o._deadman(2.0, reservado=8.6) is None  # menos de 15 min: não sobe
+
+
+def test_why_the_worker_left_goes_to_the_gpu_report(orq, banco):
+    _lote(banco, 2, plano="pago")
+    o = orq(fila_cmd="echo limite > {raiz}/fila.motivo")
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    (pf,) = o.ativos.values()
+    assert _esperar(lambda: _fim(o, pf))
+    with banco.tx() as c:
+        c.run("UPDATE jobs SET status = 'ok'")
+    o.ciclo()
+    (g,) = banco.relatorio_geradores(0)["geradores"]
+    assert (g["estado"], g["motivo"]) == ("encerrado", "limite de tempo do pod")
+
+
+def test_idle_pods_hibernate_and_come_back_without_a_new_pod(orq, banco):
+    _lote(banco, 2, plano="pago")
+    o = orq(hibernados=1, fila_cmd="echo ocioso > {raiz}/fila.motivo")
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    env = o.provedor.envs[0]
+    assert o.provedor.volumes["p1"] == 70 and env["RENDER2GO_LOCAL"] == ln.LOCAL_HIB
+    assert env["DEADMAN_ACAO"] == "parar" and int(env["DEADMAN_S"]) <= ln.PISO_HIB_S  # o real vem depois
+    (pf,) = o.ativos.values()
+    assert pf.pod.deadman_s > ln.PISO_HIB_S and o.prefixo in pf.pod.info.descricao
+    assert _esperar(lambda: _fim(o, pf))
+    with banco.tx() as c:
+        c.run("UPDATE jobs SET status = 'ok'")
+    o.ciclo()
+    # sem pedidos: o pod para (a GPU deixa de cobrar) com ambiente e modelos no disco de volume
+    assert o.provedor.parados == ["p1"] and o.provedor.encerrados == [] and not o.ativos
+    assert set(o.hib) == {"p1"} and o.hib["p1"]["versao"] == ln.versao_hibernacao()
+    assert (o.cfg.estado / "hibernados.json").stat().st_mode & 0o777 == 0o600  # tem o token do agente
+    o._estado_runpod()  # o próximo ciclo atualiza o resumo do painel
+    painel = json.loads(banco.ler_estado("runpod")["valor"])
+    assert painel["hibernados"][0]["id"] == "p1" and "token" not in painel["hibernados"][0]
+    # pedido novo: o hibernado volta, sem pod novo
+    _lote(banco, 1, plano="pago")
+    assert o.ciclo()["subindo"] == 1
+    assert _esperar(lambda: len(o.ativos) == 1)
+    assert o.provedor.retomados == ["p1"] and o.provedor.criados == ["p1"] and o.hib["p1"]["voltas"] == 1
+    (pf,) = o.ativos.values()
+    assert pf.pod.retomado and pf.pod.deadman_s > ln.PISO_HIB_S
+    with banco.tx() as c:
+        linhas = c.all("SELECT worker, motivo FROM geradores ORDER BY criado")
+    assert [x["worker"] for x in linhas] == ["pod-p1", "pod-p1"]
+    assert linhas[0]["motivo"] == "hibernado (fila vazia)"
+    o.encerrar_todos("fim do teste")  # encerrar de vez: sai do conjunto
+    assert o.provedor.encerrados == ["p1"] and not o.hib
+
+
+def test_a_host_without_free_gpu_falls_back_to_a_new_pod(orq, banco):
+    o = orq(hibernados=2)
+    info = {"url": "http://127.0.0.1:9", "token": "t" * 40, "usd_h": 2.0, "gpu": ln.GPUS_PADRAO[0], "gpus": 1}
+    o.hib["velho"] = {"id": "velho", "versao": ln.versao_hibernacao(), "falhas": 2, **info}
+    o.provedor.volumes["velho"] = 70
+    o.provedor.sem_gpu.add("velho")
+    _lote(banco, 1, plano="pago")
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    assert o.provedor.criados == ["p1"]  # o host do hibernado estava cheio: pod novo
+    assert "velho" not in o.hib and "velho" in o.provedor.encerrados  # 3ª vez sem GPU: sai de vez
+    o.encerrar_todos("fim do teste")
+
+
+def test_emergency_and_old_versions_terminate_hibernated_pods(orq, banco):
+    o = orq(hibernados=2)
+    base = {"url": "http://127.0.0.1:9", "token": "t" * 40, "usd_h": 2.0, "gpu": "x", "gpus": 1}
+    o.hib["a"] = {"id": "a", "versao": "outra", **base}
+    o.hib["b"] = {"id": "b", "versao": ln.versao_hibernacao(), **base}
+    o._estado_runpod()  # a versão do ambiente ou dos modelos mudou: o disco do "a" não serve mais
+    assert o.provedor.encerrados == ["a"] and set(o.hib) == {"b"}
+    banco.definir_estado("pausado", "1")
+    banco.comando("emergencia", "admin-teste")
+    o.ciclo()
+    assert o.provedor.encerrados == ["a", "b"] and not o.hib
+    (cmd,) = banco.comandos_recentes()
+    assert "1 hibernado(s) encerrado(s)" in cmd["resultado"]
+
+
+def test_stopping_the_orchestrator_hibernates_what_fits(orq, banco):
+    _lote(banco, 50, plano="pago")  # 2 pods; cabe 1 no conjunto
+    o = orq(hibernados=1, fila_cmd="sleep 30")
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 2)
+    o.encerrar_todos("orquestrador parou", hibernar=True)
+    assert len(o.provedor.parados) == 1 and len(o.provedor.encerrados) == 1 and len(o.hib) == 1

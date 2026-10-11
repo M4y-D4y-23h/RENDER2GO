@@ -176,3 +176,36 @@ def test_subir_refuses_pods_without_a_2h_limit(capsys):
         with pytest.raises(SystemExit):
             rp.main(["subir", "--gpu", "g", "--imagem", "i", "--auto-encerrar-horas", horas])
     assert "2 h" in capsys.readouterr().err
+
+
+def test_resume_a_stopped_pod_or_report_a_full_host(monkeypatch):
+    """Pod hibernado (ADR 0011): volta no mesmo host; sem GPU livre, fica parado e vira SemVaga."""
+    chamadas, estado = [], {"gpu": {"count": 1}, "costPerHr": 0.86}
+
+    def rest(method, path, chave, body=None):
+        chamadas.append((method, path))
+        if path.endswith("/start"):
+            return (
+                Resp(200, {}) if estado != "recusa" else Resp(500, "There are not enough free GPUs")
+            )
+        if path.endswith("/stop"):
+            return Resp(200, {})
+        return Resp(200, {"id": "abc", "desiredStatus": "RUNNING", **estado})
+
+    monkeypatch.setattr(rp, "_rest", rest)
+    assert rp.retomar("abc", "k")["costPerHr"] == 0.86
+    assert chamadas[:2] == [("POST", "/pods/abc/start"), ("GET", "/pods/abc")]
+    estado = {"gpu": {"count": 0}}  # o RunPod ligou o pod sem GPU: parado de novo
+    chamadas.clear()
+    with pytest.raises(rp.SemVaga, match="sem GPU"):
+        rp.retomar("abc", "k")
+    assert ("POST", "/pods/abc/stop") in chamadas
+    estado = "recusa"
+    with pytest.raises(rp.SemVaga, match="sem GPU livre"):
+        rp.retomar("abc", "k")
+    monkeypatch.setattr(rp, "_rest", lambda *a, **k: Resp(400, "bad pod id"))
+    with pytest.raises(rp.RunPodError) as exc:
+        rp.retomar("abc", "k")
+    assert not isinstance(exc.value, rp.SemVaga)
+    monkeypatch.setattr(rp, "_rest", lambda *a, **k: Resp(404, ""))
+    assert rp.ler("abc", "k") is None

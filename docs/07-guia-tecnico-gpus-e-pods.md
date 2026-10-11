@@ -156,3 +156,12 @@ No primeiro uso real, um pedido com o pod desligado chegou a levar ~6 min até 3
   - um pod ligado no horário comercial (`docs/11`, seção 3.4);
   - um pod quente mais longo (`RENDER2GO_POD_OCIOSO_MIN`);
   - endpoints serverless com FlashBoot (ADR 0002, Etapa 3), cuja subida pode cair para segundos quando a máquina já tem a imagem. Exigem a imagem com os modelos; ficam para quando houver fila constante.
+
+## 10. Pods hibernados e prazo pelo preço real (11/10/2026, ADR 0011)
+
+- **Por que o pod saiu aos ~40 min (11/10):** o desligamento automático era calculado na criação, pelo preço da GPU mais cara da lista (US$ 2,49/h da RTX PRO 6000), e o saldo do RunPod estava baixo (US$ 2,32 na conferência). O worker para de pegar pedidos 10 min antes do prazo; com ~US$ 3 de saldo, o prazo ficou em ~50 min e o pod saiu depois do último vídeo, sem os 3 min de pod quente.
+- **O que mudou:**
+  - o agente aceita `POST /deadman`, e o orquestrador manda o prazo com o **preço real** da GPU assim que o agente responde (L40S a ~US$ 0,86–1,09/h: com o mesmo saldo, o prazo mais que dobra);
+  - o saldo é dividido pelo que cada pod ligado ainda pode gastar até o prazo dele (antes: 2 h de cada pod ligado, e nada dos que estavam subindo);
+  - o painel (seção Pods) mostra o saldo do RunPod e o prazo que um pod novo teria; o relatório de GPUs, por que cada pod saiu.
+- **Hibernação (`RENDER2GO_PODS_HIBERNADOS`):** o pod instala tudo no disco de volume próprio (`/workspace/r2g`) e, sem pedidos, é **parado** em vez de encerrado. Na volta (mesmo host), nada é baixado: links, apt do cache do volume, bytes dos modelos e PRONTO; o SHA-256 é refeito em segundo plano. O host sem GPU livre faz o orquestrador tentar o próximo hibernado e, no fim, subir um pod do zero. Detalhes, custos e riscos no ADR 0011; a medição em GPU fica em `worker/evals/`.

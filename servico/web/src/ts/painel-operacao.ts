@@ -5,7 +5,9 @@ import { type Controle, controle, dolares, duracao, erroDeAcao, erroDeCarga, pod
 
 type Pod = { id: string; worker: string | null; gpu: string | null; usd_h: number | null; estado: string; criado: number; pronto_em: number | null; datacentro: string | null; em_andamento: number };
 type Comando = { id: string; tipo: string; alvo: string | null; criado: number; por: string | null; executado_em: number | null; resultado: string | null };
-type Pods = { pods: Pod[]; pausado: boolean; pausado_em: number | null; orquestrador_visto_s: number | null; comandos: Comando[] };
+type Hibernado = { id: string; gpu: string | null; usd_h: number | null; parado_em: number | null; voltas: number | null; falhas: number | null; em_uso: boolean | null };
+type RunPod = { saldo_usd: number | null; saldo_em: number | null; prazo_novo_pod_s: number | null; margem_s: number; hibernados: Hibernado[]; hibernados_max: number; volume_gb: number };
+type Pods = { pods: Pod[]; pausado: boolean; pausado_em: number | null; orquestrador_visto_s: number | null; comandos: Comando[]; runpod: RunPod | null };
 type Gerador = {
   id: string;
   pod: string | null;
@@ -63,9 +65,25 @@ function estadoOrquestrador(r: Pods): (Node | string)[] {
   return [criar("span", { className: "selo ok" }, [icone("ok"), "Funcionando"]), `O orquestrador liga pods conforme a fila. ${sinal}`];
 }
 
+/** Saldo do RunPod, o prazo que um pod novo teria por ele e os pods hibernados (ADR 0011). Com saldo
+ * baixo, o desligamento automático encurta (o worker para 10 min antes): era o "pod que sai aos 40 min". */
+function estadoRunPod(r: RunPod | null): (Node | string)[] {
+  if (!r || r.saldo_usd == null) return ["Saldo do RunPod: o orquestrador ainda não consultou."];
+  const prazo = r.prazo_novo_pod_s ?? 0;
+  const gpus = r.hibernados.map((h) => (h.gpu ?? "GPU").replace(/^NVIDIA (GeForce )?/, ""));
+  const hib = r.hibernados_max
+    ? `Hibernados: ${r.hibernados.length} de ${r.hibernados_max}${gpus.length ? ` (${gpus.join(", ")})` : ""}; voltam em ~1 min. Disco de volume: ${r.volume_gb} GB por pod, ~${dolares(r.volume_gb * 0.2)} por mês parado.`
+    : "Hibernação desligada (RENDER2GO_PODS_HIBERNADOS=0): todo pod sobe do zero.";
+  const saldo = `Saldo no RunPod: ${dolares(r.saldo_usd)}.`;
+  if (prazo < 15 * 60) return [criar("span", { className: "selo erro" }, [icone("alerta"), "Sem saldo"]), `${saldo} Não paga 15 min de um pod: nenhum pod novo sobe. Recarregue no RunPod. ${hib}`];
+  const texto = `${saldo} Um pod novo fica ligado até ${duracao(prazo)} (o worker para ${Math.round(r.margem_s / 60)} min antes).`;
+  if (prazo < 3600) return [criar("span", { className: "selo alerta" }, [icone("alerta"), "Saldo baixo"]), `${texto} Recarregue no RunPod para os pods ficarem até 2 h. ${hib}`];
+  return [criar("span", { className: "selo ok" }, [icone("ok"), "Saldo ok"]), `${texto} ${hib}`];
+}
+
 export function criarPods(ctx: { aoMudar: () => void }): Controle {
   const regiao = el("pods-dados");
-  let partes: { estado: HTMLElement; emergencia: HTMLButtonElement | null; retomar: HTMLButtonElement | null; tabela: HTMLElement; comandos: HTMLElement } | null = null;
+  let partes: { estado: HTMLElement; runpod: HTMLElement; emergencia: HTMLButtonElement | null; retomar: HTMLButtonElement | null; tabela: HTMLElement; comandos: HTMLElement } | null = null;
 
   const depoisDaAcao = () => {
     void c.atualizar();
@@ -74,6 +92,7 @@ export function criarPods(ctx: { aoMudar: () => void }): Controle {
 
   const montar = () => {
     const estado = criar("p", { className: "estado-orquestrador", id: "estado-orquestrador" });
+    const runpod = criar("p", { className: "estado-orquestrador", id: "estado-runpod" });
     let emergencia: HTMLButtonElement | null = null;
     let retomar: HTMLButtonElement | null = null;
     const acoes = criar("div", { className: "acoes acoes-pods" });
@@ -114,18 +133,19 @@ export function criarPods(ctx: { aoMudar: () => void }): Controle {
         }
       });
       acoes.append(emergencia, retomar);
-      regiao.replaceChildren(estado, acoes, msg);
-    } else regiao.replaceChildren(estado);
+      regiao.replaceChildren(estado, runpod, acoes, msg);
+    } else regiao.replaceChildren(estado, runpod);
     const tab = criar("div", { className: "tabela", id: "pods-tabela", attrs: { role: "region", "aria-label": "Tabela dos pods ligados", tabindex: "0" } });
     const comandos = criar("ul", { className: "linhas", id: "comandos", attrs: { "aria-labelledby": "t-comandos" } });
     regiao.append(tab, criar("h2", { id: "t-comandos", textContent: "Últimos comandos" }), comandos);
-    return { estado, emergencia, retomar, tabela: tab, comandos };
+    return { estado, runpod, emergencia, retomar, tabela: tab, comandos };
   };
 
   const carregar = async () => {
     const r = await api<Pods>("api/pods");
     partes ??= montar();
     partes.estado.replaceChildren(...estadoOrquestrador(r));
+    partes.runpod.replaceChildren(...estadoRunPod(r.runpod));
     if (partes.emergencia && partes.retomar) {
       partes.emergencia.hidden = r.pausado && !r.pods.length;
       partes.retomar.hidden = !r.pausado;

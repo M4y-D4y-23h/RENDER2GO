@@ -304,6 +304,62 @@ def test_agent_rejects_wrong_token(tmp_path):
         pod_agente.servidor("curto")
 
 
+def test_agent_deadline_can_be_rescheduled_but_never_past_two_hours(tmp_path):
+    d = pod_agente.Desligamento(1200, log=str(tmp_path / "deadman.txt"))
+    srv = pod_agente.servidor("x" * 40, "127.0.0.1", 0, deadman=d)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    ag = ln.Agente(f"http://127.0.0.1:{srv.server_address[1]}", "x" * 40)
+    try:
+        assert 1190 < d.restante() <= 1200
+        assert 3590 < ag.deadman(3600) <= 3600  # o preço real da GPU paga mais tempo
+        assert ag.deadman(9 * 3600) <= 2 * 3600  # nunca além de 2 h da subida do contêiner
+        assert ag.deadman(-5) == 0  # o saldo acabou: desliga agora
+        with pytest.raises(ln.AgenteError, match="HTTP 400"):
+            ag.deadman("x")
+        assert "reprogramado" in (tmp_path / "deadman.txt").read_text()
+    finally:
+        srv.shutdown()
+    sem = pod_agente.servidor("x" * 40, "127.0.0.1", 0)  # pod sem desligamento automático
+    threading.Thread(target=sem.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(ln.AgenteError, match="409"):
+            ln.Agente(f"http://127.0.0.1:{sem.server_address[1]}", "x" * 40).deadman(60)
+    finally:
+        sem.shutdown()
+
+
+@pytest.mark.parametrize(("acao", "primeira"), [("parar", "podStop"), ("encerrar", "podTerminate")])
+def test_agent_deadline_stops_a_hibernating_pod_before_terminating(
+    monkeypatch, tmp_path, acao, primeira
+):
+    pedidos = []
+
+    class Resposta:
+        def __init__(self, corpo):
+            self.corpo = corpo
+
+        def read(self):
+            return self.corpo
+
+    def urlopen(req, timeout):
+        pedidos.append(req.data.decode())
+        if "podStop" in req.data.decode() and acao == "parar" and len(pedidos) == 1:
+            return Resposta(b'{"errors": [{"message": "tente de novo"}]}')
+        return Resposta(b'{"data": {}}')
+
+    monkeypatch.setenv("RUNPOD_POD_ID", "abc")
+    monkeypatch.setenv("RUNPOD_API_KEY", "k" * 20)
+    monkeypatch.setattr(pod_agente.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(pod_agente.time, "sleep", lambda s: None)
+    d = pod_agente.Desligamento(0.01, acao, log=str(tmp_path / "d.txt"))
+    d.rodar()
+    assert primeira in pedidos[0]
+    if (
+        acao == "parar"
+    ):  # o 1º podStop voltou com erro: tenta de novo antes de partir para o terminate
+        assert "podStop" in pedidos[1]
+
+
 def test_bootstrap_reads_versions_from_dockerfile():
     script = (WORKER / "scripts" / "bootstrap_pod.sh").read_text()
     for arg in ("COMFYUI_COMMIT", "UMT5_PATCH_SHA256", "OLLAMA_SHA256", "COMPILER_MODEL_DIGEST"):

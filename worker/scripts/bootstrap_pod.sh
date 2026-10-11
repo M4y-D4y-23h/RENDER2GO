@@ -27,7 +27,16 @@
 # volume); cópia ruim é apagada e refeita da origem. Só o pod com RENDER2GO_VOLUME_GRAVA=1 grava no
 # volume, e só depois do PRONTO (não atrasa o pod); ao terminar, escreve /root/render2go/guardado.
 # Volume não POSIX: só rsync --inplace e cp, sem rename nem chmod.
+#
+# Pod que hiberna (ADR 0011): com RENDER2GO_LOCAL (ex.: /workspace/r2g, o disco de volume do próprio
+# pod: local, e fica no host quando o pod é parado), venv, ComfyUI, Ollama, modelos e o cache do apt
+# ficam lá, e /opt aponta para eles. As pastas de dados do ComfyUI (fotos e vídeos dos clientes) ficam no
+# disco do contêiner, que a parada apaga. No fim, $L/instalado guarda a versão ($R/versao_hib, mandada
+# pelo orquestrador). Na volta, com a mesma versão: links, apt do cache do volume (sem rede), bytes dos
+# modelos e PRONTO; o SHA-256 de todos os modelos é refeito em segundo plano (e lê os arquivos para a
+# memória antes do 1º vídeo). Arquivo que não confere: FALHOU, o marcador sai e o pod é encerrado.
 set -uo pipefail
+LAYOUT_HIB=1  # mude ao mudar onde as coisas ficam no disco de volume: os pods hibernados ficam velhos
 REPO_TGZ=$1 MODEL_SET=${2:-i2v_r1v2}
 R=/root/render2go EST=/root/render2go/estado
 mkdir -p $R/ok $R/vol && echo INSTALANDO > $EST && : > $R/tempos && rm -f $R/guardado
@@ -37,8 +46,114 @@ falha() { echo "FALHOU $*" > $EST; echo "FALHOU: $*"; echo GUARDADO > $R/guardad
 export DEBIAN_FRONTEND=noninteractive
 W=/opt/render2go/worker COMFY_DIR=/opt/comfyui OLLAMA_MODELS=/opt/ollama/models
 export OLLAMA_MODELS R
+L=${RENDER2GO_LOCAL:-}
+VERSAO=$(cat $R/versao_hib 2>/dev/null || true)
+APT=(apt-get)
+if [[ -n "$L" ]]; then
+  APT=(apt-get -o "Dir::Cache::archives=$L/apt/archives" -o "Dir::State::lists=$L/apt/lists"
+       -o APT::Keep-Downloaded-Packages=true)
+fi
 
-apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+# /opt e /usr/local apontam para o disco de volume
+links() {
+  mkdir -p $L/venv $L/comfyui/models $L/ollama/models $L/ollama/usr/bin $L/ollama/usr/lib \
+    $L/apt/archives/partial $L/apt/lists/partial /opt || return 1
+  ln -sfn $L/venv /opt/venv && ln -sfn $L/comfyui /opt/comfyui && ln -sfn $L/ollama /opt/ollama \
+    && ln -sfn $L/ollama/usr/bin/ollama /usr/local/bin/ollama \
+    && ln -sfn $L/ollama/usr/lib/ollama /usr/local/lib/ollama
+}
+# as pastas de dados do ComfyUI (fotos e vídeos dos clientes) ficam no contêiner: a parada as apaga
+links_dados() {
+  local d
+  for d in input output temp user; do
+    mkdir -p /root/comfy-dados/$d || return 1
+    [[ -L $L/comfyui/$d ]] || rm -rf "${L:?}/comfyui/$d"
+    ln -sfn /root/comfy-dados/$d $L/comfyui/$d || return 1
+  done
+}
+
+lista_modelos() {  # <url> <destino> <bytes> <sha256> de cada modelo do conjunto
+  python3 - "$MODEL_SET" <<'PY'
+import json, sys
+lock = json.load(open("/opt/render2go/worker/models.lock.json"))
+nomes = sorted({m for s in sys.argv[1].split(",") for m in lock["sets"][s]})
+for n in nomes:
+    m = lock["models"][n]
+    url = f"https://huggingface.co/{m['repo']}/resolve/{m['revision']}/{m['path']}"
+    print(url, f"/opt/comfyui/models/{m['dest']}", m["bytes"], m["sha256"], sep="\t")
+PY
+}
+
+# SHA-256 de cada modelo e de cada blob do Ollama, em paralelo e com prioridade baixa: confere o disco
+# de volume e deixa os arquivos na memória para o 1º vídeo. Arquivo que não confere: FALHOU.
+conferir_volume() {
+  local ruins
+  ruins=$(nice -n 10 python3 - $R/modelos.tsv "$OLLAMA_MODELS/blobs" <<'PY'
+import hashlib, os, sys
+from concurrent.futures import ThreadPoolExecutor
+alvos = []
+blobs = sys.argv[2]
+if os.path.isdir(blobs):  # o compilador primeiro (o pedido é traduzido antes do 1º vídeo)
+    alvos += [(os.path.join(blobs, b), b[7:]) for b in sorted(os.listdir(blobs)) if b.startswith("sha256-")]
+for linha in open(sys.argv[1]):
+    _, dest, _, sha = linha.rstrip("\n").split("\t")
+    alvos.append((dest, sha))
+def sha(caminho):
+    h = hashlib.sha256()
+    with open(caminho, "rb") as f:
+        while b := f.read(16 << 20):
+            h.update(b)
+    return h.hexdigest()
+with ThreadPoolExecutor(4) as ex:
+    for (caminho, esperado), obtido in zip(alvos, ex.map(lambda a: sha(a[0]), alvos)):
+        if obtido != esperado:
+            print(caminho)
+PY
+) || ruins="erro na conferência"
+  if [[ -n "$ruins" ]]; then
+    rm -f $L/instalado
+    echo "FALHOU disco de volume com arquivo corrompido: $ruins" > $EST
+    echo "SHA-256 não confere: $ruins"
+    return 1
+  fi
+  echo "SHA-256 do disco de volume conferido"
+}
+
+# volta da hibernação: nada baixado se o marcador é desta versão e os bytes conferem
+retomada() {
+  [[ -n "$L" && -n "$VERSAO" && -f $L/instalado ]] || return 1
+  local v
+  read -r v _ < $L/instalado || return 1
+  [[ "$v" == "$VERSAO" ]] || { echo "disco de volume de outra versão ($v)"; return 1; }
+  links && links_dados || return 1
+  mkdir -p /opt/render2go && tar -xzf "$REPO_TGZ" -C /opt/render2go || return 1
+  lista_modelos > $R/modelos.tsv || return 1
+  local url dest bytes sha
+  while IFS=$'\t' read -r url dest bytes sha; do
+    [ "$(stat -c %s "$dest" 2>/dev/null)" = "$bytes" ] || { echo "faltando no volume: $dest"; return 1; }
+  done < $R/modelos.tsv
+  marca retomada_links
+  echo AMBIENTE > $EST  # os serviços já podem subir (não dependem do apt)
+  "${APT[@]}" install -y -qq --no-install-recommends --no-download curl ffmpeg procps >/dev/null 2>&1 \
+    || { "${APT[@]}" update -qq && "${APT[@]}" install -y -qq --no-install-recommends curl ffmpeg procps >/dev/null; } \
+    || return 1
+  marca retomada_apt
+  echo PRONTO > $EST
+  echo "PRONTO (volta da hibernação)"
+  conferir_volume > $R/conferir.log 2>&1
+  marca retomada_conferida
+  return 0
+}
+if [[ -n "$L" ]] && retomada; then
+  echo GUARDADO > $R/guardado
+  exit 0
+fi
+if [[ -n "$L" ]]; then  # 1ª subida (ou volume velho/incompleto): instala tudo no disco de volume
+  rm -f $L/instalado
+  links || falha "disco de volume"
+fi
+
+"${APT[@]}" update -qq && "${APT[@]}" install -y -qq --no-install-recommends \
   curl ca-certificates rsync aria2 >/dev/null || falha "apt"
 marca apt_download
 CACHE="" GRAVA=0
@@ -92,15 +207,7 @@ reconfere() {
 export -f confere copia espelho um reconfere
 
 modelos() {
-  python3 - "$MODEL_SET" > $R/modelos.tsv <<'PY' || return 1
-import json, sys
-lock = json.load(open("/opt/render2go/worker/models.lock.json"))
-nomes = sorted({m for s in sys.argv[1].split(",") for m in lock["sets"][s]})
-for n in nomes:
-    m = lock["models"][n]
-    url = f"https://huggingface.co/{m['repo']}/resolve/{m['revision']}/{m['path']}"
-    print(url, f"/opt/comfyui/models/{m['dest']}", m["bytes"], m["sha256"], sep="\t")
-PY
+  lista_modelos > $R/modelos.tsv || return 1
   [[ -n "$CACHE" ]] && xargs -r -P 4 -L 1 bash -c 'copia "$@"' _ < $R/modelos.tsv
   while IFS=$'\t' read -r url dest bytes sha; do
     [[ -f "$R/ok/$(basename "$dest")" ]] || printf '%s\t%s\t%s\t%s\n' "$url" "$dest" "$bytes" "$sha"
@@ -130,9 +237,11 @@ PY
 }
 
 instalar_ambiente() {
-  rm -rf /opt/venv
+  local venv=/opt/venv
+  [[ -n "$L" ]] && venv=$L/venv  # /opt/venv é o link para ele
+  rm -rf "$venv"
   pip install -q "uv==$(arg UV_IMAGE | sed 's/.*://')" || return 1
-  uv venv -q /opt/venv --python python3.12 || return 1
+  uv venv -q "$venv" --python python3.12 || return 1
   uv pip install -q --require-hashes -r $W/requirements.lock \
     --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cu128 \
     --index-strategy unsafe-best-match || return 1
@@ -146,7 +255,11 @@ instalar_ambiente() {
   local v; v=$(arg OLLAMA_VERSION)
   curl -fsSL -o /tmp/ollama.tar.zst "https://github.com/ollama/ollama/releases/download/$v/ollama-linux-amd64.tar.zst" || return 1
   echo "$(arg OLLAMA_SHA256)  /tmp/ollama.tar.zst" | sha256sum -c --quiet - || return 1
-  tar --zstd -xf /tmp/ollama.tar.zst -C /usr/local || return 1
+  if [[ -n "$L" ]]; then  # no volume; /usr/local/{bin,lib}/ollama são links (links())
+    rm -rf $L/ollama/usr && mkdir -p $L/ollama/usr && tar --zstd -xf /tmp/ollama.tar.zst -C $L/ollama/usr || return 1
+  else
+    tar --zstd -xf /tmp/ollama.tar.zst -C /usr/local || return 1
+  fi
   rm -f /tmp/ollama.tar.zst /tmp/umt5.zip
 }
 
@@ -215,14 +328,17 @@ guardar() {
 
 modelos > $R/modelos.log 2>&1 &
 MPID=$!
-apt-get install -y -qq --no-install-recommends git ffmpeg zstd unzip procps >/dev/null \
+"${APT[@]}" install -y -qq --no-install-recommends git ffmpeg zstd unzip procps >/dev/null \
   || { kill $MPID 2>/dev/null; falha "apt"; }
 marca apt
 ambiente > $R/ambiente.log 2>&1 || { kill $MPID 2>/dev/null; falha "ambiente (ver ambiente.log)"; }
+[[ -n "$L" ]] && { links_dados || { kill $MPID 2>/dev/null; falha "pastas de dados do ComfyUI"; }; }
 marca ambiente_pronto
 echo AMBIENTE > $EST
 wait $MPID || falha "modelos (ver modelos.log)"
 marca pronto
+# pod que hiberna: o disco de volume tem tudo desta versão, conferido (bytes e SHA-256 na instalação)
+[[ -n "$L" && -n "$VERSAO" ]] && echo "$VERSAO $(date +%s)" > $L/instalado
 echo PRONTO > $EST
 echo PRONTO
 guardar > $R/guardar.log 2>&1
