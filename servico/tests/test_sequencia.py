@@ -131,8 +131,11 @@ def test_a_photo_text_refused_after_compiling_cancels_and_refunds_only_its_photo
         "nsfw_quadros": 13,
     }
     assert _concluir(api, r0, **ok).json()["status"] == "ok"
-    lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
+    resp = api.get(f"/api/lotes/{lid}", headers=h(tok))
+    lote = resp.json()
     assert lote["status"] == "concluido_com_falhas"
+    # recusa neutra (decisão do dono, 11/10/2026): o cliente não vê o motivo interno da recusa
+    assert not any("erro" in v for v in lote["videos"]) and "filtro" not in resp.text
     assert [(v["arquivo"], v["status"]) for v in lote["videos"]] == [
         ("foto-0-v1.mp4", "ok"),
         ("foto-1-v1.mp4", "cancelado"),

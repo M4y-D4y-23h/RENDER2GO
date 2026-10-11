@@ -53,6 +53,8 @@ Pelas regras do projeto, a troca é um ADR com teste em GPU: as mesmas receitas,
 
 O tradutor (versão "abliterada" do Qwen, sem as recusas) também veio do projeto original. Para o serviço comercial, um Qwen 2.5 7B Instruct comum (Apache 2.0) é a escolha natural, com nova rodada de fidelidade.
 
+**Decisão do dono (11/10/2026):** os modelos atuais ficam por enquanto; a troca vem em breve, com o ADR e o teste em GPU. Até lá, as barreiras são o filtro de palavras (recusa neutra: o cliente vê as regras, não a palavra; nada é cobrado), o tradutor e o filtro de imagem nos quadros (o vídeo barrado não sai do pod e o valor volta). **Ninguém é bloqueado por insistir** (decisão do dono): as tentativas recusadas ficam no registro de acesso, para consulta.
+
 ## 2. Candidatos por finalidade
 
 ### 2.1 Imagem para vídeo e texto para vídeo
