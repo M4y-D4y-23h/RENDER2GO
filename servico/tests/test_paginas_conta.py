@@ -141,11 +141,19 @@ def test_menu_opens_each_screen_by_address_without_reloading(ambiente, navegador
     pg.go_forward()
     pw.expect(pg.locator("#vista-mix")).to_be_visible()
     assert pg.evaluate("window.__mesma") is True
-    # Ctrl+clique abre a tela noutra aba (os itens do menu são links de verdade); esta aba fica onde estava
-    with ctx.expect_page() as nova:
-        pg.click(".menu-conta a[data-vista=logs]", modifiers=["Control"])
-    # a aba nasce em about:blank e só depois navega: esperar pelo endereço (o "load" do documento vazio já valeria)
-    nova.value.wait_for_url(f"{ambiente.url}/logs")
+    # Ctrl+clique fica com o navegador, que abre o link noutra aba (os itens do menu são links de verdade); esta aba
+    # fica onde estava. O teste confere a parte da página, com um clique sintético: o clique com Ctrl não é
+    # interceptado. Abrir a aba é do navegador, e o Chromium sem tela do CI às vezes não a abria ou a deixava em
+    # about:blank (3 de 6 rodadas em 10 e 11/10/2026)
+    link = pg.locator(".menu-conta a[data-vista=logs]")
+    assert link.get_attribute("href") == "/logs"
+    pg.evaluate(
+        "() => document.addEventListener('click', (ev) => { window.__ctrl = [ev.ctrlKey, ev.defaultPrevented];"
+        " ev.preventDefault(); }, { once: true })"
+    )
+    link.dispatch_event("click", {"button": 0, "ctrlKey": True})
+    assert pg.evaluate("window.__ctrl") == [True, False]  # o menu (moldura.ts) não impediu o navegador
+    assert pg.url == f"{ambiente.url}/mix"
     pw.expect(pg.locator("#vista-mix")).to_be_visible()
     # links dentro de uma tela também trocam de tela (no Mix, "Modelos de IA")
     pg.click("#vista-mix a[data-vista=modelos]")
