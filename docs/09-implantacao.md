@@ -8,7 +8,7 @@ Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem p
 
 ### 11/10/2026 (2): pods (prazo pelo preço real, motivo da saída, saldo no painel, hibernação) e filtro de imagem nos vídeos
 
-**É a atualização a fazer agora.** Parte da versão de 11/10/2026 (a entrada abaixo) e está na branch `claude/magical-lamport-4rrms9` até ir para a `main` (pull request no GitHub). Muda a API, o orquestrador e o código que vai para os pods; o banco ganha só duas colunas (`jobs.nsfw` e `jobs.barrado_em`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entradas 11/10/2026 (2) e (3); [ADR 0011](adr/0011-pods-hibernados.md) e [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md).
+**É a atualização a fazer agora.** Parte da versão de 11/10/2026 (a entrada abaixo) e está na branch `claude/magical-lamport-4rrms9` até ir para a `main` (pull request no GitHub). Muda a API, o orquestrador, o analisador (fotos conferidas antes de abrir e memória limitada a 1 GB no `compose.yaml`) e o código que vai para os pods; o banco ganha só duas colunas (`jobs.nsfw` e `jobs.barrado_em`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entradas 11/10/2026 (2) e (3); [ADR 0011](adr/0011-pods-hibernados.md) e [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md).
 
 **1) Nada gerando?** Igual ao bloco 1 da entrada abaixo: o bloco 3 recria o orquestrador, que desliga os pods ligados ao parar.
 

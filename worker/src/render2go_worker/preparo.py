@@ -55,7 +55,7 @@ class Preparada:
 
 def preparar(foto: Path, width: int, height: int, dest: Path) -> Preparada:
     try:
-        with Image.open(foto) as im:
+        with Image.open(foto, formats=("JPEG", "PNG", "WEBP")) as im:
             if im.width * im.height > MAX_PIXELS:
                 raise PreparoError(f"foto grande demais ({im.width}x{im.height})")
             im = ImageOps.exif_transpose(im)

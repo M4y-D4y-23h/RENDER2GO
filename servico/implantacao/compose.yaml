@@ -50,6 +50,9 @@ services:
   analisador:
     <<: *processo
     command: ["render2go-servico", "analisar"]
+    # o único processo do servidor que decodifica fotos dos clientes: com memória limitada, uma foto
+    # maliciosa derruba só ele (que volta sozinho), nunca a API ou o Postgres
+    mem_limit: 1g
     environment:
       <<: [*banco, *sem-segredos-da-api]
       RUNPOD_API_KEY: ""

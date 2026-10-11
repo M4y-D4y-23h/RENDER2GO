@@ -42,6 +42,44 @@ LIMIAR_PESSOA = 0.5  # objeto × classe "pessoa"
 AREA_MIN = 0.005  # caixa com menos de 0,5% da foto não conta (gente minúscula ao fundo)
 LIMIAR_ROSTO = 0.8
 LADO_MAX = 1280  # a foto é reduzida antes da análise
+# a foto do cliente só é aberta depois de conferida (11/10/2026): o tipo pelos primeiros bytes, só os
+# leitores de JPEG, PNG e WebP do Pillow (os outros, como TIFF, PSD e EPS, nem são tentados) e o tamanho em
+# pixels lido do cabeçalho antes de decodificar (bomba de descompressão). O mesmo teto do pod (preparo.py)
+MAX_PIXELS_FOTO = 50_000_000
+FORMATOS = {"image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WEBP"}
+
+
+class FotoInvalida(ValueError):
+    """O arquivo não é uma foto que o serviço aceita: não é decodificado."""
+
+
+def tipo_pelos_bytes(inicio: bytes) -> str | None:
+    """image/jpeg, image/png ou image/webp pela assinatura do arquivo; None para qualquer outra coisa."""
+    if inicio[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if inicio[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if inicio[:4] == b"RIFF" and inicio[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def abrir_foto(dados: bytes):
+    """Abre a foto (sem decodificar ainda) só se ela for JPEG, PNG ou WebP de verdade e couber no teto."""
+    from PIL import Image
+
+    tipo = tipo_pelos_bytes(dados[:16])
+    if tipo is None:
+        raise FotoInvalida("o arquivo não é uma foto JPEG, PNG ou WebP")
+    try:
+        im = Image.open(BytesIO(dados), formats=[FORMATOS[tipo]])
+    except Exception as e:  # noqa: BLE001 (inclui a bomba que o próprio Pillow recusa)
+        raise FotoInvalida(f"foto ilegível: {str(e)[:120]}") from e
+    w, h = im.size
+    if w * h > MAX_PIXELS_FOTO:
+        im.close()
+        raise FotoInvalida(f"foto de {w}×{h} pixels, acima de {MAX_PIXELS_FOTO // 1_000_000} megapixels")
+    return im
 
 
 class DetectorIndisponivel(Exception):
@@ -130,9 +168,10 @@ class Detector:
         return 0 if faces is None else len(faces)
 
     def analisar(self, dados: bytes) -> dict:
-        from PIL import Image, ImageOps
+        from PIL import ImageOps
 
-        with Image.open(BytesIO(dados)) as im:
+        with abrir_foto(dados) as im:
+            im.draft("RGB", (LADO_MAX, LADO_MAX))  # JPEG: decodifica já reduzida (memória e tempo)
             im = ImageOps.exif_transpose(im).convert("RGB")
             im.thumbnail((LADO_MAX, LADO_MAX))
             bgr = self.np.ascontiguousarray(self.np.asarray(im)[:, :, ::-1])

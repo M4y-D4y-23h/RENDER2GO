@@ -282,7 +282,8 @@ class WorkerFila:
             try:
                 foto = pasta / f"foto{TIPOS.get(job.get('foto_ext', ''), '.jpg')}"
                 media.download(job["foto_url"], foto, MAX_BYTES_FOTO)
-                media.check_image(foto)
+                # o mesmo teto do preparo (50 MP); o padrão de check_image é o do endpoint (jobs.py)
+                media.check_image(foto, max_pixels=preparo.MAX_PIXELS)
                 t = self._tarefa(job, foto)
                 prep = preparo.preparar(foto, t.width, t.height, pasta / "preparada.png")
             except (

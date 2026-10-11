@@ -122,6 +122,26 @@ uv run python tests/teste_invasao.py --caddy /tmp/caddy/caddy --db "postgresql:/
 
 **Fora do teste:** o "não sou um robô" foi conferido à parte, com as chaves de teste da Cloudflare (a que sempre passa e a que sempre falha). Não foram testados: ataque de volume (DDoS), que só uma CDN segura (seção 6.4); a infraestrutura dos fornecedores (Hetzner, Cloudflare, RunPod, Mercado Pago); engenharia social e o roubo das senhas do dono (seção 6.6).
 
+### 3.1 Arquivos enviados pelos clientes (11/10/2026)
+
+O dono perguntou se uma foto maliciosa poderia levar código ao servidor ou ao banco. O caminho de cada foto, conferido no código:
+
+1. **O pedido declara** nome, tipo e tamanho de cada foto. A API aceita só `image/jpeg`, `image/png` e `image/webp`, até 50 MB e até 1.000 fotos (o teste gratuito, 5). O nome nunca vira caminho: a chave no R2 é gerada pela API, na pasta do pedido.
+2. **A foto vai direto do navegador para o R2** por uma URL assinada que fixa o tipo e o tamanho: o R2 recusa outro tamanho. **A foto nunca passa pelo servidor nem fica no disco dele**, e nenhum byte dela vai para o banco: o banco guarda só nome, tipo, tamanho, chave e, depois, o SHA-256 e o resultado da análise, sempre por consulta parametrizada.
+3. **Na confirmação do envio**, a API confere o tamanho de cada arquivo no R2 (16 consultas em paralelo) e só então cobra.
+4. **O único lugar do servidor que abre a foto é o contêiner `analisador`** (aviso de pessoas): sem privilégios, disco só de leitura, sem os segredos da API e, desde 11/10, com **memória limitada a 1 GB** (uma foto feita para estourar a memória derruba só ele, que volta sozinho; a API e o Postgres seguem). Antes de decodificar, desde 11/10 (`pessoas.abrir_foto`):
+   - o tipo é conferido pelos primeiros bytes (a assinatura do arquivo), e não pelo nome ou pelo que o navegador declarou;
+   - o Pillow só usa os leitores de JPEG, PNG e WebP: TIFF, PSD, EPS (que chamaria o Ghostscript), BMP, GIF e os outros nem são tentados, porque são a maior superfície de ataque;
+   - o tamanho em pixels sai do cabeçalho e precisa caber em 50 megapixels (a "bomba de descompressão" é um arquivo de poucos KB que declara bilhões de pixels);
+   - o JPEG é decodificado já reduzido (`draft`), com menos memória.
+   O arquivo que não passa vira "foto ilegível" ou "não é uma foto" na análise, para o revisor; nada é executado.
+5. **No pod** (descartável, apagado ao encerrar), a mesma regra (`media.check_image` e `preparo`): só os três formatos, 50 MP no máximo, e a foto inválida falha o vídeo sem nova tentativa, com o valor devolvido. **Achado e corrigido:** o caminho da fila usava o teto padrão de 16,7 MP (4096×4096), e a foto de uma câmera de 24 MP ou de um celular no modo 48–50 MP falhava no pod; agora é o teto de 50 MP do preparo.
+6. **Na volta para o cliente**, o vídeo e a folha são gerados pelos pods (nunca o arquivo enviado), e as fotos são servidas pelo domínio do R2, com o tipo fixado na assinatura: mesmo um arquivo disfarçado não roda como página no domínio do serviço (cookies, painel).
+
+**Testes novos:** `servico/tests/test_pessoas.py` e `worker/tests/test_media_imagens.py`: as três imagens válidas abrem; página HTML, executável, zip, EPS, PHP começando com a assinatura do JPEG, TIFF, BMP, GIF, ICO e PPM disfarçados são recusados sem decodificar; a bomba de 10 bilhões de pixels em ~100 bytes e a de 64 MP são recusadas pelo cabeçalho; a foto de 24 MP passa na fila; o arquivo inválido vira erro na análise, sem parar o analisador.
+
+**Dependências:** Pillow 12.3.0 no serviço e no worker, uma versão recente, que já traz as correções conhecidas dos leitores de imagem (como a do WebP de 2023, corrigida na 10.0.1). Atualizar o Pillow junto com as outras dependências, sempre com versão fixada.
+
 ## 4. Escala: o que o servidor aguenta
 
 ### 4.1 Medido em 09/10/2026
@@ -169,6 +189,15 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
 - **Leitura:** a capacidade da API ficou a mesma. As faixas se sobrepõem nos três cenários, nenhum pedido deu erro, e o tempo de cada `GET /api/lotes` medido em processo, sem rede nem concorrência, é igual nas duas versões (7,2 ms, com as mesmas consultas no perfil). Nesta máquina, algumas rodadas inteiras saem pela metade: todo pedido demora ~2×, nas duas versões, inclusive na página inicial, que só lê da memória e não mudou. Por isso a tabela mostra as rodadas normais à parte. Uma rodada anterior do mesmo dia, noutro contêiner, deu o mesmo quadro (lotes ~380–389 × ~374–379, misto ~400–422 × ~400–411, página ~1.830–1.958 × ~1.900–1.935) e, em sequência com 1 processo, o tempo de cada resposta: `/api/lotes` 5,26 → 5,33 ms, `/api/conta` 2,53 → 3,12 ms (a conta passou a trazer o perfil, o tema e os "Tenho interesse", numa transação só) e `/` 1,07 → 0,98 ms.
 - **A lista de pedidos não ficou mais cara com o pedido em sequência:** `GET /api/lotes` é a rota mais pedida, e os vídeos voltaram a vir de uma consulta simples; os textos próprios das fotos vêm numa 2ª consulta, só para os pedidos que os têm (commit `421c8f2`, que tirou ~0,3 ms do Postgres em cada chamada).
 - **As telas novas não ficam consultando a API:** Extratos, Logs, Perfil e Configurações pedem os dados uma vez, quando abrem. Só a tela de Pedidos se atualiza sozinha (a cada 10 s, com pedido em andamento e a aba à vista), como antes; e o painel, a cada 30 s na seção aberta, só para quem está nele. A conta de ~0,1 pedido/s por pessoa da seção 4.2 continua valendo.
+
+### 4.5 Pedidos ao mesmo tempo (11/10/2026)
+
+O dono perguntou sobre erros com muitos pedidos simultâneos. O que protege, com teste:
+- **Saldo:** a cobrança trava a linha do cliente no Postgres (`SELECT ... FOR UPDATE`) e cada cobrança tem uma referência única. Teste novo: 10 pedidos da mesma conta terminam de subir no mesmo instante, com saldo para 3: exatamente 3 são cobrados, 7 recebem "saldo insuficiente" e o saldo termina em zero, nunca negativo. Sem a trava, o teste falha no Postgres (conferido tirando a trava).
+- **Fila dos pods:** cada vídeo é reivindicado com `FOR UPDATE SKIP LOCKED` e prazo; 6 workers disputando 20 trabalhos pegam cada um uma vez só (teste existente). Vídeo de pod que cai volta para a fila quando o prazo vence, até 3 tentativas.
+- **Rede:** o download da foto no pod tenta de novo nas falhas de rede; a falha da foto em si (tipo, tamanho) não se repete. O envio do navegador para o R2 é direto, sem passar pelo servidor.
+- **Capacidade:** seções 4.1 e 4.4 (~400–800 pedidos/s na API com 2–3 processos, ~5.000 pessoas acompanhando pedidos ao mesmo tempo). Os limites de verdade são a GPU (`RENDER2GO_MAX_PODS`, o saldo e o estoque do RunPod) e a revisão humana; com mais pedidos do que pods, eles esperam na fila, intercalados por cliente, e a página mostra a previsão.
+- **Não testado ainda:** um teste de ponta a ponta com centenas de clientes enviando fotos reais ao R2 e vários pods ao mesmo tempo (custa GPU; fica para antes da divulgação grande, seção 7).
 
 ## 5. GPUs no RunPod: vários modelos e 30 pods ou mais
 

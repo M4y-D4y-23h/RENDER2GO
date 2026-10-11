@@ -80,18 +80,24 @@ def download(url: str, dest: Path, max_bytes: int, timeout: float = 60) -> int:
     return size
 
 
+FORMATOS_IMAGEM = ("JPEG", "PNG", "WEBP")
+
+
 def check_image(path: Path, max_pixels: int = 4096 * 4096) -> tuple[int, int]:
+    """Só JPEG, PNG e WebP: o Pillow nem tenta os outros leitores (TIFF, PSD, EPS...), que são a
+    maior superfície de ataque de um arquivo malicioso. O tamanho em pixels vem do cabeçalho, antes
+    de decodificar."""
     from PIL import Image  # vem com o ComfyUI
 
     try:
-        with Image.open(path) as im:
+        with Image.open(path, formats=FORMATOS_IMAGEM) as im:
             im.verify()
-        with Image.open(path) as im:
+        with Image.open(path, formats=FORMATOS_IMAGEM) as im:
             w, h = im.size
             fmt = im.format
     except Exception as e:  # noqa: BLE001
-        raise MediaError(f"imagem inválida: {e}") from e
-    if fmt not in ("PNG", "JPEG", "WEBP"):
+        raise MediaError(f"imagem inválida (aceitas: JPEG, PNG e WebP): {e}") from e
+    if fmt not in FORMATOS_IMAGEM:
         raise MediaError(f"formato de imagem não aceito: {fmt}")
     if w * h > max_pixels:
         raise MediaError(f"imagem grande demais: {w}x{h}")

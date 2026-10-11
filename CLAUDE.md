@@ -36,6 +36,7 @@ Projeto Render2Go (antes GPU2GO): serviço de vídeos curtos com IA para pequeno
 - Repositório, testes, fixtures e CI só com conteúdo SFW. Nunca gerar, buscar ou guardar material explícito ou ilícito para teste.
 - Não copiar código do `worker-comfyui` (AGPL-3.0); usar só como referência de protocolo.
 - Contas e pagamentos (ADR 0007 e 0008): credenciais e assinaturas comparadas em tempo constante e em bytes (`contas.iguais`); crédito de saldo só com a confirmação da API do Mercado Pago, nunca só pelo aviso; respostas que revelariam se uma conta existe só depois da verificação anti-robô e dos limites.
+- Foto de cliente só é aberta por `pessoas.abrir_foto` (servidor, contêiner `analisador`, memória limitada) e `media.check_image` (pod): tipo pelos primeiros bytes, só os leitores de JPEG, PNG e WebP do Pillow e no máximo 50 MP lidos do cabeçalho antes de decodificar. A foto nunca passa pela API nem vai para o banco.
 - Nunca trocar o `RENDER2GO_SEGREDO_CONTAS` depois que houver acessos do painel por pessoa ou verificação em duas etapas ligada: os segredos dos aplicativos autenticadores são cifrados com ele (ADR 0009). Ações sensíveis da conta (e-mail, verificação em duas etapas, exclusão) pedem a confirmação recente (`_exigir_confirmacao`); com a verificação ligada, o código do e-mail sozinho não basta.
 
 ## Comandos

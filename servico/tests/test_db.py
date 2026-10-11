@@ -355,6 +355,34 @@ def _lote_pago(b, cid, n_fotos, preco_video, variacoes=1):
     return b.criar_lote(cid, pedido, fotos, preco_video=preco_video)
 
 
+def test_simultaneous_uploads_never_spend_the_same_balance_twice(banco):
+    """10 pedidos da mesma conta terminam de subir ao mesmo tempo, com saldo para 3: exatamente 3 são
+    cobrados e o saldo nunca fica negativo (no Postgres, a linha do cliente fica travada na cobrança)."""
+    cid, _ = banco.criar_cliente("Loja")
+    banco.movimentar(cid, 900, "Pix", "dono", referencia="pagamento:pix-1")
+    lotes = [_lote_pago(banco, cid, 3, 100) for _ in range(10)]  # 300 cada
+    largada, resultados, lock = threading.Barrier(len(lotes)), [], threading.Lock()
+
+    def enviar(lid):
+        largada.wait()
+        try:
+            banco.confirmar_envio(lid, {f["chave"]: 100 for f in banco.fotos(lid)})
+            r = "cobrado"
+        except SaldoInsuficiente:
+            r = "sem saldo"
+        with lock:
+            resultados.append(r)
+
+    ts = [threading.Thread(target=enviar, args=(lid,)) for lid in lotes]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert sorted(resultados) == ["cobrado"] * 3 + ["sem saldo"] * 7
+    assert banco.saldo(cid) == 0
+    assert sum(1 for lid in lotes if banco.lote(lid)["status"] != "aguardando_envio") == 3
+
+
 def test_prepaid_charge_on_upload_refund_per_failed_video_and_ledger_survives_cleanup(banco):
     cid, _ = banco.criar_cliente("Loja")
     assert banco.saldo(cid) == 0
