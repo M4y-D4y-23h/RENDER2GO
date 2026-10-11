@@ -122,7 +122,14 @@ def test_a_photo_text_refused_after_compiling_cancels_and_refunds_only_its_photo
     assert _job(api) is None
     chave = r0["video_url"].split("armazem.teste/")[1].split("?")[0]
     api.armazem.objetos[chave] = 7000
-    ok = {"bytes_video": 7000, "similaridade": 0.999, "deriva_cor": 6.5, "salto_cor": 1.2}
+    ok = {
+        "bytes_video": 7000,
+        "similaridade": 0.999,
+        "deriva_cor": 6.5,
+        "salto_cor": 1.2,
+        "nsfw": 0.01,
+        "nsfw_quadros": 13,
+    }
     assert _concluir(api, r0, **ok).json()["status"] == "ok"
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
     assert lote["status"] == "concluido_com_falhas"

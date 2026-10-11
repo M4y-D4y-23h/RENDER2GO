@@ -95,6 +95,7 @@ MOTIVOS = {
     "ocioso": "fila vazia",
     "limite": "limite de tempo do pod",
     "modelos": "modelos não ficaram prontos",
+    "filtro": "filtro de imagem não carregou",
     "gpu": "GPU inacessível",
 }
 

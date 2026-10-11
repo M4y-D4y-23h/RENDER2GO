@@ -449,6 +449,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 - **Aprovar pedidos:** no painel. Nada vai para a GPU sem aprovação (ADR 0004). O cliente acompanha em `/`.
   - Cada foto ganha um selo "contém pessoas" ou "sem pessoas detectadas" segundos depois do envio (detector no próprio servidor, sem custo de GPU). Com pessoas e sem a caixa de autorização marcada, o lote mostra um aviso em vermelho.
   - O selo é uma ajuda: confira sempre as miniaturas.
+- **Vídeos barrados pelo filtro de imagem (desde 11/10/2026, ADR 0005):** cada vídeo passa, no pod, por um classificador de nudez antes de ser enviado; o barrado não sai do pod, não é refeito e volta para o saldo do cliente. No painel, o histórico mostra "N vídeo(s) barrado(s) pelo filtro de imagem" no pedido, e o registro de auditoria tem a nota de cada um (evento `video_barrado`). Vale para todos os planos, inclusive o interno (que é aprovado sozinho, sem revisão). Conta que insiste: veja os registros de acesso `pedido_recusado_filtro` e desative a conta.
 - **Parar tudo e encerrar os pods:** no painel, seção "Pods", "Parada de emergência": encerra todos os pods em até ~10 s e não sobe outro até "Retomar". Cada pod também tem "Desligar". Pelo terminal (se o painel estiver fora do ar):
   ```bash
   docker compose stop orquestrador

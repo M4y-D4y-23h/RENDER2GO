@@ -219,10 +219,26 @@ def _submit_de(trocar_por: bytes | None = None):
     return submit
 
 
-def _worker(amb, submit):
+class Classificador:
+    """Filtro de imagem falso (regra do projeto: nada explícito em teste): a mesma nota para todo quadro,
+    ou um erro (classificador que não carregou)."""
+
+    def __init__(self, nota=0.01, erro=None):
+        self.nota, self.erro, self.quadros = nota, erro, 0
+
+    def probabilidades(self, quadros):
+        if self.erro:
+            raise self.erro
+        self.quadros += len(quadros)
+        return [(1 - self.nota, 0.0, self.nota, 0.0)] * len(quadros)
+
+
+def _worker(amb, submit, classificador=None):
     api = fila.ApiFila(amb.url, WORKER, "pod-teste")
     cfg = fila.Config(comfy=["http://127.0.0.1:1"], ocioso_s=1.5)
-    return fila.WorkerFila(api, cfg, submit=submit, compile_fn=_compilar)
+    return fila.WorkerFila(
+        api, cfg, submit=submit, compile_fn=_compilar, classificador=classificador or Classificador()
+    )
 
 
 @com_ffmpeg
@@ -238,6 +254,7 @@ def test_queue_worker_renders_checks_and_delivers(ambiente, monkeypatch):
     jobs = [j for j in ambiente.banco.jobs(lid) if j["tipo"] == "render"]
     assert all(j["similaridade"] > 0.9 and j["bytes_video"] > 0 for j in jobs)
     assert all(j["deriva_cor"] is not None and j["salto_cor"] is not None for j in jobs)
+    assert all(j["nsfw"] == pytest.approx(0.01) and not j["barrado_em"] for j in jobs)  # filtro de imagem
     # cada vídeo está no endereço do próprio cliente e lote, com a folha de conferência
     chaves = sorted(ambiente.objetos)
     assert sum(k.startswith("saida/") and k.endswith(".mp4") and f"/{lid}/" in k for k in chaves) == 2
@@ -313,6 +330,7 @@ def test_worker_translates_while_models_download_and_renders_after_ready(ambient
         fila.Config(comfy=["http://127.0.0.1:1"], ocioso_s=1.0, modelos=estado),
         submit=_submit_de(),
         compile_fn=_compilar,
+        classificador=Classificador(),
     )
     t = threading.Thread(target=w.rodar, daemon=True)
     t.start()
@@ -389,3 +407,35 @@ def test_worker_writes_why_it_left(monkeypatch, tmp_path):
     assert w.estado_modelos() == "ok"
     estado.write_text("FALHOU disco de volume com arquivo corrompido: /opt/comfyui/models/x\n")
     assert w.rodar() == 0 and motivo.read_text() == "modelos\n"
+
+
+@com_ffmpeg
+def test_a_video_blocked_by_the_frame_filter_never_leaves_the_pod(ambiente, monkeypatch):
+    """ADR 0005: nota alta em algum quadro = nem o vídeo nem a folha de conferência saem do pod."""
+    import requests
+
+    monkeypatch.setattr(fila, "ESPERA_S", 0.2)
+    lid, hc = _lote_aprovado(ambiente, {"bolo.png": _png((40, 90, 160), "circulo")})
+    filtro = Classificador(nota=0.9)
+    w = _worker(ambiente, _submit_de(), filtro)
+    assert w.rodar() == 0 and filtro.quadros >= 3  # 1 a cada 4 quadros, com o 1º e o último
+    lote = requests.get(f"{ambiente.url}/api/lotes/{lid}", headers=hc).json()
+    assert lote["status"] == "concluido_com_falhas" and lote["prontos"] == 0
+    (job,) = [j for j in ambiente.banco.jobs(lid) if j["tipo"] == "render"]
+    assert job["barrado_em"] and job["tentativas"] == 1 and job["nsfw"] == pytest.approx(0.9)  # não refaz
+    assert not any(k.startswith("saida/") for k in ambiente.objetos)  # nada enviado
+
+
+@com_ffmpeg
+def test_without_the_frame_filter_nothing_is_delivered_and_the_worker_leaves(ambiente, monkeypatch, tmp_path):
+    import requests
+
+    monkeypatch.setattr(fila, "ESPERA_S", 0.2)
+    lid, hc = _lote_aprovado(ambiente, {"bolo.png": _png((40, 90, 160), "circulo")})
+    w = _worker(ambiente, _submit_de(), Classificador(erro=RuntimeError("timm ausente")))
+    w.cfg.motivo_em = tmp_path / "fila.motivo"
+    assert w.rodar() == 0 and w.cfg.motivo_em.read_text() == "filtro\n"  # o orquestrador encerra o pod
+    (job,) = [j for j in ambiente.banco.jobs(lid) if j["tipo"] == "render"]
+    assert job["status"] == "pendente" and "filtro de imagem" in job["erro"]  # outro pod tenta
+    assert not any(k.startswith("saida/") for k in ambiente.objetos)
+    assert requests.get(f"{ambiente.url}/api/lotes/{lid}", headers=hc).json()["prontos"] == 0

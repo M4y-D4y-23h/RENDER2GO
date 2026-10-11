@@ -72,7 +72,7 @@ SESSAO_CLIENTE_S = 30 * 86400
 SESSAO_ADMIN_S = 12 * 3600
 # versões dos documentos que a pessoa aceita ao entrar (páginas /termos e /privacidade). Versão nova: quem
 # já estava conectado aceita na própria página (GET /api/conta traz os pendentes; POST /api/conta/aceitar)
-DOCUMENTOS = {"termos": "termos-v2", "privacidade": "privacidade-v2"}
+DOCUMENTOS = {"termos": "termos-v2", "privacidade": "privacidade-v3"}  # v3 (11/10/2026): filtro de imagem
 TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 # confirmação recente ("é você mesmo?") antes de ações sensíveis; a sessão aberta há menos que isso já conta
 CONFIRMACAO_S = 10 * 60

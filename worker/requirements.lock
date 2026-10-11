@@ -1542,6 +1542,7 @@ huggingface-hub==0.36.2 \
     # via
     #   -c lock-constraints.txt
     #   -r requirements.in
+    #   timm
     #   tokenizers
     #   transformers
 idna==3.20 \
@@ -2931,6 +2932,7 @@ pyyaml==6.0.3 \
     #   -r requirements.in
     #   fastapi
     #   huggingface-hub
+    #   timm
     #   transformers
     #   uvicorn
 regex==2026.9.29 \
@@ -3299,6 +3301,7 @@ safetensors==0.8.0 \
     #   -c lock-constraints.txt
     #   -r requirements.in
     #   spandrel
+    #   timm
     #   transformers
 scipy==1.18.1 \
     --hash=sha256:011413b7426b75012840e35649e00fe0a2c3bae89fed433876e3a99251572efc \
@@ -3553,6 +3556,10 @@ sympy==1.14.0 \
     # via
     #   -c lock-constraints.txt
     #   torch
+timm==1.0.30 \
+    --hash=sha256:1444a3af7e17fdba5440ac2bcf6e4b728da96dd62289ed9e1bcba31a545f5935 \
+    --hash=sha256:c8e27adf6801a2fdfb570dbbdd171f2f084756eefc673df8cfaab06bd14864f3
+    # via -r requirements.in
 tokenizers==0.22.2 \
     --hash=sha256:143b999bdc46d10febb15cbffb4207ddd1f410e2c755857b5a0797961bbdc113 \
     --hash=sha256:1a62ba2c5faa2dd175aaeed7b15abf18d20266189fb3406c5d0550dd34dd5f37 \
@@ -3657,6 +3664,7 @@ torch==2.8.0+cu128 \
     #   -r requirements.in
     #   kornia
     #   spandrel
+    #   timm
     #   torchaudio
     #   torchsde
     #   torchvision
@@ -3699,6 +3707,7 @@ torchvision==0.23.0+cu128 \
     #   -c lock-constraints.txt
     #   -r requirements.in
     #   spandrel
+    #   timm
 tqdm==4.70.1 \
     --hash=sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73 \
     --hash=sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4

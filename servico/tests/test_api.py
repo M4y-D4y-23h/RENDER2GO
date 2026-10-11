@@ -19,7 +19,8 @@ WORKER = "w" * 40
 PAINEL = "/painel-teste-0123456789"  # endereço do painel nos testes (RENDER2GO_ADMIN_CAMINHO)
 TOTP = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"  # segredo do autenticador nos testes (RENDER2GO_ADMIN_TOTP)
 ADM = {"X-Render2Go": "1"}  # o cabeçalho que a página do painel manda (a sessão vai no cookie)
-CONTINUO = {"deriva_cor": 6.5, "salto_cor": 1.2}  # vídeo que fica na foto até o fim
+# vídeo que fica na foto até o fim e passou no filtro de imagem (13 quadros, nota bem abaixo do limiar)
+CONTINUO = {"deriva_cor": 6.5, "salto_cor": 1.2, "nsfw": 0.01, "nsfw_quadros": 13}
 
 
 class Armazem:
@@ -538,7 +539,15 @@ def test_history_ip_usage_and_client_deactivation(api):
 
 def test_content_filter_blocks_at_entry_and_on_compiled_prompt(api):
     tok = _cliente(api)
-    assert _lote(api, tok, prompt="um homem segura uma arma").status_code == 422
+    r = _lote(api, tok, prompt="um homem segura uma arma")
+    # o cliente vê as regras, nunca qual palavra ou categoria barrou (ajudava a testar sinônimos)
+    assert r.status_code == 422 and "filtro de conteúdo" in r.json()["detail"]
+    assert "armas" in r.json()["detail"] and "C1" not in r.json()["detail"]  # a lista é a dos termos
+    assert r.json()["detail"] == _lote(api, tok, prompt="uma modelo pelada").json()["detail"]
+    # a categoria fica no registro de acesso (Marco Civil), para o dono ver quem insiste
+    with api.banco.tx() as c:
+        regs = c.all("SELECT detalhe FROM acessos WHERE evento = 'pedido_recusado_filtro'")
+    assert len(regs) == 2 and any("armas" in x["detalhe"] for x in regs)
     r = _lote(api, tok, n=1)
     lid = r.json()["lote"]
     _enviar_tudo(api, tok, lid, r.json()["envios"])
@@ -829,3 +838,48 @@ def test_the_real_ip_comes_from_the_proxy_header_and_ipv6_counts_by_network(api,
     with api.banco.tx() as c:
         lt = c.one("SELECT ip, rede, porta FROM lotes WHERE id = ?", (lid,))
     assert (lt["ip"], lt["rede"], lt["porta"]) == (f"{rede}1", "2001:db8:abcd:12::/64", 51234)
+
+
+def test_the_frame_filter_is_required_and_a_blocked_video_never_reaches_the_client(api):
+    """ADR 0005: "ok" sem a nota do filtro de imagem volta para a fila; com nota alta, o vídeo é apagado,
+    não é refeito e volta para o saldo. Nada explícito no teste: só as notas que o worker mandaria."""
+    tok = _cliente(api, "Loja", saldo="10")
+    r = _lote(api, tok, n=2, duracao=4)
+    lid = r.json()["lote"]
+    assert _enviar_tudo(api, tok, lid, r.json()["envios"]).status_code == 200
+    api.post(f"{PAINEL}/api/lotes/{lid}/aprovar", headers=ADM)
+    comp = _job(api)
+    api.post(
+        f"/api/worker/jobs/{comp['job_id']}/prompt",
+        headers=h(WORKER),
+        json={"worker": "pod-1", "prompt_en": "The camera slowly dollies in.", "compilador": "i2v@6"},
+    )
+    _concluir(api, comp, status="ok")
+    sem_filtro = {k: v for k, v in CONTINUO.items() if not k.startswith("nsfw")}
+    render = _job(api)
+    chave = render["video_url"].split("armazem.teste/")[1].split("?")[0]
+    api.armazem.objetos[chave] = 7000
+    r = _concluir(api, render, status="ok", bytes_video=7000, similaridade=0.99, **sem_filtro)
+    assert r.json()["status"] == "pendente" and chave in api.armazem.apagados  # fail-closed
+    # nota acima do limiar mesmo com "ok" (worker de outra versão): barrado pelo servidor
+    render = _job(api)
+    api.armazem.objetos[chave] = 7000
+    r = _concluir(
+        api, render, status="ok", bytes_video=7000, similaridade=0.99, **sem_filtro, nsfw=0.8, nsfw_quadros=13
+    )
+    assert r.json()["status"] == "erro"  # sem repetição
+    # o outro vídeo: o worker barrou e não enviou nada
+    outro = _job(api)
+    r = _concluir(api, outro, status="erro", erro="barrado", barrado=True, nsfw=0.97, nsfw_quadros=13)
+    assert r.json()["status"] == "erro"
+    jobs = [j for j in api.banco.jobs(lid) if j["tipo"] == "render"]
+    assert all(j["barrado_em"] and j["nsfw"] >= 0.8 and "barrado pelo filtro de imagem" in j["erro"] for j in jobs)
+    lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
+    assert lote["status"] == "concluido_com_falhas" and lote["prontos"] == 0
+    assert lote["cobranca"] == {"cobrado": 200, "devolvido": 200}  # como todo vídeo que não sai
+    assert "barrado" not in json.dumps(lote) and not any(v.get("url") for v in lote["videos"])
+    # o dono vê no histórico e no registro de auditoria
+    (x,) = [x for x in api.get(f"{PAINEL}/api/historico", headers=ADM).json()["lotes"] if x["lote"] == lid]
+    assert x["barrados"] == 2
+    aud = api.get(f"{PAINEL}/api/lotes/{lid}/auditoria", headers=ADM).json()
+    assert sum(e["tipo"] == "video_barrado" for e in aud["eventos"]) == 2

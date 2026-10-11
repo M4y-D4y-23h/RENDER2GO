@@ -298,6 +298,9 @@ COLUNAS_NOVAS = [
     ("clientes", "mfa_pendente_em", "DOUBLE PRECISION"),
     ("clientes", "pausada_em", "DOUBLE PRECISION"),  # desativada pelo próprio cliente: entrar de novo reativa
     ("clientes", "privacidade_versao", "TEXT"),  # versão da política de privacidade aceita por último
+    # filtro de imagem nos quadros (ADR 0005, 11/10/2026): maior P(medium)+P(high) e quando foi barrado
+    ("jobs", "nsfw", "DOUBLE PRECISION"),
+    ("jobs", "barrado_em", "DOUBLE PRECISION"),  # não entregue: nudez em algum quadro (sem repetição)
     ("sessoes", "confirmada_ate", "DOUBLE PRECISION"),  # confirmação recente ("é você mesmo?") até
     ("sessoes", "contexto", "TEXT"),  # desafio da verificação em duas etapas: o que a entrada guardou (JSON)
     ("auditoria_admin", "agente", "TEXT"),  # navegador de quem fez (acessos do painel por pessoa, ADR 0009)
@@ -1727,7 +1730,8 @@ class Banco:
                 " l.fotos_apagadas, l.dispositivo, l.fuso, a.declarante, a.quando AS autorizado_em,"
                 " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render' AND j.status = 'ok')"
                 " AS prontos,"
-                " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render') AS total"
+                " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render') AS total,"
+                " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.barrado_em IS NOT NULL) AS barrados"
                 " FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
                 f" LEFT JOIN consentimentos a ON a.lote_id = l.id WHERE {onde}"
                 " ORDER BY l.criado DESC LIMIT ?",
@@ -2763,9 +2767,11 @@ class Banco:
             novo = "pendente" if repetir else status
             # job devolvido à fila com `seed`: a próxima tentativa sai de outra seed
             seed = campos.get("seed") if repetir and campos.get("seed") is not None else job["seed"]
+            barrado = bool(campos.get("barrado"))
             c.run(
                 "UPDATE jobs SET status = ?, segundos = ?, aviso = ?, erro = ?, similaridade = ?, bytes_video = ?,"
-                " deriva_cor = ?, salto_cor = ?, seed = ?, atualizado = ?, lease_ate = NULL WHERE id = ?",
+                " deriva_cor = ?, salto_cor = ?, seed = ?, atualizado = ?, lease_ate = NULL, nsfw = ?,"
+                " barrado_em = ? WHERE id = ?",
                 (
                     novo,
                     campos.get("segundos"),
@@ -2777,9 +2783,16 @@ class Banco:
                     campos.get("salto_cor"),
                     seed,
                     agora,
+                    campos.get("nsfw"),
+                    agora if barrado else None,
                     job_id,
                 ),
             )
+            if barrado:  # fica no histórico do pedido (auditoria) mesmo depois da limpeza dos arquivos
+                self.evento(
+                    c, job["lote_id"], "video_barrado",
+                    {"arquivo": job["arquivo"], "nota": campos.get("nsfw"), "quadros": campos.get("nsfw_quadros")},
+                )  # fmt: skip
             self._fechar_lote(c, job["lote_id"])
             return {**job, "status": novo}
 

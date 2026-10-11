@@ -46,6 +46,8 @@ huggingface-hub<1.0
 
 # Pacote render2go_worker
 websocket-client
+# filtro de imagem nos quadros (render2go_worker.filtro_imagem, ADR 0005): EVA02 do Freepik
+timm==1.0.30
 
 # Handler do RunPod Serverless (SDK oficial, MIT)
 runpod==1.12.0

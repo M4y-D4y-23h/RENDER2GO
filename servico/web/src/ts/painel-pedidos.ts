@@ -45,6 +45,7 @@ type ItemHistorico = {
   modelo?: string;
   prontos: number;
   total: number;
+  barrados?: number;
 };
 type UsoIp = { ip: string; pedidos: number; fotos: number; fotos_teste: number; clientes: number; dispositivos: number; ultimo: number };
 type UsoDispositivo = {
@@ -221,6 +222,8 @@ function itemHistorico(x: ItemHistorico, aoMudar: () => void): HTMLElement {
     }
   });
   const acoes = criar("div", { className: "acoes" }, [registro]);
+  // filtro de imagem nos quadros (ADR 0005): o vídeo não foi entregue; o registro de auditoria tem a nota
+  if (x.barrados) acoes.append(criar("span", { className: "selo erro" }, [icone("alerta"), `${plural(x.barrados, "vídeo barrado", "vídeos barrados")} pelo filtro de imagem`]));
   if (!x.cliente_ativo) acoes.append(criar("span", { className: "selo erro" }, [icone("bloquear"), "Conta desativada"]));
   else if (pode("POST /api/clientes/{cliente_id}/desativar")) {
     const botao = criar("button", { type: "button", className: "botao pequeno perigo", dados: { foco: `${x.lote}:desativar` } }, [icone("bloquear"), "Desativar esta conta"]);

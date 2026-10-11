@@ -7,8 +7,10 @@ para o armazenamento (URLs assinadas, uma por arquivo). Por job:
   que passa o filtro C1 de novo antes de liberar os renders;
 - `render`: baixa a foto (só https e hosts de RENDER2GO_ALLOWED_URL_HOSTS), prepara no tamanho do
   vídeo, renderiza no ComfyUI, **confere o 1º quadro contra a foto e a continuidade até o fim**
-  (render2go_worker.conferencia) e só então envia o vídeo e a folha de conferência. A API recusa
-  "ok" sem essas medidas; o vídeo que troca de produto no meio é refeito com outra seed.
+  (render2go_worker.conferencia), **passa os quadros pelo filtro de imagem** (nudez:
+  render2go_worker.filtro_imagem, ADR 0005) e só então envia o vídeo e a folha de conferência. A API
+  recusa "ok" sem essas medidas; o vídeo que troca de produto no meio é refeito com outra seed; o
+  vídeo barrado pelo filtro não sai do pod (nem a folha) e não é refeito.
 
 Um laço por ComfyUI (uma GPU cada). Sem jobs por `--ocioso` segundos (o "pod quente", docs/08),
 o worker sai e o pod se desliga (desligamento automático do lote_nuvem / orquestrador). Com
@@ -45,6 +47,7 @@ from render2go_worker import (
     cli_submit,
     compiler,
     conferencia,
+    filtro_imagem,
     lote,
     media,
     preparo,
@@ -62,6 +65,7 @@ OCIOSO_S = 180  # ~ o tempo de uma subida de pod: depois disso, sair custa menos
 # por que o worker saiu (o mais grave entre os laços vale para o pod)
 MOTIVOS = {
     "modelos": "a instalação dos modelos falhou ou passou do prazo",
+    "filtro": "o filtro de imagem não carregou (nenhum vídeo sai sem ele)",
     "gpu": "a GPU ficou inacessível",
     "limite": "limite de tempo do pod (2 h ou o que o saldo do RunPod paga)",
     "ocioso": "sem pedidos (pod quente vencido)",
@@ -158,9 +162,14 @@ class WorkerFila:
         cfg: Config,
         submit: Callable = cli_submit.run,
         compile_fn: Callable = compiler.compile_prompt,
+        classificador: filtro_imagem.Classificador | None = None,
     ):
         self.api, self.cfg, self.submit, self.compile_fn = api, cfg, submit, compile_fn
         self.filtros = safety.load_filters()  # fail-closed: sem filtros, nada roda
+        # 2ª porta (ADR 0005): carregado no 1º vídeo; sem ele, nenhum vídeo é enviado
+        modelos = Path(os.environ.get("COMFY_DIR", "/opt/comfyui")) / "models"
+        self.classificador = classificador or filtro_imagem.Freepik(modelos / filtro_imagem.PASTA)
+        self.filtro_falhou = False
         self.receitas = lote.load_receitas()
         self.ultimo_job = time.monotonic()
         self.lock = threading.Lock()
@@ -294,6 +303,30 @@ class WorkerFila:
                 self.api.concluir(jid, "erro", erro=problema, repetir=True, **cont)
                 _log(f"{job['arquivo']} (lote {job['lote']}): {problema}; refazendo")
                 return True
+            try:  # 2ª porta (ADR 0005): nudez em algum quadro = o vídeo não sai do pod
+                filtro = filtro_imagem.avaliar(video, self.classificador)
+            except filtro_imagem.FiltroError as e:
+                self.api.concluir(jid, "erro", erro=f"filtro de imagem: {e}"[:500], repetir=True)
+                _log(f"{job['arquivo']}: filtro de imagem indisponível ({e}); este laço para")
+                self.filtro_falhou = True
+                return False
+            if filtro.barrado:  # nem o vídeo nem a folha são enviados; não é refeito (ADR 0005)
+                self.api.concluir(
+                    jid,
+                    "erro",
+                    erro=f"barrado pelo filtro de imagem (nota {filtro.nota:.2f})",
+                    barrado=True,
+                    nsfw=filtro.nota,
+                    nsfw_quadros=filtro.quadros,
+                    **cont,
+                )
+                with self.lock:
+                    self.falhas += 1
+                _log(
+                    f"{job['arquivo']} (lote {job['lote']}): barrado pelo filtro de imagem "
+                    f"(nota {filtro.nota:.2f} no quadro {filtro.pior_quadro})"
+                )
+                return True
             aviso = prep.aviso
             try:
                 folha = preparo.folha(prep.path, video, pasta / "folha.jpg", 16 * t.duracao + 1)
@@ -312,6 +345,8 @@ class WorkerFila:
                 similaridade=round(sim, 4),
                 bytes_video=video.stat().st_size,
                 aviso=aviso or None,
+                nsfw=filtro.nota,
+                nsfw_quadros=filtro.quadros,
                 **cont,
             )
         with self.lock:
@@ -375,6 +410,8 @@ class WorkerFila:
                 self.ultimo_job = time.monotonic()
             try:
                 if not self.processar(job, comfy):
+                    if self.filtro_falhou:
+                        return "filtro"
                     _log(f"GPU {comfy} inacessível; este laço para")
                     return "gpu"
             except FilaError as e:  # a API caiu no meio: o prazo do job o devolve à fila

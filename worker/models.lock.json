@@ -5,7 +5,9 @@
       "wan22_i2v_r1v2_high",
       "wan22_i2v_r1v2_low",
       "nsfw_umt5_xxl_v2_fp8",
-      "wan21_vae"
+      "wan21_vae",
+      "nsfw_freepik_modelo",
+      "nsfw_freepik_config"
     ],
     "t2v_a14b_q6k": [
       "wan22_t2v_a14b_high_q6k",
@@ -114,6 +116,24 @@
       "bytes": 1226977424,
       "sha256": "ec95216e614b3c132c11bfb387b11feedf62163150ccc9068bca8a189771e75a",
       "license": "apache-2.0"
+    },
+    "nsfw_freepik_modelo": {
+      "repo": "Freepik/nsfw_image_detector",
+      "revision": "15b85477e4fd2000db76ae9aae0f89a72f95e2e3",
+      "path": "model.safetensors",
+      "dest": "classificadores/nsfw_image_detector/model.safetensors",
+      "bytes": 172725672,
+      "sha256": "024a9d4818fae2656403bf626c9f8c9e7789c2da274749fbebb1060d8fdaa7ab",
+      "license": "mit"
+    },
+    "nsfw_freepik_config": {
+      "repo": "Freepik/nsfw_image_detector",
+      "revision": "15b85477e4fd2000db76ae9aae0f89a72f95e2e3",
+      "path": "config.json",
+      "dest": "classificadores/nsfw_image_detector/config.json",
+      "bytes": 989,
+      "sha256": "39f53e86cc4868e0e11396b523c906f376621f54c1025ffc9ee2ee840542a41b",
+      "license": "mit"
     }
   }
 }

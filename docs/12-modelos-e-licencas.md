@@ -37,6 +37,7 @@ Quais modelos abertos podem ser usados num serviço pago como o Render2Go e com 
 | VAE | `wan_2.1_vae` | Apache 2.0 | [Comfy-Org/Wan_2.2_ComfyUI_Repackaged](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged) |
 | Texto para vídeo (testado, fora do serviço) | Wan 2.2 T2V A14B fp8 e GGUF, LoRA Lightning | Apache 2.0 | [Comfy-Org](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged), [QuantStack](https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF) |
 | Tradutor do pedido | `huihui_ai/qwen2.5-abliterate:7b` (Ollama) | Apache 2.0 (base Qwen 2.5 7B Instruct) | [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/LICENSE), [huihui-ai](https://huggingface.co/huihui-ai/Qwen2.5-7B-Instruct-abliterated-v2) |
+| Filtro de imagem nos quadros (desde 11/10/2026, ADR 0005) | `Freepik/nsfw_image_detector` (EVA02-base 448 px) e a biblioteca `timm` 1.0.30 | MIT (modelo e base `timm/eva02_base_patch14_448`); Apache 2.0 (`timm`) | [Freepik/nsfw_image_detector](https://huggingface.co/Freepik/nsfw_image_detector), [timm](https://github.com/huggingface/pytorch-image-models) |
 
 **Juridicamente, tudo o que roda hoje permite uso comercial.** Mas há um risco que não é de licença: os dois arquivos principais do Wan em produção são ajustes da comunidade feitos para conteúdo adulto, herança do projeto original (antes do caminho A, `docs/05`).
 - O modelo de vídeo é marcado "Uncensored" no próprio cartão.

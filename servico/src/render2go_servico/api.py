@@ -117,7 +117,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
-from render2go_worker import conferencia, filtros, lote, preparo, presets
+from render2go_worker import conferencia, filtro_imagem, filtros, lote, preparo, presets
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from render2go_servico import SERVICO_DIR, contas, modelos, pagamentos, perfil, pessoas, precos, suporte
@@ -843,6 +843,16 @@ def _celula_csv(v: str) -> str:
     return v
 
 
+# Recusa do filtro de palavras (C1) para o cliente: diz as regras, nunca qual palavra ou categoria barrou
+# (11/10/2026: a categoria ajudava a testar sinônimos até passar). A categoria fica no registro de acesso
+# e no painel do revisor.
+RECUSA_FILTRO = (
+    "o texto não passou no filtro de conteúdo: ele tem palavras que não aceitamos (conteúdo adulto, crianças, "
+    "violência, armas, drogas ou pessoas reais; item 5 dos termos). Reescreva descrevendo só o produto, o "
+    "ambiente e o movimento da câmera."
+)
+
+
 def _textos_por_foto(body: Any, receita: dict) -> list[str | None]:
     """Pedido em sequência: o texto próprio de cada foto (None = o texto padrão do pedido), conferido como o
     texto padrão (filtro de conteúdo C1 e estilos). Texto igual ao padrão não conta como próprio."""
@@ -857,7 +867,7 @@ def _textos_por_foto(body: Any, receita: dict) -> list[str | None]:
             raise HTTPException(422, f"{f.nome}: o texto próprio da foto precisa de pelo menos 3 letras")
         d = filtros.avaliar(t)
         if not d.allowed:  # C1 também em cada texto próprio (ADR 0004)
-            raise HTTPException(422, f"{f.nome}: texto recusado pelo filtro de conteúdo: {d.reason}")
+            raise HTTPException(422, f"{f.nome}: {RECUSA_FILTRO}")
         try:
             presets.compose("i2v", t, receita["presets"])
         except presets.PresetError as e:
@@ -952,6 +962,10 @@ class ConcluirIn(BaseModel):
     bytes_video: int | None = Field(None, ge=0)
     deriva_cor: float | None = None  # continuidade até o fim do vídeo (render2go_worker.conferencia)
     salto_cor: float | None = None
+    # filtro de imagem nos quadros (ADR 0005): maior P(medium)+P(high) e quantos quadros passaram
+    nsfw: float | None = Field(None, ge=0, le=1)
+    nsfw_quadros: int | None = Field(None, ge=0, le=100000)
+    barrado: bool = False  # o worker barrou o vídeo (não enviou); não é refeito
 
 
 class InteresseIn(BaseModel):
@@ -1928,8 +1942,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if body.modelo not in {m["id"] for m in modelos.disponiveis()}:
             raise HTTPException(422, "modelo de geração indisponível")
         d = filtros.avaliar(body.prompt)
-        if not d.allowed:  # C1 já na entrada (ADR 0004)
-            raise HTTPException(422, f"pedido recusado pelo filtro de conteúdo: {d.reason}")
+        if not d.allowed:  # C1 já na entrada (ADR 0004); a categoria só no registro de acesso
+            c.banco.registrar_acesso(
+                cli["id"], "pedido_recusado_filtro", origem, {"motivo": d.reason, "texto": body.prompt[:300]}
+            )
+            raise HTTPException(422, RECUSA_FILTRO[0].upper() + RECUSA_FILTRO[1:])
         rec = lote.load_receitas()
         r = rec["receitas"].get(body.receita)
         if r is None:
@@ -3075,6 +3092,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "autorizado_em": lt["autorizado_em"],
                     "prontos": lt["prontos"],
                     "total": lt["total"],
+                    "barrados": int(lt.get("barrados") or 0),  # filtro de imagem (ADR 0005): não entregues
                 }
                 for lt in lotes
             ],
@@ -3293,7 +3311,19 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         _mesmo_worker(dono, body.worker)
         job = _do_worker(job_id, body.worker, c)
         status, erro, repetir = body.status, body.erro, body.repetir
-        if job["tipo"] == "render" and status == "ok":
+        barrado = job["tipo"] == "render" and (
+            body.barrado or (status == "ok" and body.nsfw is not None and body.nsfw >= filtro_imagem.LIMIAR)
+        )
+        if barrado:
+            # nudez em algum quadro (ADR 0005): nada chega ao cliente, nem a folha de conferência; o vídeo
+            # não é refeito e volta para o saldo como os outros que falham. O registro fica (evento e nota)
+            lt = c.banco.lote(job["lote_id"])
+            for nome in (job["arquivo"], f"conferencia/{Path(job['arquivo']).stem}.jpg"):
+                with contextlib.suppress(Exception):
+                    c.armazenamento.apagar(chave_saida(lt["cliente_id"], lt["id"], nome))
+            status, repetir = "erro", False
+            erro = f"barrado pelo filtro de imagem (nota {body.nsfw or 0:.2f})"
+        elif job["tipo"] == "render" and status == "ok":
             # fail-closed: o vídeo precisa estar no armazenamento, com o tamanho informado, a
             # conferência do 1º quadro precisa dizer que ele é dessa foto e a da continuidade, que
             # ele não troca de produto no meio
@@ -3305,6 +3335,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 problema = f"conferência do 1º quadro reprovada ({body.similaridade})"
             elif p := conferencia.problema_continuidade(body.deriva_cor, body.salto_cor):
                 problema = p
+            elif body.nsfw is None or not body.nsfw_quadros:
+                problema = "filtro de imagem ausente: o vídeo não foi conferido"
             elif not body.bytes_video or tamanho != body.bytes_video:
                 problema = f"vídeo ausente ou incompleto ({tamanho} de {body.bytes_video} bytes)"
             if problema:
@@ -3323,6 +3355,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 bytes_video=body.bytes_video,
                 deriva_cor=body.deriva_cor,
                 salto_cor=body.salto_cor,
+                nsfw=body.nsfw,
+                nsfw_quadros=body.nsfw_quadros,
+                barrado=barrado,
                 # vídeo refeito sai de outra seed: a mesma seed repetiria o mesmo defeito
                 seed=lote.seed_de(job["seed"], job["id"], job["tentativas"]) if job["tipo"] == "render" else None,
             )

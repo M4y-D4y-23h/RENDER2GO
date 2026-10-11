@@ -12,12 +12,14 @@ SPEC_BYTES = {
     "nsfw_wan_umt5_xxl_v2_fp8_e4m3fn_scaled.safetensors": 6_741_537_445,
     "wan_2.1_vae.safetensors": 253_815_318,
 }
+# fora da especificação: o filtro de imagem nos quadros (ADR 0005), fixado em 11/10/2026
+FILTRO_BYTES = {"model.safetensors": 172_725_672, "config.json": 989}
 
 
 def test_lock_matches_spec_sizes_and_is_pinned():
     sets, models = m.load_lock()
     entries = m.resolve(["i2v_r1v2"], sets, models)
-    assert {e.dest.rsplit("/", 1)[1]: e.bytes for e in entries} == SPEC_BYTES
+    assert {e.dest.rsplit("/", 1)[1]: e.bytes for e in entries} == SPEC_BYTES | FILTRO_BYTES
     for e in entries:
         assert len(e.revision) == 40, "revisão do HF deve ser um commit fixo"
         assert len(e.sha256) == 64

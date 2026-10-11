@@ -18,8 +18,8 @@
   <article class="recipiente estreito texto-legal com-indice">
     <div class="cab-pagina">
       <h1>Política de Privacidade</h1>
-      <p class="lead">Versão privacidade-v2, de 10 de outubro de 2026 (a anterior, privacidade-v1, valeu desde 9 de outubro de 2026). Explica como tratamos dados pessoais, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).</p>
-      <p>O que mudou nesta versão: nome e sobrenome no perfil, foto do Gravatar (só se você ligar), verificação em duas etapas, troca de e-mail, lista de aparelhos conectados, desativar a conta, preferência de tema e a exclusão de um vídeo pela tela Logs.</p>
+      <p class="lead">Versão privacidade-v3, de 11 de outubro de 2026 (as anteriores: privacidade-v2, de 10 de outubro, e privacidade-v1, de 9 de outubro de 2026). Explica como tratamos dados pessoais, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).</p>
+      <p>O que mudou nesta versão: o filtro automático de imagem que confere cada vídeo gerado antes da entrega (seção 6) e o registro do pedido recusado pelo filtro de conteúdo, com o texto enviado (registros de acesso). Na versão 2: nome e sobrenome no perfil, foto do Gravatar (só se você ligar), verificação em duas etapas, troca de e-mail, lista de aparelhos conectados, desativar a conta, preferência de tema e a exclusão de um vídeo pela tela Logs.</p>
     </div>
 
     <nav aria-labelledby="t-indice" class="indice">
@@ -58,7 +58,7 @@
             <tr><td>Aparelhos conectados: o navegador, o IP, quando cada sessão começou e o último uso</td><td>Mostrar onde a sua conta está aberta, para você encerrar o que não reconhecer; segurança</td><td>Legítimo interesse (IX)</td></tr>
             <tr><td>Troca de e-mail: o endereço novo; no registro de acesso, os dois endereços mascarados (ex.: fu***@gmail.com); um resumo irreversível do endereço anterior</td><td>Segurança da conta (o endereço anterior recebe um aviso) e impedir que o endereço anterior ganhe outro teste gratuito</td><td>Legítimo interesse (IX), prevenção a fraude</td></tr>
             <tr><td>Aceite dos termos e desta política (versão, data, IP)</td><td>Provar o que foi aceito e quando</td><td>Exercício regular de direitos (VI)</td></tr>
-            <tr><td>Registros de acesso: IP, porta de origem, data e hora, navegador; entradas, saídas, pedidos e recargas</td><td>Cumprir o Marco Civil da Internet (art. 15), segurança e investigação de fraudes</td><td>Obrigação legal (II) e legítimo interesse (IX)</td></tr>
+            <tr><td>Registros de acesso: IP, porta de origem, data e hora, navegador; entradas, saídas, pedidos (inclusive o texto de um pedido recusado pelo filtro de conteúdo) e recargas</td><td>Cumprir o Marco Civil da Internet (art. 15), segurança e investigação de fraudes</td><td>Obrigação legal (II) e legítimo interesse (IX)</td></tr>
             <tr><td>Identificador aleatório do aparelho, idioma, tela, fuso e outros sinais do navegador (e um resumo deles); verificação “não sou um robô”</td><td>Prevenir robôs, contas falsas e abuso do teste gratuito</td><td>Legítimo interesse (IX)</td></tr>
             <tr><td>Fotos enviadas, texto do pedido e vídeos gerados</td><td>Gerar e entregar os vídeos; revisão humana do pedido</td><td>Execução do contrato (V)</td></tr>
             <tr><td>Análise automática “contém pessoas” das fotos e o resumo (SHA-256) de cada foto</td><td>Alertar o revisor quando há pessoas, para conferir a autorização; auditoria</td><td>Legítimo interesse (IX), em proteção das pessoas retratadas</td></tr>
@@ -116,6 +116,7 @@
     <section id="decisoes-automatizadas" aria-labelledby="t-automaticas">
       <h2 id="t-automaticas">6. Decisões automatizadas</h2>
       <p>Filtros automáticos de conteúdo e a detecção de pessoas ajudam a revisão, mas a decisão de aprovar ou recusar um pedido é de uma pessoa. Se um pedido seu for recusado, o motivo aparece no seu painel e você pode pedir revisão pelo suporte.</p>
+      <p>Depois de gerado, cada vídeo passa ainda por um <strong>filtro automático de imagem</strong>, que procura nudez nos quadros. O vídeo barrado por ele não é entregue nem guardado, e o valor dele volta para o seu saldo; ficam só o registro de que foi barrado e a nota do filtro. Essa decisão é automática: você pode pedir a revisão dela pelo suporte, e uma pessoa confere o pedido e a foto.</p>
     </section>
 
     <section id="seguranca" aria-labelledby="t-seguranca">
