@@ -107,7 +107,7 @@ Os tokens ficam em `servico/web/src/css/tokens.css`. O tema segue o aparelho (`p
 12. **Rodapé igual em todas as páginas**, também na 404: símbolo e frase da marca, links (Termos de Uso, Privacidade, Cookies, Suporte e Preferências de cookies) e a identificação da empresa. No computador, a marca fica à esquerda e os links à direita; em telas de toque, os links têm 44 px de altura.
 13. **Janelas (diálogos):** no celular sobem de baixo, na largura toda, com os cantos de cima arredondados e o respiro da área segura (perto do polegar); no computador, ficam no centro. O aviso de cookies vai de ponta a ponta no celular e, no computador, fica no canto inferior esquerdo (27rem), sem cobrir o cartão de entrada.
 14. **Impressão:** só o conteúdo (sem topo, navegação, botões, índice nem aviso de cookies), em preto e branco; links para fora mostram o endereço.
-15. **Área do cliente e painel: uma tela por vez.** Cada tela tem o próprio endereço (`/extratos`; no painel, `#pods`) e a própria rolagem (a posição de cada uma é lembrada). O script do `<head>` marca a tela (`data-vista` ou `data-secao`) antes do primeiro quadro e pede de antemão só os dados dela (`data-antecipar`): nada pisca nem aparece a tela errada. Ao trocar, o foco vai para o título (`h1`), o título da aba muda ("Extratos · Render2Go"; no painel, "(3) Revisão · Painel · Render2Go") e o Voltar do navegador funciona. No computador, o menu fica fixo ao lado; no celular, abre numa janela de baixo, com o foco preso nela. Os dados de cada tela entram no lugar já reservado (esqueleto com a altura do que vai chegar) e de uma vez.
+15. **Área do cliente e painel: uma tela por vez.** Cada tela tem o próprio endereço (`/extratos`; no painel, `#pods`) e a própria rolagem (na área do cliente, a tela abre no topo; no painel, cada seção volta para onde estava). O script do `<head>` marca a tela (`data-vista` ou `data-secao`) antes do primeiro quadro e pede de antemão só os dados dela (`data-antecipar`): nada pisca nem aparece a tela errada. Ao trocar, o foco vai para o título (`h1`), o título da aba muda ("Extratos · Render2Go"; no painel, "(3) Revisão · Painel · Render2Go") e o Voltar do navegador funciona. No computador, o menu fica fixo ao lado; no celular, abre numa janela de baixo, com o foco preso nela. Os dados de cada tela entram no lugar já reservado (esqueleto com a altura do que vai chegar) e de uma vez.
 
 ## 3. Componentes
 
@@ -154,7 +154,7 @@ Em `servico/web/src/css/componentes.css` (os de uma página só, em `paginas.css
 
 | Atributo | O que foi feito | Como é conferido |
 |---|---|---|
-| **Core Web Vitals** | LCP: só o CSS e um script de 0,9 KB comprimido bloqueiam a pintura; quem tem sessão vê a sua tela no 1º quadro; o script do `<head>` já pede à API os dados da tela que abre (em Pedidos: receitas, pedidos e conta; no painel, os da seção), em paralelo com o resto. CLS: tamanhos declarados, fonte sem troca, sessão marcada antes de desenhar (também no topo das outras páginas), lugar reservado para o que chega da API e esqueleto no "Novo pedido": zero, mesmo com a API mais lenta que a página. INP: a lista se atualiza trocando só o cartão que mudou; miniaturas desenhadas uma por vez, fora da thread principal | Medição da seção 5; `test_paginas.py` (CLS com a API lenta, em 390 e 1280 px) |
+| **Core Web Vitals** | LCP: só o CSS e um script de 0,9 KB comprimido bloqueiam a pintura; quem tem sessão vê a sua tela no 1º quadro; o script do `<head>` já pede à API os dados da tela que abre (em Pedidos: receitas, pedidos e conta; no painel, os da seção), em paralelo com o resto. CLS: tamanhos declarados, fonte sem troca, sessão marcada antes de desenhar (também no topo das outras páginas), lugar reservado para o que chega da API e esqueleto no "Novo pedido": zero, mesmo com a API mais lenta que a página. INP: a lista se atualiza trocando só o cartão que mudou; miniaturas desenhadas uma por vez, fora da thread principal | Medição das seções 5, 5.1 e 5.2 (`medir_paginas.py`); `test_paginas.py`, `test_paginas_conta.py` e `test_paginas_painel.py` (CLS com a API lenta, em 390 e 1280 px) |
 | **Minificação de recursos** | esbuild 0.28.2 (versão fixada) minifica JS e CSS; um script por página (o código da revisão não vai mais para o cliente); HTML sem recuo nem comentários; o Caddy comprime com zstd ou gzip | CI: `npm run build` e `publico/` em dia |
 | **Otimização de mídias** | Logo e ícones em SVG; ilustração da entrada em SVG dentro do HTML (0,7 KB comprimido, sem pedido a mais); `og.jpg` de 64 KB; fonte woff2 de 13 KB; símbolo do rodapé com `loading="lazy"` (o mesmo arquivo do favicon, em cache); miniaturas das fotos reduzidas no próprio navegador (até 60 na tela); no painel, a mesma foto não é baixada de novo a cada atualização, com `loading="lazy"` e `decoding="async"`; o vídeo só carrega quando o cliente abre o player | `test_paginas.py` (prévia) |
 | **Carregamento de scripts** | Scripts da página com `defer`; o único bloqueante (`inicio.js`, 0,9 KB comprimido, em cache por 1 ano, antes do CSS) marca a sessão (para o topo), o tema e a tela, e antecipa só as chamadas da API da tela que abre; nenhum script de terceiros fora da `/verificacao` | `test_paginas.py` (uma chamada só por recurso); `test_web.py` (o script de sessão em cada página) |
@@ -164,7 +164,7 @@ Em `servico/web/src/css/componentes.css` (os de uma página só, em `paginas.css
 | **Toque e interação** | Alvos de 44 px (também os links do rodapé em telas de toque); estado de toque (`:active`) em botões, blocos e navegação; janelas perto do polegar; área de soltar toda clicável; escolher pasta escondido no celular (não existe lá); arrastar e soltar fotos e pastas no computador; nada depende de passar o mouse | `test_paginas.py` (altura dos alvos) |
 | **Semântica HTML** | `header`, `nav`, `main`, `footer` e `section` com título; um `h1` por tela; índice das páginas de texto num `<nav>` com título; `fieldset`/`legend` nos passos; listas; `<time>`, `<progress>`, `<dialog>`; tabelas com `caption` e `scope`; botão para ação ("Sair") e link para navegação ("Entrar", "Pedidos") | axe-core sem violações |
 | **Leitores de tela** | Regiões vivas com anúncios curtos (envio, progresso a cada 25 %, mudança de estado, erros); a atualização automática não repete nada; `aria-describedby`, `aria-invalid`, `aria-busy`, `aria-pressed` e `aria-current` (`page` no topo e no rodapé, `location` no índice); esqueletos e ilustração escondidos (`aria-hidden`); nome em todo botão só de ícone | axe-core (claro e escuro) |
-| **Contraste e legibilidade** | Paleta AA nos dois temas, também sobre o brilho decorativo; "mais contraste" e cores forçadas respeitados; impressão em preto e branco; texto de 16 px (mínimo de 13 px nos selos); entrelinha 1,55; até 68 caracteres por linha | `test_web.py` (28 pares e o brilho no pior caso) e axe-core |
+| **Contraste e legibilidade** | Paleta AA nos dois temas, também sobre o brilho decorativo; "mais contraste" e cores forçadas respeitados; impressão em preto e branco; texto de 16 px (mínimo de 13 px nos selos); entrelinha 1,55; até 68 caracteres por linha | `test_web.py` (33 pares e o brilho no pior caso) e axe-core |
 | **Navegação por teclado** | "Pular para o conteúdo"; foco visível em tudo (anel anil de 3 px); "Entrar" no topo leva o foco ao cartão de entrada (e o Tab, ao e-mail); Esc fecha diálogos; o foco volta para quem abriu; a atualização da lista não tira o foco de quem está nela; tabelas roláveis focáveis | `test_paginas.py` (teclado e topo) |
 | **URLs amigáveis** | `/`, `/suporte`, `/termos`, `/privacidade` e `/cookies` sem extensão; as telas da área do cliente (`/extratos`, `/logs`, `/configuracoes`…) e as seções do painel (`#revisao`, `#pods`…) com endereço próprio, que dá para guardar e abrir direto; âncoras legíveis para as seções (`/#entrar`, `/privacidade#direitos`, `#seguranca`, `#uso-de-cookies`…); o painel no endereço secreto (com a barra no fim); `/suporte/` redireciona para `/suporte`; arquivos em `/estatico/`; endereço inexistente abre uma página 404 com caminhos de volta (a API continua em JSON) | `test_web.py` (404); `test_paginas.py` (índice) |
 | **Tags meta** | Título e descrição por página; canonical; Open Graph e cartão do Twitter (com a imagem 1200 × 630 e texto alternativo); `theme-color` claro e escuro; `color-scheme`; `application-name` e `apple-mobile-web-app-title` (nome curto na tela inicial); manifesto; ícones; `noindex` no painel, na verificação e no 404; JSON-LD (Organization e WebSite) | `test_web.py` (meta) |
@@ -196,6 +196,41 @@ O dono pediu uma nova passada em todas as telas, com foco na estética, na exper
 - **Conferidos e mantidos:** minificação (já completa), CDN (continua desligada por causa do IP real; seção 7), URLs (já sem extensão; ganharam âncoras nas seções), indexação (sem `robots.txt`, decisão do dono), proteção contra XSS e CSRF e integração segura (nada novo usa `innerHTML`, `style=` ou script embutido; o teste de invasão segue com 73 de 73).
 - **Testes novos:** topo conforme a sessão, "Sair" encerrando a sessão no servidor, marca antiga sem sessão e o que já vem reservado no HTML antes da API ("Sair", aviso de conta do suporte, quadro da verificação) (`test_paginas.py`); índice da privacidade (alvos, marcação e impressão); CLS com a API lenta e o esqueleto saindo quando a API falha; janela ancorada embaixo no celular; os dois botões do aviso de cookies iguais; topo, rodapé e script de sessão em cada página e o contraste sobre o brilho (`test_web.py`).
 - **Descartado no caminho:** `scrollbar-gutter: stable`, que deixava uma faixa vazia à direita.
+
+### 4.2 Área do cliente e painel em seções (11/10/2026)
+
+O dono pediu, em 10/10, uma área do cliente com menu lateral, o pedido em sequência e o painel em seções, com visual novo, acessos por pessoa e auditoria. As decisões do servidor estão no [ADR 0009](adr/0009-acessos-do-painel-por-pessoa.md) (acessos do painel), no [ADR 0010](adr/0010-mix-e-projetos.md) (Mix e Projetos, proposto) e no `docs/13` (segurança); a publicação, no `docs/09`, seção 0, "11/10/2026". O que entrou, visto pelo front-end:
+
+- **Área do cliente** (a mesma página, uma tela por endereço; regra 15 da seção 2):
+  - **menu lateral** com quem entrou no alto (foto ou inicial, nome e plano): Pedidos, Modelos de IA, Mix e Projetos ("Em breve"), Logs, Extratos, Perfil e Configurações;
+  - **Pedidos:** a tela de antes, com duas abas: "Mesmo texto para todas" e "Sequência (texto por foto)". Na sequência, a pessoa marca fotos na grade (40 por página, miniaturas de ~10 KB feitas no navegador, uma de cada vez) e dá a elas um texto próprio; as outras seguem o texto padrão;
+  - **Modelos de IA:** o catálogo inteiro (`modelos.py`), agrupado pelo que o cliente envia. O disponível leva, com um clique, à tela de pedidos com a opção escolhida; os "Em breve" mostram os modelos previstos e o "Tenho interesse";
+  - **Extratos:** cada pedido como uma rodada (tipo e modelo de IA, vídeos, cobrado, devolvido e total), recargas e ajustes, o total por modelo, o período e a planilha;
+  - **Logs:** os vídeos das últimas 24 horas (ou 3 e 7 dias), com o modelo, a hora, assistir, baixar e excluir (com confirmação);
+  - **Perfil:** foto, nome e sobrenome; nome de usuário e ganhos por indicação "Em breve";
+  - **Configurações:** tema, e-mail, telefone ("Em breve"), verificação em duas etapas (QR Code e códigos de recuperação), aparelhos conectados, cópia dos dados, pausar e excluir a conta. Trocar o e-mail, mexer na verificação e excluir a conta pedem a confirmação recente ("é você mesmo?", `confirmacao.ts`);
+  - **Mix e Projetos:** o que o recurso vai fazer e o "Tenho interesse".
+- **Painel do dono:** 12 seções em 5 grupos (Hoje: Visão geral; Pedidos: Revisão e Histórico; Clientes: Contas e saldo, Suporte e Interesse; Operação: Pods, GPUs e Pagamentos; Segurança: Acessos, Auditoria e Configuração). Cada seção tem endereço (`#revisao`), rolagem e dados próprios, pedidos só quando ela abre; a aberta se atualiza a cada 30 s, com a aba à vista. A visão geral mostra cartões do que pede atenção, cada um levando à sua seção; o número de pendentes, mensagens e pods aparece no menu e no título da aba. Entrada em três modos (pessoa, chave de emergência e convite com QR Code), telas de acessos e de auditoria, e "Tema neste navegador".
+- **Tema escolhido** (seção 1.3): claro, escuro ou automático, guardado na conta e aplicado antes do primeiro quadro.
+
+**Como cada atributo foi mantido** (conferido nos testes `test_paginas_conta.py` e `test_paginas_painel.py`: axe-core no tema claro, no escuro do aparelho e no escuro escolhido, celular de 320 e 390 px com alvos de toque, teclado e CLS com a API lenta; e na medição da seção 5.2):
+- **CLS zero:** cada tela reserva o lugar do que vem da API (esqueletos com a altura final: `.esqueleto-linhas`, `.esqueleto-numeros`; o QR Code num lugar de tamanho fixo) e recebe os dados de uma vez, no mesmo quadro. O `inicio.js` marca a tela no `<html>` antes do primeiro quadro (`data-vista`, `data-secao`), e o CSS mostra só ela: nada pisca nem aparece a tela errada. Os testes medem o CLS com a API 0,8 s mais lenta que a página nas 8 telas da área do cliente, em 6 seções do painel e no convite, em 390 e 1280 px.
+- **LCP:** o `data-antecipar` pede de antemão só os dados da tela que abre (em Extratos, a conta e o extrato de 30 dias; no painel, a sessão, o resumo e os dados da seção), em paralelo com o CSS e o JavaScript. As outras telas pedem os seus quando abrem.
+- **Navegação e leitores de tela:** o item atual do menu tem `aria-current="page"`. Ao trocar de tela, o foco vai para o `h1` dela, o título da aba muda ("Extratos · Render2Go"; no painel, "(3) Revisão · Painel · Render2Go") e o Voltar do navegador funciona (o endereço muda; no painel, o `#`). Na área do cliente, a tela nova abre no topo; no painel, cada seção volta para onde estava.
+- **Celular:** abaixo de 64em, o menu abre numa janela de baixo (`dialog.menu-celular`, com `showModal`), com o foco preso nela; Esc ou o fundo fecham, e o foco volta ao botão "Menu" (no painel, "Seções").
+- **Papéis no painel:** o que o operador não abre fica escondido desde o primeiro quadro (`.so-dono` e `data-rota`, pela marca do papel guardada neste navegador, e depois pelo `GET <painel>/api/sessao`), e o servidor confere de novo em cada pedido (403, `PERMISSOES_PAINEL`). A marca só escolhe o que mostrar; nunca dá acesso. Um operador que abre o endereço de uma seção só do dono cai na visão geral, sem pedir o que o papel não abre (`data-so-dono`).
+- **Segurança das páginas:** nada novo usa `innerHTML`, `style=` ou script embutido. O QR Code é um SVG feito no servidor e mostrado por endereço `blob:`. O convite vai no fragmento do endereço (`#convite=…`), que o navegador não manda ao servidor nem a outros sites. O teste de invasão segue sem achados, com 88 verificações (`docs/13`, seção 3).
+- **Consistência:** os componentes novos (moldura e menu lateral, abas, linhas, cartões de resumo, QR Code, pedido em sequência, em breve, tema e zona de perigo) estão na seção 3; 10 ícones novos (44 ao todo) e 5 pares novos no teste de contraste (33 ao todo).
+
+**As ideias do dono, ponderadas:**
+- **Foto do perfil "da conta de e-mail":** o Gmail e o Outlook não entregam a foto sem "Entrar com Google/Microsoft", que seria outra forma de entrada, com mais dados pessoais. A foto vem do Gravatar, **só se a pessoa ligar**, e quem a baixa é o servidor: a página nunca fala com o Gravatar, e a CSP não muda. Sem foto, a inicial do e-mail em maiúscula, como foi pedido.
+- **Telefone, nome de usuário e ganhos por indicação:** entram como "Em breve", com o "Tenho interesse", para a demanda decidir a ordem. Cada um pede mais que uma tela: o telefone, envio e conferência por SMS ou WhatsApp; o nome de usuário só tem uso com o compartilhamento entre contas (ADR 0010, Projetos); a indicação, regras de crédito e de fraude.
+- **Mix:** proposto no ADR 0010. Cada passo é um pedido comum (revisão, cobrança, estorno e conferência já testados), e o custo de todos os passos aparece antes de começar. **Sem troca de rosto:** seria uma ferramenta de deepfake, que os termos proíbem, e mexer nos traços do rosto pode ser tratamento de dado biométrico (LGPD).
+- **Pedido em sequência:** o texto padrão vale para todas as fotos, e só as marcadas ganham texto próprio. Cada texto diferente passa pelas mesmas conferências do padrão e vira uma tradução a mais no pod (até 100 por pedido), para o custo e o tempo continuarem previsíveis.
+- **Modelos de IA:** "com um clique, levado aos pedidos daquele modelo", como foi pedido; as opções "Em breve" não deixam escolher.
+- **Painel em seções, cada uma com a própria rolagem:** uma seção por vez, com endereço; cada seção pede só os próprios dados, o que também alivia a API.
+- **Novos acessos com usuário e senha, depois do código do aplicativo, e códigos de uso único e intransferíveis:** convite de uso único (24 h), QR Code de um segredo novo só daquela pessoa, um código do aplicativo e só então a senha; cada código do aplicativo vale uma vez (ADR 0009).
+- **Auditoria com quando, IP e quem:** além disso, o navegador, o antes e o depois de cada mudança, filtros, página seguinte e planilha.
 
 ## 5. Medições (antes × depois)
 
@@ -268,6 +303,67 @@ O dono pediu uma nova passada em todas as telas, com foco na estética, na exper
   - o custo é o LCP do painel: o maior texto (a dica das opções) aparece junto com os dados, uma ida e volta à API depois da 1ª pintura. Continua bem dentro da faixa "bom" (até 2,5 s) em todas as condições, e é a mesma hora em que o cliente já pode escolher a opção;
   - entrada, suporte e termos ficaram iguais em velocidade (diferenças de poucos centésimos, dentro do ruído da medição); cada página tem 1 ou 2 pedidos a mais (o script de sessão, de 0,7 KB, nas páginas que não o tinham, e o símbolo do rodapé, que é o mesmo arquivo do favicon e só carrega quando o rodapé se aproxima da tela) e 2 a 3 KB a mais na 1ª visita (CSS e a ilustração); tudo em cache por 1 ano.
 
+### 5.2 Área do cliente e painel (11/10/2026)
+
+- **Como foi medido:** a versão de antes desta entrega (commit `87b12c6`, de 10/10) e a nova (`c93336d`), com a mesma ferramenta, agora versionada (`servico/tests/medir_paginas.py`, seção 6), na mesma máquina (Xeon de 2,1 GHz, 4 CPU): cada versão atrás do Caddy 2.10 com o `Caddyfile` de produção (HTTPS e HTTP/2), o "não sou um robô" e a entrada por e-mail ligados como em produção (o script da Cloudflare não carrega: a medição fica sem internet), Chromium 141 e uma conta do pré-pago com 3 pedidos (em revisão, na fila e pronto); mediana de 5. O painel foi medido com a chave do servidor (papel de dono).
+- **A 1ª rodada de 11/10 tinha um erro de medição, e estes números a substituem.** Aquela ferramenta, que ficou fora do repositório, aceitava o certificado local do Caddy com `ignore_https_errors`. Com erro de certificado, o Chromium não guarda nada no cache: na visita de volta, o HTML vinha inteiro (13 a 16 KB, nas duas versões), e parecia que a revalidação pela ETag tinha parado de funcionar. Não parou:
+  - o `encode` do Caddy acrescenta `-zstd` ou `-gzip` à ETag da resposta comprimida e tira esse sufixo do `If-None-Match` antes de repassar o pedido à API, que responde **304** (conferido com `curl` e no navegador, em HTTP/1.1 e HTTP/2; a 304 volta com a ETag sem o sufixo, e o Chromium usa a página guardada normalmente);
+  - com o certificado confiado pela chave pública (como um certificado de verdade), a visita de volta da entrada transfere 0,5 KB, e a de Pedidos, 3,7 KB (o HTML revalidado e os dados da API);
+  - nenhuma mudança de código foi necessária. A ferramenta nova confia no certificado, e a seção 6 avisa para não medir com `ignore_https_errors`.
+- **1) Rede lenta para tudo** (celular de 390 × 844 px, 4G lenta de 1,6 Mbps e 150 ms, CPU 4× mais lenta; 1ª visita e visita de volta):
+
+| Tela | Visita | FCP | LCP | CLS | Transferido | HTML na volta |
+|---|---|---|---|---|---|---|
+| Entrada (sem sessão) | 1ª | 0,52 s → 0,55 s | 0,52 s → 0,55 s | 0 → 0 | 56 KB → 83 KB |  |
+| Entrada (sem sessão) | de volta | 0,39 s → 0,34 s | 0,39 s → 0,34 s | 0 → 0 | 0,6 KB → 0,5 KB | 304 |
+| Pedidos | 1ª | 0,50 s → 0,53 s | 0,77 s → 0,98 s | 0 → 0 | 58 KB → 85 KB |  |
+| Pedidos | de volta | 0,38 s → 0,40 s | 0,52 s → 0,54 s | 0 → 0 | 3,2 KB → 3,7 KB | 304 |
+| Extratos (nova) | 1ª | 0,54 s | 0,54 s | 0 | 82 KB |  |
+| Extratos (nova) | de volta | 0,36 s | 0,42 s | 0 | 1,0 KB | 304 |
+| Configurações (nova) | 1ª | 0,54 s | 0,55 s | 0 | 82 KB |  |
+| Configurações (nova) | de volta | 0,36 s | 0,43 s | 0 | 0,8 KB | 304 |
+| Painel: visão geral (antes: tela única) | 1ª | 0,54 s → 0,51 s | 0,54 s → 0,51 s | 0,442 → 0 | 49 KB → 71 KB |  |
+| Painel: visão geral (antes: tela única) | de volta | 0,40 s → 0,36 s | 0,40 s → 0,36 s | 0,409 → 0 | 7,5 KB → 8,8 KB | baixado (`no-store`) |
+| Painel: Revisão (nova) | 1ª | 0,50 s | 0,50 s | 0 | 71 KB |  |
+| Painel: Revisão (nova) | de volta | 0,35 s | 0,35 s | 0 | 9,2 KB | baixado (`no-store`) |
+| Painel: Contas e saldo (nova) | 1ª | 0,50 s | 0,87 s | 0 | 71 KB |  |
+| Painel: Contas e saldo (nova) | de volta | 0,37 s | 0,50 s | 0 | 9,2 KB | baixado (`no-store`) |
+
+- **2) Visita de volta com o cache cheio** (CSS e JavaScript do cache; o HTML e a API vão até o servidor; CPU 4× mais lenta), LCP e CLS:
+
+| Tela | Ida e volta | 390 px: LCP | 390 px: CLS | 1280 px: LCP | 1280 px: CLS |
+|---|---|---|---|---|---|
+| Entrada (sem sessão) | 0 ms | 0,26 s → 0,19 s | 0 → 0 | 0,26 s → 0,20 s | 0 → 0 |
+| Entrada (sem sessão) | 120 ms | 0,36 s → 0,32 s | 0 → 0 | 0,38 s → 0,34 s | 0 → 0 |
+| Entrada (sem sessão) | 250 ms | 0,46 s → 0,46 s | 0 → 0 | 0,51 s → 0,46 s | 0 → 0 |
+| Pedidos | 0 ms | 0,22 s → 0,33 s | 0 → 0 | 0,24 s → 0,30 s | 0 → 0 |
+| Pedidos | 120 ms | 0,46 s → 0,56 s | 0 → 0 | 0,45 s → 0,47 s | 0 → 0 |
+| Pedidos | 250 ms | 0,73 s → 0,72 s | 0 → 0 | 0,70 s → 0,68 s | 0 → 0 |
+| Extratos (nova) | 0 ms | 0,22 s | 0 | 0,24 s | 0 |
+| Extratos (nova) | 120 ms | 0,38 s | 0 | 0,34 s | 0 |
+| Extratos (nova) | 250 ms | 0,52 s | 0 | 0,51 s | 0 |
+| Configurações (nova) | 0 ms | 0,28 s | 0 | 0,22 s | 0 |
+| Configurações (nova) | 120 ms | 0,41 s | 0 | 0,33 s | 0 |
+| Configurações (nova) | 250 ms | 0,51 s | 0 | 0,50 s | 0 |
+| Painel: visão geral (antes: tela única) | 0 ms | 0,27 s → 0,24 s | 0,409 → 0 | 0,26 s → 0,28 s | 0,073 → 0 |
+| Painel: visão geral (antes: tela única) | 120 ms | 0,38 s → 0,38 s | 0,409 → 0 | 0,39 s → 0,42 s | 0,073 → 0 |
+| Painel: visão geral (antes: tela única) | 250 ms | 0,49 s → 0,48 s | 0,409 → 0 | 0,54 s → 0,68 s | 0,073 → 0 |
+| Painel: Revisão (nova) | 0 ms | 0,25 s | 0 | 0,28 s | 0 |
+| Painel: Revisão (nova) | 120 ms | 0,34 s | 0 | 0,40 s | 0 |
+| Painel: Revisão (nova) | 250 ms | 0,47 s | 0 | 0,52 s | 0 |
+| Painel: Contas e saldo (nova) | 0 ms | 0,24 s | 0 | 0,28 s | 0 |
+| Painel: Contas e saldo (nova) | 120 ms | 0,44 s | 0 | 0,40 s | 0 |
+| Painel: Contas e saldo (nova) | 250 ms | 0,70 s | 0 | 0,69 s | 0 |
+
+- **Leitura:**
+  - **o painel de antes deslocava o layout em toda visita:** CLS de 0,41 a 0,44 no celular (faixa "ruim", acima de 0,25) e 0,07 no computador, porque a tela única recebia os dados acima do que já estava desenhado. **O painel novo fica em 0 em todas as seções medidas**, no celular e no computador. O LCP ficou igual ou melhor no celular; em tela larga, a visão geral ficou um pouco mais tarde (0,26 → 0,28 s sem atraso de rede, 0,54 → 0,68 s com 250 ms), porque ali o maior elemento são os cartões do que pede atenção, que chegam com os dados;
+  - **a área do cliente segue com CLS 0** em todas as telas e condições, e o LCP fica bem dentro da faixa "bom" (até 2,5 s): o pior caso é Pedidos na 1ª visita, com a rede lenta (0,98 s);
+  - **a 1ª visita ficou ~27 KB maior** (entrada 56 → 83 KB; Pedidos 58 → 85 KB), porque todas as telas novas vêm na mesma página: o script da área do cliente passou de 18,6 para 33,2 KB comprimidos, o HTML de 6,5 para 11,5 KB e o CSS de 9,6 para 12,7 KB. Na rede lenta, isso custou 0,03 s de FCP na entrada e 0,2 s de LCP em Pedidos (0,77 → 0,98 s). Tudo fica em cache, por versão (dividir o script por tela está na seção 7);
+  - **na visita de volta, só vão pela rede a revalidação do HTML (304) e os dados da API:** 0,5 KB na entrada e de 0,8 a 3,7 KB nas telas com sessão. Com o cache cheio, Pedidos ficou até 0,1 s mais lento sem atraso de rede (mais HTML e JavaScript para a CPU 4× mais lenta processar) e igual com 250 ms, quando a rede domina;
+  - **o painel baixa o HTML a cada visita (7,4 KB comprimidos), de propósito:** a página do endereço secreto sai com `no-store` (ADR 0007) e não fica no cache do navegador. O script do painel (13,7 → 27 KB comprimidos) fica em cache por versão, e só quem entra no painel o baixa;
+  - **as telas novas** (Extratos, Configurações, Revisão e Contas e saldo) abrem tão rápido quanto Pedidos ou mais, porque cada uma pede só os seus dados.
+- **Cuidados para medir de novo** (a ferramenta já faz, seção 6): o certificado confiado pela chave pública (com `ignore_https_errors`, nada fica em cache); o "não sou um robô" ligado (desligado, a página esconde o lugar reservado do quadro depois da pintura); e a entrada por e-mail ligada (sem ela, a entrada mostra "em manutenção" e o cartão cresce: 0,012 de CLS em 1280 px, que a produção não tem).
+
 ## 6. Como mexer nas páginas
 
 - **Editar só `servico/web/src/`** e rodar `npm ci && npm run build` em `servico/web`. Versionar `src/` e `publico/` juntos; o CI recusa `publico/` desatualizado. Nunca editar `publico/` à mão.
@@ -275,10 +371,25 @@ O dono pediu uma nova passada em todas as telas, com foco na estética, na exper
   1. `src/paginas/<nome>.html`, com as partes `<!--@sessao-->` (antes de `<!--@cabeca-->`, para o topo saber da sessão antes de desenhar), `<!--@cabeca-->`, `<!--@topo-->`, `<!--@rodape-->` e `<!--@anuncios-->`;
   2. script em `src/ts/<nome>.ts`, acrescentado em `PAGINAS_JS` no `construir.mjs`, chamando `iniciarCookies()` (`cookies.ts`) e `iniciarTopo()` (`topo.ts`, que liga o "Sair"); página de texto pode usar o `legal.js`, que já faz os dois e marca o índice;
   3. rota na API (`servir`, em `render2go_servico/api.py`) e, se for pública, no `sitemap.xml` (`construir.mjs`).
+- **Tela nova na área do cliente** (a mesma página `index.html`, uma tela por endereço; regra 15 da seção 2):
+  1. `<section class="vista" id="vista-<nome>" aria-labelledby="titulo-<nome>">` em `src/paginas/index.html`, com `<h1 id="titulo-<nome>" tabindex="-1">` (recebe o foco na troca) e o lugar do que vem da API já reservado (esqueleto com a altura final);
+  2. o link no menu da conta (`.menu-conta`): `<a href="/<nome>" data-vista="<nome>">`, com o ícone e o rótulo;
+  3. o nome em `NomeTela` e em `TELAS` (endereço e título da aba), em `src/ts/moldura.ts`, e nas duas listas de seletores `html[data-vista="<nome>"]` de `src/css/paginas.css`: a que mostra a tela e a que marca o item do menu;
+  4. o script da tela em `src/ts/<tela>.ts`, com um `criar<Tela>()` que devolve `abrir()`, ligado em `telas` no `src/ts/cliente.ts` (a `moldura.ts` chama o `abrir` da tela quando a mostra);
+  5. o endereço em `TELAS_CONTA` (`render2go_servico/api.py`): a API entrega o `index.html` nele, com `noindex` e fora do sitemap;
+  6. a chave da tela no `data-antecipar` do `<script src="/estatico/inicio.js">` do `index.html`, só com as chamadas que a tela mostra primeiro (ex.: `extratos=/api/conta,/api/extrato?dias=30`);
+  7. a tela em `TELAS` e em `PRONTA` (o que ela mostra quando os dados chegam) do `test_paginas_conta.py`: os testes do menu (endereço, foco no `h1`, item marcado), da acessibilidade, do celular e do CLS com a API lenta passam a cobri-la.
+- **Seção nova no painel** (uma seção por vez, no endereço `#<nome>`):
+  1. `<section class="secao-painel" id="sec-<nome>" aria-labelledby="t-<nome>">` em `src/paginas/painel.html`, com `<h1 id="t-<nome>" tabindex="-1">` e o lugar reservado;
+  2. o item no menu (`.menu-painel`, dentro do `.grupo` certo): `<li data-rota="GET /api/<rota>"><a href="#<nome>" data-secao="<nome>">`, com `class="so-dono"` no `<li>` se só o dono abre;
+  3. o nome em `SECOES` (título e rota) no `src/ts/painel.ts`; o controle da seção (`controle()`, de `painel-base.ts`) no `painel-*.ts` do grupo, ligado em `controles`; e as duas listas de seletores `html[data-secao="<nome>"]` de `src/css/paginas.css`;
+  4. cada rota nova da API do painel em `PERMISSOES_PAINEL` (`api.py`), com os papéis que podem usá-la. **Rota com sessão fora do mapa é recusada para todos** (fail-closed), e `test_every_panel_route_with_a_session_is_in_the_permission_map` falha até ela entrar;
+  5. a chave da seção no `data-antecipar` do `painel.html` (`<nome>=api/sessao,api/resumo,api/<rota>`) e, se for só do dono, também no `data-so-dono`;
+  6. um teste em `test_paginas_painel.py` (a seção pelo endereço e, se for só do dono, o operador sem ela).
 - **Mostrar algo só para quem entrou (ou só para quem não entrou):** classes `so-com-sessao` e `so-sem-sessao`, no CSS, sem JavaScript; valem desde o primeiro quadro. Se a página confirmar com a API que a sessão acabou (401), `semSessao()` (`topo.ts`) tira a marca e volta o topo de visitante.
 - **Conteúdo que vem da API:** reservar o lugar antes (altura mínima, esqueleto ou `visibility: hidden` no lugar final) e trocar tudo num mesmo quadro; nunca inserir acima do que já está na tela. O teste `test_panel_does_not_shift_when_the_api_answers_after_the_first_paint` atrasa a API e mede o CLS.
 - **Índice em página de texto:** `<nav class="indice" aria-labelledby="...">` com links para as seções (`<section id="..." aria-labelledby="...">`), a classe `com-indice` no `<article>` e as seções dentro de `<div class="corpo-legal">`; o `legal.ts` marca a seção visível.
-- **Painel do dono:** `src/paginas/painel.html` e `src/ts/painel.ts`. O build põe o script em `publico/privado/painel.js`, que a API só entrega no endereço secreto (`RENDER2GO_ADMIN_CAMINHO`); nenhuma página pública cita esse endereço (o teste de invasão confere).
+- **Painel do dono:** `src/paginas/painel.html` e os scripts `painel.ts` (seções, menu, título da aba e atualização a cada 30 s), `painel-base.ts` (sessão e permissões de quem entrou, `controle()`, tabelas e abas), `painel-entrada.ts` (pessoa, emergência e convite com QR Code), `painel-pedidos.ts` (revisão e histórico), `painel-clientes.ts` (contas e saldo, suporte e interesse), `painel-operacao.ts` (pods, GPUs e pagamentos) e `painel-seguranca.ts` (visão geral, acessos, auditoria e configuração). O build junta tudo em `publico/privado/painel.js`, que a API só entrega no endereço secreto (`RENDER2GO_ADMIN_CAMINHO`); nenhuma página pública cita esse endereço (o teste de invasão confere). A página do painel sai com `no-store` (não fica no cache do navegador) e o script, com cache privado por versão.
 - **Páginas legais:** `termos.html`, `privacidade.html` e `cookies.html`. Os dados da empresa entram pelo `.env` (`[[EMPRESA_NOME]]` e os outros marcadores viram o valor de `RENDER2GO_EMPRESA_*` quando a API carrega as páginas). Mudança de texto que muda direitos ou dados tratados = versão nova (`contas.DOCUMENTOS`), aceita de novo na próxima entrada.
 - **Ícone novo:** em `src/icones.json`, no mesmo desenho (24 × 24, traço 2).
 - **Cor nova:** token em `src/css/tokens.css`, nos dois temas, e o par em `PARES` no `test_web.py`.
@@ -288,8 +399,9 @@ O dono pediu uma nova passada em todas as telas, com foco na estética, na exper
 - **Regras que a CSP impõe:** nada de `innerHTML`, `style=` no HTML, `<script>` embutido ou `eval`. Textos novos por `textContent`; elementos por `criar()` (`src/ts/comum.ts`).
 - **Testes:**
   - `cd servico && uv run pytest -q`: cabeçalhos, cache, CSRF, indexação, contraste;
-  - `uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py`: fluxo completo, axe-core em claro e escuro, celular em 320 e 390 px (também com fonte larga), teclado, sessão e topo, índice das páginas de texto e CLS com a API lenta (precisa de `npm ci` em `servico/web`, por causa do axe-core);
+  - `uv run --with playwright==1.56.0 pytest -q tests/test_paginas.py tests/test_paginas_conta.py tests/test_paginas_painel.py`: fluxo completo, axe-core em claro e escuro, celular em 320 e 390 px (também com fonte larga), teclado, sessão e topo, índice das páginas de texto e CLS com a API lenta; as telas da área do cliente (menu, extrato, logs, perfil, tema, e-mail, verificação em duas etapas, aparelhos, pausar e excluir, pedido em sequência, termos novos); e o painel (seções, operador, convite, entrada por pessoa, acessos, auditoria). Precisa de `npm ci` em `servico/web`, por causa do axe-core; o Chromium vem do Playwright (no ambiente de nuvem, já instalado);
   - `RENDER2GO_CAPTURAS=<pasta>` grava capturas das telas.
+- **Medir** (FCP, LCP, CLS e bytes por tela, seção 5.2): `cd servico && uv run --with playwright==1.56.0 python tests/medir_paginas.py --caddy <binário do Caddy 2.10> --db <postgres de teste>` (o mesmo Caddy do teste de invasão, `docs/13`, seção 3; o banco é apagado). Para comparar com outra versão, rode a mesma ferramenta num `git worktree` dela, na mesma máquina. **Não meça com o certificado local aceito por `ignore_https_errors`:** com erro de certificado, o Chromium não guarda nada no cache, e a visita de volta baixa tudo de novo (a ferramenta confia no certificado pela chave pública).
 
 ## 7. Fora deste trabalho e próximos passos
 
@@ -300,6 +412,7 @@ O dono pediu uma nova passada em todas as telas, com foco na estética, na exper
   4. testar o teto do teste gratuito com dois IPs diferentes antes de abrir para clientes.
 
   Ganho esperado: a conexão TLS fecha em São Paulo em vez de Nuremberg (centenas de ms na primeira visita de quem está no Brasil).
+- **Dividir o script da área do cliente por tela:** desde 11/10, todas as telas da conta vêm no mesmo `cliente.js` (18,6 → 33,2 KB comprimidos) e no mesmo HTML (6,5 → 11,5 KB), e quem só quer entrar também baixa tudo. Na medição da seção 5.2, isso custou 0,2 s de LCP em Pedidos na 1ª visita com a rede lenta (0,77 → 0,98 s) e até 0,1 s na visita de volta sem atraso de rede, ainda dentro da faixa "bom". Carregar Extratos, Logs, Perfil e Configurações só quando abrem pede o esbuild com `splitting` (módulos ES), o SRI de cada pedaço e uma mudança na regra "um script por página" do ADR 0006; vale quando o script crescer de novo (o Mix, ADR 0010).
 - **Miniaturas no servidor para o painel:** hoje a revisão baixa a foto original (com `lazy` e sem repetir). Uma versão reduzida, gerada na análise de pessoas, pouparia banda do revisor. Mexe no armazenamento e no apagamento das fotos, por isso ficou de fora.
 - **Política de privacidade e termos de uso (LGPD):** publicadas em 09/10/2026 (`/termos`, `/privacidade`, `/cookies`), com links no rodapé. Falta a revisão de um advogado (`docs/13`, seção 6.7).
 - **Escolha do formato** (vertical, quadrado, horizontal): a API aceita, a página não mostra. É decisão de produto.

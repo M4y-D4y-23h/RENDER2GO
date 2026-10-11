@@ -28,29 +28,6 @@ from urllib.parse import urlsplit
 
 TESTES = Path(__file__).resolve().parent
 SERVICO = TESTES.parent
-TABELAS = [
-    "auditoria_admin",
-    "pagamentos",
-    "tokens_worker",
-    "estado",
-    "comandos",
-    "acessos",
-    "aceites",
-    "limites",
-    "codigos",
-    "sessoes",
-    "interesses",
-    "movimentos",
-    "geradores",
-    "cookies",
-    "suporte",
-    "consentimentos",
-    "eventos",
-    "jobs",
-    "fotos",
-    "lotes",
-    "clientes",
-]
 
 
 def semear(db: str, n: int) -> list[str]:
@@ -61,9 +38,9 @@ def semear(db: str, n: int) -> list[str]:
     from render2go_servico.db import Banco
 
     banco = Banco(db, pool=4)
-    with banco.tx() as c:
-        for t in TABELAS:
-            c.run(f"DROP TABLE IF EXISTS {t} CASCADE")
+    with banco.tx() as c:  # base limpa, com todas as tabelas (também as que versões novas acrescentarem)
+        for t in c.all("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"):
+            c.run(f'DROP TABLE IF EXISTS "{t["tablename"]}" CASCADE')
     banco.criar_esquema()
     arm = Armazem()
     api = cliente_teste(config_teste(banco, arm))

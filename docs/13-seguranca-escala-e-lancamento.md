@@ -2,6 +2,8 @@
 
 Revisão feita em 09/10/2026, a pedido do dono, antes do lançamento oficial e da divulgação em massa: o que estava exposto, o que mudou no código e no servidor, o teste de invasão, o que o serviço aguenta (medido) e a parte que só o dono pode fazer. As decisões estão no [ADR 0007](adr/0007-contas-sessoes-e-painel.md) (contas, sessão, painel e pods) e no [ADR 0008](adr/0008-recarga-pix-mercado-pago.md) (Pix). Os passos da atualização do servidor estão no `docs/09`, seção 0, "09/10/2026 (4)".
 
+**Atualizado em 11/10/2026** com a área do cliente (verificação em duas etapas e confirmação recente) e os acessos do painel por pessoa ([ADR 0009](adr/0009-acessos-do-painel-por-pessoa.md)): seção 2.1, o teste de invasão com 88 verificações (seção 3), a carga medida de novo (seção 4.4) e os cuidados do dono (seção 6.8). A publicação está no `docs/09`, seção 0, "11/10/2026".
+
 ## 1. Resumo
 
 | Pedido | O que foi feito | Onde |
@@ -12,12 +14,16 @@ Revisão feita em 09/10/2026, a pedido do dono, antes do lançamento oficial e d
 | Cada "Tenho interesse" no painel | Cada clique, com a conta, o plano e a hora, além do resumo por opção | Painel, seção "Interesse" |
 | Painel num endereço mais sofisticado | Endereço secreto + token + código do autenticador (2 fatores), bloqueio por tentativas, IPs permitidos (opcional), auditoria | ADR 0007, item 5 |
 | Desligar um pod pelo painel, em emergência | "Desligar" em cada pod, "Parada de emergência" (encerra todos e não sobe outro até "Retomar") | Painel, seção "Pods" |
-| APIs expostas e vulnerabilidades | Mapa da API desligado, cabeçalhos que revelavam o servidor removidos, token por pod, envio ao R2 com tamanho assinado, teste de invasão com 73 verificações | Seções 2 e 3 |
+| APIs expostas e vulnerabilidades | Mapa da API desligado, cabeçalhos que revelavam o servidor removidos, token por pod, envio ao R2 com tamanho assinado, teste de invasão com 73 verificações (88 desde 11/10) | Seções 2 e 3 |
 | Documentos legais | `/termos`, `/privacidade` e `/cookies`, com a identificação do vendedor no rodapé de todas as páginas | Seção 6.7 |
 | API de pagamento | Recarga por Pix no Mercado Pago, creditada sozinha e uma vez só | ADR 0008 |
 | Tráfego alto | Medido; correção de uma espera de 40 ms por resposta; fases de crescimento | Seção 4 |
 | Vários modelos e 30+ pods no RunPod | Limites do RunPod, um modelo por pod, cuidados | Seção 5 |
 | Sem `robots.txt` (decisão do dono) | Removido. Páginas privadas com `noindex` no cabeçalho; o endereço do painel não aparece em lugar nenhum | Seção 2 |
+| Novos acessos ao painel com usuário e senha, depois do código do aplicativo (11/10) | Uma pessoa, um acesso: convite de uso único (QR Code → código do aplicativo → senha), senha só como resumo scrypt, autenticador próprio de cada pessoa, papéis dono e operador | ADR 0009; seção 2.1 |
+| Código de autenticação de uso único e intransferível (11/10) | Cada código do aplicativo vale uma vez, gravado de forma atômica; o convite vale 24 h, uma vez e só para aquele nome de acesso | ADR 0009; seção 2.1 |
+| Auditoria das alterações no painel: quando, IP e quem (11/10) | Seção "Auditoria": quem fez, o quê, em quem, quando, IP, navegador e o antes e o depois, com filtros e planilha | ADR 0009, item 7 |
+| Verificação em duas etapas na conta do cliente (11/10) | Aplicativo autenticador com 10 códigos de recuperação, e confirmação recente ("é você mesmo?") antes das ações sensíveis | Seção 2.1 |
 
 ## 2. Auditoria: como estava e como ficou
 
@@ -41,11 +47,43 @@ Conferido de fora em https://app.render2go.com, em 09/10/2026, e no código.
 
 **O que já estava bom e continua:** CSP estrita com Trusted Types, SRI, COOP/CORP e `Permissions-Policy` (ADR 0006); CSRF barrado pelo Fetch Metadata; revisão humana antes de qualquer GPU e filtros que bloqueiam na dúvida (ADR 0004); nenhum binário passa pela API (só URLs assinadas e curtas); ComfyUI e Ollama só em `127.0.0.1` nos pods; pods só na secure cloud, com desligamento automático.
 
+### 2.1 Área do cliente e acessos do painel (11/10/2026)
+
+**Verificação em duas etapas do cliente** (opcional, em Configurações):
+- aplicativo autenticador (TOTP, RFC 6238, o mesmo tipo de código do painel). O QR Code é um SVG feito no servidor (`segno`) e mostrado como imagem `blob:`; a pessoa tem 15 minutos para lê-lo e confirmar o primeiro código;
+- o segredo fica **cifrado no banco** (AES-GCM, com uma chave derivada de `RENDER2GO_SEGREDO_CONTAS` só para isso, e o id da conta como dado associado: copiado para a linha de outra conta, não abre);
+- cada código vale uma vez (o último passo de 30 s aceito fica gravado);
+- **10 códigos de recuperação** de uso único, para entrar sem o celular: 10 letras e números, sem os que se confundem (~49 bits cada), guardados só como HMAC preso à conta;
+- na entrada, o código do e-mail abre só um desafio, que não é sessão: vale 5 minutos e uma vez, e a sessão só nasce com o código do aplicativo ou um de recuperação. 5 erros bloqueiam a conta por 15 minutos;
+- quem perdeu o celular e os códigos fala com o suporte, e só o dono pode desligar a verificação, pelo painel (Contas e saldo), com auditoria e aviso no e-mail da conta.
+
+**Confirmação recente** ("é você mesmo?"): trocar o e-mail, ligar ou desligar a verificação, gerar códigos de recuperação novos e excluir a conta pedem uma confirmação dos últimos 10 minutos (a sessão aberta há menos de 10 minutos já conta):
+- com a verificação ligada, só o código do aplicativo ou um de recuperação: o código do e-mail sozinho não basta, para quem tomou o e-mail não desligar a proteção;
+- sem ela, um código de 8 dígitos no e-mail, com chave própria (não derruba um código de entrada pedido em outro aparelho), até 5 por hora e 10 por dia; 5 erros bloqueiam por 15 minutos;
+- assim, um cookie de sessão roubado não basta para tomar a conta (trocar o e-mail) nem para apagá-la.
+
+**Avisos e outros cuidados da conta:**
+- **avisos de segurança no e-mail da conta**, só texto e sem links (como os códigos): conta excluída ou pausada, verificação ligada ou desligada (também pelo suporte), códigos de recuperação novos ou usados e troca de e-mail (o aviso vai para o endereço antigo, com o novo mascarado);
+- troca de e-mail com código no endereço novo; o antigo fica só como resumo (HMAC), para não ganhar outro teste grátis numa conta nova;
+- aparelhos conectados: encerrar um ou todos. A referência de cada sessão na página é derivada do id, que nunca sai do servidor, e outra conta não encerra a sessão de ninguém;
+- as configurações só aceitam a sessão do navegador: o código de acesso antigo no cabeçalho recebe 403.
+
+**Acessos do painel por pessoa** ([ADR 0009](adr/0009-acessos-do-painel-por-pessoa.md)):
+- **senha só como resumo scrypt** (n = 2^15, r = 8, p = 1: ~0,1 s e 32 MiB por conferência, no máximo 4 ao mesmo tempo por processo), com a regra do NIST SP 800-63B: 12 a 128 caracteres, sem o nome de acesso, com pelo menos 5 caracteres diferentes e fora de uma lista de pedaços comuns em vazamentos;
+- o segredo do aplicativo de cada pessoa é cifrado como o do cliente, com o id da pessoa como dado associado;
+- **convite de uso único**, que vale 24 horas e só cria aquele nome de acesso. O token vai no fragmento do endereço (`#convite=…`), que o navegador nunca manda ao servidor, ao registro do Caddy nem a outros sites; o banco guarda só o SHA-256. A ordem é QR Code → código do aplicativo → senha: quem intercepta o convite sem o celular da pessoa não cria a senha;
+- **entrada:** a mesma mensagem e o mesmo tempo para nome inexistente, senha errada e código errado (a senha é conferida sempre, mesmo contra um resumo de mentira); cada código do aplicativo vale uma vez, gravado de forma atômica (nem em duas abas ao mesmo tempo); 5 erros bloqueiam a rede por 15 minutos, e 5 erros em 15 minutos bloqueiam o nome de acesso, mesmo vindo de outras redes;
+- **papéis por rota** (`PERMISSOES_PAINEL`, em `api.py`): o dono faz tudo; o operador revisa pedidos e consulta, sem mexer em dinheiro, pods, contas ou acessos. Rota com sessão fora do mapa é recusada para todos (fail-closed; um teste confere que toda rota está no mapa). Sempre fica um dono ativo, ninguém tira o próprio acesso, e tirar o acesso de alguém derruba as sessões dessa pessoa na hora;
+- **a chave do servidor** (`RENDER2GO_ADMIN_TOKENS` + `RENDER2GO_ADMIN_TOTP`) continua como acesso de emergência, com papel de dono e registrada como emergência na auditoria;
+- **auditoria** de cada ação (quem fez, o quê, em quem, quando, IP, navegador e o antes e o depois), também das entradas recusadas, das de emergência e dos convites. O `apagar-historico` não a apaga, e a planilha é protegida contra fórmulas.
+
+**`RENDER2GO_SEGREDO_CONTAS` não pode mudar** depois que houver acessos por pessoa ou verificação em duas etapas ligada: os segredos do aplicativo deixam de abrir, e a entrada que depende deles é recusada (fail-closed). Se mudar, cada pessoa do painel precisa de um convite novo, e os clientes com a verificação ligada, de o dono desligá-la pelo painel (seção 6.8).
+
 ## 3. Teste de invasão
 
 **Como:** `servico/tests/teste_invasao.py` sobe a API de verdade num Postgres de teste, atrás do `Caddyfile` de produção (com TLS local), e ataca de fora, como um invasor faria. Cada grupo de ataques sai de um IP próprio (127.0.0.x), como redes diferentes. Ele recusa rodar num banco cujo nome não tenha "teste", "invasao" ou "pentest", porque apaga o banco a cada rodada.
 
-**Resultado em 09/10/2026: 73 de 73 verificações OK**, depois das correções abaixo.
+**Resultado em 09/10/2026: 73 de 73 verificações OK**, depois das correções abaixo. **Em 11/10/2026: 88 de 88**, com 15 verificações novas (acessos do painel por pessoa e configurações da conta, as duas últimas linhas da tabela), sem achados.
 
 | Grupo | O que foi tentado | Resultado |
 |---|---|---|
@@ -61,6 +99,8 @@ Conferido de fora em https://app.render2go.com, em 09/10/2026, e no código.
 | Aviso do Mercado Pago | Sem assinatura, com outro segredo, com Unicode | 401; o aviso válido só dispara a consulta ao Mercado Pago |
 | Sessões | Sair, sair de todos os aparelhos, conta excluída, apelido do Gmail | O cookie copiado deixa de valer; um teste por caixa |
 | Limites | Códigos por e-mail; força bruta no código; entrada no painel; tokens de worker chutados | 429 no 6º código; o código morre depois de 5 erros; painel bloqueado 15 min; rede bloqueada depois de 60 erros |
+| Acessos do painel por pessoa (11/10) | Senha do convite antes do código do aplicativo; o mesmo convite de novo, de outra rede; convite chutado, com injeção SQL ou Unicode; o mesmo código do aplicativo duas vezes; operador nas rotas de pods, GPUs, pagamentos, acessos, auditoria e configuração; nome inexistente, senha errada e código errado; força bruta por rede e por nome de acesso | 409 (código primeiro); 401; 401; 401 na 2ª vez; 403 nas 8 rotas; a mesma resposta nos três casos; 429 na rede e no nome, também vindo de outra rede |
+| Configurações da conta (11/10) | Rotas das configurações sem sessão e com o código de acesso antigo no cabeçalho; encerrar a sessão de outra conta pela referência; excluir a conta com uma sessão de 20 minutos sem confirmar; o desafio da verificação em duas etapas usado como sessão e usado duas vezes; código de recuperação repetido; força bruta no código do aplicativo | 401 e 403; 404 (IDOR); 403 "confirme que é você"; 401; 401 na 2ª vez; 401; 429 (conta bloqueada 15 min) |
 
 **XSS armazenado:** um teste no navegador (`test_paginas.py`) põe HTML e JavaScript no nome da conta, no texto do pedido e numa mensagem de suporte. O painel mostra tudo como texto, nada executa e a CSP nem precisa bloquear.
 
@@ -114,6 +154,21 @@ Numa máquina de 4 vCPU (Xeon 2,3 GHz, 15 GB), com a API, o Postgres e o gerador
 | **Lançamento** | Até ~1.000 contas ativas por dia | O servidor atual, com `RENDER2GO_API_WORKERS=2`, Postgres no mesmo servidor e backup diário (seção 6.5). A revisão pelo dono dá conta. |
 | **Crescimento** | ~10 mil por dia, com picos de campanha | Servidor de 8 vCPU e 16 GB, com `RENDER2GO_API_WORKERS=4` a `6` (processos × `RENDER2GO_DB_POOL` + 30 precisa caber no Postgres; acima de 100 conexões, subir o `max_connections`). Proxy da Cloudflare na frente (DDoS e estáticos), com o firewall aceitando só a Cloudflare. Postgres num servidor próprio ou gerenciado, com backup contínuo. Cota maior no provedor de e-mail. Mais revisores ou o filtro automático do ADR 0005. |
 | **Escala grande** | 100 mil contas ou mais, campanhas nacionais | Vários servidores da API atrás de um balanceador: a API não guarda estado (sessões, limites e fila estão no Postgres). O orquestrador continua um só (trava de líder; um segundo fica de reserva). Postgres com réplica de leitura e PgBouncer. Um grupo de pods por modelo (seção 5) e o limite de gasto do RunPod aumentado. |
+
+### 4.4 Medido em 11/10/2026 (área do cliente e acessos por pessoa)
+
+**Outra máquina que a da seção 4.1**: o contêiner de desenvolvimento (Xeon de 2,1 GHz, 4 CPU), também com a API, o Postgres e o gerador de carga na mesma CPU. Os números não se comparam com os de 09/10; o que vale é a versão de antes desta entrega (`87b12c6`) contra a nova, na mesma máquina e com a mesma ferramenta (`medir_carga.py`: 300 contas, 2 processos da API, 3 conexões, 30 s por cenário; cinco rodadas de cada versão, intercaladas). Pedidos por segundo:
+
+| Cenário | Antes (`87b12c6`) | Nova | 95% abaixo de |
+|---|---|---|---|
+| Página do cliente acompanhando os pedidos (`GET /api/lotes`) | 385 a 411 | 376 a 400 | 11,5 a 13,1 ms nas duas |
+| Misto (85% pedidos, 10% conta, 5% página inicial) | 419 a 453 | 413 a 437 | 11,2 a 12,4 ms nas duas |
+| Página inicial | 2.029 a 2.157 | 1.998 a 2.105 | 2,3 a 2,5 ms nas duas |
+| Rodadas pela metade, fora das faixas acima | 6 de 15 cenários (lotes 1, misto 3, página 2) | 1 de 15 (página) | 21 a 22 ms (lotes e misto); 3,7 ms (página) |
+
+- **Leitura:** a capacidade da API ficou a mesma. As faixas se sobrepõem nos três cenários, nenhum pedido deu erro, e o tempo de cada `GET /api/lotes` medido em processo, sem rede nem concorrência, é igual nas duas versões (7,2 ms, com as mesmas consultas no perfil). Nesta máquina, algumas rodadas inteiras saem pela metade: todo pedido demora ~2×, nas duas versões, inclusive na página inicial, que só lê da memória e não mudou. Por isso a tabela mostra as rodadas normais à parte. Uma rodada anterior do mesmo dia, noutro contêiner, deu o mesmo quadro (lotes ~380–389 × ~374–379, misto ~400–422 × ~400–411, página ~1.830–1.958 × ~1.900–1.935) e, em sequência com 1 processo, o tempo de cada resposta: `/api/lotes` 5,26 → 5,33 ms, `/api/conta` 2,53 → 3,12 ms (a conta passou a trazer o perfil, o tema e os "Tenho interesse", numa transação só) e `/` 1,07 → 0,98 ms.
+- **A lista de pedidos não ficou mais cara com o pedido em sequência:** `GET /api/lotes` é a rota mais pedida, e os vídeos voltaram a vir de uma consulta simples; os textos próprios das fotos vêm numa 2ª consulta, só para os pedidos que os têm (commit `421c8f2`, que tirou ~0,3 ms do Postgres em cada chamada).
+- **As telas novas não ficam consultando a API:** Extratos, Logs, Perfil e Configurações pedem os dados uma vez, quando abrem. Só a tela de Pedidos se atualiza sozinha (a cada 10 s, com pedido em andamento e a aba à vista), como antes; e o painel, a cada 30 s na seção aberta, só para quem está nele. A conta de ~0,1 pedido/s por pessoa da seção 4.2 continua valendo.
 
 ## 5. GPUs no RunPod: vários modelos e 30 pods ou mais
 
@@ -329,6 +384,17 @@ Siga o `docs/09`, seção 0, "09/10/2026 (4)". A atualização leva poucos minut
 - **Encarregado de dados:** a Resolução CD/ANPD nº 2/2022 dispensa o agente de pequeno porte de indicar o encarregado, mas exige um canal com os titulares. O e-mail de privacidade cumpre esse papel.
 - **Nota fiscal das recargas** e o tratamento fiscal do saldo pré-pago: com o contador.
 
+### 6.8 Acessos do painel (11/10/2026)
+
+O passo a passo está no `docs/09`, seção 0, "11/10/2026" (bloco 3). Os cuidados de segurança:
+- **O seu acesso por pessoa primeiro:** pelo terminal do servidor (`render2go-servico admin-convite --usuario <nome> --papel dono`). Daí em diante, entre com nome, senha e código; a chave do servidor fica guardada no gerenciador de senhas, só para emergência (sem ela, a volta é o mesmo comando, pelo terminal).
+- **Um acesso por pessoa, com o menor papel que basta:** operador para quem só revisa e consulta. Ninguém divide nome, senha ou o QR Code.
+- **O endereço do convite é tão sensível quanto uma senha** enquanto vale (24 horas): mande em mãos, pelo gerenciador de senhas ou numa mensagem que se apaga, nunca por e-mail aberto nem print.
+- **Quem sai da equipe:** "Tirar acesso", na seção Acessos (as sessões da pessoa caem na hora). Celular perdido ou senha esquecida: um convite novo para o mesmo nome.
+- **Nunca troque o `RENDER2GO_SEGREDO_CONTAS`** (seção 2.1). Guarde-o no gerenciador de senhas, junto com o resto do `.env`.
+- **De vez em quando, olhe a Auditoria:** entradas recusadas em sequência, entradas de emergência que você não fez e convites que você não criou.
+- **Cliente que perdeu o celular e os códigos de recuperação:** antes de desligar a verificação dele pelo painel, confirme que é a pessoa (a mensagem vem do e-mail da conta, e ela confirma um dado de um pedido ou de uma recarga).
+
 ## 7. O que continua em aberto
 
 - **Revisão humana** é a principal proteção e também o gargalo (ADR 0004). Para escalar: mais revisores ou o filtro automático de imagem (ADR 0005, proposto).
@@ -338,3 +404,5 @@ Siga o `docs/09`, seção 0, "09/10/2026 (4)". A atualização leva poucos minut
 - **Proxy da Cloudflare** contra DDoS (seção 6.4).
 - **Grupo de pods por modelo**, quando entrar o 2º modelo (seção 5).
 - **PgBouncer e réplica do Postgres:** só na fase de escala grande.
+- **Chaves de acesso (passkeys, WebAuthn)** no painel e na conta: o melhor caminho a seguir depois do aplicativo autenticador; ficaram para depois (ADR 0009, alternativas). O acesso por pessoa já é a base para elas.
+- **Mix e Projetos** (ADR 0010, proposto): o Mix depende do filtro de imagem (ADR 0005) ou da revisão humana entre os passos de imagem, e fica sem troca de rosto.
