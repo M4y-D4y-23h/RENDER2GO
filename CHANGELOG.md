@@ -2,6 +2,10 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 12/10/2026 (7): parar pedido, motivos e quarentena na `main`
+
+A pedido do dono, as entradas 12/10/2026 (5) e (6) e a atualização dos custos (`docs/11`, seção 1) entram na `main` (avanço direto, sem conflito; CI verde no código). Publicação no servidor: `docs/09`, entrada 12/10/2026 (2), com a regra nova `quarentena-7-dias` no R2. Na próxima entrada no site, cada conta aceita a Política de Privacidade v4.
+
 ## 12/10/2026 (6): diagnóstico da qualidade e avaliação das recomendações de velocidade
 
 Pedido do dono depois dos testes no site. Sem mudança de código: análise em `docs/06`, seção 9.

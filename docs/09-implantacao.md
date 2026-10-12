@@ -8,7 +8,7 @@ Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem p
 
 ### 12/10/2026 (2): parar pedido, motivo de cada falha e quarentena dos vídeos barrados
 
-**É a atualização a fazer agora.** Parte da versão da entrada abaixo (a `main` de 12/10, `693e38b`). Está na branch `claude/magical-lamport-4rrms9` até ir para a `main`. Muda a API, as páginas e o código que vai para os pods (o vídeo barrado vai para a quarentena); o banco ganha três colunas (`lotes.interrompido_em`, `lotes.interrompido_por` e `jobs.quarentena_em`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (5); [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md), atualização de 12/10.
+**É a atualização a fazer agora.** Parte da versão da entrada abaixo (a `main` de 12/10, `693e38b`) e está na `main` desde 12/10/2026 (veio da branch `claude/magical-lamport-4rrms9`). Muda a API, as páginas e o código que vai para os pods (o vídeo barrado vai para a quarentena); o banco ganha três colunas (`lotes.interrompido_em`, `lotes.interrompido_por` e `jobs.quarentena_em`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (5); [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md), atualização de 12/10.
 
 1. **Nada gerando?** O mesmo bloco 1 da entrada 11/10/2026 (abaixo).
 2. **Backup e código novo:** o bloco 2 da entrada abaixo (`pg_dump` e `git pull`).
