@@ -13,11 +13,15 @@ Não é parecer contábil nem fiscal: impostos e taxas de pagamento devem ser co
 | DNS e HTTPS | Cloudflare (DNS) e Caddy (certificado) | grátis | |
 | Armazenamento | Cloudflare R2, bucket `gpu2go` | 10 GB, 1 milhão de operações classe A e 10 milhões de classe B grátis por mês; acima disso, US$ 0,015 por GB-mês, US$ 4,50 e US$ 0,36 por milhão; **saída grátis** | O espelho dos modelos (36,6 GB) custa ~US$ 0,40/mês. As fotos são apagadas quando o pedido fecha; os vídeos, em 30 dias. |
 | GPUs | RunPod, nuvem secure, por segundo de uso | L40S **US$ 1,09/h**; RTX 6000 Ada US$ 0,99/h; RTX PRO 6000 US$ 2,49/h; RTX 4090 US$ 0,89/h | Sem mensalidade: pod desligado não custa nada. |
-| E-mail do suporte | SMTP (ainda não configurado) | grátis num plano de entrada de um serviço de envio (ex.: Brevo, Resend) | Caixa de e-mail própria (ex.: suporte@render2go.com) é à parte. |
-| Código e CI | GitHub (repositório privado) | grátis | Até 2.000 min/mês de CI. |
+| E-mail (códigos de entrada e suporte) | Amazon SES, Ohio (no sandbox até a aprovação; `docs/13`) | US$ 0,10 por mil e-mails no plano à la carte; US$ 0,16 no Essentials, o padrão de conta nova desde 21/07/2026 | Centavos por mês no volume atual. Para pagar o menor preço: console do SES → Pricing plan → Cancel plan. Caixa de e-mail própria (ex.: suporte@render2go.com) é à parte. |
+| Anti-robô | Cloudflare Turnstile | grátis | |
+| Pagamentos | Mercado Pago (Pix) | sem mensalidade; ~0,5% a ~1,2% de cada Pix recebido (depende da conta) | Confira a sua taxa em "Seu negócio → Custos" (ADR 0008). |
+| Pods hibernados | Disco de volume de cada pod parado, no RunPod | ~US$ 14/mês por pod hibernado | Hoje 0 (`RENDER2GO_PODS_HIBERNADOS` = 0); ligar só na divulgação (ADR 0011). |
+| Código e CI | GitHub (repositório privado) | grátis | Até 2.000 min/mês de CI. Cada envio para o GitHub gasta ~10 min (serviço) e ~8 min (worker): em 12/10/2026, ~170 execuções no mês, ~1.200 a 1.600 min. Perto da cota, o CI para até o mês virar, sem cobrança, se não houver forma de pagamento; confira em Settings → Billing and plans. |
 
 - **Câmbio:** o dólar ficou perto de R$ 5,15 em setembro/2026. Para o que é pago em dólar no cartão (RunPod, domínio), conte **~R$ 5,70 por US$**, com IOF (3,5%) e o spread do banco.
 - **Orquestrador ligado 24 h:** não custa nada além do servidor. Ele só olha a fila; GPU só é cobrada com pod ligado.
+- **Conferido em 12/10/2026 pela API do RunPod:** saldo de US$ 1,24, gasto de US$ 0/h, nenhum pod e nenhum volume de rede (nada cobrando parado). Em 11/10, no fim dos testes de GPU, o saldo era US$ 1,82: os testes do dono de 12/10 (2 pedidos, 15 fotos) gastaram ~US$ 0,58, se não houve recarga no meio.
 
 ## 2. Custo de GPU por vídeo (L40S, a GPU padrão desde 08/10)
 
