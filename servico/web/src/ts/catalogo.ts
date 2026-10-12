@@ -50,7 +50,7 @@ export type Receitas = {
   proporcao_auto?: [number, number];
   ampliacao_aviso?: number;
   qualidades: string[];
-  limites: { fotos: number; bytes_foto: number; tipos: string[] };
+  limites: { fotos: number | null; por_envio?: number; bytes_foto: number; tipos: string[] };
 };
 
 let pedido: Promise<Receitas> | null = null;

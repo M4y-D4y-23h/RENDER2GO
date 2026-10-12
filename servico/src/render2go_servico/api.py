@@ -111,6 +111,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
@@ -126,9 +127,13 @@ from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_
 from render2go_servico.db import Banco, BancoError, SaldoInsuficiente, novo_id
 
 TIPOS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
-MAX_FOTOS_LOTE = 1000
+MAX_FOTOS_LOTE = 1000  # por envio (pedido HTTP): o pedido maior vai em partes, sem limite no total (pago e interno)
+FOTOS_POR_ENVIO = MAX_FOTOS_LOTE  # a página divide nessas partes (os testes diminuem)
 # pedido em sequência: textos próprios distintos por lote (cada um vira uma compilação a mais no pod)
 MAX_TEXTOS_FOTO = 100
+VIDEOS_POR_PAGINA = 100  # vídeos de um pedido grande por resposta (a página pede mais)
+PREVIA_REVISAO = 60  # fotos de um pedido grande que o revisor vê de cara (mais as marcadas pela análise)
+MARCADAS_REVISAO = 300  # teto das fotos marcadas (pessoas, rostos, erro) mostradas além da prévia
 DIAS_EXTRATO = (7, 30, 90, 365, 0)  # períodos do extrato (0 = tudo)
 MAX_LINHAS_CSV = 5000
 RESOLUCAO_EXTRATO = {"rapida": "480p", "alta": "720p"}
@@ -882,6 +887,34 @@ def _textos_por_foto(body: Any, receita: dict) -> list[str | None]:
     return textos
 
 
+def _fotos_do_envio(cliente_id: str, fotos_in: list, textos: list[str | None], usados: set[str]) -> list[dict]:
+    """Fotos de um envio, conferidas (tipo e tamanho) e com nome único no pedido (`usados`: os nomes que o
+    pedido já tem; é atualizado). A chave no armazenamento é a pasta do pedido ({lote} trocado no banco)."""
+    fotos = []
+    for f, texto in zip(fotos_in, textos, strict=True):
+        if f.tipo not in TIPOS:
+            raise HTTPException(422, f"{f.nome}: use JPG, PNG ou WebP")
+        if f.bytes > MAX_BYTES_FOTO:
+            raise HTTPException(422, f"{f.nome}: acima de {MAX_BYTES_FOTO // 1024**2} MB")
+        base = NOME.sub("-", Path(f.nome).stem).strip("-")[:80] or "foto"
+        nome, n = base, 2
+        while nome in usados:
+            nome, n = f"{base}-{n}", n + 1
+        usados.add(nome)
+        arq = f"{nome}.{TIPOS[f.tipo]}"
+        fotos.append(
+            {
+                "nome": nome,
+                "tipo": f.tipo,
+                "bytes": f.bytes,
+                "chave": chave_entrada(cliente_id, "{lote}", arq),
+                "original": f.nome,
+                "prompt": texto,
+            }
+        )
+    return fotos
+
+
 def duracoes(plano: str) -> list[int]:
     """Durações aceitas: 3 s só no teste gratuito; nos outros planos, de 4 a 7 s."""
     if plano == "teste":
@@ -938,6 +971,12 @@ class SuporteIn(BaseModel):
     mensagem: str = Field(min_length=10, max_length=2000)
     email: str | None = Field(None, max_length=200)
     turnstile: str | None = Field(None, max_length=2048)
+
+
+class FotosIn(BaseModel):
+    """Mais fotos num pedido grande, em partes (12/10/2026)."""
+
+    fotos: list[FotoIn] = Field(min_length=1, max_length=MAX_FOTOS_LOTE)
 
 
 class LoteIn(BaseModel):
@@ -1926,7 +1965,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "ampliacao_aviso": preparo.AMPLIACAO_AVISO,
             "qualidades": list(lote.QUALIDADES),
             "limites": {
-                "fotos": MAX_FOTOS_LOTE,
+                "fotos": None,  # sem limite no pago e no interno; o teste tem o dele (plano.max_fotos)
+                "por_envio": FOTOS_POR_ENVIO,  # a página manda o pedido maior em partes
                 "bytes_foto": MAX_BYTES_FOTO,
                 "tipos": list(TIPOS),
             },
@@ -1973,8 +2013,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             presets.compose("i2v", body.prompt, r["presets"])
         except presets.PresetError as e:
             raise HTTPException(422, str(e)) from e
-        if not 1 <= len(body.fotos) <= MAX_FOTOS_LOTE:
-            raise HTTPException(422, f"de 1 a {MAX_FOTOS_LOTE} fotos por lote")
+        if not 1 <= len(body.fotos) <= FOTOS_POR_ENVIO:
+            raise HTTPException(422, f"de 1 a {FOTOS_POR_ENVIO} fotos por envio; o pedido maior vai em partes")
         textos = _textos_por_foto(body, r)
         if cli["plano"] == "teste":
             pedido_teste = (body.qualidade, body.duracao or TESTE["duracao"], body.variacoes)
@@ -1994,28 +2034,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             livre = c.banco.saldo_livre(cli["id"])
             if livre < preco_video:  # o saldo paga ao menos o 1º vídeo; o resto espera a recarga
                 raise HTTPException(402, sem_saldo_video(preco_video, livre))
-        fotos, usados = [], set()
-        for f, texto in zip(body.fotos, textos, strict=True):
-            if f.tipo not in TIPOS:
-                raise HTTPException(422, f"{f.nome}: use JPG, PNG ou WebP")
-            if f.bytes > MAX_BYTES_FOTO:
-                raise HTTPException(422, f"{f.nome}: acima de {MAX_BYTES_FOTO // 1024**2} MB")
-            base = NOME.sub("-", Path(f.nome).stem).strip("-")[:80] or "foto"
-            nome, n = base, 2
-            while nome in usados:
-                nome, n = f"{base}-{n}", n + 1
-            usados.add(nome)
-            arq = f"{nome}.{TIPOS[f.tipo]}"
-            fotos.append(
-                {
-                    "nome": nome,
-                    "tipo": f.tipo,
-                    "bytes": f.bytes,
-                    "chave": chave_entrada(cli["id"], "{lote}", arq),
-                    "original": f.nome,
-                    "prompt": texto,
-                }
-            )
+        fotos = _fotos_do_envio(cli["id"], body.fotos, textos, set())
         pedido = body.model_dump(exclude={"fotos", "declarante", "navegador"})
         if any(textos):  # pedido em sequência: os textos ficam nas fotos; aqui, só quantos são
             pedido["textos_por_foto"] = len({t for t in textos if t})
@@ -2036,22 +2055,59 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             cli["id"], pedido, fotos, origem=origem, autorizacao=autorizacao, preco_video=preco_video
         )
         c.banco.registrar_acesso(cli["id"], "pedido", origem, {"lote": lid, "fotos": len(fotos)})
-        envios = []
-        for f in c.banco.fotos(lid):
-            original = next(x["original"] for x in fotos if x["nome"] == f["nome"])
-            envios.append(
-                {
-                    "original": original,
-                    # a URL só aceita exatamente os bytes declarados (o R2 recusa arquivo maior ou menor)
-                    "url": c.armazenamento.url(
-                        "PUT", f["chave"], URL_ENVIO_S, content_type=f["tipo"], content_length=f["bytes"]
-                    ),
-                    "tipo": f["tipo"],
-                }
-            )
+        envios = _envios(c, fotos, c.banco.fotos(lid))
         # custo: a estimativa do pedido inteiro; cada vídeo é cobrado só quando sai certo (ADR 0012)
         custo = len(fotos) * body.variacoes * preco_video if preco_video else 0
         return {"lote": lid, "envios": envios, "expira_s": URL_ENVIO_S, "custo": custo, "preco_video": preco_video}
+
+    def _envios(c: Config, fotos: list[dict], gravadas: list[dict]) -> list[dict]:
+        """URL de envio de cada foto: só aceita exatamente os bytes declarados (o R2 recusa outro tamanho)."""
+        originais = {x["nome"]: x["original"] for x in fotos}
+        return [
+            {
+                "original": originais[f["nome"]],
+                "url": c.armazenamento.url(
+                    "PUT", f["chave"], URL_ENVIO_S, content_type=f["tipo"], content_length=f["bytes"]
+                ),
+                "tipo": f["tipo"],
+            }
+            for f in gravadas
+            if f["nome"] in originais
+        ]
+
+    @app.post("/api/lotes/{lote_id}/fotos")
+    def mais_fotos(lote_id: str, body: FotosIn, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """Pedido grande em partes (sem limite de fotos no pago e no interno, 12/10/2026): mais fotos num
+        pedido que ainda espera o envio, com as mesmas conferências da criação (tipo, tamanho, textos)."""
+        _exigir_aceite(cli)
+        if cli["plano"] == "teste":
+            raise HTTPException(429, f"o teste gratuito vale para até {TESTE['fotos']} fotos, num pedido só")
+        lt = c.banco.lote(lote_id, cli["id"])
+        if lt is None:
+            raise HTTPException(404, "lote não encontrado")
+        if lt["status"] != "aguardando_envio":
+            raise HTTPException(409, "este pedido já foi enviado; as fotos novas vão num pedido novo")
+        if len(body.fotos) > FOTOS_POR_ENVIO:
+            raise HTTPException(422, f"de 1 a {FOTOS_POR_ENVIO} fotos por envio")
+        pedido = json.loads(lt["pedido"])
+        receita = lote.load_receitas()["receitas"].get(pedido.get("receita"))
+        if receita is None:
+            raise HTTPException(422, "receita desconhecida")
+        envio = SimpleNamespace(prompt=pedido["prompt"], fotos=body.fotos)
+        textos = _textos_por_foto(envio, receita)
+        existentes = c.banco.fotos(lote_id)
+        distintos = {f["prompt"] for f in existentes if f["prompt"]} | {t for t in textos if t}
+        if len(distintos) > MAX_TEXTOS_FOTO:
+            raise HTTPException(
+                422,
+                f"no máximo {MAX_TEXTOS_FOTO} textos diferentes por pedido (fotos com o mesmo texto contam uma vez)",
+            )
+        fotos = _fotos_do_envio(cli["id"], body.fotos, textos, {f["nome"] for f in existentes})
+        try:
+            novas = c.banco.acrescentar_fotos(lote_id, cli["id"], fotos)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        return {"lote": lote_id, "envios": _envios(c, fotos, novas), "expira_s": URL_ENVIO_S}
 
     @app.post("/api/lotes/{lote_id}/enviado")
     def enviado(lote_id: str, cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -2062,7 +2118,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             origem = {"ip": lt["ip"] or "desconhecido", "dispositivo": lt["dispositivo"], "rede": lt.get("rede")}
             _limites_teste(c, cli, origem, lt["n_fotos"], exceto=lote_id)
         fotos = c.banco.fotos(lote_id)
-        with ThreadPoolExecutor(max_workers=16) as ex:
+        with ThreadPoolExecutor(max_workers=32) as ex:  # pedido grande: milhares de consultas ao R2
             tamanhos = dict(
                 zip(
                     [f["chave"] for f in fotos],
@@ -2088,6 +2144,43 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             return {"lote": lote_id, "status": "aprovado", "videos": r["videos"]}
         return {"lote": lote_id, "status": "aguardando_aprovacao"}
 
+    def _video(c: Config, cliente_id: str, lote_id: str, j: dict) -> dict:
+        """Um vídeo do pedido para a página; pronto (e não excluído), com os links assinados por 24 h."""
+        item = {"id": j["id"], "arquivo": j["arquivo"], "status": j["status"], "aviso": j["aviso"],
+                "texto": j.get("texto"), "excluido": bool(j.get("excluido_em"))}  # fmt: skip
+        if j["status"] == "ok" and not j.get("excluido_em"):
+            chave = chave_saida(cliente_id, lote_id, j["arquivo"])
+            item["url"] = c.armazenamento.url("GET", chave, URL_DOWNLOAD_S)  # abre e toca no navegador
+            item["baixar"] = c.armazenamento.url(  # o mesmo vídeo, salvo como arquivo
+                "GET",
+                chave,
+                URL_DOWNLOAD_S,
+                extra={"response-content-disposition": f'attachment; filename="{j["arquivo"]}"'},
+            )
+        return item
+
+    @app.get("/api/lotes/{lote_id}/videos")
+    def videos_do_lote(lote_id: str, depois: int = 0, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """Vídeos prontos de um pedido grande, de VIDEOS_POR_PAGINA em VIDEOS_POR_PAGINA, na ordem da lista
+        (`depois`: quantos a página já mostra)."""
+        lt = c.banco.lote(lote_id, cli["id"])
+        if lt is None:
+            raise HTTPException(404, "lote não encontrado")
+        if depois < 0:
+            raise HTTPException(422, "depois: a partir de 0")
+        pedido = json.loads(lt["pedido"])
+        com_texto = [lote_id] if pedido.get("textos_por_foto") else []
+        prontos = [
+            j
+            for j in c.banco.jobs_de([lote_id], com_texto=com_texto)[lote_id]
+            if j["status"] == "ok" and not j.get("excluido_em")
+        ]
+        pagina = prontos[depois : depois + VIDEOS_POR_PAGINA]
+        return {
+            "videos": [_video(c, cli["id"], lote_id, j) for j in pagina],
+            "mais": max(0, len(prontos) - depois - len(pagina)),
+        }
+
     def _resumo(
         lt: dict,
         c: Config,
@@ -2099,27 +2192,29 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     ) -> dict:
         if jobs is None:
             jobs = [j for j in c.banco.jobs(lt["id"]) if j["tipo"] == "render"]
-        videos = []
-        for j in jobs:
-            item = {"id": j["id"], "arquivo": j["arquivo"], "status": j["status"], "aviso": j["aviso"],
-                    "texto": j.get("texto"), "excluido": bool(j.get("excluido_em"))}  # fmt: skip
-            if j["status"] == "ok" and not j.get("excluido_em"):
-                chave = chave_saida(cliente_id, lt["id"], j["arquivo"])
-                item["url"] = c.armazenamento.url("GET", chave, URL_DOWNLOAD_S)  # abre e toca no navegador
-                item["baixar"] = c.armazenamento.url(  # o mesmo vídeo, salvo como arquivo
-                    "GET",
-                    chave,
-                    URL_DOWNLOAD_S,
-                    extra={"response-content-disposition": f'attachment; filename="{j["arquivo"]}"'},
-                )
-            videos.append(item)
+        contagem = {
+            "prontos": sum(1 for j in jobs if j["status"] == "ok"),
+            "falhas": sum(1 for j in jobs if j["status"] == "erro"),
+            "excluidos": sum(1 for j in jobs if j.get("excluido_em")),
+        }
+        pendente = any(j["status"] == "pendente" for j in jobs)
+        # pedido grande (12/10/2026): a página recebe os primeiros vídeos prontos e as contagens; os
+        # seguintes vêm de /api/lotes/{lote}/videos, aos poucos (nada de milhares de links a cada 10 s)
+        mais = 0
+        if len(jobs) > VIDEOS_POR_PAGINA:
+            prontos = [j for j in jobs if j["status"] == "ok" and not j.get("excluido_em")]
+            mais = max(0, len(prontos) - VIDEOS_POR_PAGINA)
+            jobs_lista = prontos[:VIDEOS_POR_PAGINA]
+        else:
+            jobs_lista = jobs
+        videos = [_video(c, cliente_id, lt["id"], j) for j in jobs_lista]
         pedido = pedido if pedido is not None else json.loads(lt["pedido"])
         if lt["preco_video"] is not None and cobranca is None:
             cobranca = c.banco.cobranca(lt["id"])
         por_video = lt.get("cobranca") == "video" and bool(lt["preco_video"])
         # cobrança por vídeo (ADR 0012): sem saldo livre para o próximo vídeo, o pedido espera a recarga
         aguardando_saldo = False
-        if por_video and lt["status"] in ("aprovado", "processando") and any(v["status"] == "pendente" for v in videos):
+        if por_video and lt["status"] in ("aprovado", "processando") and pendente:
             livre = c.banco.saldo_livre(cliente_id) if livre is None else livre
             aguardando_saldo = livre < int(lt["preco_video"])
         return {
@@ -2130,9 +2225,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "motivo": lt["motivo"],
             "pedido": pedido,
             "modelo": modelos.nome(pedido.get("modelo")),
-            "prontos": sum(1 for v in videos if v["status"] == "ok"),
-            "total": len(videos),
+            "prontos": contagem["prontos"],
+            "total": len(jobs),
+            "falhas": contagem["falhas"],
+            "excluidos": contagem["excluidos"],
             "videos": videos,
+            "videos_mais": mais,  # vídeos prontos além dos listados (pedido grande)
             "previsao": {"fase": "saldo"} if aguardando_saldo else _previsao(c, lt, jobs),
             # pré-pago: quanto o pedido custou e quanto já voltou para o saldo; no modo por vídeo, o que já
             # foi cobrado dos vídeos entregues, o preço de cada um e se espera a recarga
@@ -2929,11 +3027,44 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                             "texto": f["prompt"],
                             "filtro_c1": filtros.avaliar(f["prompt"]).reason if f["prompt"] else None,
                         }
-                        for f in fotos
+                        for f in _amostra_revisao(fotos)
                     ],
+                    **_contagem_revisao(fotos),
                 }
             )
         return out
+
+    def _amostra_revisao(fotos: list[dict]) -> list[dict]:
+        """Pedido grande (12/10/2026): o revisor vê as primeiras fotos e todas as que a análise marcou
+        (pessoas, rostos ou erro), até um teto; as contagens do pedido inteiro vêm em _contagem_revisao."""
+        if len(fotos) <= PREVIA_REVISAO:
+            return fotos
+        primeiras = fotos[:PREVIA_REVISAO]
+        marcadas = [f for f in fotos[PREVIA_REVISAO:] if _marcada(f)][:MARCADAS_REVISAO]
+        return primeiras + marcadas
+
+    def _marcada(f: dict) -> bool:
+        a = json.loads(f["analise"]) if f["analise"] else None
+        return bool(a) and bool(a.get("erro") or a.get("pessoas") or a.get("rostos"))
+
+    def _contagem_revisao(fotos: list[dict]) -> dict:
+        """Totais do pedido inteiro para o revisor (a lista pode ser só uma amostra) e cada texto próprio
+        distinto, com o filtro de conteúdo, uma vez só."""
+        textos: dict[str, int] = {}
+        for f in fotos:
+            if f["prompt"]:
+                textos[f["prompt"]] = textos.get(f["prompt"], 0) + 1
+        analises = [json.loads(f["analise"]) if f["analise"] else None for f in fotos]
+        return {
+            "fotos_total": len(fotos),
+            "fotos_amostra": len(fotos) > PREVIA_REVISAO,
+            "fotos_com_pessoas": sum(
+                1 for a in analises if a and not a.get("erro") and (a.get("pessoas") or a.get("rostos"))
+            ),
+            "fotos_analisando": sum(1 for a in analises if a is None),
+            "fotos_com_texto": sum(textos.values()),
+            "textos": [{"texto": t, "fotos": n, "filtro_c1": filtros.avaliar(t).reason} for t, n in textos.items()],
+        }
 
     @rotas.post("/api/lotes/{lote_id}/aprovar")
     def aprovar(lote_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):

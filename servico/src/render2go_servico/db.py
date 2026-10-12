@@ -2272,6 +2272,45 @@ class Banco:
             )
         return lid
 
+    def acrescentar_fotos(self, lote_id: str, cliente_id: str, fotos: list[dict]) -> list[dict]:
+        """Pedido grande em partes (sem limite de fotos no pago e no interno, 12/10/2026): mais fotos num
+        pedido que ainda espera o envio. `fotos`: como em `criar_lote` (nomes já únicos no pedido). A
+        autorização, se houver, passa a listar também estas fotos. Devolve as fotos novas."""
+        with self.tx() as c:
+            lt = c.one("SELECT * FROM lotes WHERE id = ? AND cliente_id = ?", (lote_id, cliente_id))
+            if lt is None:
+                raise BancoError("lote não encontrado")
+            if lt["status"] != "aguardando_envio":
+                raise BancoError("lote não está aguardando envio")
+            ids = []
+            for f in fotos:
+                fid = novo_id("foto")
+                ids.append(fid)
+                c.run(
+                    "INSERT INTO fotos (id, lote_id, nome, tipo, bytes, chave, prompt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (fid, lote_id, f["nome"], f["tipo"], f["bytes"], f["chave"].replace("{lote}", lote_id),
+                     f.get("prompt") or None),
+                )  # fmt: skip
+            pedido = json.loads(lt["pedido"])
+            textos = c.one(
+                "SELECT COUNT(DISTINCT prompt) AS n FROM fotos WHERE lote_id = ? AND prompt IS NOT NULL", (lote_id,)
+            )["n"]
+            if textos:
+                pedido["textos_por_foto"] = int(textos)
+            c.run(
+                "UPDATE lotes SET n_fotos = n_fotos + ?, pedido = ? WHERE id = ?",
+                (len(fotos), json.dumps(pedido, ensure_ascii=False), lote_id),
+            )
+            aut = c.one("SELECT id, fotos FROM consentimentos WHERE lote_id = ?", (lote_id,))
+            if aut:  # o registro de auditoria da autorização lista todas as fotos do pedido
+                lista = json.loads(aut["fotos"] or "[]") + [{"nome": f["nome"], "bytes": f["bytes"]} for f in fotos]
+                c.run(
+                    "UPDATE consentimentos SET fotos = ? WHERE id = ?",
+                    (json.dumps(lista, ensure_ascii=False), aut["id"]),
+                )
+            self.evento(c, lote_id, "fotos_acrescentadas", {"fotos": len(fotos)})
+            return c.all(f"SELECT * FROM fotos WHERE id IN ({', '.join('?' * len(ids))}) ORDER BY nome", tuple(ids))
+
     # -- suporte --------------------------------------------------------------------------
 
     def registrar_suporte(self, cliente_id: str, origem: dict, email: str | None, assunto: str, mensagem: str) -> str:

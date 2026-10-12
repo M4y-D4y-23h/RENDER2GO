@@ -56,12 +56,20 @@ type Lote = {
   por_video?: boolean;
   preco_video?: number | null;
   aguardando_saldo?: boolean;
+  // pedido grande: contagens do pedido inteiro e quantos vídeos prontos não vieram na lista
+  falhas?: number;
+  excluidos?: number;
+  videos_mais?: number;
 };
 type Envio = { original: string; url: string; tipo: string };
 
 const EM_ANDAMENTO = new Set(["aguardando_aprovacao", "aprovado", "processando"]);
 const ENVIOS_SIMULTANEOS = 4;
 const MAX_PREVIA = 60; // miniaturas desenhadas; acima disso, um quadro "+N"
+const MAX_MEDIDAS = 500; // fotos medidas para o aviso de foto pequena (pedido grande: só as primeiras)
+// pedido grande: cada parte (até `por_envio` fotos e este tanto de bytes) é criada logo antes de subir, e os links de
+// envio (válidos por 1 h) não vencem enquanto as partes anteriores sobem
+const BYTES_POR_PARTE = 512 * 1024 ** 2;
 const NICHOS: Record<string, string> = { geral: "Geral", produto: "Produtos", imovel: "Imóveis", comida: "Comida e bebida", pessoa: "Pessoas" };
 const RESOLUCAO: Record<string, string> = { rapida: "480p", alta: "720p" };
 const MOVIMENTOS: Record<string, string> = { recarga: "Recarga", ajuste: "Ajuste", pedido: "Pedido", estorno: "Devolvido", video: "Vídeo entregue" };
@@ -127,8 +135,9 @@ async function enviarArquivos(
           break;
         } catch {
           porArquivo.set(e.original, 0);
-          if (tentativa >= 3) throw new Error(`não foi possível enviar ${e.original}; confira a internet e tente de novo`);
-          await new Promise((ok) => setTimeout(ok, 1500 * tentativa));
+          // 5 tentativas (1,5 s, 3 s, 6 s e 12 s de espera): um pedido grande sobe por horas e não para numa queda curta
+          if (tentativa >= 5) throw new Error(`não foi possível enviar ${e.original}; confira a internet e tente de novo`);
+          await new Promise((ok) => setTimeout(ok, 1500 * 2 ** (tentativa - 1)));
         }
       }
       porArquivo.set(e.original, arq.size);
@@ -138,6 +147,24 @@ async function enviarArquivos(
     }
   };
   await Promise.all(Array.from({ length: Math.min(ENVIOS_SIMULTANEOS, envios.length) }, trabalhar));
+}
+
+/** Pedido grande (12/10/2026): partes de até `porEnvio` fotos e BYTES_POR_PARTE (a foto maior que isso vai sozinha). */
+function dividirEmPartes<T extends { bytes: number }>(fotos: T[], porEnvio: number): T[][] {
+  const partes: T[][] = [];
+  let atual: T[] = [];
+  let soma = 0;
+  for (const f of fotos) {
+    if (atual.length && (atual.length >= porEnvio || soma + f.bytes > BYTES_POR_PARTE)) {
+      partes.push(atual);
+      atual = [];
+      soma = 0;
+    }
+    atual.push(f);
+    soma += f.bytes;
+  }
+  if (atual.length) partes.push(atual);
+  return partes;
 }
 
 // -- miniaturas das fotos escolhidas --------------------------------------------------------------
@@ -216,6 +243,26 @@ function textoPrevisao(p: NonNullable<Previsao>): string {
   return `Gerando seus vídeos · termina em ${minutos(p.fim_s ?? 0)}.`;
 }
 
+// vídeos além dos primeiros de cada pedido grande, já buscados com "Mostrar mais" (lote → vídeos)
+const maisVideos = new Map<string, Video[]>();
+
+function itemVideo(lote: string, v: Video): HTMLElement {
+  const assistir = criar("button", { type: "button", className: "assistir", dados: { foco: `${lote}:assistir:${v.arquivo}` } }, [
+    criar("span", { className: "play" }, [icone("play", "cheio")]),
+    criar("span", { className: "nome", textContent: v.arquivo }),
+  ]);
+  assistir.setAttribute("aria-label", `Assistir ${v.arquivo}`);
+  assistir.addEventListener("click", () => abrirVideo(v, assistir));
+  const itens: HTMLElement[] = [assistir];
+  const baixar = urlSegura(v.baixar);
+  if (baixar) {
+    const a = criar("a", { href: baixar, className: "botao pequeno baixar", rel: "noopener", dados: { foco: `${lote}:baixar:${v.arquivo}` } }, [icone("baixar"), "Baixar"]);
+    a.setAttribute("aria-label", `Baixar ${v.arquivo}`);
+    itens.push(a);
+  }
+  return criar("li", { className: "video" }, itens);
+}
+
 function cartaoLote(l: Lote): HTMLElement {
   const estado = ESTADOS[l.status] ?? l.status;
   const cartao = criar("article", { className: `cartao lote estado-${l.status} surgir`, attrs: { "aria-label": `Pedido de ${plural(l.fotos, "foto", "fotos")}, ${estado}` } }, [
@@ -246,27 +293,43 @@ function cartaoLote(l: Lote): HTMLElement {
   const prontos = l.videos.filter((v) => urlSegura(v.url));
   if (prontos.length) {
     const lista = criar("ul", { className: "videos", attrs: { "aria-label": "Vídeos prontos" } });
-    for (const v of prontos) {
-      const assistir = criar("button", { type: "button", className: "assistir", dados: { foco: `${l.lote}:assistir:${v.arquivo}` } }, [
-        criar("span", { className: "play" }, [icone("play", "cheio")]),
-        criar("span", { className: "nome", textContent: v.arquivo }),
-      ]);
-      assistir.setAttribute("aria-label", `Assistir ${v.arquivo}`);
-      assistir.addEventListener("click", () => abrirVideo(v, assistir));
-      const itens: HTMLElement[] = [assistir];
-      const baixar = urlSegura(v.baixar);
-      if (baixar) {
-        const a = criar("a", { href: baixar, className: "botao pequeno baixar", rel: "noopener", dados: { foco: `${l.lote}:baixar:${v.arquivo}` } }, [icone("baixar"), "Baixar"]);
-        a.setAttribute("aria-label", `Baixar ${v.arquivo}`);
-        itens.push(a);
-      }
-      lista.append(criar("li", { className: "video" }, itens));
+    // pedido grande (12/10/2026): a API manda os primeiros vídeos; "Mostrar mais" busca os seguintes, e os já
+    // buscados continuam no cartão quando a lista se atualiza
+    const naLista = new Set<string>();
+    const mostrar = (v: Video) => {
+      if (naLista.has(v.arquivo)) return; // um vídeo que fica pronto fora da ordem pode mudar de página: sem repetir
+      naLista.add(v.arquivo);
+      lista.append(itemVideo(l.lote, v));
+    };
+    for (const v of [...prontos, ...(maisVideos.get(l.lote) ?? [])]) mostrar(v);
+    cartao.append(lista);
+    const restam = (l.videos_mais ?? 0) - (maisVideos.get(l.lote)?.length ?? 0);
+    if (restam > 0) {
+      const mais = criar("button", { type: "button", className: "botao", dados: { foco: `${l.lote}:mais-videos` } }, [`Mostrar mais vídeos (${restam} ainda)`]);
+      mais.addEventListener("click", async () => {
+        ocupado(mais, true);
+        try {
+          const ja = prontos.length + (maisVideos.get(l.lote)?.length ?? 0);
+          const r = await api<{ videos: Video[]; mais: number }>(`/api/lotes/${l.lote}/videos?depois=${ja}`);
+          maisVideos.set(l.lote, [...(maisVideos.get(l.lote) ?? []), ...r.videos]);
+          for (const v of r.videos) mostrar(v);
+          if (r.mais > 0) {
+            rotular(mais, `Mostrar mais vídeos (${r.mais} ainda)`);
+            ocupado(mais, false);
+          } else mais.remove();
+          anunciar(`${plural(r.videos.length, "vídeo a mais", "vídeos a mais")} na lista.`);
+        } catch (e) {
+          ocupado(mais, false);
+          anunciar(textoErro(e), true);
+        }
+      });
+      cartao.append(mais);
     }
-    cartao.append(lista, criar("p", { className: "fraco", textContent: "Os links valem por 24 h; ao voltar à página, eles são renovados." }));
+    cartao.append(criar("p", { className: "fraco", textContent: "Os links valem por 24 h; ao voltar à página, eles são renovados." }));
   }
-  const falhas = l.videos.filter((v) => v.status === "erro").length;
+  const falhas = l.falhas ?? l.videos.filter((v) => v.status === "erro").length;
   if (falhas) cartao.append(criar("p", { className: "fraco", textContent: `${plural(falhas, "vídeo não saiu", "vídeos não saíram")}.` }));
-  const excluidos = l.videos.filter((v) => v.excluido).length;
+  const excluidos = l.excluidos ?? l.videos.filter((v) => v.excluido).length;
   if (excluidos) cartao.append(criar("p", { className: "fraco", textContent: `${plural(excluidos, "vídeo excluído", "vídeos excluídos")} por você.` }));
   if (l.por_video && l.preco_video) {
     // ADR 0012: o valor sai do saldo a cada vídeo entregue; o que não sai não é cobrado
@@ -456,7 +519,8 @@ export function criarPedidos(ctx: {
   });
 
   // -- fotos -----------------------------------------------------------------------------------
-  const maximo = () => receitas?.plano?.max_fotos ?? receitas?.limites.fotos ?? 0;
+  // sem limite no pago e no interno (12/10/2026): a API manda fotos = null; o teste tem o teto dele
+  const maximo = () => receitas?.plano?.max_fotos ?? receitas?.limites.fotos ?? Number.POSITIVE_INFINITY;
 
   const atualizarContagem = (ignorados = 0, excedentes = 0) => {
     const teste = receitas?.plano?.nome === "teste";
@@ -533,10 +597,19 @@ export function criarPedidos(ctx: {
     if (medindo) return;
     medindo = true;
     try {
-      for (let chave = [...arquivos.keys()].find((k) => !dimensoes.has(k)); chave; chave = [...arquivos.keys()].find((k) => !dimensoes.has(k))) {
-        const arq = arquivos.get(chave);
-        dimensoes.set(chave, arq ? await medirFoto(arq) : null);
-        atualizarAvisoFotos();
+      // uma passada pela lista (antes, cada foto relia a lista inteira: com 10 mil fotos, 100 milhões de passos);
+      // o aviso de foto pequena olha as primeiras MAX_MEDIDAS fotos, sem decodificar milhares de imagens
+      let novas = true;
+      while (novas) {
+        novas = false;
+        for (const chave of [...arquivos.keys()].slice(0, MAX_MEDIDAS)) {
+          if (dimensoes.has(chave)) continue;
+          const arq = arquivos.get(chave);
+          if (!arq) continue;
+          dimensoes.set(chave, await medirFoto(arq));
+          atualizarAvisoFotos();
+          novas = true;
+        }
       }
     } finally {
       medindo = false;
@@ -920,11 +993,17 @@ export function criarPedidos(ctx: {
       consentimento: consentimento.checked,
       modelo: selModelo.value,
       navegador: sinaisNavegador(consentimento.checked ? marcadoEm : null),
-      fotos: nomes.map((n) => {
-        const texto = seq.textoDe(n);
-        return { nome: n, tipo: arquivos.get(n)!.type, bytes: arquivos.get(n)!.size, ...(texto ? { prompt: texto } : {}) };
-      }),
+      fotos: [] as { nome: string; tipo: string; bytes: number; prompt?: string }[],
     };
+    // pedido grande (12/10/2026): sem limite de fotos no pago e no interno; a página cria o pedido com a 1ª parte e
+    // acrescenta cada parte seguinte só quando a anterior terminou de subir (o teste gratuito vai numa parte só)
+    const todas = nomes.map((n) => {
+      const texto = seq.textoDe(n);
+      return { nome: n, tipo: arquivos.get(n)!.type, bytes: arquivos.get(n)!.size, ...(texto ? { prompt: texto } : {}) };
+    });
+    const porEnvio = Math.max(1, receitas?.limites.por_envio ?? 1000);
+    const partes = receitas?.plano?.nome === "teste" ? [todas] : dividirEmPartes(todas, porEnvio);
+    corpo.fotos = partes[0];
     enviando = true;
     ocupado(enviar, true);
     campos.disabled = true;
@@ -938,30 +1017,42 @@ export function criarPedidos(ctx: {
       area.hidden = false;
       barra.max = 1;
       barra.value = 0;
-      el("progresso-texto").textContent = `Enviando ${plural(r.envios.length, "foto", "fotos")}…`;
-      anunciar(`Enviando ${plural(r.envios.length, "foto", "fotos")}. Não feche a página até terminar.`);
+      const total = todas.reduce((s, f) => s + f.bytes, 0);
+      el("progresso-texto").textContent = `Enviando ${plural(todas.length, "foto", "fotos")}…`;
+      anunciar(`Enviando ${plural(todas.length, "foto", "fotos")}. Não feche a página até terminar.`);
       let ultimoAnuncio = 0;
+      let bytesAntes = 0; // das partes que já subiram
+      let prontosAntes = 0;
       for (const li of miniaturas.values()) li.classList.add("enviando");
-      await enviarArquivos(
-        r.envios,
-        arquivos,
-        (enviados, total, prontos) => {
-          barra.max = total || 1;
-          barra.value = enviados;
-          const pct = total ? Math.floor((enviados / total) * 100) : 0;
-          el("progresso-pct").textContent = `${pct}% · ${bytes(enviados)} de ${bytes(total)}`;
-          el("progresso-texto").textContent = `Enviando: ${prontos} de ${plural(r.envios.length, "foto", "fotos")}`;
-          if (pct - ultimoAnuncio >= 25) {
-            ultimoAnuncio = pct - (pct % 25);
-            anunciar(`${ultimoAnuncio}% enviado.`);
-          }
-        },
-        (chave) => {
-          const li = miniaturas.get(chave);
-          li?.classList.remove("enviando");
-          li?.classList.add("enviada");
-        },
-      );
+      for (const [i, parte] of partes.entries()) {
+        const envios =
+          i === 0
+            ? r.envios
+            : (await api<{ envios: Envio[] }>(`/api/lotes/${r.lote}/fotos`, { method: "POST", body: JSON.stringify({ fotos: parte }) })).envios;
+        await enviarArquivos(
+          envios,
+          arquivos,
+          (enviados, _totalParte, prontos) => {
+            const feito = bytesAntes + enviados;
+            barra.max = total || 1;
+            barra.value = feito;
+            const pct = total ? Math.floor((feito / total) * 100) : 0;
+            el("progresso-pct").textContent = `${pct}% · ${bytes(feito)} de ${bytes(total)}`;
+            el("progresso-texto").textContent = `Enviando: ${prontosAntes + prontos} de ${plural(todas.length, "foto", "fotos")}`;
+            if (pct - ultimoAnuncio >= 25) {
+              ultimoAnuncio = pct - (pct % 25);
+              anunciar(`${ultimoAnuncio}% enviado.`);
+            }
+          },
+          (chave) => {
+            const li = miniaturas.get(chave);
+            li?.classList.remove("enviando");
+            li?.classList.add("enviada");
+          },
+        );
+        bytesAntes += parte.reduce((s, f) => s + f.bytes, 0);
+        prontosAntes += parte.length;
+      }
       el("progresso-texto").textContent = "Conferindo o envio…";
       await api(`/api/lotes/${r.lote}/enviado`, { method: "POST" });
       window.removeEventListener("beforeunload", avisarSaida);

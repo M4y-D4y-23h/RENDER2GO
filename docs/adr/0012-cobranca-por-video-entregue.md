@@ -10,7 +10,7 @@
 3. **Sem saldo, o pedido espera.** O cliente vê "Aguardando saldo" no pedido; ao recarregar, ele continua sozinho de onde parou. O orquestrador só conta como trabalho os vídeos que o saldo livre paga (`Banco.trabalho`): pedido parado por saldo não liga nem segura pod.
 4. **Pedidos da mesma conta em ordem.** Os vídeos de um pedido só começam quando o pedido anterior da mesma conta termina (`PEDIDO_ANTERIOR_ABERTO`); a tradução do texto do pedido seguinte pode adiantar, porque é rápida e não gera vídeo. Outras contas não esperam: a vez continua intercalada entre clientes.
 5. **Envio.** Para criar o pedido, o saldo livre precisa pagar ao menos o 1º vídeo; a página mostra a estimativa do pedido inteiro e quantos vídeos o saldo atual paga.
-6. **Sem limite de fotos** nos planos pago e interno: a cota diária fica só no teste gratuito (que tem o teto de 5 fotos), e o pedido grande vai em partes (item 7 da seção "Consequências").
+6. **Sem limite de fotos** nos planos pago e interno: a cota diária fica só no teste gratuito (que tem o teto de 5 fotos), e o pedido grande vai em partes ("Pedido muito grande", em Consequências).
 7. **Pedidos antigos.** Os pedidos criados antes desta mudança (`lotes.cobranca` vazio) seguem a regra anterior até o fim: cobrados no envio, com estorno.
 
 ## Consequências
@@ -19,8 +19,8 @@
 - **Para o dono:** o gasto aparece no extrato e no painel a cada vídeo entregue ("Cobrado hoje" sobe aos poucos). Uma rodada do extrato soma os vídeos entregues daquele pedido.
 - **Pods:** o saldo do cliente decide quantos vídeos entram na conta do orquestrador. Com milhares de vídeos e saldo para todos, os pods sobem até `RENDER2GO_MAX_PODS`.
 - **Risco aceito:** um ajuste manual negativo no painel, com vídeos em andamento, pode deixar o saldo abaixo de zero na entrega desses vídeos (a reserva já os contava). O vídeo é entregue e cobrado; o pedido espera a recarga.
-- **Pedido muito grande** (milhares de fotos): criado em partes, sem limite total, e as listas da página e do painel não trazem milhares de endereços de uma vez (ver o CHANGELOG da mesma data).
+- **Pedido muito grande** (milhares de fotos): criado em partes de até 1.000 fotos (`POST /api/lotes` e `POST /api/lotes/{lote}/fotos`), sem limite total; a página cria cada parte só quando a anterior subiu (os links de envio valem 1 h). A lista de pedidos traz os 100 primeiros vídeos e as contagens, e o resto vem de 100 em 100; o revisor vê as 60 primeiras fotos e as marcadas pela análise, com os totais do pedido inteiro (CHANGELOG, 12/10/2026 (2)).
 
 ## Testes
 
-`servico/tests/test_db.py`: cobrança só do entregue e uma vez só; pedido parado por saldo sem segurar pod e retomado com a recarga; pedidos da mesma conta em ordem com pods livres; 10 pods com saldo para 3 (falha no Postgres sem a trava do cliente). `servico/tests/test_api.py`: o fluxo inteiro pela API (preço por vídeo, nada no envio, recusa sem custo, vídeo entregue cobrado, pausa e volta com a recarga). Os testes do modo antigo continuam, com `cobranca="pedido"`.
+`servico/tests/test_db.py`: cobrança só do entregue e uma vez só; pedido parado por saldo sem segurar pod e retomado com a recarga; pedidos da mesma conta em ordem com pods livres; 10 pods com saldo para 3 (falha no Postgres sem a trava do cliente). `servico/tests/test_api.py`: o fluxo inteiro pela API (preço por vídeo, nada no envio, recusa sem custo, vídeo entregue cobrado, pausa e volta com a recarga). Os testes do modo antigo continuam, com `cobranca="pedido"`. `servico/tests/test_pedido_grande.py` e, no navegador, `test_a_big_order_goes_up_in_parts_one_after_another`: o pedido sem limite, em partes.

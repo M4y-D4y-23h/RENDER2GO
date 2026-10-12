@@ -21,6 +21,13 @@ type Pendente = {
   filtro_c1: string;
   analise_ligada?: boolean;
   fotos: FotoPendente[];
+  // pedido grande (12/10/2026): a lista pode ser uma amostra; os totais são do pedido inteiro
+  fotos_total?: number;
+  fotos_amostra?: boolean;
+  fotos_com_pessoas?: number;
+  fotos_analisando?: number;
+  fotos_com_texto?: number;
+  textos?: { texto: string; fotos: number; filtro_c1: string | null }[];
 };
 type ItemHistorico = {
   lote: string;
@@ -75,8 +82,9 @@ function seloAnalise(a: Analise | undefined): HTMLElement {
 // resumo do pedido: pessoas detectadas × autorização marcada pelo cliente (ADR 0004, item 5)
 function resumoPessoas(p: Pendente): HTMLElement | null {
   if (!p.analise_ligada) return null;
-  const com = p.fotos.filter((f) => f.analise && !f.analise.erro && ((f.analise.pessoas ?? 0) > 0 || (f.analise.rostos ?? 0) > 0)).length;
-  const analisando = p.fotos.filter((f) => f.analise == null).length;
+  const com = p.fotos_com_pessoas ?? p.fotos.filter((f) => f.analise && !f.analise.erro && ((f.analise.pessoas ?? 0) > 0 || (f.analise.rostos ?? 0) > 0)).length;
+  const analisando = p.fotos_analisando ?? p.fotos.filter((f) => f.analise == null).length;
+  const total = p.fotos_total ?? p.fotos.length;
   if (!com) {
     const texto = analisando ? `Analisando ${plural(analisando, "foto", "fotos")}…` : "Nenhuma pessoa detectada (a análise pode errar; confira as miniaturas).";
     return criar("p", { className: "fraco", textContent: texto });
@@ -86,8 +94,8 @@ function resumoPessoas(p: Pendente): HTMLElement | null {
   aviso(
     caixa,
     autorizado
-      ? `Pessoas em ${com} de ${plural(p.fotos.length, "foto", "fotos")}. O cliente marcou ter autorização por escrito.`
-      : `Pessoas em ${com} de ${plural(p.fotos.length, "foto", "fotos")} e o cliente NÃO marcou a autorização por escrito. Recuse, ou peça a autorização antes de aprovar.`,
+      ? `Pessoas em ${com} de ${plural(total, "foto", "fotos")}. O cliente marcou ter autorização por escrito.`
+      : `Pessoas em ${com} de ${plural(total, "foto", "fotos")} e o cliente NÃO marcou a autorização por escrito. Recuse, ou peça a autorização antes de aprovar.`,
     autorizado ? "alerta" : "erro",
   );
   return caixa;
@@ -128,6 +136,8 @@ function cartaoPendente(p: Pendente, aoMudar: () => void, imagens: Map<string, H
   const pedido = p.pedido;
   const a = p.autorizacao;
   const comTexto = p.fotos.filter((f) => f.texto);
+  const total = p.fotos_total ?? p.fotos.length;
+  const nComTexto = p.fotos_com_texto ?? comTexto.length;
   const aprovar = criar("button", { type: "button", className: "botao sucesso", dados: { acao: "aprovar", foco: `${p.lote}:aprovar` } }, [icone("ok"), "Aprovar"]);
   const recusar = criar("button", { type: "button", className: "botao perigo", dados: { acao: "recusar", foco: `${p.lote}:recusar` } }, [icone("bloquear"), "Recusar"]);
   const motivo = criar("input", { id: `motivo-${p.lote}`, placeholder: "Motivo da recusa (o cliente vê)", maxLength: 500, dados: { foco: `${p.lote}:motivo` } });
@@ -158,24 +168,43 @@ function cartaoPendente(p: Pendente, aoMudar: () => void, imagens: Map<string, H
     void agir("recusar", recusar);
   });
   motivo.addEventListener("input", () => marcarErro(motivo, false));
-  const textos = comTexto.length
+  const textos = nComTexto
     ? (() => {
         const caixa = criar("div");
-        const distintos = new Set(comTexto.map((f) => f.texto)).size;
+        const distintos = p.textos?.length ?? new Set(comTexto.map((f) => f.texto)).size;
         aviso(
           caixa,
-          `Pedido em sequência: ${plural(comTexto.length, "foto tem texto próprio", "fotos têm texto próprio")} (${plural(distintos, "texto diferente", "textos diferentes")}), embaixo de cada miniatura; ${plural(p.fotos.length - comTexto.length, "foto segue", "fotos seguem")} o texto do pedido.`,
+          `Pedido em sequência: ${plural(nComTexto, "foto tem texto próprio", "fotos têm texto próprio")} (${plural(distintos, "texto diferente", "textos diferentes")}), ${p.fotos_amostra ? "listados abaixo" : "embaixo de cada miniatura"}; ${plural(total - nComTexto, "foto segue", "fotos seguem")} o texto do pedido.`,
           "info",
         );
+        if (p.fotos_amostra && p.textos?.length) {
+          // pedido grande: cada texto próprio uma vez, com quantas fotos o usam e o filtro de conteúdo
+          caixa.append(
+            criar(
+              "ul",
+              { className: "textos-revisao" },
+              p.textos.map((t) =>
+                criar("li", {}, [
+                  criar("q", { textContent: t.texto }),
+                  ` · ${plural(t.fotos, "foto", "fotos")}`,
+                  t.filtro_c1 && t.filtro_c1 !== FILTRO_OK ? criar("span", { className: "selo erro", textContent: `texto barrado: ${t.filtro_c1}` }) : null,
+                ]),
+              ),
+            ),
+          );
+        }
         return caixa;
       })()
+    : null;
+  const amostra = p.fotos_amostra
+    ? criar("p", { className: "fraco", textContent: `Mostrando ${plural(p.fotos.length, "foto", "fotos")} de ${total}: as primeiras e as que a análise marcou (pessoas, rostos ou erro).` })
     : null;
   return criar("article", { className: "cartao pendente surgir", attrs: { "aria-label": `Pedido de ${p.cliente_nome ?? p.cliente}` } }, [
     criar("div", { className: "lote-cab" }, [
       criar("span", { className: "selo estado-aguardando_aprovacao" }, [icone("relogio"), "Em análise"]),
       criar("strong", { textContent: p.cliente_nome ?? p.cliente }),
       p.plano ? criar("span", { className: "selo", textContent: p.plano }) : null,
-      criar("span", { className: "fraco" }, [plural(p.fotos.length, "foto", "fotos"), " · ", tempo(p.criado)]),
+      criar("span", { className: "fraco" }, [plural(total, "foto", "fotos"), " · ", tempo(p.criado)]),
     ]),
     criar("p", { className: "pedido", textContent: pedido.prompt }),
     meta([
@@ -195,6 +224,7 @@ function cartaoPendente(p: Pendente, aoMudar: () => void, imagens: Map<string, H
     }),
     resumoPessoas(p),
     textos,
+    amostra,
     fotos,
     criar("div", { className: "decisao" }, [aprovar, motivo, recusar]),
     msg,

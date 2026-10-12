@@ -16,6 +16,7 @@ pw = pytest.importorskip("playwright.sync_api")
 from test_api import PAINEL, TOTP  # noqa: E402
 from test_fila import ADMIN, _png, ambiente, entrar_painel  # noqa: E402,F401 (mesma API local e armazenamento)
 
+from render2go_servico import api as api_mod  # noqa: E402
 from render2go_servico import contas, pagamentos  # noqa: E402
 
 CHROMIUM = next(iter(sorted(Path("/opt/pw-browsers").glob("chromium-*/chrome-linux/chrome"))), None)
@@ -845,6 +846,70 @@ def test_prepaid_balance_price_and_top_up_by_the_owner(ambiente, navegador, tmp_
     ctx.close()
     adm_ctx.close()
     assert [e for e in erros if "status of 422" not in e] == []  # só a recusa do Pix repetido
+
+
+def test_a_big_order_goes_up_in_parts_one_after_another(ambiente, navegador, tmp_path, monkeypatch):  # noqa: F811
+    """Pedido grande (12/10/2026): a página cria o pedido com a 1ª parte e só pede os links da parte seguinte
+    depois que a anterior subiu (os links de envio valem 1 h); no fim, um pedido só, com todas as fotos."""
+    monkeypatch.setattr(api_mod, "FOTOS_POR_ENVIO", 2)
+    erros: list[str] = []
+    tok = _cliente(ambiente)
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, tok)
+    pg = _pagina(ctx, erros)
+    ordem: list[str] = []
+
+    def anotar(r):
+        caminho = r.url.split("?")[0]
+        if r.method == "PUT":
+            ordem.append("foto")
+        elif r.method == "POST" and caminho.endswith("/api/lotes"):
+            ordem.append("criar")
+        elif r.method == "POST" and re.search(r"/api/lotes/[^/]+/(fotos|enviado)$", caminho):
+            ordem.append(caminho.rsplit("/", 1)[1])
+
+    pg.on("request", anotar)
+    pg.goto(ambiente.url)
+    pg.wait_for_selector("#receita option", state="attached")
+    _escolher_finalidade(pg)
+    fotos = [_salvar(tmp_path, f"p{i}.png", _png((30 * i, 90, 160), "circulo")) for i in range(1, 6)]
+    pg.set_input_files("#fotos", [str(f) for f in fotos])
+    assert pg.locator("#enviar").inner_text() == "Enviar pedido com 5 fotos"  # sem teto no plano pago
+    pg.fill("#prompt", "a câmera se aproxima devagar do produto")
+    pg.click("#enviar")
+    pg.wait_for_selector("#msg.ok", timeout=15000)
+    assert ordem == ["criar", "foto", "foto", "fotos", "foto", "foto", "fotos", "foto", "enviado"]
+    (lote,) = ambiente.banco.lotes()
+    assert lote["n_fotos"] == 5 and lote["status"] == "aguardando_aprovacao"
+    assert sum(k.endswith(".png") for k in ambiente.objetos) == 5
+    ctx.close()
+    assert erros == [], erros
+
+
+def test_a_big_order_shows_the_first_videos_and_loads_the_rest_on_demand(ambiente, navegador, monkeypatch):  # noqa: F811
+    """Pedido grande: a lista traz os primeiros vídeos; "Mostrar mais vídeos" busca os seguintes, sem repetir."""
+    monkeypatch.setattr(api_mod, "VIDEOS_POR_PAGINA", 2)
+    erros: list[str] = []
+    tok = _cliente(ambiente)
+    _lote(ambiente, tok, {f"v{i}.png": _png((20 * i, 90, 160), "circulo") for i in range(1, 6)}, pronto=True)
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, tok)
+    pg = _pagina(ctx, erros)
+    pg.goto(ambiente.url)
+    videos = pg.locator("#lotes .lote .videos .video")
+    pw.expect(videos).to_have_count(2)
+    mais = pg.locator("#lotes .lote button:has-text('Mostrar mais vídeos')")
+    pw.expect(mais).to_have_text("Mostrar mais vídeos (3 ainda)")
+    mais.click()
+    pw.expect(mais).to_have_text("Mostrar mais vídeos (1 ainda)")
+    pw.expect(videos).to_have_count(4)
+    mais.click()
+    pw.expect(videos).to_have_count(5)
+    pw.expect(mais).to_have_count(0)
+    nomes = pg.locator("#lotes .lote .videos .video .nome").all_inner_texts()
+    assert len(set(nomes)) == 5 and nomes == sorted(nomes)
+    ctx.close()
+    assert erros == [], erros
 
 
 class _MercadoPago:
