@@ -83,7 +83,7 @@ Conferido de fora em https://app.render2go.com, em 09/10/2026, e no código.
 
 **Como:** `servico/tests/teste_invasao.py` sobe a API de verdade num Postgres de teste, atrás do `Caddyfile` de produção (com TLS local), e ataca de fora, como um invasor faria. Cada grupo de ataques sai de um IP próprio (127.0.0.x), como redes diferentes. Ele recusa rodar num banco cujo nome não tenha "teste", "invasao" ou "pentest", porque apaga o banco a cada rodada.
 
-**Resultado em 09/10/2026: 73 de 73 verificações OK**, depois das correções abaixo. **Em 11/10/2026: 88 de 88**, com 15 verificações novas (acessos do painel por pessoa e configurações da conta, as duas últimas linhas da tabela), sem achados.
+**Resultado em 09/10/2026: 73 de 73 verificações OK**, depois das correções abaixo. **Em 11/10/2026: 88 de 88**, com 15 verificações novas (acessos do painel por pessoa e configurações da conta, as duas últimas linhas da tabela), sem achados. **De novo em 12/10/2026**, com o filtro de imagem, a hibernação, o teste gratuito sem teto por IP e as fotos conferidas antes de abrir: 88 de 88, sem achados.
 
 | Grupo | O que foi tentado | Resultado |
 |---|---|---|
@@ -197,6 +197,7 @@ O dono perguntou sobre erros com muitos pedidos simultâneos. O que protege, com
 - **Fila dos pods:** cada vídeo é reivindicado com `FOR UPDATE SKIP LOCKED` e prazo; 6 workers disputando 20 trabalhos pegam cada um uma vez só (teste existente). Vídeo de pod que cai volta para a fila quando o prazo vence, até 3 tentativas.
 - **Rede:** o download da foto no pod tenta de novo nas falhas de rede; a falha da foto em si (tipo, tamanho) não se repete. O envio do navegador para o R2 é direto, sem passar pelo servidor.
 - **Capacidade:** seções 4.1 e 4.4 (~400–800 pedidos/s na API com 2–3 processos, ~5.000 pessoas acompanhando pedidos ao mesmo tempo). Os limites de verdade são a GPU (`RENDER2GO_MAX_PODS`, o saldo e o estoque do RunPod) e a revisão humana; com mais pedidos do que pods, eles esperam na fila, intercalados por cliente, e a página mostra a previsão.
+- **Medido de novo em 12/10/2026**, com o código desta entrega, na mesma máquina e com a mesma ferramenta da seção 4.4 (2 processos, 3 conexões): `GET /api/lotes` 381 e 387 pedidos/s (95% abaixo de 12,7 ms), misto 431 e 439, página inicial ~2.056, **nenhum erro**. A 1ª rodada de `GET /api/lotes` saiu pela metade (180/s, 95% abaixo de 22,5 ms), o mesmo fenômeno da seção 4.4; as outras duas voltaram à faixa. A capacidade não mudou.
 - **Não testado ainda:** um teste de ponta a ponta com centenas de clientes enviando fotos reais ao R2 e vários pods ao mesmo tempo (custa GPU; fica para antes da divulgação grande, seção 7).
 
 ## 5. GPUs no RunPod: vários modelos e 30 pods ou mais
