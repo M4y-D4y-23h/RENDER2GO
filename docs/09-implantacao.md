@@ -6,9 +6,9 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há. Para pôr o servidor em dia, comece pela entrada mais recente: ela diz de que versão parte e quais anteriores já traz junto.
 
-### 12/10/2026 (3): a GPU não espera e aquecimento (na branch, ainda não na `main`)
+### 12/10/2026 (3): a GPU não espera e aquecimento
 
-**Só depois de entrar na `main`** (decisão do dono). Parte da versão da entrada abaixo e muda a API (duas rotas de worker, `iniciar` e `devolver`) e o código que vai para os pods (`render2go_worker/fila.py`: o próximo vídeo é preparado e o anterior enviado enquanto a GPU gera; aquecimento com a fila vazia). Sem coluna nova no banco, sem variável nova no `.env` e sem regra nova no R2. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (8); medição em `worker/evals/gpu-2026-10-12-velocidade/`.
+**É a atualização a fazer agora.** Parte da versão da entrada abaixo (a `main` de 12/10, `60aa44f`) e está na `main` desde 12/10/2026 (veio da branch `claude/magical-lamport-4rrms9`). Muda a API (duas rotas de worker, `iniciar` e `devolver`) e o código que vai para os pods (`render2go_worker/fila.py`: o próximo vídeo é preparado e o anterior enviado enquanto a GPU gera; aquecimento com a fila vazia). Sem coluna nova no banco, sem variável nova no `.env` e sem regra nova no R2. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (8); medição em `worker/evals/gpu-2026-10-12-velocidade/`.
 
 1. **Nada gerando, backup e código novo:** os blocos 1 e 2 da entrada abaixo.
 2. **Subir:** `cd ~/GPU2GO/servico/implantacao && docker compose up -d --build`. API e pods sobem juntos com o mesmo código (o orquestrador empacota o worker do próprio contêiner), então não há pod novo falando com a API antiga.
@@ -17,7 +17,7 @@ Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem p
 
 ### 12/10/2026 (2): parar pedido, motivo de cada falha e quarentena dos vídeos barrados
 
-**É a atualização a fazer agora.** Parte da versão da entrada abaixo (a `main` de 12/10, `693e38b`) e está na `main` desde 12/10/2026 (veio da branch `claude/magical-lamport-4rrms9`). Muda a API, as páginas e o código que vai para os pods (o vídeo barrado vai para a quarentena); o banco ganha três colunas (`lotes.interrompido_em`, `lotes.interrompido_por` e `jobs.quarentena_em`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (5); [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md), atualização de 12/10.
+Parte da versão da entrada abaixo (a `main` de 12/10, `693e38b`) e está na `main` desde 12/10/2026 (veio da branch `claude/magical-lamport-4rrms9`). Muda a API, as páginas e o código que vai para os pods (o vídeo barrado vai para a quarentena); o banco ganha três colunas (`lotes.interrompido_em`, `lotes.interrompido_por` e `jobs.quarentena_em`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (5); [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md), atualização de 12/10.
 
 1. **Nada gerando?** O mesmo bloco 1 da entrada 11/10/2026 (abaixo).
 2. **Backup e código novo:** o bloco 2 da entrada abaixo (`pg_dump` e `git pull`).

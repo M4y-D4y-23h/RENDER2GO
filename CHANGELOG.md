@@ -2,6 +2,10 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 12/10/2026 (9): a GPU não espera e aquecimento na `main`
+
+A pedido do dono, a entrada 12/10/2026 (8) entra na `main` (avanço direto, sem conflito; CI verde no código). Publicação no servidor: `docs/09`, entrada 12/10/2026 (3) (sem variável nova, coluna nova nem regra nova no R2).
+
 ## 12/10/2026 (8): a GPU não espera, aquecimento e medição do SageAttention 2.2 e do RIFE
 
 Pedido do dono depois da avaliação da proposta FastAPI/asyncio: "realize e avalie agora os 3 pontos [...]: fazer a GPU não esperar, SageAttention 2.2 e interpolação, aquecer no boot", sem o `torch.compile`, com medições reais em pod. Branch `claude/magical-lamport-4rrms9`. Publicação: `docs/09`, entrada 12/10/2026 (3).
