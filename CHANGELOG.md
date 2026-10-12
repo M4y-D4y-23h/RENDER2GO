@@ -13,6 +13,7 @@ Pedido do dono depois da avaliação da proposta FastAPI/asyncio: "realize e ava
 - **RIFE ×2 (32 fps):** +4,4 a +5,0 s por vídeo 480p de 5 s (+9%), sem fantasma nos movimentos lentos testados. Vira proposta, [ADR 0013](docs/adr/0013-interpolacao-rife.md), para o dono decidir (muda o vídeo entregue).
 - **Medição** (`worker/evals/gpu-2026-10-12-velocidade/`, `docs/06`, seção 9.2): um pod L40S secure, 47 min, US$ 0,86, desligamento automático armado e pod encerrado no fim (conferido na API). A fase 2 do roteiro caiu no meio (um vídeo que reprovou derrubou a busca do tempo de base); o pod foi retomado com o desligamento automático ainda armado, o que faltou foi refeito e o roteiro, corrigido.
 - **Testes:** `test_interromper.py` (o vídeo adiantado cancelado com o pedido parado; devolvido sem contar tentativa, com a mesma seed) e `test_fila.py` (o envio do 1º vídeo só termina depois que o 2º começou na GPU, e o contrário com `--sem-adiantar`; pedido parado com um vídeo adiantado; GPU que cai com um vídeo adiantado; limite do pod; aquecimento só com a fila vazia), conferidos com mutações.
+- **Correção nos testes do serviço:** a suíte caía às vezes com falha de segmentação: um trabalho em segundo plano da API (apagar as fotos do pedido que fechou) ainda gravava no SQLite quando o teste fechava o banco. `Banco.fechar` agora espera a transação de outro thread terminar; depois de fechado, o uso dá erro do Python (`test_db.py`, conferido com mutação).
 
 ## 12/10/2026 (7): parar pedido, motivos e quarentena na `main`
 

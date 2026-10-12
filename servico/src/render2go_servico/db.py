@@ -438,11 +438,14 @@ class Banco:
             ]
 
     def fechar(self) -> None:
-        """Fecha as conexões (fim do processo e testes)."""
+        """Fecha as conexões (fim do processo e testes). No SQLite, espera a transação de outro thread
+        terminar: fechar no meio de um comando derrubava o processo (falha de segmentação nos testes, com
+        um trabalho em segundo plano da API ainda gravando); depois de fechado, o uso dá erro do Python."""
         if self.pg:
             self._pool.close()
         else:
-            self._sq.close()
+            with self._lock:
+                self._sq.close()
 
     # -- conexão e transação --------------------------------------------------------------
 

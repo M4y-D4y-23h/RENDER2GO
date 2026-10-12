@@ -561,3 +561,33 @@ def test_a_charged_upfront_order_past_the_photo_retention_refunds_what_was_cance
         c.run("UPDATE lotes SET criado = criado - ? WHERE id = ?", (7 * 24 * 3600, lid))
     assert banco.reivindicar("w1") is None
     assert banco.lote(lid)["status"] == "concluido_com_falhas" and banco.saldo(cid) == 900
+
+
+def test_closing_sqlite_waits_for_a_transaction_in_another_thread(tmp_path):
+    """Um trabalho em segundo plano da API (ex.: apagar as fotos do pedido que fechou) ainda gravava quando o
+    teste fechava o banco: no SQLite, fechar no meio de um comando derrubava o processo (12/10/2026)."""
+    import sqlite3
+
+    from render2go_servico.db import Banco
+
+    b = Banco(f"sqlite:///{tmp_path / 'b.db'}")
+    b.criar_esquema()
+    dentro, solta, fechou = threading.Event(), threading.Event(), threading.Event()
+
+    def trabalho():
+        with b.tx() as c:
+            dentro.set()
+            solta.wait(5)
+            c.run("SELECT COUNT(*) FROM lotes")
+
+    t = threading.Thread(target=trabalho)
+    t.start()
+    assert dentro.wait(5)
+    threading.Thread(target=lambda: (b.fechar(), fechou.set()), daemon=True).start()
+    assert not fechou.wait(0.3)  # espera a transação do outro thread
+    solta.set()
+    t.join(5)
+    assert fechou.wait(5)
+    # depois de fechado, erro do Python (não falha de segmentação)
+    with pytest.raises(sqlite3.ProgrammingError), b.tx():
+        pass
