@@ -41,33 +41,32 @@ def _pedido_com_um_video_e_uma_falha(a, tok):
 
 def test_statement_groups_each_round_with_model_type_and_net_total(api):  # noqa: F811 (fixture)
     tok = _cliente(api, "Pizzaria", saldo="20")
-    lid, _ = _pedido_com_um_video_e_uma_falha(api, tok)  # 2 vídeos de 4 s em 480p: R$ 2,00; 1 volta
-    r = _lote(api, tok, n=1)  # 1 vídeo de 5 s, recusado na revisão: volta inteiro
+    lid, _ = _pedido_com_um_video_e_uma_falha(api, tok)  # 2 vídeos de 4 s em 480p: só o entregue (R$ 1,00) é cobrado
+    r = _lote(api, tok, n=1)  # 1 vídeo de 5 s, recusado na revisão: nada cobrado (ADR 0012), não vira rodada
     rec = r.json()["lote"]
     _enviar_tudo(api, tok, rec, r.json()["envios"])
     api.post(f"{PAINEL}/api/lotes/{rec}/recusar", json={"motivo": "foto borrada"}, headers=ADM)
 
     x = api.get("/api/extrato?dias=30", headers=h(tok)).json()
     rodadas = [i for i in x["itens"] if i["tipo"] == "rodada"]
-    assert [i["lote"] for i in rodadas] == [rec, lid]  # a mais recente primeiro
-    a, b = rodadas[1], rodadas[0]
+    assert [i["lote"] for i in rodadas] == [lid]  # o recusado não custou nada: fica fora do extrato
+    (a,) = rodadas
     assert (a["modelo"], a["finalidade"], a["tipo_modelo"]) == ("Wan 2.2", "Foto vira vídeo", "Imagem para vídeo")
-    assert (a["videos"], a["duracao"], a["resolucao"]) == (2, 4, "480p")
-    assert (a["cobrado"], a["devolvido"], a["liquido"], a["status"]) == (200, 100, 100, "concluido_com_falhas")
-    assert (b["cobrado"], b["devolvido"], b["liquido"], b["status"]) == (125, 125, 0, "recusado")
+    assert (a["videos"], a["duracao"], a["resolucao"]) == (1, 4, "480p")  # os vídeos entregues (cobrados)
+    assert (a["cobrado"], a["devolvido"], a["liquido"], a["status"]) == (100, 0, 100, "concluido_com_falhas")
     (recarga,) = [i for i in x["itens"] if i["tipo"] == "recarga"]
     assert recarga["valor"] == 2000 and recarga["descricao"] == "recarga do teste"
     assert x["resumo"] == {
-        "gasto": 325,
-        "devolvido": 225,
+        "gasto": 100,
+        "devolvido": 0,
         "liquido": 100,
-        "rodadas": 2,
+        "rodadas": 1,
         "recargas": 2000,
         "ajustes": 0,
         "saldo": 1900,
     }
     (m,) = x["por_modelo"]
-    assert (m["modelo"], m["rodadas"], m["liquido"]) == ("Wan 2.2", 2, 100)
+    assert (m["modelo"], m["rodadas"], m["liquido"]) == ("Wan 2.2", 1, 100)
 
     # paginação por "antes": a página seguinte continua de onde a anterior parou
     corte = x["itens"][0]["quando"]
@@ -83,7 +82,7 @@ def test_statement_groups_each_round_with_model_type_and_net_total(api):  # noqa
     api.banco.apagar_historico(forcar=True)
     x = api.get("/api/extrato?dias=0", headers=h(tok)).json()
     a = next(i for i in x["itens"] if i.get("lote") == lid)
-    assert (a["modelo"], a["videos"], a["duracao"], a["resolucao"], a["status"]) == ("Wan 2.2", 2, 4, "480p", None)
+    assert (a["modelo"], a["videos"], a["duracao"], a["resolucao"], a["status"]) == ("Wan 2.2", 1, 4, "480p", None)
 
 
 def test_statement_spreadsheet_is_excel_friendly_and_safe(api):  # noqa: F811 (fixture)

@@ -123,7 +123,7 @@ export function pedirAceite(): Promise<boolean> {
     criar("p", {
       className: "dica",
       textContent:
-        "O que mudou: nome e foto do perfil (a foto só se você ligar o Gravatar), verificação em duas etapas, confirmação antes de ações importantes, troca de e-mail, aparelhos conectados, desativar a conta, o tema das páginas, a exclusão de um vídeo pela tela Logs e as opções “Em breve”.",
+        "O que mudou: cada vídeo é cobrado só quando fica pronto, e o que não sai não é cobrado; sem saldo, o pedido espera a recarga e continua sozinho; os pedidos da mesma conta são feitos em ordem, sem limite de fotos nos planos pagos; e o filtro automático que confere cada vídeo antes da entrega.",
     }),
     criar("label", { className: "marcacao", htmlFor: id }, [caixa, criar("span", { textContent: "Li e aceito os Termos de Uso e a Política de Privacidade." })]),
     msg,

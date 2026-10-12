@@ -34,7 +34,7 @@ docker compose ps --format "table {{.Service}}\t{{.Status}}"
 docker compose logs --since 10m orquestrador | tail -20
 ```
 
-- **Conferir depois:** no painel, seção **Pods**, a 2ª linha mostra o saldo do RunPod e o prazo que um pod novo teria ("Saldo ok", "Saldo baixo" ou "Sem saldo") e os hibernados. No 1º pedido, o relatório de **GPUs** mostra o pod e, quando ele sair, o motivo ("fila vazia", "limite de tempo do pod" ou "hibernado (fila vazia)"). Quem entra no site vê a política de privacidade v3 para aceitar.
+- **Conferir depois:** no painel, seção **Pods**, a 2ª linha mostra o saldo do RunPod e o prazo que um pod novo teria ("Saldo ok", "Saldo baixo" ou "Sem saldo") e os hibernados. No 1º pedido, o relatório de **GPUs** mostra o pod e, quando ele sair, o motivo ("fila vazia", "limite de tempo do pod" ou "hibernado (fila vazia)"). Quem entra no site vê os Termos de Uso v3 (cobrança por vídeo entregue, pedidos em ordem, ADR 0012) e a política de privacidade v3 para aceitar.
 - **1º pod depois da atualização:** o espelho dos modelos no R2 já tem os 2 arquivos do filtro de imagem (enviados em 11/10); se não tiver, o 1º pod os envia, como na entrada 08/10 (noite).
 - **Se algo der errado:** `cd ~/GPU2GO && git checkout <versão do bloco 2> && cd servico/implantacao && docker compose up -d --build`. As duas colunas novas ficam no banco sem uso. Os pods hibernados (se ligou o bloco 4) ficam parados no RunPod: encerre-os pelo painel do RunPod (nome `render2go-fila-...`), porque a versão antiga não os conhece.
 
@@ -610,9 +610,9 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 ## 5.1.7 Saldo pré-pago (plano pago)
 
 - **Preço:** por segundo de vídeo, 480p a R$ 0,25 e 720p a R$ 0,50 (padrões; seção 4). Um vídeo de 5 s em 480p custa R$ 1,25; de 7 s em 720p, R$ 3,50. Custos e margens: `docs/11`, seção 4.
-- **O que o cliente vê** no cartão "Novo pedido": o saldo, os preços, o extrato (ao abrir "Ver extrato") e, junto do botão de envio, o custo do pedido e o saldo depois dele. Cada pedido mostra quanto custou e quanto voltou para o saldo.
-- **Cobrança:** quando as fotos terminam de chegar, o pedido inteiro (fotos × preço do vídeo). Se outro pedido gastou o saldo enquanto as fotos subiam, o pedido é recusado sem cobrança e as fotos são apagadas.
-- **Devolução automática:** pedido recusado na revisão volta inteiro; cada vídeo que termina em erro ou cancelado volta sozinho. Nada é cobrado ou devolvido duas vezes.
+- **O que o cliente vê** no cartão "Novo pedido": o saldo, os preços, o extrato (ao abrir "Ver extrato") e, junto do botão de envio, a estimativa do pedido e quantos vídeos o saldo atual paga. Cada pedido mostra quanto já foi cobrado e o preço de cada vídeo; parado por saldo, mostra "Aguardando saldo".
+- **Cobrança (desde 12/10/2026, ADR 0012):** cada vídeo quando fica pronto (conferência e filtro aprovados), uma vez só. O vídeo que falha e o pedido recusado não custam nada. Para criar o pedido, o saldo precisa pagar o 1º vídeo; sem saldo para o próximo, o pedido espera e continua sozinho depois da recarga, sem segurar pod. Os pedidos da mesma conta são feitos em ordem; sem limite de fotos no plano pago e no interno.
+- **Pedidos de antes de 12/10/2026:** cobrados inteiros quando as fotos chegaram; o recusado volta inteiro e cada vídeo que termina em erro ou cancelado volta sozinho. Nada é cobrado ou devolvido duas vezes.
 - **Recarga por Pix, sozinha** (ADR 0008), com o Mercado Pago configurado: o cliente clica em "Adicionar saldo", escolhe o valor (R$ 10 a R$ 2.000), informa o CPF ou CNPJ de quem paga e paga o QR (vale 1 hora). O saldo entra quando o Mercado Pago confirma, uma vez só, e a 1ª recarga tira a conta do teste gratuito. O painel lista as recargas em "Recargas por Pix"; "Conferir" pergunta de novo ao Mercado Pago.
 - **Recarga à mão** (pagamento por fora, ajustes): no painel, seção "Contas e saldo": cliente, valor em reais, descrição (o cliente vê no extrato) e, de preferência, o código do Pix, para o mesmo pagamento nunca entrar duas vezes. Valor negativo desconta (ajuste); o saldo nunca fica negativo. Pelo terminal:
   ```bash

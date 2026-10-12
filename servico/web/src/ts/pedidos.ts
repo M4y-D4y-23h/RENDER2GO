@@ -38,7 +38,7 @@ type Movimento = { quando: number; tipo: string; valor: number; lote_id: string 
 type Saldo = { pre_pago: boolean; saldo?: number; precos?: Record<string, number>; extrato?: Movimento[] };
 type Video = { id?: string; arquivo: string; status: string; aviso: string | null; url?: string; baixar?: string; texto?: string | null; excluido?: boolean };
 // previsão em segundos; o cliente vê só o tempo, não as etapas internas
-type Previsao = { fase: "analise" | "fila" | "gerando"; inicio_max_s?: number; inicio_s?: number; fim_s?: number } | null;
+type Previsao = { fase: "analise" | "fila" | "gerando" | "saldo"; inicio_max_s?: number; inicio_s?: number; fim_s?: number } | null;
 type Lote = {
   lote: string;
   status: string;
@@ -52,6 +52,10 @@ type Lote = {
   modelo?: string;
   previsao?: Previsao;
   cobranca?: { cobrado: number; devolvido: number } | null;
+  // cobrança por vídeo (ADR 0012): cada vídeo é cobrado quando fica pronto; sem saldo, o pedido espera a recarga
+  por_video?: boolean;
+  preco_video?: number | null;
+  aguardando_saldo?: boolean;
 };
 type Envio = { original: string; url: string; tipo: string };
 
@@ -60,7 +64,7 @@ const ENVIOS_SIMULTANEOS = 4;
 const MAX_PREVIA = 60; // miniaturas desenhadas; acima disso, um quadro "+N"
 const NICHOS: Record<string, string> = { geral: "Geral", produto: "Produtos", imovel: "Imóveis", comida: "Comida e bebida", pessoa: "Pessoas" };
 const RESOLUCAO: Record<string, string> = { rapida: "480p", alta: "720p" };
-const MOVIMENTOS: Record<string, string> = { recarga: "Recarga", ajuste: "Ajuste", pedido: "Pedido", estorno: "Devolvido" };
+const MOVIMENTOS: Record<string, string> = { recarga: "Recarga", ajuste: "Ajuste", pedido: "Pedido", estorno: "Devolvido", video: "Vídeo entregue" };
 const ROTULO_TEXTO = {
   unico: ["O que deve acontecer nos vídeos?", "Escreva em português, do seu jeito. O texto vale para cada foto, uma de cada vez: descreva o que acontece numa foto só. Pode ser simples ou detalhado."],
   sequencia: ["Texto padrão", "Vale para cada foto que não tiver um texto próprio, uma de cada vez: descreva o que acontece numa foto só. Em português, do seu jeito."],
@@ -208,6 +212,7 @@ async function arquivosSoltos(dt: DataTransfer): Promise<Escolhida[]> {
 function textoPrevisao(p: NonNullable<Previsao>): string {
   if (p.fase === "analise") return `Recebemos seu pedido. Ele começa em até ${minutos(p.inicio_max_s ?? 3600)}.`;
   if (p.fase === "fila") return (p.inicio_s ?? 0) < 60 ? "Seus vídeos começam em instantes." : `Seus vídeos começam em ${minutos(p.inicio_s ?? 0)}.`;
+  if (p.fase === "saldo") return "Aguardando saldo: adicione saldo e o pedido continua sozinho de onde parou.";
   return `Gerando seus vídeos · termina em ${minutos(p.fim_s ?? 0)}.`;
 }
 
@@ -263,7 +268,14 @@ function cartaoLote(l: Lote): HTMLElement {
   if (falhas) cartao.append(criar("p", { className: "fraco", textContent: `${plural(falhas, "vídeo não saiu", "vídeos não saíram")}.` }));
   const excluidos = l.videos.filter((v) => v.excluido).length;
   if (excluidos) cartao.append(criar("p", { className: "fraco", textContent: `${plural(excluidos, "vídeo excluído", "vídeos excluídos")} por você.` }));
-  if (l.cobranca?.cobrado) {
+  if (l.por_video && l.preco_video) {
+    // ADR 0012: o valor sai do saldo a cada vídeo entregue; o que não sai não é cobrado
+    const cobrado = l.cobranca?.cobrado ?? 0;
+    const texto = EM_ANDAMENTO.has(l.status)
+      ? `Cobrado até agora: ${reais(cobrado)} · ${reais(l.preco_video)} por vídeo, só quando fica pronto`
+      : `Custo do pedido: ${reais(cobrado)} (${reais(l.preco_video)} por vídeo entregue)`;
+    cartao.append(criar("p", { className: "fraco", textContent: texto }));
+  } else if (l.cobranca?.cobrado) {
     const devolvido = l.cobranca.devolvido ? ` · ${reais(l.cobranca.devolvido)} voltaram para o saldo` : "";
     cartao.append(criar("p", { className: "fraco", textContent: `Custo do pedido: ${reais(l.cobranca.cobrado)}${devolvido}` }));
   }
@@ -340,12 +352,19 @@ export function criarPedidos(ctx: {
     alvo.hidden = !c;
     if (!c) return;
     const disponivel = saldo.saldo ?? 0;
-    const falta = c.custo > disponivel;
+    // ADR 0012: cada vídeo é cobrado quando fica pronto; o saldo precisa pagar ao menos o 1º
+    const falta = c.porVideo > disponivel;
+    const cobre = c.porVideo ? Math.floor(disponivel / c.porVideo) : 0;
     alvo.classList.toggle("falta", falta);
     alvo.textContent = arquivos.size
-      ? `Este pedido: ${plural(arquivos.size, "vídeo", "vídeos")} de ${c.duracao} s em ${c.resolucao} = ${reais(c.custo)}` +
-        (falta ? ` · faltam ${reais(c.custo - disponivel)} de saldo` : ` · saldo depois: ${reais(disponivel - c.custo)}`)
-      : `Cada vídeo de ${c.duracao} s em ${c.resolucao} custa ${reais(c.porVideo)}.`;
+      ? `Estimativa: ${plural(arquivos.size, "vídeo", "vídeos")} de ${c.duracao} s em ${c.resolucao} = ${reais(c.custo)}, ` +
+        `cobrados um a um, só quando ficam prontos` +
+        (falta
+          ? ` · o seu saldo não paga o 1º vídeo (${reais(c.porVideo)})`
+          : cobre < arquivos.size
+            ? ` · o saldo atual paga ${plural(cobre, "vídeo", "vídeos")}; o resto espera você adicionar saldo`
+            : "")
+      : `Cada vídeo de ${c.duracao} s em ${c.resolucao} custa ${reais(c.porVideo)}, cobrado só quando fica pronto.`;
   };
 
   const mostrarSaldo = () => {
@@ -857,8 +876,8 @@ export function criarPedidos(ctx: {
       return prompt;
     }
     const c = custoAtual();
-    if (c && c.custo > (saldo.saldo ?? 0)) {
-      aviso(msg, `Saldo insuficiente: este pedido custa ${reais(c.custo)} e o seu saldo é ${reais(saldo.saldo ?? 0)}. Tire algumas fotos, escolha vídeos mais curtos ou adicione saldo por Pix.`, "erro");
+    if (c && c.porVideo > (saldo.saldo ?? 0)) {
+      aviso(msg, `Saldo insuficiente: cada vídeo deste pedido custa ${reais(c.porVideo)} e o seu saldo é ${reais(saldo.saldo ?? 0)}. Escolha vídeos mais curtos ou adicione saldo por Pix.`, "erro");
       return el("fotos");
     }
     if (consentimento.required && !consentimento.checked) {

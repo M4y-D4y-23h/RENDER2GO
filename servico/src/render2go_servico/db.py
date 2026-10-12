@@ -232,6 +232,14 @@ INICIADOS_POR_CLIENTE = (
     " WHERE m.status IN ('aprovado', 'processando') AND k.tipo = 'render' AND k.status <> 'pendente'"
     " GROUP BY m.cliente_id"
 )
+# pedidos da mesma conta, um depois do outro (pedido do dono, 12/10/2026): há outro pedido da conta, mais
+# antigo, ainda em andamento? (l = o lote do job candidato)
+PEDIDO_ANTERIOR_ABERTO = (
+    "SELECT 1 FROM lotes a WHERE a.cliente_id = l.cliente_id AND a.status IN ('aprovado', 'processando')"
+    " AND (a.criado < l.criado OR (a.criado = l.criado AND a.id < l.id))"
+)
+# contas sem saldo puladas numa reivindicação antes de desistir (as próximas ficam para o próximo pedido)
+MAX_CONTAS_SEM_SALDO = 20
 TIPOS_JOB = ("compilar", "render")
 # dois CREATE TABLE IF NOT EXISTS ao mesmo tempo podem falhar no Postgres (pg_type duplicado)
 TRAVA_ESQUEMA = 20261008
@@ -301,6 +309,9 @@ COLUNAS_NOVAS = [
     # filtro de imagem nos quadros (ADR 0005, 11/10/2026): maior P(medium)+P(high) e quando foi barrado
     ("jobs", "nsfw", "DOUBLE PRECISION"),
     ("jobs", "barrado_em", "DOUBLE PRECISION"),  # não entregue: nudez em algum quadro (sem repetição)
+    # pré-pago (ADR 0012, 12/10/2026): "video" = cada vídeo cobrado quando sai certo; NULL = o pedido
+    # inteiro cobrado no envio, com estorno do que falha (os pedidos de antes de 12/10)
+    ("lotes", "cobranca", "TEXT"),
     ("sessoes", "confirmada_ate", "DOUBLE PRECISION"),  # confirmação recente ("é você mesmo?") até
     ("sessoes", "contexto", "TEXT"),  # desafio da verificação em duas etapas: o que a entrada guardou (JSON)
     ("auditoria_admin", "agente", "TEXT"),  # navegador de quem fez (acessos do painel por pessoa, ADR 0009)
@@ -309,7 +320,9 @@ MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
 SESSAO_TIPOS = ("cliente", "admin", "mfa")
 COMANDOS = ("desligar_pod", "emergencia", "retomar")
-TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno")
+TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno", "video")
+# o que conta como gasto de um pedido: "pedido" (cobrado inteiro no envio) e "video" (ADR 0012)
+GASTO = "tipo IN ('pedido', 'video')"
 RESOLUCAO = {"rapida": "480p", "alta": "720p"}  # qualidade do pedido → resolução (descrição no extrato)
 # lote que já passou do envio e não foi recusado: conta nos limites do teste gratuito
 ATIVO = "status NOT IN ('aguardando_envio', 'recusado')"
@@ -1396,7 +1409,7 @@ class Banco:
                 " FROM jobs j JOIN lotes l ON l.id = j.lote_id WHERE l.status IN ('aprovado', 'processando')"
             )
             dinheiro = c.one(
-                "SELECT COALESCE(SUM(CASE WHEN tipo = 'pedido' THEN -valor ELSE 0 END), 0) AS cobrado,"
+                f"SELECT COALESCE(SUM(CASE WHEN {GASTO} THEN -valor ELSE 0 END), 0) AS cobrado,"
                 " COALESCE(SUM(CASE WHEN tipo = 'estorno' THEN valor ELSE 0 END), 0) AS devolvido,"
                 " COALESCE(SUM(CASE WHEN tipo = 'recarga' THEN valor ELSE 0 END), 0) AS recargas"
                 " FROM movimentos WHERE quando >= ?",
@@ -1895,6 +1908,21 @@ class Banco:
         r = c.one("SELECT COALESCE(SUM(valor), 0) AS s FROM movimentos WHERE cliente_id = ?", (cliente_id,))
         return int(r["s"])
 
+    def _reservado(self, c, cliente_id: str) -> int:
+        """Centavos dos vídeos cobrados por vídeo (ADR 0012) que estão num pod agora: saem do saldo livre até
+        a entrega (cobrados) ou a falha (liberados)."""
+        r = c.one(
+            "SELECT COALESCE(SUM(l.preco_video), 0) AS r FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+            " WHERE l.cliente_id = ? AND l.cobranca = 'video' AND j.tipo = 'render' AND j.status = 'em_andamento'",
+            (cliente_id,),
+        )
+        return int(r["r"])
+
+    def saldo_livre(self, cliente_id: str) -> int:
+        """Saldo menos os vídeos em andamento dos pedidos cobrados por vídeo: o que paga o próximo vídeo."""
+        with self.tx() as c:
+            return self._saldo(c, cliente_id) - self._reservado(c, cliente_id)
+
     def _movimento(
         self,
         c,
@@ -1953,9 +1981,10 @@ class Banco:
     # extrato por rodada (cada pedido é uma rodada: cobrado, devolvido e o líquido), créditos e resumo
     RODADAS = (
         "SELECT m.lote_id, MIN(m.quando) AS quando,"
-        " COALESCE(SUM(CASE WHEN m.tipo = 'pedido' THEN -m.valor ELSE 0 END), 0) AS cobrado,"
+        " COALESCE(SUM(CASE WHEN m.tipo IN ('pedido', 'video') THEN -m.valor ELSE 0 END), 0) AS cobrado,"
         " COALESCE(SUM(CASE WHEN m.tipo = 'estorno' THEN m.valor ELSE 0 END), 0) AS devolvido,"
-        " MAX(m.modelo) AS modelo, MAX(CASE WHEN m.tipo = 'pedido' THEN m.descricao END) AS descricao"
+        " MAX(m.modelo) AS modelo, MAX(CASE WHEN m.tipo IN ('pedido', 'video') THEN m.descricao END) AS descricao,"
+        " SUM(CASE WHEN m.tipo = 'video' THEN 1 ELSE 0 END) AS videos_cobrados"
         # estornos chegam dias depois da cobrança, nunca 30: a janela de volta limita a leitura sem
         # perder a rodada que começou dentro do período
         " FROM movimentos m WHERE m.cliente_id = ? AND m.lote_id IS NOT NULL AND m.quando >= ?"
@@ -2045,7 +2074,7 @@ class Banco:
         """Quanto o pedido custou e quanto já voltou para o saldo (vídeos que não saíram, recusa)."""
         with self.tx() as c:
             r = c.one(
-                "SELECT COALESCE(SUM(CASE WHEN tipo = 'pedido' THEN -valor ELSE 0 END), 0) AS cobrado,"
+                f"SELECT COALESCE(SUM(CASE WHEN {GASTO} THEN -valor ELSE 0 END), 0) AS cobrado,"
                 " COALESCE(SUM(CASE WHEN tipo = 'estorno' THEN valor ELSE 0 END), 0) AS devolvido"
                 " FROM movimentos WHERE lote_id = ?",
                 (lote_id,),
@@ -2071,6 +2100,29 @@ class Banco:
             lote_id=lote["id"],
             descricao=f"{videos} vídeo(s) de {pedido.get('duracao')} s em {resolucao}",
             modelo=lote.get("modelo") or pedido.get("modelo") or MODELO_PADRAO,
+        )
+
+    def _cobrar_video(self, c, job: dict) -> None:
+        """Cobrança por vídeo (ADR 0012): o vídeo que saiu certo (conferência e filtro de imagem aprovados)
+        é cobrado na hora, uma vez só (a referência é única). O vídeo que falha nunca é cobrado."""
+        lote = c.one(
+            "SELECT cliente_id, pedido, preco_video, cobranca, modelo FROM lotes WHERE id = ?", (job["lote_id"],)
+        )
+        if not lote or lote["cobranca"] != "video" or not lote["preco_video"]:
+            return
+        p = json.loads(lote["pedido"])
+        resolucao = RESOLUCAO.get(p.get("qualidade"), p.get("qualidade"))
+        self._travar_cliente(c, lote["cliente_id"])
+        self._movimento(
+            c,
+            lote["cliente_id"],
+            "video",
+            -int(lote["preco_video"]),
+            f"video:{job['id']}",
+            job["lote_id"],
+            job["id"],
+            f"1 vídeo(s) de {p.get('duracao')} s em {resolucao} ({job['arquivo']})",
+            modelo=lote["modelo"] or p.get("modelo") or MODELO_PADRAO,
         )
 
     def _estornar_lote(self, c, lote_id: str, descricao: str) -> None:
@@ -2135,12 +2187,16 @@ class Banco:
         origem: dict | None = None,
         autorizacao: dict | None = None,
         preco_video: int | None = None,
+        cobranca: str = "video",
     ) -> str:
         """fotos: [{nome, tipo, bytes, chave, prompt?}] (já validadas pela API; prompt: texto próprio da foto).
         origem: {ip, dispositivo, agente, fuso} de quem pediu.
         autorizacao: {declarante, texto_versao, texto} quando a caixa de autorização foi marcada;
         gravada na mesma transação, com a origem e a lista de fotos (auditoria).
-        preco_video: centavos por vídeo do pré-pago (cobrado em `confirmar_envio`); None não cobra."""
+        preco_video: centavos por vídeo do pré-pago; None não cobra. cobranca: "video" (ADR 0012: cada vídeo
+        cobrado quando sai certo) ou "pedido" (o pedido inteiro no envio, como antes de 12/10/2026)."""
+        if cobranca not in ("video", "pedido"):
+            raise BancoError(f"cobrança inválida: {cobranca}")
         lid = novo_id("lote")
         agora = time.time()
         o = origem or {}
@@ -2150,8 +2206,8 @@ class Banco:
                 raise BancoError("cliente não encontrado")
             c.run(
                 "INSERT INTO lotes (id, cliente_id, status, pedido, n_fotos, prioridade, criado, ip, dispositivo,"
-                " agente, fuso, impressao, preco_video, rede, modelo, porta)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " agente, fuso, impressao, preco_video, rede, modelo, porta, cobranca)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     lid,
                     cliente_id,
@@ -2169,6 +2225,7 @@ class Banco:
                     o.get("rede") or o.get("ip"),
                     pedido.get("modelo") or MODELO_PADRAO,
                     o.get("porta"),
+                    None if preco_video is None or cobranca == "pedido" else "video",
                 ),
             )
             if autorizacao:
@@ -2583,7 +2640,8 @@ class Banco:
 
     def confirmar_envio(self, lote_id: str, tamanhos: dict[str, int | None]) -> list[str]:
         """tamanhos: chave → bytes no armazenamento (None = ausente). Devolve os problemas.
-        Pedido do pré-pago: cobra o pedido inteiro na mesma transação (SaldoInsuficiente: nada muda)."""
+        Pedido do pré-pago no modo antigo (cobranca NULL): cobra o pedido inteiro na mesma transação
+        (SaldoInsuficiente: nada muda). No modo "video" (ADR 0012), nada é cobrado aqui."""
         problemas = []
         with self.tx() as c:
             lote = c.one("SELECT * FROM lotes WHERE id = ?", (lote_id,))
@@ -2596,7 +2654,7 @@ class Banco:
                 elif t != f["bytes"]:
                     problemas.append(f"{f['nome']}: {t} bytes, esperados {f['bytes']}")
             if not problemas:
-                if lote["preco_video"] is not None:
+                if lote["preco_video"] is not None and lote.get("cobranca") is None:
                     self._cobrar(c, lote)
                 c.run("UPDATE fotos SET enviada = 1 WHERE lote_id = ?", (lote_id,))
                 c.run("UPDATE lotes SET status = 'aguardando_aprovacao' WHERE id = ?", (lote_id,))
@@ -2726,21 +2784,40 @@ class Banco:
             if modelos:
                 filtro_modelo = f" AND COALESCE(l.modelo, ?) IN ({', '.join('?' * len(modelos))})"
                 args_modelo = (MODELO_PADRAO, *modelos)
-            job = c.one(
-                f"WITH inic AS ({INICIADOS_POR_CLIENTE})"
-                " SELECT j.* FROM jobs j JOIN lotes l ON l.id = j.lote_id"
-                " LEFT JOIN fotos f ON f.id = j.foto_id"
-                " LEFT JOIN inic ON inic.cliente_id = l.cliente_id"
-                " WHERE j.status = 'pendente' AND l.status IN ('aprovado', 'processando')"
-                " AND (j.tipo = 'compilar' OR (f.prompt IS NULL AND l.prompt_en IS NOT NULL)"
-                " OR (f.prompt IS NOT NULL AND f.prompt_en IS NOT NULL))"
-                f" AND j.tipo IN ({', '.join('?' * len(tipos))}){filtro_modelo}"
-                # o compilar do lote passa na frente; o de um texto próprio espera a vez como um render
-                " ORDER BY CASE WHEN j.tipo = 'compilar' AND j.foto_id IS NULL THEN 0 ELSE 1 END, l.prioridade,"
-                " COALESCE(inic.n, 0), l.criado, l.id, j.criado, j.arquivo, j.id LIMIT 1" + trava,
-                (*tipos, *args_modelo),
-            )
-            if job is None:
+            # cobrança por vídeo (ADR 0012): o vídeo só sai para um pod se o saldo livre da conta (saldo menos
+            # os vídeos em andamento) paga por ele; senão, a conta fica de fora desta vez ("aguardando saldo")
+            # e volta sozinha depois da recarga. A trava do cliente serializa com a cobrança na entrega
+            sem_saldo: list[str] = []
+            for _ in range(MAX_CONTAS_SEM_SALDO):
+                fora = f" AND l.cliente_id NOT IN ({', '.join('?' * len(sem_saldo))})" if sem_saldo else ""
+                job = c.one(
+                    f"WITH inic AS ({INICIADOS_POR_CLIENTE})"
+                    " SELECT j.*, l.cliente_id AS _cliente, l.preco_video AS _preco, l.cobranca AS _cobranca"
+                    " FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                    " LEFT JOIN fotos f ON f.id = j.foto_id"
+                    " LEFT JOIN inic ON inic.cliente_id = l.cliente_id"
+                    " WHERE j.status = 'pendente' AND l.status IN ('aprovado', 'processando')"
+                    " AND (j.tipo = 'compilar' OR (f.prompt IS NULL AND l.prompt_en IS NOT NULL)"
+                    " OR (f.prompt IS NOT NULL AND f.prompt_en IS NOT NULL))"
+                    # pedidos da mesma conta, um depois do outro: os vídeos só do mais antigo em andamento
+                    # (a tradução do pedido seguinte pode adiantar: é rápida e não gera vídeo)
+                    f" AND (j.tipo = 'compilar' OR NOT EXISTS ({PEDIDO_ANTERIOR_ABERTO}))"
+                    f" AND j.tipo IN ({', '.join('?' * len(tipos))}){filtro_modelo}{fora}"
+                    # o compilar do lote passa na frente; o de um texto próprio espera a vez como um render
+                    " ORDER BY CASE WHEN j.tipo = 'compilar' AND j.foto_id IS NULL THEN 0 ELSE 1 END, l.prioridade,"
+                    " COALESCE(inic.n, 0), l.criado, l.id, j.criado, j.arquivo, j.id LIMIT 1" + trava,
+                    (*tipos, *args_modelo, *sem_saldo),
+                )
+                if job is None:
+                    return None
+                cliente, preco = job.pop("_cliente"), job.pop("_preco")
+                if job.pop("_cobranca") == "video" and preco and job["tipo"] == "render":
+                    self._travar_cliente(c, cliente)
+                    if self._saldo(c, cliente) - self._reservado(c, cliente) < int(preco):
+                        sem_saldo.append(cliente)
+                        continue
+                break
+            else:
                 return None
             c.run(
                 "UPDATE jobs SET status = 'em_andamento', worker = ?, lease_ate = ?, tentativas = tentativas + 1,"
@@ -2793,6 +2870,8 @@ class Banco:
                     c, job["lote_id"], "video_barrado",
                     {"arquivo": job["arquivo"], "nota": campos.get("nsfw"), "quadros": campos.get("nsfw_quadros")},
                 )  # fmt: skip
+            if novo == "ok" and job["tipo"] == "render":
+                self._cobrar_video(c, job)
             self._fechar_lote(c, job["lote_id"])
             return {**job, "status": novo}
 
@@ -2910,7 +2989,7 @@ class Banco:
             return {}
         with self.tx() as c:
             linhas = c.all(
-                "SELECT lote_id, COALESCE(SUM(CASE WHEN tipo = 'pedido' THEN -valor ELSE 0 END), 0) AS cobrado,"
+                f"SELECT lote_id, COALESCE(SUM(CASE WHEN {GASTO} THEN -valor ELSE 0 END), 0) AS cobrado,"
                 " COALESCE(SUM(CASE WHEN tipo = 'estorno' THEN valor ELSE 0 END), 0) AS devolvido"
                 f" FROM movimentos WHERE lote_id IN ({', '.join('?' * len(lotes))}) GROUP BY lote_id",
                 tuple(lotes),
@@ -2922,16 +3001,33 @@ class Banco:
 
     def trabalho(self) -> list[dict]:
         """Para o orquestrador: renders pendentes e em andamento por lote, com o pedido
-        (qualidade e duração decidem o tempo por vídeo) e a prioridade."""
+        (qualidade e duração decidem o tempo por vídeo) e a prioridade. Nos pedidos cobrados por vídeo
+        (ADR 0012), só conta o que o saldo livre da conta paga: o resto espera a recarga e não liga pod."""
         with self.tx() as c:
-            return c.all(
+            linhas = c.all(
                 "SELECT l.id AS lote_id, l.pedido, l.prioridade, l.modelo, MIN(j.criado) AS mais_antigo,"
                 " SUM(CASE WHEN j.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,"
-                " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS em_andamento"
+                " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS em_andamento,"
+                " l.cliente_id, l.preco_video, l.cobranca, l.criado"
                 " FROM jobs j JOIN lotes l ON l.id = j.lote_id"
                 " WHERE l.status IN ('aprovado', 'processando') AND j.status IN ('pendente', 'em_andamento')"
-                " GROUP BY l.id, l.pedido, l.prioridade, l.modelo ORDER BY l.prioridade, MIN(j.criado)"
+                " GROUP BY l.id, l.pedido, l.prioridade, l.modelo, l.cliente_id, l.preco_video, l.cobranca, l.criado"
+                " ORDER BY l.prioridade, MIN(j.criado)"
             )
+            livre = {
+                cid: self._saldo(c, cid) - self._reservado(c, cid)
+                for cid in {r["cliente_id"] for r in linhas if r["cobranca"] == "video" and r["preco_video"]}
+            }
+        for r in sorted(linhas, key=lambda x: (x["criado"], x["lote_id"])):  # o pedido mais antigo paga antes
+            if r["cliente_id"] in livre and r["cobranca"] == "video" and r["preco_video"]:
+                pagos = max(0, livre[r["cliente_id"]] // int(r["preco_video"]))
+                r["pendentes"] = min(int(r["pendentes"] or 0), pagos)
+                livre[r["cliente_id"]] -= r["pendentes"] * int(r["preco_video"])
+        return [
+            {k: v for k, v in r.items() if k not in ("cliente_id", "preco_video", "cobranca", "criado")}
+            for r in linhas
+            if int(r["pendentes"] or 0) or int(r["em_andamento"] or 0)
+        ]
 
     def fila(self) -> dict[str, int]:
         """Para o orquestrador: jobs prontos para rodar e em andamento."""

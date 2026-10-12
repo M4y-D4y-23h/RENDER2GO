@@ -140,5 +140,6 @@ def test_a_photo_text_refused_after_compiling_cancels_and_refunds_only_its_photo
         ("foto-0-v1.mp4", "ok"),
         ("foto-1-v1.mp4", "cancelado"),
     ]
-    assert lote["cobranca"] == {"cobrado": 250, "devolvido": 125}
-    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == saldo_antes + 125
+    # ADR 0012: só o vídeo entregue é cobrado; o da foto recusada nunca foi
+    assert lote["cobranca"] == {"cobrado": 125, "devolvido": 0}
+    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == saldo_antes - 125

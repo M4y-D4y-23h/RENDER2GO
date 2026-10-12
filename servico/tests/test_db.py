@@ -346,13 +346,15 @@ def test_photo_analysis_is_saved(banco):
     assert '"pessoas": 1' in banco.fotos(lid)[0]["analise"]
 
 
-def _lote_pago(b, cid, n_fotos, preco_video, variacoes=1):
+def _lote_pago(b, cid, n_fotos, preco_video, variacoes=1, cobranca="pedido"):
+    """Pedido do pré-pago; cobranca "pedido" = o modo de antes de 12/10/2026 (inteiro no envio, com estorno),
+    que continua valendo para os pedidos criados antes; "video" = ADR 0012."""
     fotos = [
         {"nome": f"f{i}", "tipo": "image/jpeg", "bytes": 100, "chave": f"entrada/{cid}/{{lote}}/f{i}.jpg"}
         for i in range(n_fotos)
     ]
     pedido = {"prompt": "a câmera se aproxima", "qualidade": "rapida", "duracao": 4, "variacoes": variacoes}
-    return b.criar_lote(cid, pedido, fotos, preco_video=preco_video)
+    return b.criar_lote(cid, pedido, fotos, preco_video=preco_video, cobranca=cobranca)
 
 
 def test_simultaneous_uploads_never_spend_the_same_balance_twice(banco):
@@ -381,6 +383,99 @@ def test_simultaneous_uploads_never_spend_the_same_balance_twice(banco):
     assert sorted(resultados) == ["cobrado"] * 3 + ["sem saldo"] * 7
     assert banco.saldo(cid) == 0
     assert sum(1 for lid in lotes if banco.lote(lid)["status"] != "aguardando_envio") == 3
+
+
+def _pronto_para_render(b, lid):
+    """Envia, aprova e traduz o pedido: os renders ficam na fila."""
+    _aprovar(b, lid)
+    c = b.reivindicar("compilador", tipos=["compilar"])
+    b.definir_prompt(c["lote_id"], "p", "i2v@5")
+    b.concluir(c["id"], "compilador", "ok")
+
+
+def test_per_video_billing_charges_each_delivered_video_once_and_never_the_failed_ones(banco):
+    """ADR 0012: nada no envio; cada vídeo é cobrado quando sai certo, uma vez só; o que falha, nunca."""
+    cid, _ = banco.criar_cliente("Loja")
+    banco.movimentar(cid, 1000, "Pix", "dono", referencia="pagamento:pix-1")
+    lid = _lote_pago(banco, cid, 3, 300, cobranca="video")
+    _pronto_para_render(banco, lid)
+    assert banco.saldo(cid) == 1000 and banco.cobranca(lid) == {"cobrado": 0, "devolvido": 0}
+    a, b, d = (banco.reivindicar(f"w{i}") for i in range(3))
+    assert banco.saldo_livre(cid) == 1000 - 900  # os 3 em andamento estão reservados
+    banco.concluir(a["id"], "w0", "ok")
+    banco.concluir(b["id"], "w1", "erro", erro="falhou")  # não cobra
+    banco.concluir(d["id"], "w2", "ok")
+    assert banco.saldo(cid) == 400 and banco.cobranca(lid) == {"cobrado": 600, "devolvido": 0}
+    assert banco.saldo_livre(cid) == 400 and banco.lote(lid)["status"] == "concluido_com_falhas"
+    videos = [m for m in banco.extrato(cid) if m["tipo"] == "video"]
+    assert sorted(m["valor"] for m in videos) == [-300, -300]
+    assert all(m["descricao"].startswith("1 vídeo(s) de 4 s em 480p (") for m in videos)
+    with banco.tx() as c:  # a mesma entrega de novo não cobra de novo (referência única)
+        banco._cobrar_video(c, {**a, "lote_id": lid})
+    assert banco.saldo(cid) == 400
+
+
+def test_per_video_orders_wait_for_balance_without_holding_pods_and_resume_after_recharge(banco):
+    cid, _ = banco.criar_cliente("Loja")
+    banco.movimentar(cid, 500, "Pix", "dono", referencia="pagamento:pix-1")
+    lid = _lote_pago(banco, cid, 3, 300, cobranca="video")
+    _pronto_para_render(banco, lid)
+    (t,) = banco.trabalho()
+    assert (t["pendentes"], t["em_andamento"]) == (1, 0)  # o saldo paga 1 vídeo agora: o orquestrador vê 1
+    v1 = banco.reivindicar("w1")
+    assert banco.reivindicar("w2") is None  # livre: 500 − 300 reservados = 200 < 300
+    (t,) = banco.trabalho()
+    assert (t["pendentes"], t["em_andamento"]) == (0, 1)
+    banco.concluir(v1["id"], "w1", "ok")
+    assert banco.saldo(cid) == 200 and banco.reivindicar("w2") is None
+    assert banco.trabalho() == []  # nada que o saldo pague: nenhum pod fica ligado esperando
+    banco.movimentar(cid, 1000, "Pix", "dono", referencia="pagamento:pix-2")
+    assert [x["pendentes"] for x in banco.trabalho()] == [2]  # volta sozinho com a recarga
+    assert banco.reivindicar("w2") is not None and banco.reivindicar("w3") is not None
+
+
+def test_orders_of_the_same_account_start_only_after_the_previous_one_ends(banco):
+    """Pedido do dono (12/10/2026): mesmo com vários pods livres, o pedido seguinte da mesma conta só
+    começa quando o anterior termina; outra conta não espera."""
+    a, _ = banco.criar_cliente("A")
+    b, _ = banco.criar_cliente("B")
+    a1 = _lote_do_cliente(banco, a, "a1-", 2)
+    a2 = _lote_do_cliente(banco, a, "a2-", 2)  # a tradução do 2º pedido já pode ter saído
+    x, y = banco.reivindicar("w1"), banco.reivindicar("w2")
+    assert {x["lote_id"], y["lote_id"]} == {a1}
+    assert banco.reivindicar("w3") is None  # o a2 espera o a1 terminar, com pods livres
+    b1 = _lote_do_cliente(banco, b, "b1-", 1)
+    assert banco.reivindicar("w3")["lote_id"] == b1  # outra conta não espera
+    banco.concluir(x["id"], "w1", "ok")
+    assert banco.reivindicar("w1") is None  # o a1 ainda tem um vídeo em andamento
+    banco.concluir(y["id"], "w2", "ok")
+    assert banco.reivindicar("w1")["lote_id"] == a2
+
+
+def test_many_pods_never_take_more_videos_than_the_balance_pays(banco):
+    """10 pods pedem vídeo ao mesmo tempo, com saldo para 3: só 3 saem (a reserva e a trava do cliente)."""
+    cid, _ = banco.criar_cliente("Loja")
+    banco.movimentar(cid, 900, "Pix", "dono", referencia="pagamento:pix-1")
+    lid = _lote_pago(banco, cid, 10, 300, cobranca="video")
+    _pronto_para_render(banco, lid)
+    largada, pegos, lock = threading.Barrier(10), [], threading.Lock()
+
+    def pod(n):
+        largada.wait()
+        j = banco.reivindicar(f"w{n}")
+        with lock:
+            pegos.append(j)
+
+    ts = [threading.Thread(target=pod, args=(n,)) for n in range(10)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    saidos = [j for j in pegos if j is not None]
+    assert len(saidos) == 3 and banco.saldo_livre(cid) == 0
+    for j in saidos:
+        banco.concluir(j["id"], j["worker"], "ok")
+    assert banco.saldo(cid) == 0 and banco.reivindicar("w0") is None
 
 
 def test_prepaid_charge_on_upload_refund_per_failed_video_and_ledger_survives_cleanup(banco):

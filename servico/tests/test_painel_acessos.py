@@ -320,7 +320,8 @@ def test_overview_numbers_for_the_first_screen(painel):
     _enviar_tudo(api, tok, r.json()["lote"], r.json()["envios"])
     resumo = api.get(f"{PAINEL}/api/resumo", params={"fuso_min": -180}).json()
     assert resumo["revisao"] == 1 and resumo["revisao_mais_antiga"] and resumo["pedidos_hoje"] == 1
-    assert resumo["cobrado_hoje"] > 0 and resumo["pods"] == 0 and resumo["pausado"] is False
+    # ADR 0012: nada é cobrado no envio; o gasto do dia sobe a cada vídeo entregue
+    assert resumo["cobrado_hoje"] == 0 and resumo["pods"] == 0 and resumo["pausado"] is False
     assert isinstance(resumo["avisos"], list) and resumo["orquestrador_visto_s"] is None
     assert api.get(f"{PAINEL}/api/resumo", params={"fuso_min": 9999}).status_code == 422
 

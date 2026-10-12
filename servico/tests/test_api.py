@@ -253,7 +253,7 @@ def test_gpu_report_is_admin_only(api):
     assert r["totais"]["ligados_agora"] == 1
 
 
-def test_video_that_swaps_the_product_midway_is_redone_with_another_seed_then_refunded(api):
+def test_video_that_swaps_the_product_midway_is_redone_with_another_seed_and_never_charged(api):
     tok = _cliente(api, "Revenda", saldo="10")
     r = _lote(api, tok, n=1, duracao=4)
     lid = r.json()["lote"]
@@ -285,7 +285,9 @@ def test_video_that_swaps_the_product_midway_is_redone_with_another_seed_then_re
     (job,) = [j for j in api.banco.jobs(lid) if j["tipo"] == "render"]
     assert job["erro"] == "conferência da continuidade ausente" and job["deriva_cor"] == pytest.approx(6.5)
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
-    assert lote["status"] == "concluido_com_falhas" and lote["cobranca"] == {"cobrado": 100, "devolvido": 100}
+    # ADR 0012: o vídeo que não sai nunca é cobrado (antes, era cobrado no envio e devolvido)
+    assert lote["status"] == "concluido_com_falhas" and lote["cobranca"] == {"cobrado": 0, "devolvido": 0}
+    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 1000
 
 
 D1, D2, D3, D4 = (f"{n}{n}{n}{n}{n}{n}{n}{n}-0000-4000-8000-000000000000" for n in "1234")
@@ -685,9 +687,9 @@ def test_prepaid_balance_prices_charges_refunds_and_minimum_duration(api):
     receitas = api.get("/api/receitas", headers=h(tok)).json()["receitas"]
     assert all(x["duracao"] >= 4 for x in receitas)
 
-    # sem saldo: recusado antes de as fotos subirem, com o preço do pedido (2 vídeos × 5 s × R$ 0,25)
+    # sem saldo: recusado antes de as fotos subirem, com o preço de cada vídeo (5 s × R$ 0,25; ADR 0012)
     r = _lote(api, tok, n=2)
-    assert r.status_code == 402 and "R$ 2,50" in r.json()["detail"] and "R$ 0,00" in r.json()["detail"]
+    assert r.status_code == 402 and "R$ 1,25" in r.json()["detail"] and "R$ 0,00" in r.json()["detail"]
 
     # recarga pelo /aprovar (valores em reais); erros de digitação e plano sem saldo são recusados
     saldo = f"{PAINEL}/api/clientes/{cid}/saldo"
@@ -708,29 +710,26 @@ def test_prepaid_balance_prices_charges_refunds_and_minimum_duration(api):
     r = _lote(api, tok, n=1, duracao=3)
     assert r.status_code == 422 and "4 a 7 s" in r.json()["detail"]
 
-    # 2 vídeos de 4 s em 720p: R$ 4,00, cobrados quando as fotos chegam
+    # 2 vídeos de 4 s em 720p: estimativa de R$ 4,00; nada é cobrado quando as fotos chegam
     r = _lote(api, tok, n=2, duracao=4, qualidade="alta")
-    assert r.status_code == 200 and r.json()["custo"] == 400
+    assert r.status_code == 200 and (r.json()["custo"], r.json()["preco_video"]) == (400, 200)
     lid = r.json()["lote"]
-    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 1000
     assert _enviar_tudo(api, tok, lid, r.json()["envios"]).status_code == 200
     s = api.get("/api/saldo", headers=h(tok)).json()
-    assert s["pre_pago"] and s["saldo"] == 600 and s["precos"] == {"rapida": 25, "alta": 50}
-    assert (s["extrato"][0]["tipo"], s["extrato"][0]["valor"]) == ("pedido", -400)
-    assert s["extrato"][0]["descricao"] == "2 vídeo(s) de 4 s em 720p"
-    assert api.get(f"/api/lotes/{lid}", headers=h(tok)).json()["cobranca"] == {"cobrado": 400, "devolvido": 0}
+    assert s["pre_pago"] and s["saldo"] == 1000 and s["precos"] == {"rapida": 25, "alta": 50}
+    lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
+    assert lote["cobranca"] == {"cobrado": 0, "devolvido": 0} and lote["por_video"] and lote["preco_video"] == 200
 
-    # pedido recusado na revisão: volta inteiro (sem duração escolhida: a do estilo, 5 s)
+    # pedido recusado na revisão: nada foi cobrado, nada a devolver (sem duração escolhida: a do estilo, 5 s)
     r = _lote(api, tok, n=1)
     assert r.json()["custo"] == 125
     rec = r.json()["lote"]
     _enviar_tudo(api, tok, rec, r.json()["envios"])
-    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 475
     api.post(f"{PAINEL}/api/lotes/{rec}/recusar", json={"motivo": "foto borrada"}, headers=ADM)
-    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 600
-    assert api.get(f"/api/lotes/{rec}", headers=h(tok)).json()["cobranca"] == {"cobrado": 125, "devolvido": 125}
+    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 1000
+    assert api.get(f"/api/lotes/{rec}", headers=h(tok)).json()["cobranca"] == {"cobrado": 0, "devolvido": 0}
 
-    # um vídeo pronto e outro que falha de vez: só o que falhou volta
+    # um vídeo pronto (cobrado na hora) e outro que falha de vez (nunca cobrado)
     api.post(f"{PAINEL}/api/lotes/{lid}/aprovar", headers=ADM)
     comp = _job(api)
     api.post(
@@ -742,18 +741,42 @@ def test_prepaid_balance_prices_charges_refunds_and_minimum_duration(api):
     ok = _job(api)
     api.armazem.objetos[ok["video_url"].split("armazem.teste/")[1].split("?")[0]] = 7000
     assert _concluir(api, ok, status="ok", bytes_video=7000, similaridade=0.99, **CONTINUO).json()["status"] == "ok"
+    s = api.get("/api/saldo", headers=h(tok)).json()
+    assert s["saldo"] == 800 and (s["extrato"][0]["tipo"], s["extrato"][0]["valor"]) == ("video", -200)
+    assert s["extrato"][0]["descricao"].startswith("1 vídeo(s) de 4 s em 720p")
     assert _concluir(api, _job(api), status="erro", erro="sem memória na GPU").json()["status"] == "erro"
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
-    assert lote["status"] == "concluido_com_falhas" and lote["cobranca"] == {"cobrado": 400, "devolvido": 200}
+    assert lote["status"] == "concluido_com_falhas" and lote["cobranca"] == {"cobrado": 200, "devolvido": 0}
     assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 800
 
-    # o saldo acabou enquanto as fotos subiam (outro pedido, ajuste): recusado, sem cobrança
-    r = _lote(api, tok, n=2, duracao=4)  # R$ 2,00
-    corrida = r.json()["lote"]
-    api.post(saldo, json={"valor": "-7,00", "descricao": "ajuste"}, headers=ADM)
-    r = _enviar_tudo(api, tok, corrida, r.json()["envios"])
-    assert r.status_code == 402 and "R$ 1,00" in r.json()["detail"]
-    assert api.get(f"/api/lotes/{corrida}", headers=h(tok)).json()["status"] == "recusado"
+    # o saldo acaba no meio do pedido: ele espera a recarga e continua sozinho depois
+    api.post(saldo, json={"valor": "-6,50", "descricao": "ajuste"}, headers=ADM)  # sobra R$ 1,50
+    r = _lote(api, tok, n=3, duracao=4)  # R$ 1,00 cada
+    meio = r.json()["lote"]
+    _enviar_tudo(api, tok, meio, r.json()["envios"])
+    api.post(f"{PAINEL}/api/lotes/{meio}/aprovar", headers=ADM)
+    comp = _job(api)
+    api.post(
+        f"/api/worker/jobs/{comp['job_id']}/prompt",
+        headers=h(WORKER),
+        json={"worker": "pod-1", "prompt_en": "The camera slowly dollies in.", "compilador": "i2v@5"},
+    )
+    _concluir(api, comp, status="ok")
+    v1 = _job(api)  # R$ 1,00 reservado: o livre (R$ 0,50) não paga o 2º
+    assert _job(api) is None
+    lote = api.get(f"/api/lotes/{meio}", headers=h(tok)).json()
+    assert lote["aguardando_saldo"] and lote["previsao"] == {"fase": "saldo"}
+    api.armazem.objetos[v1["video_url"].split("armazem.teste/")[1].split("?")[0]] = 7000
+    assert _concluir(api, v1, status="ok", bytes_video=7000, similaridade=0.99, **CONTINUO).json()["status"] == "ok"
+    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 50 and _job(api) is None
+    api.post(saldo, json={"valor": "0,50", "descricao": "Pix"}, headers=ADM)  # recarga: volta sozinho
+    lote = api.get(f"/api/lotes/{meio}", headers=h(tok)).json()
+    assert not lote["aguardando_saldo"] and lote["previsao"]["fase"] != "saldo"
+    v2 = _job(api)
+    assert v2 is not None and v2["lote"] == meio
+    assert _concluir(api, v2, status="erro", erro="falhou").json()["status"] == "erro"  # não cobra
+    assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 100
+    _concluir(api, _job(api), status="erro", erro="falhou")
     assert api.get("/api/saldo", headers=h(tok)).json()["saldo"] == 100
 
     # o dono vê o saldo de cada cliente e o extrato completo
@@ -848,7 +871,7 @@ def test_the_real_ip_comes_from_the_proxy_header_and_ipv6_counts_by_network(api,
 
 def test_the_frame_filter_is_required_and_a_blocked_video_never_reaches_the_client(api):
     """ADR 0005: "ok" sem a nota do filtro de imagem volta para a fila; com nota alta, o vídeo é apagado,
-    não é refeito e volta para o saldo. Nada explícito no teste: só as notas que o worker mandaria."""
+    não é refeito e não é cobrado (ADR 0012). Nada explícito no teste: só as notas que o worker mandaria."""
     tok = _cliente(api, "Loja", saldo="10")
     r = _lote(api, tok, n=2, duracao=4)
     lid = r.json()["lote"]
@@ -882,7 +905,7 @@ def test_the_frame_filter_is_required_and_a_blocked_video_never_reaches_the_clie
     assert all(j["barrado_em"] and j["nsfw"] >= 0.8 and "barrado pelo filtro de imagem" in j["erro"] for j in jobs)
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
     assert lote["status"] == "concluido_com_falhas" and lote["prontos"] == 0
-    assert lote["cobranca"] == {"cobrado": 200, "devolvido": 200}  # como todo vídeo que não sai
+    assert lote["cobranca"] == {"cobrado": 0, "devolvido": 0}  # como todo vídeo que não sai (ADR 0012)
     assert "barrado" not in json.dumps(lote) and not any(v.get("url") for v in lote["videos"])
     # o dono vê no histórico e no registro de auditoria
     (x,) = [x for x in api.get(f"{PAINEL}/api/historico", headers=ADM).json()["lotes"] if x["lote"] == lid]

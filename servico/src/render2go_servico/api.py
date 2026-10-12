@@ -889,6 +889,13 @@ def duracoes(plano: str) -> list[int]:
     return [d for d in lote.DURACOES if d >= precos.DURACAO_MIN]
 
 
+def sem_saldo_video(preco: int, saldo: int) -> str:
+    return (
+        f"saldo insuficiente: cada vídeo deste pedido custa {precos.reais(preco)} e o seu saldo livre é "
+        f"{precos.reais(max(0, saldo))}. Adicione saldo por Pix no seu painel"
+    )
+
+
 def sem_saldo(custo: int, saldo: int) -> str:
     return (
         f"saldo insuficiente: este pedido custa {precos.reais(custo)} e o seu saldo é {precos.reais(saldo)}. "
@@ -1977,15 +1984,16 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 raise HTTPException(429, f"o teste gratuito vale para até {TESTE['fotos']} fotos, num pedido só")
             _limites_teste(c, cli, origem, len(body.fotos))
             body.duracao = TESTE["duracao"]
-        if cli["plano"] != "interno" and c.banco.fotos_hoje(cli["id"]) + len(body.fotos) > cli["cota_fotos_dia"]:
+        # sem limite de fotos nos planos pago e interno (pedido do dono, 12/10/2026): a cota diária fica só
+        # no teste gratuito, que já tem o teto de 5 fotos
+        if cli["plano"] == "teste" and c.banco.fotos_hoje(cli["id"]) + len(body.fotos) > cli["cota_fotos_dia"]:
             raise HTTPException(429, f"cota diária de {cli['cota_fotos_dia']} fotos atingida")
-        preco_video, custo = None, 0
-        if cli["plano"] in precos.PLANOS_COBRADOS:  # pré-pago: confere o saldo antes de as fotos subirem
+        preco_video = None
+        if cli["plano"] in precos.PLANOS_COBRADOS:  # pré-pago: cada vídeo é cobrado quando sai certo (ADR 0012)
             preco_video = precos.preco_video(body.qualidade, body.duracao)
-            custo = len(body.fotos) * body.variacoes * preco_video
-            saldo = c.banco.saldo(cli["id"])
-            if saldo < custo:
-                raise HTTPException(402, sem_saldo(custo, saldo))
+            livre = c.banco.saldo_livre(cli["id"])
+            if livre < preco_video:  # o saldo paga ao menos o 1º vídeo; o resto espera a recarga
+                raise HTTPException(402, sem_saldo_video(preco_video, livre))
         fotos, usados = [], set()
         for f, texto in zip(body.fotos, textos, strict=True):
             if f.tipo not in TIPOS:
@@ -2041,7 +2049,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "tipo": f["tipo"],
                 }
             )
-        return {"lote": lid, "envios": envios, "expira_s": URL_ENVIO_S, "custo": custo}
+        # custo: a estimativa do pedido inteiro; cada vídeo é cobrado só quando sai certo (ADR 0012)
+        custo = len(fotos) * body.variacoes * preco_video if preco_video else 0
+        return {"lote": lid, "envios": envios, "expira_s": URL_ENVIO_S, "custo": custo, "preco_video": preco_video}
 
     @app.post("/api/lotes/{lote_id}/enviado")
     def enviado(lote_id: str, cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -2085,6 +2095,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         jobs: list[dict] | None = None,
         cobranca: dict | None = None,
         pedido: dict | None = None,
+        livre: int | None = None,
     ) -> dict:
         if jobs is None:
             jobs = [j for j in c.banco.jobs(lt["id"]) if j["tipo"] == "render"]
@@ -2105,6 +2116,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         pedido = pedido if pedido is not None else json.loads(lt["pedido"])
         if lt["preco_video"] is not None and cobranca is None:
             cobranca = c.banco.cobranca(lt["id"])
+        por_video = lt.get("cobranca") == "video" and bool(lt["preco_video"])
+        # cobrança por vídeo (ADR 0012): sem saldo livre para o próximo vídeo, o pedido espera a recarga
+        aguardando_saldo = False
+        if por_video and lt["status"] in ("aprovado", "processando") and any(v["status"] == "pendente" for v in videos):
+            livre = c.banco.saldo_livre(cliente_id) if livre is None else livre
+            aguardando_saldo = livre < int(lt["preco_video"])
         return {
             "lote": lt["id"],
             "status": lt["status"],
@@ -2116,9 +2133,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "prontos": sum(1 for v in videos if v["status"] == "ok"),
             "total": len(videos),
             "videos": videos,
-            "previsao": _previsao(c, lt, jobs),
-            # pré-pago: quanto o pedido custou e quanto já voltou para o saldo
+            "previsao": {"fase": "saldo"} if aguardando_saldo else _previsao(c, lt, jobs),
+            # pré-pago: quanto o pedido custou e quanto já voltou para o saldo; no modo por vídeo, o que já
+            # foi cobrado dos vídeos entregues, o preço de cada um e se espera a recarga
             "cobranca": cobranca if lt["preco_video"] is not None else None,
+            "por_video": por_video,
+            "preco_video": lt["preco_video"],
+            "aguardando_saldo": aguardando_saldo,
         }
 
     def _previsao(c: Config, lt: dict, jobs: list[dict]) -> dict | None:
@@ -2214,7 +2235,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         # uma consulta para os jobs de todos os pedidos da página; o texto de cada foto, só nos pedidos em sequência
         jobs = c.banco.jobs_de(ids, com_texto=[i for i in ids if pedidos[i].get("textos_por_foto")])
         cobr = c.banco.cobrancas([lt["id"] for lt in lotes if lt["preco_video"] is not None])
-        return [_resumo(lt, c, cli["id"], jobs[lt["id"]], cobr.get(lt["id"]), pedidos[lt["id"]]) for lt in lotes]
+        livre = c.banco.saldo_livre(cli["id"]) if any(lt.get("cobranca") == "video" for lt in lotes) else None
+        return [_resumo(lt, c, cli["id"], jobs[lt["id"]], cobr.get(lt["id"]), pedidos[lt["id"]], livre) for lt in lotes]
 
     @app.get("/api/saldo")
     def meu_saldo(cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -2247,6 +2269,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         elif m := DESCRICAO_PEDIDO.match(r["descricao"] or ""):  # pedido que já saiu do histórico
             videos, duracao, resolucao = int(m["videos"]), int(m["duracao"]), m["resolucao"]
         cobrado, devolvido = int(r["cobrado"]), int(r["devolvido"])
+        if int(r.get("videos_cobrados") or 0):  # cobrança por vídeo (ADR 0012): os vídeos entregues da rodada
+            videos = int(r["videos_cobrados"])
         return {
             "tipo": "rodada",
             "lote": r["lote_id"],

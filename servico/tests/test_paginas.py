@@ -348,12 +348,14 @@ def _lote(amb, token, fotos: dict[str, bytes], aprovar=False, pronto=False, prom
         _api(amb, "POST", f"{PAINEL}/api/lotes/{r['lote']}/aprovar")
     if pronto:
         lote = amb.banco.lote(r["lote"])
-        for j in amb.banco.jobs(r["lote"]):
-            if j["tipo"] == "render":
-                amb.objetos[f"saida/{lote['cliente_id']}/{lote['id']}/{j['arquivo']}"] = b"mp4"
+        renders = [j for j in amb.banco.jobs(r["lote"]) if j["tipo"] == "render"]
+        for j in renders:
+            amb.objetos[f"saida/{lote['cliente_id']}/{lote['id']}/{j['arquivo']}"] = b"mp4"
         with amb.banco.tx() as c:
             c.run("UPDATE jobs SET status = 'ok' WHERE lote_id = ?", (r["lote"],))
             c.run("UPDATE lotes SET status = 'concluido' WHERE id = ?", (r["lote"],))
+            for j in renders:  # pré-pago (ADR 0012): cada vídeo entregue é cobrado, como na entrega de verdade
+                amb.banco._cobrar_video(c, j)
     return r["lote"]
 
 
@@ -768,29 +770,38 @@ def test_prepaid_balance_price_and_top_up_by_the_owner(ambiente, navegador, tmp_
     assert "fale com a gente pelo suporte" in pg.locator("#saldo-recarga").inner_text()
     # 3 s é só do teste gratuito; o padrão do estilo mostra a duração
     assert pg.locator("#duracao option").all_inner_texts() == ["Padrão do estilo (5 s)", "4 s", "5 s", "6 s", "7 s"]
-    assert _texto(pg, "#custo") == "Cada vídeo de 5 s em 480p custa R$ 1,25."
+    assert _texto(pg, "#custo") == "Cada vídeo de 5 s em 480p custa R$ 1,25, cobrado só quando fica pronto."
     fotos = [_salvar(tmp_path, f"f{i}.png", _png((40 * i, 90, 160), "circulo")) for i in range(1, 3)]
     pg.set_input_files("#fotos", [str(f) for f in fotos])
     custo = pw.expect(pg.locator("#custo"))
-    custo.to_have_text("Este pedido: 2 vídeos de 5 s em 480p = R$ 2,50 · saldo depois: R$ 0,50")
-    pg.select_option("#qualidade", "alta")
-    custo.to_have_text("Este pedido: 2 vídeos de 5 s em 720p = R$ 5,00 · faltam R$ 2,00 de saldo")
+    cobrados = "cobrados um a um, só quando ficam prontos"
+    custo.to_have_text(f"Estimativa: 2 vídeos de 5 s em 480p = R$ 2,50, {cobrados}")
+    pg.select_option("#qualidade", "alta")  # R$ 2,50 cada: o saldo de R$ 3,00 paga 1 agora
+    custo.to_have_text(
+        f"Estimativa: 2 vídeos de 5 s em 720p = R$ 5,00, {cobrados}"
+        " · o saldo atual paga 1 vídeo; o resto espera você adicionar saldo"
+    )
+    assert "falta" not in (pg.get_attribute("#custo", "class") or "")
+    pg.select_option("#duracao", "7")  # R$ 3,50: nem o 1º vídeo
+    custo.to_have_text(
+        f"Estimativa: 2 vídeos de 7 s em 720p = R$ 7,00, {cobrados} · o seu saldo não paga o 1º vídeo (R$ 3,50)"
+    )
     assert "falta" in pg.get_attribute("#custo", "class")
     pg.fill("#prompt", "a câmera se aproxima devagar do produto")
     pg.click("#enviar")
     assert "Saldo insuficiente" in _texto(pg, "#msg")
     assert ambiente.banco.lotes() == []  # nada foi criado
-    # 4 s em 480p: R$ 2,00, cobrados quando as fotos chegam
+    # 4 s em 480p: estimativa de R$ 2,00; nada sai do saldo no envio (ADR 0012: só quando o vídeo fica pronto)
     pg.select_option("#qualidade", "rapida")
     pg.select_option("#duracao", "4")
-    custo.to_have_text("Este pedido: 2 vídeos de 4 s em 480p = R$ 2,00 · saldo depois: R$ 1,00")
+    custo.to_have_text(f"Estimativa: 2 vídeos de 4 s em 480p = R$ 2,00, {cobrados}")
     pg.click("#enviar")
     pg.wait_for_selector("#msg.ok", timeout=15000)
-    pw.expect(pg.locator("#saldo-valor")).to_have_text("R$ 1,00")
-    pg.wait_for_selector("#lotes .lote:has-text('Custo do pedido: R$ 2,00')")
+    pw.expect(pg.locator("#saldo-valor")).to_have_text("R$ 3,00")
+    cobrado = "Cobrado até agora: R$ 0,00 · R$ 1,00 por vídeo, só quando fica pronto"
+    pg.wait_for_selector(f"#lotes .lote:has-text('{cobrado}')")
     pg.click("#extrato summary")
-    pw.expect(pg.locator("#extrato-lista li").first).to_contain_text("Pedido: 2 vídeo(s) de 4 s em 480p")
-    pw.expect(pg.locator("#extrato-lista li").first).to_contain_text("-R$ 2,00")
+    pw.expect(pg.locator("#extrato-lista li").first).to_contain_text("Recarga")
 
     # o dono lança uma recarga pelo painel (a janela da conta) e baixa o extrato
     adm_ctx = navegador.new_context()
@@ -798,12 +809,12 @@ def test_prepaid_balance_price_and_top_up_by_the_owner(ambiente, navegador, tmp_
     adm = _pagina(adm_ctx, erros)
     adm.goto(f"{ambiente.url}{PAINEL}/#clientes")
     adm.wait_for_selector("#clientes-tabela table")
-    assert "R$ 1,00" in _texto(adm, "#clientes-tabela table")
+    assert "R$ 3,00" in _texto(adm, "#clientes-tabela table")
     assert "720p a R$ 0,50" in _texto(adm, "#precos-info")
     adm.click("#clientes-tabela .botao-linha")
     janela = adm.locator("dialog.conta-cliente[open]")
     pw.expect(janela.locator("h2")).to_have_text("Café da Esquina")
-    pw.expect(janela.locator(".dados-conta")).to_contain_text("R$ 1,00")
+    pw.expect(janela.locator(".dados-conta")).to_contain_text("R$ 3,00")
     adm.click("#saldo-enviar")
     pw.expect(adm.locator("#saldo-msg")).to_contain_text("Escreva o valor em reais")
     pw.expect(adm.locator("#saldo-valor")).to_be_focused()
@@ -812,14 +823,14 @@ def test_prepaid_balance_price_and_top_up_by_the_owner(ambiente, navegador, tmp_
     adm.fill("#saldo-referencia", "E2026100912345")
     adm.click("#saldo-enviar")
     adm.click("dialog.confirmacao[open] button:has-text('Lançar')")
-    pw.expect(janela.locator(".aviso.ok")).to_contain_text("R$ 21,00")
+    pw.expect(janela.locator(".aviso.ok")).to_contain_text("R$ 23,00")
     pw.expect(janela.locator(".aviso.ok")).to_be_focused()  # o leitor de tela ouve o resultado
-    pw.expect(janela.locator(".dados-conta")).to_contain_text("R$ 21,00")
-    pw.expect(adm.locator("#clientes-tabela table")).to_contain_text("R$ 21,00")
+    pw.expect(janela.locator(".dados-conta")).to_contain_text("R$ 23,00")
+    pw.expect(adm.locator("#clientes-tabela table")).to_contain_text("R$ 23,00")
     with adm.expect_download() as baixado:
         janela.locator("button:has-text('Baixar o extrato')").click()
     extrato = json.loads(Path(baixado.value.path()).read_text())
-    assert extrato["saldo"] == 2100 and extrato["movimentos"][0]["descricao"] == "Pix de 09/10"
+    assert extrato["saldo"] == 2300 and extrato["movimentos"][0]["descricao"] == "Pix de 09/10"
     # o mesmo Pix de novo: recusado
     adm.fill("#saldo-valor", "20")
     adm.fill("#saldo-descricao", "Pix de 09/10")

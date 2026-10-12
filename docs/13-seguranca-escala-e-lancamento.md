@@ -213,6 +213,15 @@ O dono perguntou sobre erros com muitos pedidos simultâneos. O que protege, com
 
 **30 pods L40S** (US$ 1,09/h, `docs/07`) custam ~US$ 33/h: cabem nos US$ 80/h, mas o saldo precisa cobrir o pior caso de 2 h de cada pod (~US$ 66), além da reserva. No `.env`: `RENDER2GO_MAX_PODS=30` e `RENDER2GO_MAX_USD_H` com folga (ex.: 40). Juntos, fazem ~1.950 vídeos de 3 s por hora. **Até 12/10/2026, isso não valia:** a regra de quantos pods subir, herdada do `lote_nuvem`, parava em 8 mesmo com `RENDER2GO_MAX_PODS=30`; agora o teto é o do `.env` (sem ele, continuam 8; teste `test_a_big_queue_asks_for_up_to_the_configured_number_of_pods`).
 
+**Como os pods são escolhidos quando a demanda explode** (pergunta do dono, 12/10/2026; conferido no código):
+1. **A cada ciclo (10 s)**, o orquestrador calcula quantos pods a fila pede: cada pod com pelo menos 10 min de vídeos (ou o mínimo para o prazo, com `RENDER2GO_PRAZO_MIN`), contando só o que o saldo de cada cliente paga (ADR 0012), até `RENDER2GO_MAX_PODS`.
+2. **Primeiro os hibernados** (ADR 0011), se houver: voltam em ~1 min. O que está sem GPU livre no host fica para a próxima; depois de 3 vezes seguidas, sai do conjunto.
+3. **Depois, pods novos, na ordem de `RENDER2GO_GPUS`:** L40S → RTX 6000 Ada → RTX PRO 6000 → RTX 4090, só na nuvem secure. Sem estoque de uma GPU no RunPod, tenta a seguinte (a RTX PRO 6000 é mais cara e mais rápida; a 4090, mais barata e mais lenta). Datacenters lembrados como lentos ficam de fora.
+4. **Os pods já ligados nunca são "trocados" por outros:** cada um pega um vídeo por vez, o próximo da fila (a vez intercalada entre clientes; na mesma conta, em ordem). "Melhores e medianos ocupados" quer dizer só que todos estão gerando; com mais fila do que pods, a fila espera e a previsão de cada cliente mostra o tempo.
+5. **Tetos que param a subida:** `RENDER2GO_MAX_PODS`; `RENDER2GO_MAX_USD_H` (o pod novo conta pelo preço da GPU mais cara da lista que tiver vaga); o saldo do RunPod (nenhum pod sobe sem pagar 15 min, e o desligamento automático de cada um cabe no saldo); e o limite de gasto da conta no RunPod (US$ 80/h por padrão).
+6. **Sem estoque de nenhuma GPU da lista:** nada sobe naquele ciclo, o registro mostra "sem GPU disponível" com cada tentativa, e o orquestrador tenta de novo no ciclo seguinte, sem custo. Os pedidos esperam na fila, sem erro para o cliente.
+7. **Para aguentar picos:** subir `RENDER2GO_MAX_PODS` e `RENDER2GO_MAX_USD_H`, manter saldo no RunPod, pedir ao suporte do RunPod um limite de gasto maior, e acrescentar GPUs ao fim de `RENDER2GO_GPUS` (mais opções de estoque).
+
 **Um modelo por pod** (ou por grupo de pods):
 - cada modelo pesa dezenas de GB e ocupa a VRAM inteira. Misturar modelos num pod obriga a carregar e descarregar a cada troca, minutos por vez;
 - o worker já informa à fila os modelos que tem (`modelos`), e a fila só entrega a ele trabalho desses modelos;

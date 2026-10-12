@@ -2,6 +2,18 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 12/10/2026: cobrança por vídeo entregue, pedidos da mesma conta em ordem e sem limite de fotos (ADR 0012)
+
+Motivo: pedido do dono de 12/10 ("sem limite de fotos para contas pagas e internas; cada pedido só depois da conclusão do anterior; o valor descontado do saldo logo depois de cada arquivo processado e entregue corretamente"). Branch `claude/magical-lamport-4rrms9`. Decisão: [ADR 0012](docs/adr/0012-cobranca-por-video-entregue.md), aceito.
+
+- **Cobrança por vídeo:** nos pedidos novos do plano pago, nada sai do saldo no envio; cada vídeo é cobrado quando sai certo (movimento `video`, referência única), e o que falha, é barrado ou o pedido recusado não custam nada (sem estorno). Os pedidos de antes seguem a regra antiga até o fim (`lotes.cobranca` vazio).
+- **Saldo livre e espera:** a fila só entrega um vídeo a um pod se o saldo livre da conta (saldo menos os vídeos em andamento) paga por ele, com a linha do cliente travada; sem saldo, o pedido fica "Aguardando saldo" (página e previsão) e continua sozinho depois da recarga; o orquestrador não conta esse trabalho, então nenhum pod fica ligado esperando.
+- **Pedidos da mesma conta em ordem:** os vídeos de um pedido só começam quando o anterior da mesma conta termina (a tradução do seguinte pode adiantar); outras contas seguem intercaladas.
+- **Sem limite de fotos por dia** nos planos pago e interno (a cota diária de 500 fica só no teste gratuito). O pedido muito grande (mais de 1.000 fotos) vai em partes: ver a entrada seguinte.
+- **Página:** estimativa do pedido, quantos vídeos o saldo paga, "Cobrado até agora" em cada pedido e "Vídeo entregue" no extrato; o envio pede saldo para o 1º vídeo.
+- **Termos de Uso v3** (`termos-v3`, aceite de novo na próxima entrada): item 5 (cobrança por vídeo entregue e a espera por saldo), item 2 (pedidos em ordem, sem limite de fotos no pago) e item 4 (o teste gratuito sem limite por rede). `docs/11` (seção 4.1), `docs/09` (seção 5.1.7), CLAUDE.md.
+- **Testes:** `test_db.py` (só o entregue cobrado e uma vez; espera por saldo sem segurar pod e volta com a recarga; pedidos em ordem com pods livres; 10 pods com saldo para 3, que falha no Postgres sem a trava do cliente), `test_api.py` (o fluxo inteiro pela API), páginas e extrato; os testes do modo antigo ficam com `cobranca="pedido"`.
+
 ## 11/10/2026 (4): ADR 0011 aceito, decisões do dono sobre o filtro e o teste gratuito
 
 Motivo: respostas do dono de 11/10 depois dos testes. Branch `claude/magical-lamport-4rrms9`.
