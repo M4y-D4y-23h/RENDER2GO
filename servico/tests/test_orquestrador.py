@@ -542,3 +542,13 @@ def test_stopping_the_orchestrator_hibernates_what_fits(orq, banco):
     assert _esperar(lambda: len(o.ativos) == 2)
     o.encerrar_todos("orquestrador parou", hibernar=True)
     assert len(o.provedor.parados) == 1 and len(o.provedor.encerrados) == 1 and len(o.hib) == 1
+
+
+def test_an_order_past_the_photo_retention_closes_without_starting_a_pod(orq, banco):
+    """Fotos guardadas por 7 dias: o pedido aberto além do prazo fecha no ciclo, sem subir pod para ele."""
+    lid = _lote(banco, 2)
+    with banco.tx() as c:
+        c.run("UPDATE lotes SET criado = criado - ? WHERE id = ?", (7 * 24 * 3600, lid))
+    o = orq()
+    assert o.ciclo() == {"desejados": 0, "ativos": 0, "subindo": 0}
+    assert banco.lote(lid)["status"] == "concluido_com_falhas"

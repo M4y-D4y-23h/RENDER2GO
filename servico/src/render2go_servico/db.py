@@ -240,6 +240,15 @@ PEDIDO_ANTERIOR_ABERTO = (
 )
 # contas sem saldo puladas numa reivindicação antes de desistir (as próximas ficam para o próximo pedido)
 MAX_CONTAS_SEM_SALDO = 20
+# fotos guardadas por 7 dias no armazenamento (regra `fotos-7-dias` do bucket, docs/09 seção 3): o pedido aberto
+# há mais tempo que isto (esperando saldo, a revisão ou o pedido anterior da conta) já não tem as fotos garantidas;
+# o que falta é cancelado, sem custo, e o pedido fecha, sem gastar pod com fotos apagadas. A folga de 12 h cobre o
+# vídeo que já está num pod. Mudou a regra do bucket? Mude este prazo junto
+PRAZO_FOTOS_S = 6.5 * 24 * 3600
+MOTIVO_FOTOS_VENCIDAS = (
+    "as fotos ficam guardadas por 7 dias e este pedido não terminou nesse prazo; os vídeos que faltavam foram"
+    " cancelados, sem custo"
+)
 TIPOS_JOB = ("compilar", "render")
 # dois CREATE TABLE IF NOT EXISTS ao mesmo tempo podem falhar no Postgres (pg_type duplicado)
 TRAVA_ESQUEMA = 20261008
@@ -2815,6 +2824,7 @@ class Banco:
                 " WHERE status = 'em_andamento' AND lease_ate < ?",
                 (agora, agora),
             )
+            self._vencer_pedidos(c, agora)  # fotos já apagadas: nada desses pedidos vai para um pod
             # vez por cliente (menos vídeos iniciados primeiro); no mesmo cliente, o pedido mais antigo;
             # no mesmo pedido, a ordem da lista que o cliente vê (arquivo). A contagem por cliente sai uma
             # vez só (CTE), e não uma vez por job candidato: com milhares de jobs na fila, a consulta
@@ -2913,6 +2923,35 @@ class Banco:
                 self._cobrar_video(c, job)
             self._fechar_lote(c, job["lote_id"])
             return {**job, "status": novo}
+
+    def vencer_pedidos(self) -> int:
+        """Para o orquestrador, a cada ciclo: ver `_vencer_pedidos`."""
+        with self.tx() as c:
+            return self._vencer_pedidos(c, time.time())
+
+    def _vencer_pedidos(self, c, agora: float) -> int:
+        """Pedidos abertos há mais de PRAZO_FOTOS_S: o armazenamento pode já ter apagado as fotos. O que não
+        está num pod (pendente, ou com o prazo do pod vencido) é cancelado, sem custo (nos pedidos por vídeo, nada
+        foi cobrado; nos de antes, `_fechar_lote` devolve), e o pedido fecha quando o que está num pod terminar.
+        Devolve quantos pedidos tiveram vídeos cancelados."""
+        n = 0
+        for lt in c.all(
+            "SELECT id FROM lotes WHERE status IN ('aprovado', 'processando') AND criado < ?",
+            (agora - PRAZO_FOTOS_S,),
+        ):
+            cancelados = c.run(
+                "UPDATE jobs SET status = 'cancelado', erro = 'fotos apagadas (prazo de 7 dias)', worker = NULL,"
+                " lease_ate = NULL, atualizado = ? WHERE lote_id = ?"
+                " AND (status = 'pendente' OR (status = 'em_andamento' AND lease_ate < ?))",
+                (agora, lt["id"], agora),
+            )
+            if not cancelados:
+                continue
+            n += 1
+            c.run("UPDATE lotes SET motivo = ? WHERE id = ? AND motivo IS NULL", (MOTIVO_FOTOS_VENCIDAS, lt["id"]))
+            self.evento(c, lt["id"], "fotos_vencidas", {"cancelados": int(cancelados)})
+            self._fechar_lote(c, lt["id"])
+        return n
 
     def _fechar_lote(self, c, lote_id: str) -> None:
         agora = time.time()

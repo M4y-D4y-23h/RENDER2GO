@@ -239,7 +239,7 @@ async function arquivosSoltos(dt: DataTransfer): Promise<Escolhida[]> {
 function textoPrevisao(p: NonNullable<Previsao>): string {
   if (p.fase === "analise") return `Recebemos seu pedido. Ele começa em até ${minutos(p.inicio_max_s ?? 3600)}.`;
   if (p.fase === "fila") return (p.inicio_s ?? 0) < 60 ? "Seus vídeos começam em instantes." : `Seus vídeos começam em ${minutos(p.inicio_s ?? 0)}.`;
-  if (p.fase === "saldo") return "Aguardando saldo: adicione saldo e o pedido continua sozinho de onde parou.";
+  if (p.fase === "saldo") return "Aguardando saldo: adicione saldo e o pedido continua sozinho de onde parou (as fotos ficam guardadas por 7 dias).";
   return `Gerando seus vídeos · termina em ${minutos(p.fim_s ?? 0)}.`;
 }
 

@@ -653,7 +653,7 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
 
 ## 5.2 O que fica guardado
 
-- **Fotos de entrada:** apagadas pela API assim que o lote fecha (pronto, com falhas ou recusado). A regra `fotos-7-dias` do bucket fica como rede de segurança, para lotes que nunca fecham ou que esperam revisão por dias. Não use menos de 7 dias: um lote parado na revisão perderia as fotos antes de chegar à GPU.
+- **Fotos de entrada:** apagadas pela API assim que o lote fecha (pronto, com falhas ou recusado). A regra `fotos-7-dias` do bucket fica como rede de segurança, para lotes que nunca fecham ou que esperam revisão por dias. Não use menos de 7 dias: um lote parado na revisão perderia as fotos antes de chegar à GPU. Desde 12/10/2026, o pedido aberto há mais de 6,5 dias (esperando saldo, a revisão ou o pedido anterior da conta) fecha sozinho: o que faltava é cancelado sem custo, com o motivo para o cliente, e nenhum pod gasta tempo com fotos apagadas (`PRAZO_FOTOS_S`, em `servico/src/render2go_servico/db.py`; se mudar a regra do bucket, mude o prazo junto).
 - **Vídeos e folhas de conferência:** pela regra `videos-30-dias` do bucket. Pode ser reduzida (ex.: 7 dias) se os termos de uso disserem que o cliente deve baixar os vídeos nesse prazo.
 - **No banco:** contas (e-mail, plano, saldo), sessões (só o resumo SHA-256), pedido, IP, quantidade de fotos, eventos e o resultado da análise de pessoas. Nenhuma imagem.
 - **Registros que ficam mesmo depois do `apagar-historico`:** aceites dos termos (versão, data, IP), registros de acesso (Marco Civil: IP, porta, data e hora; apagados sozinhos depois de 6 meses), pagamentos e a auditoria do painel. Prazos completos na Política de Privacidade (`/privacidade`, seção 4).

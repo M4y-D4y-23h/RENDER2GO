@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from render2go_servico.db import MAX_TENTATIVAS, BancoError, SaldoInsuficiente
+from render2go_servico.db import MAX_TENTATIVAS, MOTIVO_FOTOS_VENCIDAS, BancoError, SaldoInsuficiente
 
 
 def _lote(b, n_fotos=2, variacoes=1):
@@ -522,3 +522,42 @@ def test_prepaid_charge_on_upload_refund_per_failed_video_and_ledger_survives_cl
     banco.apagar_historico()
     assert banco.saldo(cid) == 1000 and len(banco.extrato(cid)) == 1 + 1 + 6 + 1 + 1
     assert [k["saldo"] for k in banco.clientes() if k["id"] == cid] == [1000]
+
+
+def test_an_order_open_longer_than_the_photo_retention_closes_without_cost(banco):
+    """As fotos ficam 7 dias no armazenamento: o pedido parado além do prazo (aqui, esperando saldo) fecha, o que
+    faltava é cancelado sem custo e nenhum pod pega vídeo de foto apagada; o vídeo que já está num pod termina."""
+    cid, _ = banco.criar_cliente("Loja")
+    banco.movimentar(cid, 300, "Pix", "dono", referencia="pagamento:pix-1")
+    lid = _lote_pago(banco, cid, 3, 300, cobranca="video")
+    _pronto_para_render(banco, lid)
+    v1 = banco.reivindicar("w1")  # o saldo paga 1 vídeo; os outros 2 esperam a recarga
+    novo = _lote_pago(banco, cid, 1, 300, cobranca="video")  # recente: fica como está
+    assert banco.vencer_pedidos() == 0
+    with banco.tx() as c:
+        c.run("UPDATE lotes SET criado = criado - ? WHERE id = ?", (7 * 24 * 3600, lid))
+    assert banco.vencer_pedidos() == 1
+    lt = banco.lote(lid)
+    assert lt["status"] in ("aprovado", "processando") and lt["motivo"] == MOTIVO_FOTOS_VENCIDAS
+    banco.movimentar(cid, 1000, "Pix", "dono", referencia="pagamento:pix-2")
+    assert banco.reivindicar("w2") is None  # a recarga não traz de volta vídeos de fotos apagadas
+    assert [(t["pendentes"], t["em_andamento"]) for t in banco.trabalho()] == [(0, 1)]
+    banco.concluir(v1["id"], "w1", "ok")  # o que estava num pod termina e é cobrado
+    assert banco.lote(lid)["status"] == "concluido_com_falhas"
+    assert banco.cobranca(lid) == {"cobrado": 300, "devolvido": 0} and banco.saldo(cid) == 1000
+    assert banco.vencer_pedidos() == 0 and banco.lote(novo)["status"] == "aguardando_envio"
+    assert [e["tipo"] for e in banco.auditoria(lid)["eventos"]].count("fotos_vencidas") == 1
+
+
+def test_a_charged_upfront_order_past_the_photo_retention_refunds_what_was_cancelled(banco):
+    """Pedido do modo de antes (cobrado no envio): o que o prazo das fotos cancela volta para o saldo. Sem
+    orquestrador, a própria fila fecha o pedido."""
+    cid, _ = banco.criar_cliente("Loja")
+    banco.movimentar(cid, 900, "Pix", "dono", referencia="pagamento:pix-1")
+    lid = _lote_pago(banco, cid, 3, 300)
+    _pronto_para_render(banco, lid)
+    assert banco.saldo(cid) == 0
+    with banco.tx() as c:
+        c.run("UPDATE lotes SET criado = criado - ? WHERE id = ?", (7 * 24 * 3600, lid))
+    assert banco.reivindicar("w1") is None
+    assert banco.lote(lid)["status"] == "concluido_com_falhas" and banco.saldo(cid) == 900

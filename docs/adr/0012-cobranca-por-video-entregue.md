@@ -19,6 +19,7 @@
 - **Para o dono:** o gasto aparece no extrato e no painel a cada vídeo entregue ("Cobrado hoje" sobe aos poucos). Uma rodada do extrato soma os vídeos entregues daquele pedido.
 - **Pods:** o saldo do cliente decide quantos vídeos entram na conta do orquestrador. Com milhares de vídeos e saldo para todos, os pods sobem até `RENDER2GO_MAX_PODS`.
 - **Risco aceito:** um ajuste manual negativo no painel, com vídeos em andamento, pode deixar o saldo abaixo de zero na entrega desses vídeos (a reserva já os contava). O vídeo é entregue e cobrado; o pedido espera a recarga.
+- **Prazo das fotos:** as fotos ficam 7 dias no armazenamento. O pedido aberto há mais de 6,5 dias (esperando saldo, a revisão ou o pedido anterior da conta) fecha: o que não está num pod é cancelado sem custo e o cliente vê o motivo (`Banco.vencer_pedidos`, a cada ciclo do orquestrador e em cada `reivindicar`). Os Termos v3 dizem isso no item 5.
 - **Pedido muito grande** (milhares de fotos): criado em partes de até 1.000 fotos (`POST /api/lotes` e `POST /api/lotes/{lote}/fotos`), sem limite total; a página cria cada parte só quando a anterior subiu (os links de envio valem 1 h). A lista de pedidos traz os 100 primeiros vídeos e as contagens, e o resto vem de 100 em 100; o revisor vê as 60 primeiras fotos e as marcadas pela análise, com os totais do pedido inteiro (CHANGELOG, 12/10/2026 (2)).
 
 ## Testes
