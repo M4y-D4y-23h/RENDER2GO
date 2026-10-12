@@ -3,6 +3,30 @@
 - **Status:** **aceito pelo dono em 11/10/2026**, depois da medição em GPU (seção "Medição"). Implementado atrás de `RENDER2GO_PODS_HIBERNADOS` (padrão 0 = desligado). Plano do dono: 0 durante os testes (os pods são encerrados como antes) e 2 ou 3 a partir da divulgação; voltar para 0 (ou diminuir) encerra os hibernados a mais no ciclo seguinte do orquestrador.
 - **Contexto:** o dono pediu a subida dos pods de 4–5 min para ~1 min. Medido em 08/10 (`worker/evals/gpu-2026-10-08-subida/`): agente, CUDA e rede ~60 s; ambiente (venv, ComfyUI, Ollama) 60–190 s; modelos (37 GB do espelho R2) 44–175 s; serviços e tradução ~1 min. Baixar 37 GB não cabe em 1 min em host nenhum, e o cache de modelos do RunPod é só para Serverless, com um modelo por endpoint (nós usamos quatro arquivos e o Ollama). Também em 11/10: um pod do dono saiu aos ~40 min, depois do último vídeo, porque o saldo do RunPod estava baixo (US$ 2,32 na conferência) e o desligamento automático era calculado pelo preço da GPU mais cara da lista (US$ 2,49/h da RTX PRO 6000), mesmo com o pod numa L40S.
 
+## Atualização (12/10/2026): o "volume zerado" e as correções
+
+**O que o dono viu:** com `RENDER2GO_PODS_HIBERNADOS=1`, o pod hibernou; no pedido seguinte, o pod que atendeu subiu do zero (disco e volume vazios, ~4 min), e não em ~1 min.
+
+**O que aconteceu (conferido na API do RunPod):** o pod que atendeu era **outro pod**, criado do zero. O hibernado não voltou porque a GPU do host dele tinha sido alugada por outra pessoa enquanto ele estava parado ("not enough free GPUs on the host machine", o caso já visto no 2º teste da medição). O código de antes tentava a volta 3 vezes **no mesmo pedido**, em segundos; as 3 falhas seguidas tiravam o pod do conjunto e o **encerravam com o disco de volume**. O pod novo, sem volume, fazia a subida inteira e hibernava no lugar (no momento da conferência, o único hibernado era esse, `-2`, parado às 15:17 e nunca religado). Quem estava no volume nunca foi lido: ele foi apagado junto com o pod.
+
+**Outros caminhos que apagavam ou estragavam um hibernado**, achados na revisão do código e corrigidos junto:
+
+| Onde | O que fazia | Agora |
+|---|---|---|
+| Volta sem GPU no host (`_retomar_algum`) | 3 tentativas no mesmo pedido e o pod era encerrado | **uma tentativa por pedido**; só sai do conjunto depois de 3 pedidos seguidos sem GPU livre (`FALHAS_RETOMADA`), com o motivo e a hora no painel ("Última volta que não deu certo"). No lugar, sobe um pod do zero, como antes |
+| Conjunto cheio | o pod que acabou de rodar era encerrado, e o hibernado cujo host estava cheio ficava | o pod que acabou de rodar (com o volume conferido) **toma a vaga** de um hibernado que já falhou na volta (o que mais falhou); os que nunca falharam ficam |
+| Erro depois da volta (apt, links) | o pod era encerrado, mesmo com o volume bom | só sai se o erro mostra o volume estragado ("disco de volume", "não existe mais", GPU com defeito, driver antigo); senão, é parado de novo e conta uma falha |
+| Prazo do agente (`pod_agente.desligar`, modo parar) | `podStop` e, 60 s depois, `podTerminate` se a API ainda não mostrasse o pod parado | até 10 `podStop` (2 min entre as tentativas); `podTerminate` só no fim, como último recurso |
+| `entrypoint.sh` | o desligamento de 2 h do contêiner (`podTerminate` primeiro) corria junto com o prazo do agente | com `DEADMAN_S` (prazo do agente), o contêiner não tem desligamento próprio |
+| Pod parado pelo próprio prazo | entrava no conjunto sem conferir o volume | entra só com o marcador `GUARDADO` e o `instalado` da versão atual, lidos do pod |
+| Pod que voltou | hibernava de novo sem conferir o marcador | confere `guardado` e `instalado` antes de hibernar; sem eles, é encerrado |
+| Volta com volume incompleto (`retomada` no bootstrap) | criava os links de `/opt` para o volume antes de conferir; a instalação do zero, depois, escrevia no volume pelos links | confere marcador, versão, cada modelo (bytes), venv, Ollama e blobs **antes** de criar qualquer link; faltou algo, instala do zero no disco do contêiner, sem links |
+| Orquestrador parando com um pod fechando | o mesmo pod podia ser fechado duas vezes (hibernar e encerrar) | um dono só por pod (`PodFila.pegar_vez`, com trava) |
+
+**Testado sem GPU:** o bootstrap em contêiner com a imagem dos pods (`worker/evals/bootstrap-2026-10-12/`): volta certa, volume incompleto (sem links, instala do zero) e arquivo corrompido (FALHOU e o marcador sai); e os testes do orquestrador (`servico/tests/test_orquestrador.py`): host cheio guarda o hibernado e tenta uma vez por pedido; pod novo toma a vaga do que falhou; prazo do agente; volta sem marcador; erros depois da volta; fechamento único.
+
+**O que a hibernação não resolve:** se a GPU do host foi alugada, o pod parado não volta, e não há como reservar a GPU parada no RunPod (a política do RunPod: o pod parado só volta no mesmo host, com GPU livre; senão, migrar = pod novo). Com 2–3 hibernados em hosts diferentes, a chance de algum voltar é maior. A outra saída medível é o volume de rede (seção final e `docs/07`, seção 12).
+
 ## Decisão
 
 1. **Disco de volume do próprio pod.** Com a hibernação ligada, todo pod do serviço nasce com `volumeInGb` (`RENDER2GO_POD_VOLUME_GB`, padrão 70) em `/workspace`, além do disco do contêiner de 120 GB de sempre.

@@ -41,6 +41,7 @@ Serviço de vídeos curtos com IA para pequenos negócios: o cliente envia as fo
 | [`docs/11-custos-e-planos.md`](docs/11-custos-e-planos.md) | Custos mensais (parado, escala pequena e demanda alta) e preços do pré-pago em vigor (por segundo de vídeo, com custo e margem) |
 | [`docs/12-modelos-e-licencas.md`](docs/12-modelos-e-licencas.md) | Modelos de IA por finalidade: quais podem ser usados comercialmente, com que condições e fontes; riscos dos modelos em uso |
 | [`docs/13-seguranca-escala-e-lancamento.md`](docs/13-seguranca-escala-e-lancamento.md) | Revisão de segurança antes do lançamento, teste de invasão, o que o servidor aguenta (medido), GPUs com 30+ pods e a lista de tarefas do dono |
+| [`docs/14-videos-quase-instantaneos.md`](docs/14-videos-quase-instantaneos.md) | Vídeos quase instantâneos: onde está o tempo de um pedido, o que reduz a subida do pod e o que acelera a geração, com os números medidos |
 | [`docs/adr/`](docs/adr) | Decisões de arquitetura (0001 a 0010) |
 
 ## Desenvolvimento

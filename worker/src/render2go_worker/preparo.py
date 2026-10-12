@@ -53,18 +53,25 @@ class Preparada:
         return ""
 
 
+def rgb(im: Image.Image) -> Image.Image:
+    """A foto como o vídeo a vê: com a rotação do EXIF aplicada e a transparência sobre fundo
+    branco, em RGB. O filtro das fotos no servidor (render2go_servico.filtro_fotos) usa a mesma
+    conversão para avaliar o que vai ser o 1º quadro."""
+    im = ImageOps.exif_transpose(im)
+    if im.mode in ("RGBA", "LA", "P"):
+        im = im.convert("RGBA")
+        fundo = Image.new("RGBA", im.size, (255, 255, 255, 255))
+        im = Image.alpha_composite(fundo, im)
+    return im.convert("RGB")
+
+
 def preparar(foto: Path, width: int, height: int, dest: Path) -> Preparada:
     try:
         with Image.open(foto, formats=("JPEG", "PNG", "WEBP")) as im:
             if im.width * im.height > MAX_PIXELS:
                 raise PreparoError(f"foto grande demais ({im.width}x{im.height})")
-            im = ImageOps.exif_transpose(im)
+            im = rgb(im)
             original = im.size
-            if im.mode in ("RGBA", "LA", "P"):
-                im = im.convert("RGBA")
-                fundo = Image.new("RGBA", im.size, (255, 255, 255, 255))
-                im = Image.alpha_composite(fundo, im)
-            im = im.convert("RGB")
             escala = max(width / original[0], height / original[1])
             out = ImageOps.fit(im, (width, height), Image.Resampling.LANCZOS)
     except (OSError, Image.DecompressionBombError) as e:

@@ -552,3 +552,142 @@ def test_an_order_past_the_photo_retention_closes_without_starting_a_pod(orq, ba
     o = orq()
     assert o.ciclo() == {"desejados": 0, "ativos": 0, "subindo": 0}
     assert banco.lote(lid)["status"] == "concluido_com_falhas"
+
+
+def _hibernado(o, pid, falhas=0, **extra):
+    """Um pod no conjunto de hibernados, parado no "RunPod" falso (o agente nunca responde)."""
+    base = {"url": "http://127.0.0.1:9", "token": "t" * 40, "usd_h": 2.0, "gpu": ln.GPUS_PADRAO[0], "gpus": 1}
+    o.hib[pid] = {"id": pid, "versao": ln.versao_hibernacao(), "falhas": falhas, **base, **extra}
+    o.provedor.volumes[pid] = 70
+
+
+def test_a_full_host_keeps_the_hibernated_pod_and_tries_it_once_per_order(orq, banco):
+    """12/10/2026, em produção: o host do único hibernado ficou sem GPU livre e o laço tentou o mesmo pod
+    3 vezes na hora: no 1º pedido, o pod era encerrado com o disco de volume, e um pod do zero subia (o dono
+    viu o disco "zerado"). Agora: uma tentativa por pedido; o pod fica parado e conta a falha."""
+    o = orq(hibernados=1)
+    _hibernado(o, "velho")
+    o.provedor.sem_gpu.add("velho")
+    tentativas = []
+    retomar = o.provedor.retomar
+    o.provedor.retomar = lambda pid: (tentativas.append(pid), retomar(pid))[1]
+    _lote(banco, 1, plano="pago")
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    assert tentativas == ["velho"] and o.provedor.criados == ["p1"]  # uma vez só; depois, o pod novo
+    assert "velho" not in o.provedor.encerrados and o.hib["velho"]["falhas"] == 1
+    assert o.hib["velho"]["ultima_falha"] == "sem GPU livre no host" and o.hib["velho"]["ultima_falha_em"]
+    o._estado_runpod()  # o painel mostra o motivo
+    painel = json.loads(banco.ler_estado("runpod")["valor"])
+    assert painel["hibernados"][0]["ultima_falha"] == "sem GPU livre no host"
+    o.encerrar_todos("fim do teste")
+
+
+def test_a_fresh_pod_takes_the_place_of_a_hibernated_pod_whose_host_was_full(orq, banco):
+    """Conjunto cheio com um hibernado que acabou de falhar por falta de GPU no host: o pod que acabou de
+    rodar teve a GPU livre agora há pouco; ele hiberna e o outro sai (com o disco)."""
+    o = orq(hibernados=1, fila_cmd="echo ocioso > {raiz}/fila.motivo")
+    _instala_no_volume(o)
+    _hibernado(o, "velho")
+    o.provedor.sem_gpu.add("velho")
+    _lote(banco, 1, plano="pago")
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    (pf,) = o.ativos.values()
+    assert _esperar(lambda: _fim(o, pf))
+    with banco.tx() as c:
+        c.run("UPDATE jobs SET status = 'ok'")
+    o.ciclo()
+    assert _esperar(lambda: not o.encerrando)
+    assert o.provedor.parados == ["p1"] and o.provedor.encerrados == ["velho"] and set(o.hib) == {"p1"}
+
+
+@pytest.mark.parametrize("completo", [True, False])
+def test_a_pod_stopped_by_its_own_deadline_stays_only_with_a_checked_volume(orq, banco, completo):
+    """O desligamento automático do agente parou o pod (EXITED): ele só fica no conjunto se o disco de volume
+    foi conferido enquanto estava no ar (antes de 12/10/2026, entrava sem conferir nada)."""
+    o = orq(hibernados=1, fila_cmd="sleep 30")
+    _instala_no_volume(o, completo=completo)
+    _lote(banco, 1, plano="pago")
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    o.ciclo()  # o pod no ar: a consulta do worker também confere o disco de volume
+    (pf,) = o.ativos.values()
+    assert pf.pod.volume_ok is completo
+    o.provedor.parar(pf.pod.info.id)  # o prazo venceu: o agente parou o próprio pod
+    with banco.tx() as c:  # a fila acabou: o ciclo não sobe outro pod
+        c.run("UPDATE jobs SET status = 'ok'")
+    o.ciclo()
+    assert _esperar(lambda: not o.encerrando and not o.ativos and not o.subindo)
+    if completo:
+        assert set(o.hib) == {pf.pod.info.id} and pf.pod.info.id not in o.provedor.encerrados
+    else:  # sem o disco completo, a volta seria do zero: o pod parado é encerrado, não fica cobrando o disco
+        assert not o.hib and pf.pod.info.id in o.provedor.encerrados
+    o.encerrar_todos("fim do teste")
+
+
+def test_a_resumed_pod_without_the_marker_is_terminated_not_hibernated(orq, banco):
+    """Na volta, o marcador sai se o SHA-256 refeito não confere: o pod que voltou não hiberna de novo
+    sem conferir o marcador (até 12/10/2026, a volta era aceita sem olhar)."""
+    o = orq(hibernados=1, fila_cmd="echo ocioso > {raiz}/fila.motivo")
+    _instala_no_volume(o)
+    _lote(banco, 1, plano="pago")
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    (pf,) = o.ativos.values()
+    assert _esperar(lambda: _fim(o, pf))
+    with banco.tx() as c:
+        c.run("UPDATE jobs SET status = 'ok'")
+    o.ciclo()
+    assert _esperar(lambda: not o.encerrando) and o.provedor.parados == ["p1"]
+    # a volta: o "bootstrap" fica pronto, mas o disco perdeu o marcador
+    o.remoto.instalar = (
+        "echo PRONTO > {raiz}/estado; rm -f " + o.remoto.local_hib + "/instalado; echo GUARDADO > {raiz}/guardado"
+    )
+    _lote(banco, 1, plano="pago")
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1) and o.provedor.retomados == ["p1"]
+    (pf,) = o.ativos.values()
+    assert _esperar(lambda: _fim(o, pf))
+    with banco.tx() as c:
+        c.run("UPDATE jobs SET status = 'ok'")
+    o.ciclo()
+    assert _esperar(lambda: not o.encerrando)
+    assert o.provedor.encerrados == ["p1"] and not o.hib
+
+
+@pytest.mark.parametrize(("falha", "fica"), [("apt na volta da hibernação", True), ("disco de volume: links", False)])
+def test_a_resume_that_fails_after_starting(orq, banco, falha, fica):
+    """O RunPod ligou o pod, mas ele não ficou pronto: sem culpa do disco (ex.: apt sem rede), o pod é parado de
+    novo e fica (conta uma falha); com o disco de volume ruim, sai do conjunto. Nos dois, um pod do zero sobe."""
+    o = orq(hibernados=1, fila_cmd="sleep 30")
+    env = {"AGENT_TOKEN": "a" * 40, "DEADMAN_S": "600", "DEADMAN_ACAO": "parar"}
+    info = o.provedor.criar("teste", [runpod_pods.Opcao(ln.GPUS_PADRAO[0], "secure")], 1, env, volume_gb=70)
+    o.provedor.parar(info.id)  # hibernado; na volta, o agente responde na mesma porta (como no RunPod)
+    o.provedor.parados.clear()
+    o.hib[info.id] = {"id": info.id, "versao": ln.versao_hibernacao(), "falhas": 0, "url": info.url,
+                      "token": info.token, "usd_h": 2.0, "gpu": ln.GPUS_PADRAO[0], "gpus": 1}  # fmt: skip
+    o.remoto.instalar = f"echo FALHOU {falha} > {{raiz}}/estado"
+    assert o._retomar_algum(lambda i: None) is None  # não voltou: quem chama sobe um pod do zero
+    assert o.provedor.retomados == [info.id]
+    if fica:
+        assert o.provedor.parados == [info.id] and info.id not in o.provedor.encerrados
+        assert o.hib[info.id]["falhas"] == 1 and "não ficou pronto" in o.hib[info.id]["ultima_falha"]
+    else:
+        assert info.id in o.provedor.encerrados and info.id not in o.hib
+
+
+def test_a_pod_is_closed_only_once_even_with_the_shutdown_in_the_middle(orq, banco):
+    """Quem pega a vez fecha o pod; o outro caminho (ex.: a parada do orquestrador durante a espera do
+    GUARDADO) não tira do conjunto o pod que acabou de hibernar nem tenta encerrá-lo."""
+    o = orq(hibernados=1, fila_cmd="sleep 30")
+    _instala_no_volume(o)
+    _lote(banco, 1, plano="pago")
+    o.ciclo()
+    assert _esperar(lambda: len(o.ativos) == 1)
+    ((pid, pf),) = o.ativos.items()
+    o._fim_do_pod(pf, "ocioso", "fila vazia", esperar=False)
+    assert o.provedor.parados == [pid] and set(o.hib) == {pid}
+    o.encerrando[pid] = pf  # como se a thread do ciclo ainda estivesse nele
+    o.encerrar_todos("orquestrador parou")
+    assert o.provedor.encerrados == [] and set(o.hib) == {pid}

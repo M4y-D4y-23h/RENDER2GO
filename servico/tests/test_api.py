@@ -19,8 +19,8 @@ WORKER = "w" * 40
 PAINEL = "/painel-teste-0123456789"  # endereço do painel nos testes (RENDER2GO_ADMIN_CAMINHO)
 TOTP = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"  # segredo do autenticador nos testes (RENDER2GO_ADMIN_TOTP)
 ADM = {"X-Render2Go": "1"}  # o cabeçalho que a página do painel manda (a sessão vai no cookie)
-# vídeo que fica na foto até o fim e passou no filtro de imagem (13 quadros, nota bem abaixo do limiar)
-CONTINUO = {"deriva_cor": 6.5, "salto_cor": 1.2, "nsfw": 0.01, "nsfw_quadros": 13}
+# vídeo que fica na foto até o fim e passou no filtro de imagem (13 quadros, as duas notas bem abaixo dos limiares)
+CONTINUO = {"deriva_cor": 6.5, "salto_cor": 1.2, "nsfw": 0.01, "nsfw_alto": 0.0, "nsfw_quadros": 13}
 
 
 class Armazem:
@@ -917,3 +917,43 @@ def test_the_frame_filter_is_required_and_a_blocked_video_never_reaches_the_clie
     assert x["barrados"] == 2 and x["nao_sairam"] == [{"motivo": "filtro_imagem", "texto": texto, "videos": 2}]
     aud = api.get(f"{PAINEL}/api/lotes/{lid}/auditoria", headers=ADM).json()
     assert sum(e["tipo"] == "video_barrado" for e in aud["eventos"]) == 2
+
+
+def test_the_server_applies_the_pod_rule_to_both_frame_scores(api, monkeypatch):
+    """A regra de 12/10/2026 (render2go_worker.filtro_imagem.barrado) também no servidor: a nota da janela
+    abaixo de 0,5 e a explícita abaixo de 0,35 passam; qualquer uma acima barra; sem a explícita (pod de
+    antes de 12/10), o vídeo volta para a fila. O .env aperta os limiares (dentro dos limites)."""
+    tok = _cliente(api, "Loja", saldo="10")
+    r = _lote(api, tok, n=3, duracao=4)
+    lid = r.json()["lote"]
+    assert _enviar_tudo(api, tok, lid, r.json()["envios"]).status_code == 200
+    api.post(f"{PAINEL}/api/lotes/{lid}/aprovar", headers=ADM)
+    comp = _job(api)
+    api.post(
+        f"/api/worker/jobs/{comp['job_id']}/prompt",
+        headers=h(WORKER),
+        json={"worker": "pod-1", "prompt_en": "The camera slowly dollies in.", "compilador": "i2v@6"},
+    )
+    _concluir(api, comp, status="ok")
+
+    def entregar(job, **notas):
+        chave = job["video_url"].split("armazem.teste/")[1].split("?")[0]
+        api.armazem.objetos[chave] = 7000
+        corpo = {**{k: v for k, v in CONTINUO.items() if not k.startswith("nsfw")}, "nsfw_quadros": 13, **notas}
+        return _concluir(api, job, status="ok", bytes_video=7000, similaridade=0.99, **corpo).json()["status"]
+
+    # antes, um quadro de transição com 0,45 já barrava o vídeo; agora vale a média de 2 quadros seguidos
+    a = _job(api)
+    assert entregar(a, nsfw=0.45, nsfw_alto=0.1) == "ok"
+    b = _job(api)
+    assert entregar(b, nsfw=0.1, nsfw_alto=0.4) == "erro"  # um quadro explícito basta
+    c = _job(api)
+    assert entregar(c, nsfw=0.1) == "pendente"  # sem a nota explícita: fail-closed
+    monkeypatch.setenv("RENDER2GO_FILTRO_LIMIAR", "0,4")  # o .env aperta: 0,45 passa a barrar
+    de_novo = _job(api)
+    assert de_novo["job_id"] == c["job_id"]
+    assert entregar(de_novo, nsfw=0.45, nsfw_alto=0.0) == "erro"
+    jobs = {j["id"]: j for j in api.banco.jobs(lid) if j["tipo"] == "render"}
+    assert [bool(jobs[j["job_id"]]["barrado_em"]) for j in (a, b, c)] == [False, True, True]
+    assert "explícita 0.40" in jobs[b["job_id"]]["erro"] and jobs[b["job_id"]]["nsfw_alto"] == pytest.approx(0.4)
+    assert jobs[c["job_id"]]["tentativas"] == 2

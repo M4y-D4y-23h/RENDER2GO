@@ -3,9 +3,10 @@
 # Contexto = raiz do repositório:
 #   docker build -f servico/Dockerfile -t render2go-servico .
 #   (atrás de proxy que reassina TLS: --secret id=extra_ca,src=/caminho/ca.pem)
-# Mesma imagem para os dois processos:
+# Mesma imagem para os três processos:
 #   render2go-servico api          (padrão; porta 8000)
 #   render2go-servico orquestrar   (sobe e encerra pods conforme a fila)
+#   render2go-servico analisar     (filtro das fotos e aviso de pessoas, em CPU)
 ARG PYTHON_IMAGE=python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.8.17
 
@@ -21,14 +22,19 @@ WORKDIR /app
 COPY worker/ worker/
 COPY tools/ tools/
 COPY servico/ servico/
-# chmod: o checkout no servidor pode ter vindo com umask 077, e o usuário render2go precisa ler o código
-# modelos do aviso de pessoas no /aprovar (pessoas.py): baixados aqui, conferidos por bytes e SHA-256
+# chmod: o checkout no servidor pode ter vindo com umask 077, e o usuário render2go precisa ler o código.
+# Modelos do aviso de pessoas no painel (pessoas.py) e o classificador do filtro das fotos (filtro_fotos.py,
+# ADR 0005; PyTorch de CPU pelo extra "filtro"; os pesos do models.lock.json): baixados aqui e conferidos por bytes
+# e SHA-256. O filtro é carregado e testado numa imagem lisa: a build falha se ele não funcionar
 ENV RENDER2GO_MODELOS_SERVICO=/opt/render2go/modelos-servico
 RUN --mount=type=secret,id=extra_ca --mount=type=tmpfs,target=/run/render2go-ca . /usr/local/lib/render2go/ca-env.sh \
     && chmod -R a+rX /app \
-    && cd servico && uv sync --frozen --no-dev --no-cache \
+    && cd servico && uv sync --frozen --no-dev --no-cache --extra filtro \
     && test -s web/publico/index.html && test -s web/publico/estatico/cliente.js \
-    && /opt/venv/bin/python -m render2go_servico.pessoas baixar "$RENDER2GO_MODELOS_SERVICO"
+    && /opt/venv/bin/python -m render2go_servico.pessoas baixar "$RENDER2GO_MODELOS_SERVICO" \
+    && /opt/venv/bin/python -m render2go_worker.models nsfw_freepik_modelo --models-dir "$RENDER2GO_MODELOS_SERVICO" \
+    && /opt/venv/bin/python -m render2go_servico.filtro_fotos conferir \
+    && chmod -R a+rX "$RENDER2GO_MODELOS_SERVICO"
 # a pasta de estado já existe com o dono certo: o volume nomeado do compose herda dono e permissões
 RUN useradd --system --uid 10001 --create-home render2go \
     && install -d -o render2go -g render2go -m 700 /home/render2go/.cache /home/render2go/.cache/render2go

@@ -1033,6 +1033,46 @@ def test_stop_an_order_and_see_why_videos_did_not_come_out(ambiente, navegador):
     assert [e for e in erros if "media" not in e.lower()] == [], erros
 
 
+def test_a_photo_refused_by_the_filter_is_blurred_for_the_owner_and_can_be_released(ambiente, navegador):  # noqa: F811
+    """Filtro das fotos (12/10/2026): a foto recusada não vira miniatura no cartão da revisão; o dono a abre desfocada
+    (fica na auditoria) e libera o engano antes de aprovar. Só SFW: um classificador falso recusa pela cor do fundo."""
+
+    class PelaCor:
+        def probabilidades(self, quadros):  # o fundo laranja de _png((200, 120, 60)): "recusada"
+            return [(0.1, 0.1, 0.3, 0.5) if q[0] > 150 and q[2] < 100 else (0.98, 0.02, 0.0, 0.0) for q in quadros]
+
+    erros: list[str] = []
+    ambiente.cfg.filtro.classificador = PelaCor()
+    tok = _cliente(ambiente)
+    lid = _lote(ambiente, tok, {"bolo.png": _png((40, 90, 160), "circulo"), "loja.png": _png((200, 120, 60), "barras")})
+    ambiente.cfg.analises.esperar()
+    (recusada,) = [f for f in ambiente.banco.fotos(lid) if f["filtro"] == "recusada"]
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, admin=True)
+    adm = _pagina(ctx, erros)
+    adm.goto(f"{ambiente.url}{PAINEL}/#revisao")
+    cartao = adm.locator("#pendentes .cartao.pendente")
+    texto = "Recusada pelo filtro de imagem · nota 0,8 · explícita 0,5"
+    pw.expect(cartao.locator(".foto-recusada")).to_contain_text(texto)
+    pw.expect(cartao).to_contain_text("1 foto não passou no filtro de imagem")
+    pw.expect(cartao.locator(".foto-revisao img")).to_have_count(1)  # só a liberada vira miniatura
+    cartao.locator(f"[data-foco='{recusada['id']}:ver']").click()
+    midia = cartao.locator(".foto-recusada .quarentena")
+    pw.expect(midia).to_have_class(re.compile(r"\bdesfocado\b"))
+    cartao.locator(f"[data-foco='{recusada['id']}:desfoque']").click()
+    pw.expect(midia).not_to_have_class(re.compile(r"\bdesfocado\b"))
+    assert _axe(adm) == []
+    cartao.locator(f"[data-foco='{recusada['id']}:liberar']").click()
+    adm.click("dialog.confirmacao[open] button:has-text('Liberar')")
+    pw.expect(cartao.locator(".foto-recusada")).to_have_count(0)
+    pw.expect(cartao.locator(".foto-revisao img")).to_have_count(2)
+    with ambiente.banco.tx() as c:
+        acoes = {r["acao"] for r in c.all("SELECT acao FROM auditoria_admin")}
+    assert {"ver_foto_recusada", "liberar_foto"} <= acoes
+    ctx.close()
+    assert erros == [], erros
+
+
 class _MercadoPago:
     """Mercado Pago falso para a janela de Pix: QR de verdade (PNG) e a situação controlada pelo teste."""
 

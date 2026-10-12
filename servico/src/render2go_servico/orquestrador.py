@@ -71,7 +71,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from render2go_worker import lote, runpod_pods
+from render2go_worker import filtro_imagem, lote, runpod_pods
 from render2go_worker import lote_nuvem as ln
 
 from render2go_servico.db import Banco, BancoError
@@ -98,6 +98,14 @@ MOTIVOS = {
     "filtro": "filtro de imagem não carregou",
     "gpu": "GPU inacessível",
 }
+
+
+def _volume_completo(saida: str) -> bool:
+    """Saída de `cat guardado instalado` no pod que hiberna: a cópia para o disco de volume terminou (GUARDADO)
+    e o marcador é desta versão (ADR 0011)."""
+    linhas = saida.splitlines()
+    versao = ln.versao_hibernacao()
+    return any(x.strip() == "GUARDADO" for x in linhas) and any(x.split()[:1] == [versao] for x in linhas)
 
 
 def _gpus_do_ambiente() -> list[str]:
@@ -164,6 +172,17 @@ class PodFila:
     ate: float  # epoch em que o worker para de pegar jobs
     gerador: str | None = None  # linha na tabela geradores (previsão para o cliente)
     worker: str = ""  # nome do worker (pod-<id>): o token do pod é revogado por ele
+    # um só caminho fecha o pod (hiberna ou encerra): o ciclo, o painel ou a parada do orquestrador. Quem
+    # pega a vez marca `atendido` com a trava, e a trava fica com ele até a parada ou o encerramento acabar
+    trava: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    atendido: bool = False
+
+    def pegar_vez(self) -> bool:
+        """Chamar com `trava`: True se este caminho fecha o pod (ninguém fechou antes)."""
+        if self.atendido:
+            return False
+        self.atendido = True
+        return True
 
 
 class Orquestrador:
@@ -306,6 +325,10 @@ class Orquestrador:
         }
         if self.cfg.segredo_aprovacao:
             linhas["RENDER2GO_SEGREDO_APROVACAO"] = self.cfg.segredo_aprovacao
+        # limiares do filtro de imagem do .env: o pod barra com a mesma regra com que a API confere
+        for nome in filtro_imagem.LIMITES:
+            if os.environ.get(nome, "").strip():
+                linhas[nome] = os.environ[nome].strip()
         env.write_text("".join(f"{k}={shlex.quote(v)}\n" for k, v in linhas.items()))
         env.chmod(0o600)
         try:
@@ -402,54 +425,115 @@ class Orquestrador:
             if self.hib.pop(pod_id, None) is not None:
                 self._salvar_hibernados()
 
-    def _pode_hibernar(self, pod: ln.Pod, motivo: str) -> bool:
+    def _vaga_hibernar(self, pod: ln.Pod, motivo: str, reservar: bool = False) -> tuple[bool, str | None]:
+        """O pod pode hibernar? E, com o conjunto cheio, qual hibernado sai para dar a vaga: o que falhou por
+        falta de GPU livre no host dele (12/10/2026). O pod que acabou de rodar teve a GPU livre agora há pouco
+        e volta com mais chance. `reservar`: marca o que sai (em uso), para dois pods que terminam juntos não
+        escolherem o mesmo; quem chama solta a reserva (`_soltar`) se não hibernar."""
         if not (self.cfg.hibernados and pod.hibernavel and motivo in ("ocioso", "limite")) or self.pausado:
-            return False
+            return False, None
         versao = ln.versao_hibernacao()
         with self.lock:
             if (self.hib.get(pod.info.id) or {}).get("versao", versao) != versao:
-                return False  # o disco do pod é de uma versão anterior (dependências, modelos, agente)
-            return sum(1 for k in self.hib if k != pod.info.id) < self.cfg.hibernados
+                return False, None  # o disco do pod é de uma versão anterior (dependências, modelos, agente)
+            outros = [h for k, h in self.hib.items() if k != pod.info.id]
+            if len(outros) < self.cfg.hibernados:
+                return True, None
+            trocaveis = [h for h in outros if not h.get("em_uso") and h.get("falhas", 0) > 0]
+            if len(outros) > self.cfg.hibernados or not trocaveis:
+                return False, None  # cheio de pods que voltam (ou o dono diminuiu o número): este é encerrado
+            sai = max(trocaveis, key=lambda h: (h.get("falhas", 0), h.get("ultima_falha_em") or 0))
+            if reservar:
+                sai["em_uso"] = True
+            return True, sai["id"]
+
+    def _pode_hibernar(self, pod: ln.Pod, motivo: str) -> bool:
+        return self._vaga_hibernar(pod, motivo)[0]
+
+    def _soltar(self, pod_id: str | None) -> None:
+        """Solta a reserva de um hibernado escolhido para sair (o pod que ia entrar no lugar não hibernou)."""
+        if pod_id is None:
+            return
+        with self.lock:
+            if pod_id in self.hib:
+                self.hib[pod_id]["em_uso"] = False
+
+    def _falhou_retomada(self, h: dict, motivo: str) -> bool:
+        """Conta uma volta que não deu certo (o pod continua parado, com o disco); devolve se ele deve sair do
+        conjunto (FALHAS_RETOMADA voltas seguidas sem dar certo, em pedidos diferentes)."""
+        with self.lock:
+            h["em_uso"] = False
+            h["falhas"] = h.get("falhas", 0) + 1
+            h["ultima_falha"] = motivo[:200]
+            h["ultima_falha_em"] = time.time()
+            self._salvar_hibernados()
+            return h["falhas"] >= FALHAS_RETOMADA
 
     def _retomar_algum(self, ao_criar) -> ln.Pod | None:
         """Liga o primeiro pod hibernado que conseguir (GPU na ordem de RENDER2GO_GPUS, menos falhas
-        antes); None se não há nenhum ou todos estão sem GPU livre no host agora."""
+        antes); None se não há nenhum ou todos estão sem GPU livre no host agora.
+
+        Cada hibernado é tentado **uma vez** por chamada (até 12/10/2026, o laço tentava o mesmo pod de novo na
+        hora: com um hibernado só e o host cheio, as 3 falhas vinham em segundos, e o pod era encerrado com o
+        disco de volume no 1º pedido depois de a GPU do host ser alugada por outra pessoa). Sem GPU livre, ele
+        continua parado e conta uma falha; só sai do conjunto depois de FALHAS_RETOMADA pedidos seguidos sem
+        voltar, ou se o disco de volume não serve (versão, arquivo corrompido, GPU com defeito)."""
         if not self.cfg.hibernados:
             return None
         versao = ln.versao_hibernacao()
         ordem = {g: n for n, g in enumerate(self.cfg.gpus)}
+        tentados: set[str] = set()
         while True:
             with self.lock:
-                livres = [h for h in self.hib.values() if not h.get("em_uso") and h.get("versao") == versao]
+                livres = [
+                    h
+                    for h in self.hib.values()
+                    if not h.get("em_uso") and h.get("versao") == versao and h["id"] not in tentados
+                ]
                 if not livres:
+                    if tentados:
+                        _log(f"nenhum hibernado voltou ({len(tentados)} tentado(s)): subindo um pod do zero")
                     return None
                 h = min(livres, key=lambda x: (ordem.get(x.get("gpu"), 99), x.get("falhas", 0)))
                 h["em_uso"] = True
+                tentados.add(h["id"])
             info = ln.PodInfo(
                 h["id"], h["url"], h["token"], float(h["usd_h"]), h.get("descricao", ""),
                 int(h.get("gpus", 1)), h.get("gpu", ""), h.get("datacentro"),
             )  # fmt: skip
             try:
                 pod = self.pods_ln.retomar_pod(info, cedo=True, ao_agente=self._ajustar_deadman, ao_criar=ao_criar)
-            except runpod_pods.SemVaga as e:  # o host está sem GPU livre: o pod continua parado
-                with self.lock:
-                    h["em_uso"] = False
-                    h["falhas"] = h.get("falhas", 0) + 1
-                    desiste = h["falhas"] >= FALHAS_RETOMADA
-                    self._salvar_hibernados()
+            except runpod_pods.SemVaga as e:  # o host está sem GPU livre: o pod continua parado, com o disco
                 _log(f"pod hibernado {info.id}: {e}")
-                if desiste:  # host cheio demais: o disco sai junto, e um pod novo ocupa a vaga depois
-                    self._descartar_hibernado(info.id, f"{FALHAS_RETOMADA} vezes sem GPU livre no host")
+                if self._falhou_retomada(h, "sem GPU livre no host"):
+                    self._descartar_hibernado(info.id, f"{FALHAS_RETOMADA} pedidos seguidos sem GPU livre no host")
                 continue
             except (ln.NuvemError, runpod_pods.RunPodError, OSError) as e:
-                _log(f"pod hibernado {info.id} não voltou: {e}")
-                self._descartar_hibernado(info.id, "não voltou da hibernação")
+                self._volta_falhou(h, info, e)
                 continue
             with self.lock:
                 h["falhas"] = 0
                 h["voltas"] = h.get("voltas", 0) + 1
+                h.pop("ultima_falha", None)
+                h.pop("ultima_falha_em", None)
                 self._salvar_hibernados()
             return pod
+
+    def _volta_falhou(self, h: dict, info: ln.PodInfo, e: Exception) -> None:
+        """O RunPod ligou o pod, mas ele não ficou pronto. Disco de volume que não serve (outra versão, arquivo
+        corrompido), GPU com defeito ou pod que não existe mais: sai do conjunto. O resto (agente ou rede que não
+        responderam, apt sem rede...) não é culpa do disco: o pod é parado de novo e conta uma falha."""
+        texto = str(e)
+        _log(f"pod hibernado {info.id} não voltou: {texto[:300]}")
+        perdido = any(s in texto for s in ("disco de volume", "não existe mais", "GPU com defeito", "driver antigo"))
+        if not perdido:
+            try:
+                self.provedor.parar(info.id)  # a GPU para de cobrar; o disco fica para a próxima
+            except Exception as erro:  # noqa: BLE001 (sem a parada, o pod não pode ficar ligado)
+                _log(f"AVISO: parar de novo o pod hibernado {info.id}: {erro}")
+                perdido = True
+        if perdido or self._falhou_retomada(h, f"não ficou pronto: {texto}"):
+            self._descartar_hibernado(info.id, f"não voltou da hibernação: {texto[:120]}")
 
     def _descartar_hibernado(self, pod_id: str, motivo: str) -> None:
         """Encerra de vez um pod do conjunto (o disco de volume vai junto)."""
@@ -475,16 +559,25 @@ class Orquestrador:
             _log(f"AVISO: registro do gerador ({acao}): {e}")
 
     def _terminou(self, pf: PodFila) -> str | None:
-        """Por que o worker saiu (chave de MOTIVOS ou "agente"), ou None se ele ainda roda."""
+        """Por que o worker saiu (chave de MOTIVOS ou "agente"), ou None se ele ainda roda. No pod que
+        hiberna, a mesma consulta confere o disco de volume (GUARDADO e o marcador desta versão): se o
+        desligamento automático parar o pod depois, já se sabe se ele pode ficar no conjunto."""
         r = self.remoto.raiz
+        cmd = f"cat {r}/fila.fim {r}/fila.motivo 2>/dev/null"
+        conferir = pf.pod.hibernavel and not pf.pod.volume_ok
+        if conferir:
+            cmd += f"; echo '#volume'; cat {r}/guardado {self.remoto.local_hib}/instalado 2>/dev/null"
         try:
-            _, out = pf.pod.agente.exec(f"cat {r}/fila.fim {r}/fila.motivo 2>/dev/null", 30)
+            _, out = pf.pod.agente.exec(cmd, 30)
         except (ln.NuvemError, OSError) as e:
             _log(f"pod {pf.pod.nome}: agente inacessível ({e})")
             return "agente"
-        if "FIM" not in out:
+        fila, _, volume = out.partition("#volume")
+        if conferir and _volume_completo(volume):
+            pf.pod.volume_ok = True
+        if "FIM" not in fila:
             return None
-        return next((m for m in MOTIVOS if m in out.split()), "ocioso")
+        return next((m for m in MOTIVOS if m in fila.split()), "ocioso")
 
     def _revisar(self) -> None:
         """Hiberna ou encerra pods cujo worker terminou ou cujo agente sumiu. Os agentes são consultados
@@ -504,8 +597,9 @@ class Orquestrador:
                     pf.pod.vivo, pf.pod.fim = False, time.monotonic()
                     self.pods_ln._salvar_estado()
                 motivo, texto = "limite", "limite de tempo do pod (parado pelo desligamento automático)"
-            # o envio ao espelho e a 1ª cópia para o disco de volume (ADR 0011) podem levar minutos
-            if pf.pod.grava_volume or pf.pod.espelhando or (pf.pod.hibernavel and not pf.pod.retomado):
+            # o envio ao espelho, a 1ª cópia para o disco de volume e, na volta, a conferência do SHA-256 dos
+            # modelos (ADR 0011) podem levar minutos: fora do ciclo
+            if pf.pod.grava_volume or pf.pod.espelhando or pf.pod.hibernavel:
                 with self.lock:
                     self.encerrando[pid] = pf
                 threading.Thread(target=self._fim_do_pod, args=(pf, motivo, texto), daemon=True).start()
@@ -522,32 +616,55 @@ class Orquestrador:
             return False
 
     def _volume_gravado(self, pod: ln.Pod, esperar: bool) -> bool:
-        """O disco de volume do pod tem tudo desta versão (ADR 0011)? Na 1ª subida, a cópia termina
-        depois do PRONTO, com o pod no ar; `esperar`: espera o GUARDADO (com prazo) antes de olhar."""
-        if pod.retomado:
-            return True  # voltou da hibernação com o marcador desta versão (o bootstrap conferiu)
+        """O disco de volume do pod tem tudo desta versão (ADR 0011)? Na 1ª subida, a cópia termina depois do
+        PRONTO, com o pod no ar; na volta, o marcador sai se o SHA-256 refeito não conferir. `esperar`: espera
+        o GUARDADO (com prazo) antes de olhar. Até 12/10/2026, o pod que voltou da hibernação era aceito sem
+        olhar o marcador: um disco que tinha acabado de reprovar no SHA-256 podia hibernar de novo."""
+        if pod.volume_ok:
+            return True
         if esperar:
             self.pods_ln._esperar_guardar(pod)
         try:
             _, out = pod.agente.exec(f"cat {self.remoto.local_hib}/instalado 2>/dev/null", 30)
         except (ln.NuvemError, OSError):
             return False
-        return out.split()[:1] == [ln.versao_hibernacao()]
+        pod.volume_ok = out.split()[:1] == [ln.versao_hibernacao()]
+        return pod.volume_ok
 
     def _fim_do_pod(self, pf: PodFila, motivo: str, texto: str, esperar: bool = True) -> None:
-        """Hiberna (ADR 0011) se pode e se o disco de volume está completo; senão encerra."""
-        if not self._pode_hibernar(pf.pod, motivo) or (pf.pod.vivo and not self._volume_gravado(pf.pod, esperar)):
-            self._tirar_hibernado(pf.pod.info.id)
-            if self._pode_hibernar(pf.pod, motivo):
+        """Hiberna (ADR 0011) se pode e se o disco de volume está completo; senão encerra. Com o conjunto
+        cheio, o pod que acabou de rodar entra no lugar do hibernado que ficou sem GPU livre no host."""
+        pod = pf.pod
+        pode = self._pode_hibernar(pod, motivo)
+        # o pod que o desligamento automático já parou (vivo=False em _revisar) só fica se o disco de volume
+        # foi conferido enquanto ele estava no ar (_terminou); senão, a volta seria uma subida do zero
+        volume = pode and (self._volume_gravado(pod, esperar) if pod.vivo else pod.volume_ok)
+        if esperar and pod.vivo and pod.grava_volume and not (pode and volume):
+            self.pods_ln._esperar_guardar(pod)  # o gravador termina o envio ao espelho antes de sair (com prazo)
+        with pf.trava:  # as esperas acima são longas e sem trava; a decisão e a parada, com ela e uma vez só
+            if pf.pegar_vez():
+                self._fechar_pod(pf, motivo, texto, pode, volume)
+
+    def _fechar_pod(self, pf: PodFila, motivo: str, texto: str, pode: bool, volume: bool) -> None:
+        pod = pf.pod
+        sai = None
+        if pode and volume:
+            pode, sai = self._vaga_hibernar(pod, motivo, reservar=True)  # de novo: a espera pode ter mudado
+        if not (pode and volume):
+            self._tirar_hibernado(pod.info.id)
+            if pode:
                 texto = f"{texto}; disco de volume incompleto"
-            self._encerrar_pod(pf, texto, esperar_espelho=esperar)
+            if pod.vivo:
+                self._encerrar_pod(pf, texto, esperar_espelho=False)  # o envio ao espelho já foi esperado
+            else:  # já parado: o encerramento não pode passar batido (o disco de volume cobraria parado)
+                self._encerrar_parado(pf, texto)
             return
         self._registrar_token(pf)
+        ok = False
         try:
-            # o pod que o desligamento automático já parou (vivo=False em _revisar) só entra no conjunto
-            ok = self.pods_ln.hibernar(pf.pod, texto) if pf.pod.vivo else True
+            ok = self.pods_ln.hibernar(pod, texto) if pod.vivo else True
             if ok:
-                i = pf.pod.info
+                i = pod.info
                 with self.lock:
                     h = self.hib.setdefault(i.id, {"criado": time.time(), "voltas": 0, "falhas": 0})
                     h |= {
@@ -558,12 +675,31 @@ class Orquestrador:
                     self._salvar_hibernados()
                 texto = f"hibernado ({texto})"
             else:
-                self._tirar_hibernado(pf.pod.info.id)
+                self._tirar_hibernado(pod.info.id)
         finally:
             self._registrar("gerador_fim", pf.gerador, texto)
             self._registrar("gerador_motivo", pf.gerador, texto)  # o _revisar já tirou da previsão
             self._registrar("gerador_desligado", pf.gerador)  # fim da cobrança da GPU
             with self.lock:  # só depois do registro: quem vê o pod fora de "encerrando" lê o motivo final
+                self.encerrando.pop(pod.info.id, None)
+            if ok and sai:  # a vaga era do hibernado sem GPU livre no host: ele sai, com o disco
+                self._descartar_hibernado(sai, "trocado por um pod que acabou de rodar (o host dele estava cheio)")
+            elif sai:
+                self._soltar(sai)
+
+    def _encerrar_parado(self, pf: PodFila, motivo: str) -> None:
+        """Encerra o pod que o próprio desligamento automático já parou e que não fica no conjunto."""
+        self._registrar_token(pf)
+        try:
+            self.provedor.encerrar(pf.pod.info.id)
+            _log(f"pod {pf.pod.nome} encerrado ({motivo})")
+        except Exception as e:  # noqa: BLE001 (parado, não cobra GPU; a partida encerra os parados fora do conjunto)
+            _log(f"AVISO: encerrar o pod parado {pf.pod.nome}: {e}")
+        finally:
+            self._registrar("gerador_fim", pf.gerador, motivo)
+            self._registrar("gerador_motivo", pf.gerador, motivo)
+            self._registrar("gerador_desligado", pf.gerador)
+            with self.lock:
                 self.encerrando.pop(pf.pod.info.id, None)
 
     def _encerrar_pod(self, pf: PodFila, motivo: str, esperar_espelho: bool = True) -> None:
@@ -595,8 +731,10 @@ class Orquestrador:
             else:
                 self.cancelados.add(gerador)  # ainda subindo: encerrado assim que o RunPod devolver o pod
         if pf:  # pedido explícito do dono: encerra de vez, mesmo se o pod pudesse hibernar
-            self._tirar_hibernado(pf.pod.info.id)
-            self._encerrar_pod(pf, "desligado pelo painel", esperar_espelho=False)
+            with pf.trava:
+                if pf.pegar_vez():
+                    self._tirar_hibernado(pf.pod.info.id)
+                    self._encerrar_pod(pf, "desligado pelo painel", esperar_espelho=False)
             return f"pod {pf.pod.info.id} encerrado"
         try:  # subindo: se o RunPod já criou o pod, encerra agora mesmo pelo id registrado
             with self.banco.tx() as c:
@@ -704,7 +842,10 @@ class Orquestrador:
         for _, pid in parados[: max(0, sobra)]:
             self._descartar_hibernado(pid, "acima de RENDER2GO_PODS_HIBERNADOS")
         with self.lock:
-            campos = ("id", "gpu", "usd_h", "datacentro", "criado", "parado_em", "voltas", "falhas", "em_uso")
+            campos = (
+                "id", "gpu", "usd_h", "datacentro", "criado", "parado_em", "voltas", "falhas", "em_uso",
+                "ultima_falha", "ultima_falha_em",
+            )  # fmt: skip
             hib = [{k: h.get(k) for k in campos} for h in self.hib.values()]
         self.banco.definir_estado(
             "runpod",
@@ -858,13 +999,18 @@ class Orquestrador:
             conhecidos = {p.pod.info.id for p in pods}
         for pf in pods:
             if hibernar and not pf.pod.grava_volume and self._pode_hibernar(pf.pod, "ocioso"):
-                self._fim_do_pod(pf, "ocioso", motivo, esperar=False)  # sem esperar cópia nenhuma
+                # sem esperar cópia nenhuma; o pod que outra thread está fechando (esperando o GUARDADO) fica
+                # com quem pegar a vez primeiro, e esta espera a parada dela terminar antes de o processo sair
+                self._fim_do_pod(pf, "ocioso", motivo, esperar=False)
                 continue
-            self._tirar_hibernado(pf.pod.info.id)
-            self._registrar_token(pf)
-            self.pods_ln.encerrar(pf.pod, motivo, esperar_espelho=False)
-            self._registrar("gerador_fim", pf.gerador, motivo)
-            self._registrar("gerador_desligado", pf.gerador)
+            with pf.trava:
+                if not pf.pegar_vez():
+                    continue
+                self._tirar_hibernado(pf.pod.info.id)
+                self._registrar_token(pf)
+                self.pods_ln.encerrar(pf.pod, motivo, esperar_espelho=False)
+                self._registrar("gerador_fim", pf.gerador, motivo)
+                self._registrar("gerador_desligado", pf.gerador)
         with self.pods_ln.lock:
             subindo = [p for p in self.pods_ln.pods if p.vivo and p.info.id not in conhecidos]
         for pod in subindo:  # a subida em andamento vê o pod encerrado e desiste

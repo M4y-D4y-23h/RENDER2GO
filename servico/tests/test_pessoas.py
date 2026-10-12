@@ -137,6 +137,9 @@ def test_an_invalid_file_becomes_an_analysis_error_for_the_reviewer(monkeypatch)
         def salvar_analise(self, foto_id, analise, impressao):
             salvas.append((foto_id, analise, impressao))
 
+        def tentar_analise(self, foto_id):  # a 1ª análise desta foto
+            return 1
+
     class Armazem:
         def ler(self, chave, limite):
             return b"<html>nao sou foto</html>"

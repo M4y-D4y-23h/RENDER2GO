@@ -451,18 +451,21 @@ class WorkerFila:
             self.api.concluir(
                 jid,
                 "erro",
-                erro=f"barrado pelo filtro de imagem (nota {filtro.nota:.2f})",
+                erro=f"barrado pelo filtro de imagem (nota {filtro.nota:.2f}, "
+                f"explícita {filtro.nota_alta:.2f})",
                 barrado=True,
                 quarentena=self._quarentena(job, prep.path, video, pasta, t),
                 nsfw=filtro.nota,
+                nsfw_alto=filtro.nota_alta,
                 nsfw_quadros=filtro.quadros,
                 **cont,
             )
             with self.lock:
                 self.falhas += 1
             _log(
-                f"{job['arquivo']} (lote {job['lote']}): barrado pelo filtro de imagem "
-                f"(nota {filtro.nota:.2f} no quadro {filtro.pior_quadro})"
+                f"{job['arquivo']} (lote {job['lote']}): barrado pelo filtro de imagem (nota "
+                f"{filtro.nota:.2f}, explícita {filtro.nota_alta:.2f}, "
+                f"pior quadro {filtro.pior_quadro})"
             )
             return True
         etapa = time.monotonic()
@@ -488,6 +491,7 @@ class WorkerFila:
             bytes_video=video.stat().st_size,
             aviso=aviso or None,
             nsfw=filtro.nota,
+            nsfw_alto=filtro.nota_alta,
             nsfw_quadros=filtro.quadros,
             **cont,
         )

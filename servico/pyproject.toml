@@ -15,11 +15,25 @@ dependencies = [
     "render2go-worker",
 ]
 
+[project.optional-dependencies]
+# filtro das fotos no servidor (ADR 0005, render2go_servico.filtro_fotos): o mesmo classificador dos pods
+# (render2go_worker.filtro_imagem), em CPU, nas versões dos pods (worker/requirements.lock). Só na imagem
+# (uv sync --extra filtro, no Dockerfile): os testes usam um classificador falso
+filtro = ["torch==2.8.0", "torchvision==0.23.0", "timm==1.0.30", "safetensors==0.8.0"]
+
 [project.scripts]
 render2go-servico = "render2go_servico.cli:main"
 
 [tool.uv.sources]
 render2go-worker = { path = "../worker", editable = true }
+# PyTorch só de CPU (o servidor não tem GPU): o índice oficial, sem as bibliotecas CUDA do PyPI
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = ["pytest==8.4.2", "ruff==0.13.3", "httpx==0.28.1"]

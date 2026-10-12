@@ -21,7 +21,15 @@ from test_sequencia import _prompt
 
 from render2go_servico import motivos
 
-OK = {"bytes_video": 7000, "similaridade": 0.999, "deriva_cor": 6.5, "salto_cor": 1.2, "nsfw": 0.01, "nsfw_quadros": 13}
+OK = {
+    "bytes_video": 7000,
+    "similaridade": 0.999,
+    "deriva_cor": 6.5,
+    "salto_cor": 1.2,
+    "nsfw": 0.01,
+    "nsfw_alto": 0.0,
+    "nsfw_quadros": 13,
+}
 
 
 def _gerando(api, tok, n=3):  # noqa: F811 (fixture)
@@ -145,10 +153,17 @@ def test_blocked_videos_go_to_quarantine_that_only_the_owner_opens_and_it_is_aud
         assert chave.startswith("quarentena/") and "saida/" not in j["quarentena_folha_url"]
         if enviado:
             api.armazem.objetos[chave] = 5000
-        corpo = {"erro": "barrado", "barrado": True, "quarentena": True, "nsfw": 0.91, "nsfw_quadros": 13}
+        corpo = {
+            "erro": "barrado",
+            "barrado": True,
+            "quarentena": True,
+            "nsfw": 0.91,
+            "nsfw_alto": 0.2,
+            "nsfw_quadros": 13,
+        }
         assert _concluir(api, j, status="erro", **corpo).json()["status"] == "erro"
     falhas = api.get(f"{PAINEL}/api/lotes/{lid}/falhas", headers=ADM).json()["videos"]
-    assert [(f["quarentena"], f["nsfw"]) for f in falhas] == [(True, 0.91), (False, 0.91)]
+    assert [(f["quarentena"], f["nsfw"], f["nsfw_alto"]) for f in falhas] == [(True, 0.91, 0.2), (False, 0.91, 0.2)]
     assert falhas[0]["motivo"] == motivos.MOTIVOS["filtro_imagem"] and "nota 0.91" in falhas[0]["erro"]
     r = api.get(f"{PAINEL}/api/jobs/{falhas[0]['job']}/quarentena", headers=ADM)
     assert r.status_code == 200 and "quarentena/" in r.json()["video"] and r.json()["expira_s"] == 600

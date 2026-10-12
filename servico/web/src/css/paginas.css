@@ -2058,6 +2058,26 @@ html:not([data-convite]) #convite {
   overflow-wrap: anywhere;
 }
 
+/* painel: a foto que o filtro das fotos não liberou (render2go_servico/filtro_fotos.py). No lugar da miniatura, o
+   resultado; o dono abre a foto desfocada pelo botão (cada abertura na auditoria) e pode liberá-la */
+.foto-recusada {
+  display: grid;
+  align-content: start;
+  gap: var(--esp-2);
+  min-height: 7rem;
+  padding: var(--esp-2);
+  font-size: var(--texto-xs);
+  overflow-wrap: anywhere;
+  color: var(--cor-erro);
+  background: var(--cor-erro-fundo);
+  border: 2px dashed var(--cor-erro-borda);
+  border-radius: var(--raio-md);
+}
+
+.foto-recusada .nome-foto {
+  font-weight: 650;
+}
+
 /* contas: a janela de cada conta */
 .dados-conta {
   display: grid;

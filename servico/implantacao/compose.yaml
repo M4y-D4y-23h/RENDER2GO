@@ -44,15 +44,16 @@ services:
     command: ["render2go-servico", "api"] # processos: RENDER2GO_API_WORKERS no .env
     environment:
       <<: *banco
-      RENDER2GO_ANALISE: separada # o aviso de pessoas roda no "analisador", fora da API
+      RENDER2GO_ANALISE: separada # filtro das fotos e aviso de pessoas no "analisador", fora da API
       RUNPOD_API_KEY: "" # a API não fala com o RunPod (o painel manda comandos ao orquestrador)
 
   analisador:
     <<: *processo
     command: ["render2go-servico", "analisar"]
     # o único processo do servidor que decodifica fotos dos clientes: com memória limitada, uma foto
-    # maliciosa derruba só ele (que volta sozinho), nunca a API ou o Postgres
-    mem_limit: 1g
+    # maliciosa derruba só ele (que volta sozinho), nunca a API ou o Postgres. Desde 12/10/2026 ele também
+    # roda o filtro das fotos (PyTorch em CPU, ~850 MB): nenhuma foto vai para um pod sem passar por ele
+    mem_limit: 2g
     environment:
       <<: [*banco, *sem-segredos-da-api]
       RUNPOD_API_KEY: ""

@@ -2,7 +2,9 @@
 justificativa de recusa, tanto na recusa dos prompts, como na falha e recusa das gerações").
 
 O cliente vê a categoria do motivo, nunca a palavra que barrou o texto (ajudaria a testar sinônimos); o painel vê,
-além disso, o texto técnico gravado no vídeo (`jobs.erro`) e as notas dos filtros."""
+além disso, o texto técnico gravado no vídeo (`jobs.erro`) e as notas dos filtros. A foto que o filtro das fotos não
+liberou (render2go_servico.filtro_fotos) tem um motivo de propósito vago, igual para a recusa pelo conteúdo e para o
+arquivo que não abre (pedido do dono, 12/10/2026: "justificativa pouco clara, evitando que tentem burlar")."""
 
 from __future__ import annotations
 
@@ -24,6 +26,7 @@ MOTIVOS = {
     "texto": "o texto foi recusado pelo filtro de conteúdo",
     "traducao": "a tradução do texto falhou",
     "foto": "a foto não pôde ser usada (arquivo, formato ou tamanho)",
+    "foto_nao_aceita": "a foto não pôde ser usada; envie outra foto",
     "interrompido_cliente": "cancelado: você interrompeu o pedido",
     "interrompido_painel": "cancelado: o pedido foi interrompido pela equipe",
     "prazo_fotos": "cancelado: as fotos ficam guardadas por 7 dias e o pedido não terminou nesse prazo",
@@ -73,6 +76,8 @@ def motivo(job: dict) -> str | None:
     erro = (job.get("erro") or "").lower()
     if job.get("barrado_em") or erro.startswith("barrado pelo filtro de imagem"):
         return "filtro_imagem"
+    if erro.startswith(("foto recusada pelo filtro", "foto inválida")):  # o filtro das fotos, antes de qualquer pod
+        return "foto_nao_aceita"
     if erro.startswith("interrompido pelo cliente"):
         return "interrompido_cliente"
     if erro.startswith("interrompido"):

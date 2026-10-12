@@ -168,3 +168,12 @@ Depois dos testes do dono no site (pedido "deixe bonito, com um movimento suave"
 
 **Teste em GPU feito em 12/10/2026** (`worker/evals/gpu-2026-10-12-velocidade/`, um pod L40S secure, 47 min, US$ 0,86, com desligamento automático e encerrado no fim): o worker de antes e o novo, o aquecimento, o SageAttention 2.2 (compilado no pod, do commit da tag v2.2.0) e o RIFE ×2, com fotos SFW e seeds fixas, e as regras de decisão escritas antes da medição. Resultado na tabela acima; o detalhe, as folhas de quadros e o incidente do roteiro (a fase 2 caiu e o pod foi retomado para refazê-la), no LEIAME da medição.
 
+
+### 9.3 Vídeos barrados por "conteúdo impróprio" (12/10/2026, pedido do dono)
+
+- **Onde está o medidor:** `worker/src/render2go_worker/filtro_imagem.py` (constantes `LIMIAR`, `LIMIAR_ALTO`, `JANELA` e a função `barrado`), rodando no pod em 1 a cada 4 quadros de cada vídeo; a API confere de novo com as notas que o pod manda (`servico/src/render2go_servico/api.py`, rota `concluir`). Classificador: `Freepik/nsfw_image_detector` (ADR 0005).
+- **Por que barrava demais:** um **quadro só** com P(medium) + P(high) ≥ **0,35** barrava o vídeo inteiro, abaixo do limiar de 0,5 do próprio cartão do modelo. Com 13 a 29 quadros por vídeo, um quadro de transição (borrão, mão, tecido, pele de um produto) bastava.
+- **Regra nova:** barra com a média de 2 quadros seguidos (0,25 s) ≥ **0,5**, ou com um quadro **explícito** (P(high)) ≥ **0,35**. O nível "medium" (nudez parcial) precisa aparecer por mais de um instante; o explícito barra num quadro só. Os dois limiares mudam no `.env`, só dentro de limites (o filtro nunca é desligado); a consulta para calibrar com os números reais está no `docs/09`, seção 5.1.9.
+- **O que também pesa, e não é o filtro:** o modelo de vídeo e o codificador de texto em produção são ajustes da comunidade para conteúdo adulto ("Uncensored", vocabulário explícito; `docs/12`, seção 1). Eles aumentam a chance de o próprio vídeo sair impróprio a partir de uma foto e de um texto inocentes. A troca pelos arquivos oficiais do Wan 2.2 (Apache 2.0) é a correção de raiz: ADR com teste em GPU, já recomendada.
+- **Desde 12/10, também nas fotos:** a mesma regra roda no servidor antes de qualquer pod (`servico/src/render2go_servico/filtro_fotos.py`): a foto que não passa nem chega à GPU, e o cliente vê só que ela não pôde ser usada (ADR 0005, atualização de 12/10).
+- **Vídeos quase instantâneos:** a avaliação está em `docs/14`.

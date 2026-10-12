@@ -6,9 +6,26 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há. Para pôr o servidor em dia, comece pela entrada mais recente: ela diz de que versão parte e quais anteriores já traz junto.
 
+### 12/10/2026 (4): filtro das fotos no servidor, hibernação que não perde o volume, subida mais rápida e filtro dos vídeos recalibrado
+
+**É a atualização a fazer agora.** Parte da versão da entrada abaixo (12/10/2026 (3)) e está na branch `claude/festive-mccarthy-sc784n` (a `main` recebe depois do aceite do dono). Muda a API, o analisador (que passa a rodar o filtro das fotos, com PyTorch de CPU), o orquestrador, as páginas e o código que vai para os pods; o banco ganha quatro colunas (`fotos.filtro`, `fotos.filtro_detalhe`, `fotos.tentativas_analise` e `jobs.nsfw_alto`), criadas sozinhas na partida. Sem regra nova no R2. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (10); [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md) e [ADR 0011](adr/0011-pods-hibernados.md), atualizações de 12/10; `docs/07`, seções 11 e 12.
+
+1. **Nada gerando, backup e código novo:** os blocos 1 e 2 da entrada 11/10/2026 (2), com `git pull` da branch acima.
+2. **Espaço em disco:** a imagem do serviço passa a ~2,2 GB (PyTorch de CPU e o classificador). Antes de subir, `df -h /` com pelo menos 5 GB livres; depois, `docker image prune -f` apaga a imagem antiga.
+3. **`.env` (nada obrigatório):** os limiares do filtro de imagem (`RENDER2GO_FILTRO_LIMIAR` e `RENDER2GO_FILTRO_LIMIAR_ALTO`, padrões 0,5 e 0,35, só dentro de 0,3–0,8 e 0,2–0,6), as threads do filtro das fotos (`RENDER2GO_FILTRO_THREADS`, padrão 1) e a escolha de hosts rápidos (`RENDER2GO_REDE_MIN_MBPS=2000` e `RENDER2GO_DISCO_MIN_MBS=1000`, padrões; 0 desliga). Ver o `exemplo.env`.
+4. **Subir:** `cd ~/GPU2GO/servico/implantacao && docker compose up -d --build`. A build demora mais (baixa o PyTorch de CPU, ~180 MB, e os pesos do classificador, 173 MB, conferidos pelo SHA-256) e **roda o classificador numa imagem lisa: se ele não funcionar, a build falha** e nada muda no servidor. O `compose.yaml` sobe o limite de memória do analisador de 1 para 2 GB.
+5. **Conferir:**
+   - `docker compose logs --since 5m analisador | tail` mostra "rodando (filtro das fotos e aviso de pessoas)", sem "classificador indisponível";
+   - painel, seção Segurança: "Filtro das fotos ligado (fotos-v1, limiares 0,5 e 0,35 explícita)";
+   - na entrada no site, a Política de Privacidade v5 para aceitar;
+   - num pedido de teste: o cartão da revisão mostra "Filtro de imagem: avaliando N fotos…" por alguns segundos; aprovado, os vídeos saem como antes.
+   - **Pedidos que estavam no meio:** as fotos deles ainda sem o resultado do filtro são avaliadas nos primeiros minutos depois da subida; até lá, os vídeos delas esperam (não vão para um pod).
+6. **Hibernação (se `RENDER2GO_PODS_HIBERNADOS` ≥ 1):** o hibernado não é mais encerrado na 1ª volta sem GPU livre no host: a seção Pods do painel mostra "Última volta que não deu certo" e o motivo; ele só sai do conjunto depois de 3 pedidos seguidos sem GPU. O hibernado de antes desta versão é encerrado no 1º ciclo (a versão da hibernação mudou) e o conjunto se refaz.
+- **Se algo der errado:** `cd ~/GPU2GO && git checkout <versão do bloco 2> && cd servico/implantacao && docker compose up -d --build`. As colunas novas ficam no banco sem uso. A versão antiga não tem o portão das fotos: as fotos ainda não avaliadas voltam a ir direto para os pods (o filtro dos vídeos continua no pod); os vídeos das fotos já recusadas continuam cancelados.
+
 ### 12/10/2026 (3): a GPU não espera e aquecimento
 
-**É a atualização a fazer agora.** Parte da versão da entrada abaixo (a `main` de 12/10, `60aa44f`) e está na `main` desde 12/10/2026 (veio da branch `claude/magical-lamport-4rrms9`). Muda a API (duas rotas de worker, `iniciar` e `devolver`) e o código que vai para os pods (`render2go_worker/fila.py`: o próximo vídeo é preparado e o anterior enviado enquanto a GPU gera; aquecimento com a fila vazia). Sem coluna nova no banco, sem variável nova no `.env` e sem regra nova no R2. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (8); medição em `worker/evals/gpu-2026-10-12-velocidade/`.
+Parte da versão da entrada abaixo (a `main` de 12/10, `60aa44f`) e está na `main` desde 12/10/2026 (veio da branch `claude/magical-lamport-4rrms9`). Muda a API (duas rotas de worker, `iniciar` e `devolver`) e o código que vai para os pods (`render2go_worker/fila.py`: o próximo vídeo é preparado e o anterior enviado enquanto a GPU gera; aquecimento com a fila vazia). Sem coluna nova no banco, sem variável nova no `.env` e sem regra nova no R2. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (8); medição em `worker/evals/gpu-2026-10-12-velocidade/`.
 
 1. **Nada gerando, backup e código novo:** os blocos 1 e 2 da entrada abaixo.
 2. **Subir:** `cd ~/GPU2GO/servico/implantacao && docker compose up -d --build`. API e pods sobem juntos com o mesmo código (o orquestrador empacota o worker do próprio contêiner), então não há pod novo falando com a API antiga.
@@ -391,7 +408,7 @@ Navegador do cliente ──fotos (URL assinada)──►  R2 (Cloudflare)  ◄�
 | Peça | Onde | O que faz |
 |---|---|---|
 | API e páginas | contêiner `api` (`render2go-servico api`, `RENDER2GO_API_WORKERS` processos) | Contas e sessões, lotes, URLs assinadas, Pix, painel do dono no endereço secreto (ADR 0007 e 0009) |
-| Análise das fotos | contêiner `analisador` (mesma imagem) | Aviso de pessoas nas fotos, fora da API |
+| Análise das fotos | contêiner `analisador` (mesma imagem, até 2 GB de memória) | Filtro das fotos (antes de qualquer pod, desde 12/10/2026) e aviso de pessoas, fora da API |
 | Orquestrador | contêiner `orquestrador` (mesma imagem) | Lê a fila, sobe e encerra pods, executa os comandos do painel; só um manda por vez |
 | Banco | Postgres 16 (contêiner ou gerenciado) | Contas, sessões, lotes, jobs, saldo, pagamentos, limites, registros |
 | Arquivos | R2 (bucket `gpu2go`, já criado) | Fotos, vídeos, folhas de conferência e espelho dos modelos |
@@ -502,6 +519,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 - **Aprovar pedidos:** no painel. Nada vai para a GPU sem aprovação (ADR 0004). O cliente acompanha em `/`.
   - Cada foto ganha um selo "contém pessoas" ou "sem pessoas detectadas" segundos depois do envio (detector no próprio servidor, sem custo de GPU). Com pessoas e sem a caixa de autorização marcada, o lote mostra um aviso em vermelho.
   - O selo é uma ajuda: confira sempre as miniaturas.
+- **Fotos recusadas pelo filtro de imagem (desde 12/10/2026, ADR 0005):** cada foto é avaliada no servidor (contêiner `analisador`) antes de ir para um pod; a que não passa não vira vídeo nem é cobrada, e o cliente vê só "a foto não pôde ser usada; envie outra foto". No cartão da revisão, a foto recusada aparece como um quadro vermelho com as notas, sem a miniatura; o **dono** pode abri-la desfocada ("Ver a foto", fica na auditoria) e, se for um engano do filtro, "Liberar a foto" antes de aprovar. Sem o classificador carregado, nenhum vídeo sai (Segurança e o log da API dizem por quê): veja `docker compose logs analisador`.
 - **Vídeos barrados pelo filtro de imagem (desde 11/10/2026, ADR 0005):** cada vídeo passa, no pod, por um classificador de nudez antes de ser enviado; o barrado não sai do pod, não é refeito e volta para o saldo do cliente. No painel, o histórico mostra "N vídeo(s) barrado(s) pelo filtro de imagem" no pedido, e o registro de auditoria tem a nota de cada um (evento `video_barrado`). Vale para todos os planos, inclusive o interno (que é aprovado sozinho, sem revisão). Conta que insiste: veja os registros de acesso `pedido_recusado_filtro` e desative a conta.
 - **Parar tudo e encerrar os pods:** no painel, seção "Pods", "Parada de emergência": encerra todos os pods em até ~10 s e não sobe outro até "Retomar". Cada pod também tem "Desligar". Pelo terminal (se o painel estiver fora do ar):
   ```bash
@@ -662,6 +680,12 @@ A página do cliente tem um link para **https://app.render2go.com/suporte**. A p
   docker compose exec postgres psql -U gpu2go gpu2go -c "SELECT arquivo, status, tentativas, round(deriva_cor::numeric, 1) AS deriva, round(salto_cor::numeric, 1) AS salto, erro FROM jobs WHERE tipo = 'render' ORDER BY atualizado DESC LIMIT 20"
   ```
 - **A folha de conferência** (foto, início, meio e fim de cada vídeo) continua no armazenamento, para revisar um lote em minutos.
+- **Filtro de imagem (quadros desde 11/10; fotos e a regra nova desde 12/10; ADR 0005):** barra com a nota (P(medium) + P(high), na média de 2 quadros seguidos; numa foto, a própria foto) a partir de 0,5, ou com a nota explícita (P(high)) a partir de 0,35. Para calibrar com os números de verdade, as notas dos últimos vídeos e das últimas fotos:
+  ```bash
+  docker compose exec postgres psql -U gpu2go gpu2go -c "SELECT arquivo, status, round(nsfw::numeric, 3) AS nota, round(nsfw_alto::numeric, 3) AS explicita, erro FROM jobs WHERE tipo = 'render' AND nsfw IS NOT NULL ORDER BY atualizado DESC LIMIT 20"
+  docker compose exec postgres psql -U gpu2go gpu2go -c "SELECT f.nome, f.filtro, f.filtro_detalhe FROM fotos f JOIN lotes l ON l.id = f.lote_id WHERE f.filtro IS NOT NULL ORDER BY l.criado DESC LIMIT 20"
+  ```
+  Muitos falsos positivos: suba `RENDER2GO_FILTRO_LIMIAR` no `.env` (até 0,8) e `docker compose up -d` (a API, o analisador e os pods novos leem o mesmo valor).
 
 ## 5.1.10 Tela de finalidades ("O que você quer criar?")
 

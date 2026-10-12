@@ -169,6 +169,9 @@ def test_an_operator_reviews_orders_and_consults_but_does_not_touch_money_pods_o
         ("POST", "/api/acessos/convites", {"usuario": "intruso", "papel": "dono"}),
         ("GET", "/api/auditoria", None),
         ("GET", "/api/auditoria.csv", None),
+        # a foto que o filtro das fotos recusou: só o dono vê e libera (como o vídeo barrado)
+        ("GET", "/api/fotos/fot_x/recusada", None),
+        ("POST", "/api/fotos/fot_x/liberar", None),
     ]
     for metodo, rota, corpo in proibidas:
         r = operador.request(metodo, f"{PAINEL}{rota}", json=corpo)

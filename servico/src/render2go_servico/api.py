@@ -126,7 +126,18 @@ from pydantic import BaseModel, Field
 from render2go_worker import conferencia, filtro_imagem, filtros, lote, preparo, presets
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from render2go_servico import SERVICO_DIR, contas, modelos, motivos, pagamentos, perfil, pessoas, precos, suporte
+from render2go_servico import (
+    SERVICO_DIR,
+    contas,
+    filtro_fotos,
+    modelos,
+    motivos,
+    pagamentos,
+    perfil,
+    pessoas,
+    precos,
+    suporte,
+)
 from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_quarentena, chave_saida
 from render2go_servico.db import Banco, BancoError, SaldoInsuficiente, novo_id
 
@@ -139,6 +150,10 @@ VIDEOS_POR_PAGINA = 100  # vídeos de um pedido grande por resposta (a página p
 PREVIA_REVISAO = 60  # fotos de um pedido grande que o revisor vê de cara (mais as marcadas pela análise)
 MARCADAS_REVISAO = 300  # teto das fotos marcadas (pessoas, rostos, erro) mostradas além da prévia
 QUARENTENA_S = 7 * 86400  # vídeo barrado na quarentena: o dono vê por 7 dias (regra quarentena-7-dias do bucket)
+# análise das fotos (aviso de pessoas e filtro das fotos): o analisador intercala os pedidos, poucas fotos de cada
+# por vez (um pedido de 500 fotos não segura o filtro do pedido de 5 que chegou depois)
+FOTOS_POR_VEZ = 5
+VARREDURA_S = 60  # análise dentro da API: sem trabalho agendado, procura fotos esquecidas a cada minuto
 # satisfação depois de cada pedido terminado (pedido do dono, 12/10/2026): notas de 1 (muito pouco) a 5 (muito
 # satisfeito); o card aparece nos pedidos terminados nos últimos AVALIAR_DIAS dias, ainda sem nota
 AVALIAR_DIAS = 7
@@ -186,6 +201,7 @@ DISPOSITIVO = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 FUSO = re.compile(r"^[A-Za-z0-9_+\-/]{1,64}$")
 CAMINHO_ADMIN = re.compile(r"^/[A-Za-z0-9_-]{12,64}$")
 LOTE_FECHADO = ("concluido", "concluido_com_falhas", "recusado")
+FOTO_NAO_LIBERADA = ("recusada", "invalida")  # fotos.filtro que cancela os vídeos da foto (filtro_fotos)
 NOME = re.compile(r"[^A-Za-z0-9_-]+")
 PUBLICO = SERVICO_DIR / "web" / "publico"  # páginas compiladas (cd servico/web && npm run build)
 PAGINAS = {"/": "index.html", "/suporte": "suporte.html", "/termos": "termos.html", "/privacidade": "privacidade.html",
@@ -256,6 +272,9 @@ PERMISSOES_PAINEL: dict[tuple[str, str], frozenset[str]] = {
     ("POST", "/api/lotes/{lote_id}/interromper"): _TODOS,
     ("GET", "/api/lotes/{lote_id}/falhas"): _TODOS,
     ("GET", "/api/jobs/{job_id}/quarentena"): _DONO,  # o vídeo barrado (ADR 0005): só o dono
+    # a foto que o filtro das fotos recusou: ver (desfocada, na auditoria) e liberar antes da aprovação; só o dono
+    ("GET", "/api/fotos/{foto_id}/recusada"): _DONO,
+    ("POST", "/api/fotos/{foto_id}/liberar"): _DONO,
     ("GET", "/api/lotes/{lote_id}/auditoria"): _TODOS,
     ("GET", "/api/historico"): _TODOS,
     ("GET", "/api/suporte"): _TODOS,
@@ -358,38 +377,60 @@ def caminho_admin_do_ambiente() -> str | None:
 
 
 class AnaliseFotos:
-    """Análise das fotos em segundo plano (aviso de pessoas no painel): um thread, fila por lote.
+    """Análise das fotos dentro da API (RENDER2GO_ANALISE=api, desenvolvimento): aviso de pessoas e filtro das
+    fotos, num thread, fila por lote. Agendada no envio e quando o painel lista um lote com foto sem análise; sem
+    trabalho, o thread procura de minuto em minuto fotos que ficaram sem análise (a API reiniciou no meio, ou o
+    classificador voltou). Em produção, a análise roda no serviço `render2go-servico analisar`
+    (RENDER2GO_ANALISE=separada), fora da API."""
 
-    Agendada no envio e de novo quando o painel lista um lote com foto ainda sem análise
-    (assim uma reinicialização da API no meio não deixa foto para trás). Com muitos envios, a análise
-    sai da API e roda no serviço `render2go-servico analisar` (RENDER2GO_ANALISE=separada)."""
-
-    def __init__(self, banco: Banco, armazenamento: Any, analisar: Callable[[bytes], dict]):
-        self.banco, self.armazenamento, self.analisar = banco, armazenamento, analisar
+    def __init__(self, banco: Banco, armazenamento: Any, analisar: Callable[[bytes], dict] | None, filtro: Any = None):
+        self.banco, self.armazenamento, self.analisar, self.filtro = banco, armazenamento, analisar, filtro
         self.fila: queue.Queue[str] = queue.Queue()
         self.agendados: set[str] = set()
         self.lock = threading.Lock()
         self.thread: threading.Thread | None = None
+
+    def iniciar(self, varrer: bool = False) -> None:
+        """Liga o thread; `varrer`: agenda já as fotos que ficaram sem análise (a API subiu agora)."""
+        with self.lock:
+            if self.thread is None:
+                self.thread = threading.Thread(target=self._rodar, name="analise-fotos", daemon=True)
+                self.thread.start()
+        if varrer:
+            self._varrer()
+
+    def _varrer(self) -> None:
+        """Agenda os lotes com foto sem análise (sem carregar o classificador aqui: isso fica para o thread)."""
+        try:
+            for lid in self.banco.lotes_para_analisar(filtro=self.filtro is not None):
+                self.agendar(lid)
+        except Exception as e:  # noqa: BLE001 (o thread não pode morrer)
+            print(f"[analise] AVISO: {e}", flush=True)
 
     def agendar(self, lote_id: str) -> None:
         with self.lock:
             if lote_id in self.agendados:
                 return
             self.agendados.add(lote_id)
-            if self.thread is None:
-                self.thread = threading.Thread(target=self._rodar, name="analise-fotos", daemon=True)
-                self.thread.start()
+        self.iniciar()
         self.fila.put(lote_id)
 
     def esperar(self) -> None:
         self.fila.join()
 
+    def _com_filtro(self) -> Any:
+        return self.filtro if self.filtro is not None and self.filtro.disponivel() else None
+
     def _rodar(self) -> None:
-        while True:
-            lote_id = self.fila.get()
+        while not self.banco.fechado:  # fim do processo (e dos testes): o thread acaba com o banco
             try:
-                analisar_lote(self.banco, self.armazenamento, self.analisar, lote_id)
-            except Exception as e:  # noqa: BLE001 (o thread não pode morrer; a próxima listagem reagenda)
+                lote_id = self.fila.get(timeout=VARREDURA_S)
+            except queue.Empty:
+                self._varrer()
+                continue
+            try:
+                analisar_lote(self.banco, self.armazenamento, self.analisar, lote_id, self._com_filtro())
+            except Exception as e:  # noqa: BLE001 (o thread não pode morrer; a varredura reagenda)
                 print(f"[analise] AVISO: lote {lote_id}: {e}", flush=True)
             finally:
                 with self.lock:
@@ -397,46 +438,140 @@ class AnaliseFotos:
                 self.fila.task_done()
 
 
-def analisar_lote(banco: Banco, armazenamento: Any, analisar: Callable[[bytes], dict], lote_id: str) -> int:
-    """Analisa as fotos enviadas do lote que ainda não têm análise; devolve quantas analisou."""
+def apagar_fotos(banco: Banco, armazenamento: Any, lote_id: str) -> None:
+    """Fotos de entrada de um lote fechado: apagadas do armazenamento (minimiza o que guardamos)."""
+    falhas = 0
+    for f in banco.fotos(lote_id):
+        try:
+            armazenamento.apagar(f["chave"])
+        except Exception as e:  # noqa: BLE001 (a regra de ciclo de vida do bucket apaga depois)
+            falhas += 1
+            print(f"[fotos] AVISO: {f['chave']}: {e}", flush=True)
+    if not falhas:
+        banco.marcar_fotos_apagadas(lote_id)
+
+
+def _ausente(armazenamento: Any, chave: str) -> bool:
+    """A foto não está mais no armazenamento (nunca vai abrir); False também quando nem isso dá para saber."""
+    try:
+        return armazenamento.tamanho(chave) is None
+    except Exception:  # noqa: BLE001 (rede: a próxima volta tenta de novo)
+        return False
+
+
+def analisar_lote(
+    banco: Banco,
+    armazenamento: Any,
+    analisar: Callable[[bytes], dict] | None,
+    lote_id: str,
+    filtro: Any = None,
+    limite: int | None = None,
+) -> int:
+    """O aviso de pessoas (`analisar`) e o filtro das fotos (`filtro`, render2go_servico.filtro_fotos, já carregado)
+    nas fotos enviadas do lote que ainda não os têm, na ordem da fila; devolve quantas fotos terminou. `limite`: no
+    máximo tantas (a vez dos outros pedidos). Armazenamento fora do ar: a foto fica para a próxima volta. O filtro
+    roda antes do aviso de pessoas: é ele que segura os vídeos da foto."""
+    pedido: dict | None = None
     n = 0
     for f in banco.fotos(lote_id):
-        if f["analise"] is not None or not f["enviada"]:
+        if not f["enviada"]:
             continue
-        impressao = None
+        falta_pessoas = analisar is not None and f["analise"] is None
+        falta_filtro = filtro is not None and f.get("filtro") is None
+        if not (falta_pessoas or falta_filtro):
+            continue
+        if limite is not None and n >= limite:
+            break
         try:
             dados = armazenamento.ler(f["chave"], MAX_BYTES_FOTO)
-            impressao = hashlib.sha256(dados).hexdigest()  # fica no banco depois que a foto é apagada
-            a = analisar(dados)
-        except Exception as e:  # noqa: BLE001 (foto ilegível ou armazenamento fora: o revisor vê o erro)
-            a = {"versao": pessoas.VERSAO, "erro": str(e)[:200]}
-        banco.salvar_analise(f["id"], a, impressao)
+        except Exception as e:  # noqa: BLE001
+            if not _ausente(armazenamento, f["chave"]):
+                print(f"[analise] AVISO: {f['chave']}: {e} (tenta de novo na próxima volta)", flush=True)
+                continue
+            erro = "foto ausente no armazenamento"
+            if falta_filtro and banco.salvar_filtro(f["id"], "invalida", {"versao": filtro_fotos.VERSAO, "erro": erro}):
+                apagar_fotos(banco, armazenamento, lote_id)
+            if falta_pessoas:
+                banco.salvar_analise(f["id"], {"versao": pessoas.VERSAO, "erro": erro})
+            n += 1
+            continue
+        impressao = hashlib.sha256(dados).hexdigest()  # fica no banco depois que a foto é apagada
+        vez = banco.tentar_analise(f["id"])
+        if vez > filtro_fotos.TENTATIVAS:  # a análise desta foto já caiu várias vezes: desiste dela
+            erro = f"a análise da foto não terminou em {vez - 1} tentativas"
+            if falta_filtro:
+                detalhe = {"versao": filtro_fotos.VERSAO, "erro": erro}
+                if banco.salvar_filtro(f["id"], "invalida", detalhe, impressao):
+                    apagar_fotos(banco, armazenamento, lote_id)
+            if falta_pessoas:
+                banco.salvar_analise(f["id"], {"versao": pessoas.VERSAO, "erro": erro}, impressao)
+            n += 1
+            continue
+        if falta_filtro:
+            if pedido is None:
+                lt = banco.lote(lote_id)
+                pedido = json.loads(lt["pedido"]) if lt else {}
+            try:
+                r = filtro.avaliar(dados, pedido)
+            except Exception as e:  # noqa: BLE001 (o classificador não respondeu: a foto fica para a próxima volta)
+                print(f"[filtro] AVISO: {f['chave']}: {e}", flush=True)
+                continue
+            if banco.salvar_filtro(f["id"], r.filtro, r.detalhe, impressao):
+                apagar_fotos(banco, armazenamento, lote_id)  # nenhuma foto do pedido passou: ele fechou
+            if r.filtro != "ok":
+                print(f"[filtro] {f['chave']}: {r.filtro} {r.detalhe}", flush=True)
+        if falta_pessoas:
+            try:
+                a = analisar(dados)
+            except Exception as e:  # noqa: BLE001 (foto ilegível: o revisor vê o erro)
+                a = {"versao": pessoas.VERSAO, "erro": str(e)[:200]}
+            banco.salvar_analise(f["id"], a, impressao)
         n += 1
     return n
 
 
-def analisar_continuamente(banco: Banco, armazenamento: Any, analisar: Callable[[bytes], dict], parar: threading.Event,
-                           intervalo_s: float = 5, vivo: Path | None = None) -> None:  # fmt: skip
-    """Serviço próprio da análise de pessoas (`render2go-servico analisar`, RENDER2GO_ANALISE=separada na
-    API): com muitos envios, a análise (CPU) não disputa a máquina com as requisições da API.
-    Sinal de vida: o arquivo `vivo` a cada volta (healthcheck do contêiner) e o banco a cada minuto
-    (o painel mostra, em Segurança, há quanto tempo a análise não dá sinal)."""
+def estado_filtro(filtro: Any) -> str:
+    """O estado do filtro das fotos para o painel (tabela estado, chave filtro_fotos), em JSON."""
+    if filtro is None:
+        return json.dumps({"ok": False, "erro": "o analisador roda sem o filtro das fotos"}, ensure_ascii=False)
+    return json.dumps(filtro.estado(), ensure_ascii=False)
+
+
+def analisar_continuamente(banco: Banco, armazenamento: Any, analisar: Callable[[bytes], dict] | None,
+                           parar: threading.Event, intervalo_s: float = 5, vivo: Path | None = None,
+                           filtro: Any = None) -> None:  # fmt: skip
+    """Serviço próprio da análise das fotos (`render2go-servico analisar`, RENDER2GO_ANALISE=separada na API): o
+    filtro das fotos e o aviso de pessoas (CPU) não disputam a máquina com as requisições da API. Os pedidos se
+    alternam, FOTOS_POR_VEZ fotos de cada por vez. Sinal de vida: o arquivo `vivo` (healthcheck do contêiner) e o
+    banco a cada minuto, com o estado do filtro (o painel mostra, em Segurança, há quanto tempo a análise não dá
+    sinal e se o filtro está carregado)."""
     sinal = 0.0
+
+    def sinal_de_vida() -> None:
+        nonlocal sinal
+        if vivo is not None:
+            vivo.touch()
+        if time.time() - sinal >= 60:
+            banco.definir_estado("analisador_vivo", None)
+            banco.definir_estado("filtro_fotos", estado_filtro(filtro))
+            sinal = time.time()
+
     while not parar.is_set():
+        feitas = 0
         try:
-            if vivo is not None:
-                vivo.touch()
-            if time.time() - sinal >= 60:
-                banco.definir_estado("analisador_vivo", None)
-                sinal = time.time()
-            lotes = banco.lotes_para_analisar()
-            for lid in lotes:
-                n = analisar_lote(banco, armazenamento, analisar, lid)
-                print(f"[analise] lote {lid}: {n} foto(s) analisada(s)", flush=True)
+            com_filtro = filtro if filtro is not None and filtro.disponivel() else None
+            sinal_de_vida()
+            for lid in banco.lotes_para_analisar(filtro=com_filtro is not None):
+                if parar.is_set():
+                    break
+                n = analisar_lote(banco, armazenamento, analisar, lid, com_filtro, limite=FOTOS_POR_VEZ)
+                if n:
+                    print(f"[analise] lote {lid}: {n} foto(s) analisada(s)", flush=True)
+                feitas += n
+                sinal_de_vida()
         except Exception as e:  # noqa: BLE001 (o laço não pode morrer; tenta de novo no próximo intervalo)
             print(f"[analise] AVISO: {e}", flush=True)
-            lotes = []
-        if not lotes:
+        if not feitas:
             parar.wait(intervalo_s)
 
 
@@ -449,6 +584,9 @@ class Config:
     segredo_aprovacao: str
     limite_por_minuto: int = 120
     analisar: Callable[[bytes], dict] | None = None  # None: sem aviso de pessoas na API
+    # filtro das fotos (render2go_servico.filtro_fotos.FiltroFotos) na análise dentro da API (RENDER2GO_ANALISE=api).
+    # Sem ele (e sem o serviço separado), nenhuma foto é liberada e nenhum vídeo sai (fail-closed)
+    filtro: Any = None
     email: suporte.ConfigEmail | None = None  # None: suporte só no banco e login por e-mail fora
     enviar_email: Callable = suporte.enviar
     # contas (ADR 0007)
@@ -504,11 +642,11 @@ class Config:
 
     @property
     def analises(self) -> AnaliseFotos | None:
-        if self.analisar is None or self.analise != "api":
+        if (self.analisar is None and self.filtro is None) or self.analise != "api":
             return None
         with self._lock:
             if self._analises is None:
-                self._analises = AnaliseFotos(self.banco, self.armazenamento, self.analisar)
+                self._analises = AnaliseFotos(self.banco, self.armazenamento, self.analisar, self.filtro)
             return self._analises
 
     @property
@@ -576,6 +714,7 @@ class Config:
             worker_tokens=lista("RENDER2GO_WORKER_TOKENS"),
             segredo_aprovacao=segredo,
             analisar=pessoas.analisador() if analise == "api" else None,
+            filtro=filtro_fotos.FiltroFotos() if analise == "api" else None,
             email=suporte.ConfigEmail.do_ambiente(),
             segredo_contas=segredo_contas,
             turnstile=contas.ConfigTurnstile.do_ambiente(),
@@ -703,16 +842,7 @@ def _contar_falha(c: Config, origem: dict, motivo: str, janela_s: int = 600, max
 
 
 def _apagar_fotos(c: Config, lote_id: str) -> None:
-    """Fotos de entrada de um lote fechado: apagadas do armazenamento (minimiza o que guardamos)."""
-    falhas = 0
-    for f in c.banco.fotos(lote_id):
-        try:
-            c.armazenamento.apagar(f["chave"])
-        except Exception as e:  # noqa: BLE001 (a regra de ciclo de vida do bucket apaga depois)
-            falhas += 1
-            print(f"[fotos] AVISO: {f['chave']}: {e}", flush=True)
-    if not falhas:
-        c.banco.marcar_fotos_apagadas(lote_id)
+    apagar_fotos(c.banco, c.armazenamento, lote_id)
 
 
 # num pico de cadastros, o provedor recusa por alguns segundos o que passa do limite por segundo (no SES,
@@ -1021,8 +1151,10 @@ class ConcluirIn(BaseModel):
     bytes_video: int | None = Field(None, ge=0)
     deriva_cor: float | None = None  # continuidade até o fim do vídeo (render2go_worker.conferencia)
     salto_cor: float | None = None
-    # filtro de imagem nos quadros (ADR 0005): maior P(medium)+P(high) e quantos quadros passaram
+    # filtro de imagem nos quadros (ADR 0005): a maior média de P(medium)+P(high) em 2 quadros seguidos, o
+    # maior P(high) num quadro só (12/10/2026) e quantos quadros passaram
     nsfw: float | None = Field(None, ge=0, le=1)
+    nsfw_alto: float | None = Field(None, ge=0, le=1)
     nsfw_quadros: int | None = Field(None, ge=0, le=100000)
     barrado: bool = False  # o worker barrou o vídeo (não enviou ao cliente); não é refeito
     quarentena: bool = False  # o vídeo barrado foi para a quarentena (só o dono vê; ADR 0005)
@@ -1191,6 +1323,15 @@ def avisos_de_configuracao(c: Config) -> list[str]:
             if c.turnstile_desligado
             else "Turnstile não configurado: a entrada por e-mail e o suporte sem conta recusam os pedidos"
         )
+    if c.analise == "desligada":
+        avisos.append(
+            "análise das fotos desligada (RENDER2GO_ANALISE=desligada): o filtro das fotos não roda, e nenhum vídeo é"
+            " gerado (cada foto precisa passar por ele antes de ir para um pod)"
+        )
+    elif (f := estado_do_filtro(c)) and not f.get("ok") and f.get("visto_s") is not None:
+        avisos.append(
+            f"filtro das fotos indisponível ({f.get('erro') or 'sem detalhe'}): nenhum vídeo sai até ele voltar"
+        )
     if c.mp is None:
         avisos.append("recarga por Pix desligada (RENDER2GO_MP_*): o saldo só entra pelo painel")
     if not c.cookie_seguro:
@@ -1198,6 +1339,30 @@ def avisos_de_configuracao(c: Config) -> list[str]:
     if vazios := [v for v in EMPRESA.values() if not os.environ.get(v, "").strip()]:
         avisos.append(f"identificação da empresa incompleta (páginas legais e rodapé): {', '.join(vazios)}")
     return avisos
+
+
+def estado_do_filtro(c: Config) -> dict:
+    """O filtro das fotos para o painel: carregado ou não, por quê, versão e limiares. Com o serviço separado, o que
+    ele gravou no banco (`visto_s`: há quantos segundos; mais de 5 min, o analisador parou); dentro da API, o
+    próprio filtro (`visto_s` 0 depois de carregar, None antes)."""
+    if c.analise == "desligada":
+        return {"ok": False, "erro": "análise desligada", "visto_s": None}
+    if c.analise == "api":
+        if c.filtro is None:
+            return {"ok": False, "erro": "sem o filtro das fotos", "visto_s": None}
+        e = c.filtro.estado()
+        return {**e, "visto_s": 0.0 if e["ok"] or e["erro"] else None}
+    gravado = c.banco.ler_estado("filtro_fotos")
+    if gravado is None:
+        return {"ok": False, "erro": "o analisador ainda não deu sinal", "visto_s": None}
+    try:
+        e = json.loads(gravado["valor"] or "{}")
+    except ValueError:
+        e = {}
+    visto = round(time.time() - float(gravado["atualizado"]), 1)
+    if visto > 300:  # o analisador grava a cada minuto: parado, o filtro também está
+        e = {**e, "ok": False, "erro": f"o analisador não dá sinal há {visto / 60:.0f} min"}
+    return {**e, "visto_s": visto}
 
 
 def criar_app(cfg: Config | None = None) -> FastAPI:
@@ -1209,6 +1374,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             app_.state.cfg = Config.do_ambiente()
             for aviso in avisos_de_configuracao(app_.state.cfg):
                 print(f"[api] AVISO: {aviso}", flush=True)
+            if app_.state.cfg.analises is not None:  # análise dentro da API: procura fotos sem análise desde já
+                app_.state.cfg.analises.iniciar(varrer=True)
         yield
         if criada_aqui:
             app_.state.cfg.encerrar()
@@ -3077,7 +3244,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         out = []
         for lt in c.banco.lotes(status=status, limite=50):
             fotos = c.banco.fotos(lt["id"])
-            if c.analises is not None and any(f["analise"] is None and f["enviada"] for f in fotos):
+            if c.analises is not None and any(
+                f["enviada"] and (f["analise"] is None or (c.filtro is not None and f["filtro"] is None)) for f in fotos
+            ):
                 c.analises.agendar(lt["id"])  # a API pode ter reiniciado no meio da análise
             cli = c.banco.cliente(lt["cliente_id"]) or {}
             out.append(
@@ -3096,9 +3265,15 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "analise_ligada": c.analise_ligada,
                     "fotos": [
                         {
+                            "id": f["id"],
                             "nome": f["nome"],
-                            "url": c.armazenamento.url("GET", f["chave"], 3600),
+                            # a foto que o filtro das fotos não liberou não vai para a tela do revisor: o dono a
+                            # abre pelo botão (desfocada, na auditoria; GET /api/fotos/{id}/recusada)
+                            "url": _url_revisao(c, f),
                             "analise": json.loads(f["analise"]) if f["analise"] else None,
+                            # filtro das fotos: None (avaliando), ok, recusada ou invalida; notas só para o painel
+                            "filtro": f["filtro"],
+                            "filtro_detalhe": json.loads(f["filtro_detalhe"]) if f["filtro_detalhe"] else None,
                             # pedido em sequência: o revisor vê e aprova cada texto próprio
                             "texto": f["prompt"],
                             "filtro_c1": filtros.avaliar(f["prompt"]).reason if f["prompt"] else None,
@@ -3119,7 +3294,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         marcadas = [f for f in fotos[PREVIA_REVISAO:] if _marcada(f)][:MARCADAS_REVISAO]
         return primeiras + marcadas
 
+    def _url_revisao(c: Config, f: dict) -> str | None:
+        return None if f["filtro"] in FOTO_NAO_LIBERADA else c.armazenamento.url("GET", f["chave"], 3600)
+
     def _marcada(f: dict) -> bool:
+        if f["filtro"] in FOTO_NAO_LIBERADA:
+            return True
         a = json.loads(f["analise"]) if f["analise"] else None
         return bool(a) and bool(a.get("erro") or a.get("pessoas") or a.get("rostos"))
 
@@ -3138,6 +3318,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 1 for a in analises if a and not a.get("erro") and (a.get("pessoas") or a.get("rostos"))
             ),
             "fotos_analisando": sum(1 for a in analises if a is None),
+            # filtro das fotos: as que não vão virar vídeo e as que ainda esperam a avaliação
+            "fotos_recusadas": sum(1 for f in fotos if f["filtro"] in FOTO_NAO_LIBERADA),
+            "fotos_filtrando": sum(1 for f in fotos if f["filtro"] is None),
             "fotos_com_texto": sum(textos.values()),
             "textos": [{"texto": t, "fotos": n, "filtro_c1": filtros.avaliar(t).reason} for t, n in textos.items()],
         }
@@ -3167,6 +3350,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             c.banco.aprovar(lote_id, quem, tarefas)
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
+        _se_fechou(c, lote_id)  # todas as fotos recusadas pelo filtro das fotos: o pedido já fecha na aprovação
         return {"lote": lote_id, "status": "aprovado", "videos": len(tarefas)}
 
     @rotas.post("/api/lotes/{lote_id}/recusar")
@@ -3207,6 +3391,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "erro": j["erro"],
                     "tentativas": j["tentativas"],
                     "nsfw": j["nsfw"],
+                    "nsfw_alto": j.get("nsfw_alto"),
                     "deriva_cor": j["deriva_cor"],
                     "salto_cor": j["salto_cor"],
                     "similaridade": j["similaridade"],
@@ -3215,6 +3400,28 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 for j in c.banco.falhas_de([lote_id])[lote_id]
             ]
         }
+
+    @rotas.get("/api/fotos/{foto_id}/recusada")
+    def ver_foto_recusada(foto_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        """A foto que o filtro das fotos recusou (só o dono): link de 10 min, desfocada na página até ele pedir, cada
+        abertura na auditoria. Só enquanto o pedido está aberto: as fotos são apagadas quando ele fecha."""
+        f = c.banco.foto(foto_id)
+        lt = c.banco.lote(f["lote_id"]) if f else None
+        if f is None or lt is None or f["filtro"] != "recusada" or lt["fotos_apagadas"] or lt["status"] in LOTE_FECHADO:
+            raise HTTPException(404, "foto recusada não encontrada (as fotos são apagadas quando o pedido fecha)")
+        _auditar(c, request, quem, "ver_foto_recusada", lt["id"], {"foto": f["nome"]})
+        return {"foto": c.armazenamento.url("GET", f["chave"], 600), "expira_s": 600}
+
+    @rotas.post("/api/fotos/{foto_id}/liberar")
+    def liberar_foto(foto_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        """O dono libera uma foto que o filtro recusou por engano, antes de aprovar o pedido (fica no registro do
+        pedido e na auditoria). Depois da aprovação, os vídeos dela já foram cancelados."""
+        try:
+            r = c.banco.liberar_foto(foto_id, quem)
+        except BancoError as e:
+            raise HTTPException(404 if "não encontrada" in str(e) else 409, str(e)) from e
+        _auditar(c, request, quem, "liberar_foto", r["lote_id"], {"foto": r["nome"], "nota": r["nota"]})
+        return {"ok": True}
 
     @rotas.get("/api/jobs/{job_id}/quarentena")
     def ver_quarentena(job_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
@@ -3479,6 +3686,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             a["autorizacao"]["sinais"] = js(a["autorizacao"].get("sinais"))
         for f in a["fotos"]:
             f["analise"] = js(f["analise"])
+            f["filtro_detalhe"] = js(f["filtro_detalhe"])
         for e in a["eventos"]:
             e["detalhe"] = js(e["detalhe"])
         return a
@@ -3511,6 +3719,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "pagamento": c.mp is not None,
             "cookie_seguro": c.cookie_seguro,
             "analise": c.analise,
+            "filtro_fotos": estado_do_filtro(c),
             "segredo_contas": c.segredo_contas is not None,
             "orquestrador_visto_s": round(time.time() - float(vivo["atualizado"]), 1) if vivo else None,
             "analisador_visto_s": round(time.time() - float(analisador["atualizado"]), 1) if analisador else None,
@@ -3615,8 +3824,14 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         job = _do_worker(job_id, body.worker, c)
         status, erro, repetir = body.status, body.erro, body.repetir
         quarentena = False
+        # a mesma regra do pod (render2go_worker.filtro_imagem.barrado), com as notas que ele mandou
         barrado = job["tipo"] == "render" and (
-            body.barrado or (status == "ok" and body.nsfw is not None and body.nsfw >= filtro_imagem.LIMIAR)
+            body.barrado
+            or (
+                status == "ok"
+                and body.nsfw is not None
+                and filtro_imagem.barrado(body.nsfw, body.nsfw_alto if body.nsfw_alto is not None else 0.0)
+            )
         )
         if barrado:
             # nudez em algum quadro (ADR 0005): nada chega ao cliente, nem a folha de conferência; o vídeo
@@ -3626,7 +3841,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 with contextlib.suppress(Exception):
                     c.armazenamento.apagar(chave_saida(lt["cliente_id"], lt["id"], nome))
             status, repetir = "erro", False
-            erro = f"barrado pelo filtro de imagem (nota {body.nsfw or 0:.2f})"
+            erro = f"barrado pelo filtro de imagem (nota {body.nsfw or 0:.2f}, explícita {body.nsfw_alto or 0:.2f})"
             if body.quarentena:  # o pod diz que enviou: vale só se o vídeo está mesmo lá
                 with contextlib.suppress(Exception):
                     quarentena = bool(
@@ -3644,7 +3859,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 problema = f"conferência do 1º quadro reprovada ({body.similaridade})"
             elif p := conferencia.problema_continuidade(body.deriva_cor, body.salto_cor):
                 problema = p
-            elif body.nsfw is None or not body.nsfw_quadros:
+            elif body.nsfw is None or body.nsfw_alto is None or not body.nsfw_quadros:
+                # sem as duas notas (ex.: um pod com o código de antes de 12/10/2026), o vídeo é refeito
                 problema = "filtro de imagem ausente: o vídeo não foi conferido"
             elif not body.bytes_video or tamanho != body.bytes_video:
                 problema = f"vídeo ausente ou incompleto ({tamanho} de {body.bytes_video} bytes)"
@@ -3665,6 +3881,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 deriva_cor=body.deriva_cor,
                 salto_cor=body.salto_cor,
                 nsfw=body.nsfw,
+                nsfw_alto=body.nsfw_alto,
                 nsfw_quadros=body.nsfw_quadros,
                 barrado=barrado,
                 quarentena=quarentena,

@@ -669,6 +669,8 @@ type Seguranca = {
   pagamento: boolean;
   cookie_seguro: boolean;
   analise: string;
+  // filtro das fotos (render2go_servico/filtro_fotos.py): sem ele carregado, nenhum vídeo sai
+  filtro_fotos?: { ok: boolean; erro?: string | null; versao?: string; limiar?: number; limiar_alto?: number; threads?: number; visto_s?: number | null };
   segredo_contas: boolean;
   orquestrador_visto_s: number | null;
   analisador_visto_s?: number | null;
@@ -714,8 +716,19 @@ function checagem(r: Seguranca): HTMLElement[] {
       `Identificação da empresa incompleta nas páginas legais e no rodapé: falta ${r.empresa_faltando.join(", ")}.`,
     ),
     analise,
+    filtroFotos(r),
     item(visto !== null && visto < 120, `Orquestrador ativo (visto há ${Math.round(visto ?? 0)} s).`, visto === null ? "O orquestrador ainda não deu sinal." : `Orquestrador sem sinal há ${Math.round(visto)} s: confira o contêiner.`),
   ];
+}
+
+// o filtro das fotos: cada foto passa por ele antes de ir para um pod (fail-closed: sem ele, nenhum vídeo sai)
+function filtroFotos(r: Seguranca): HTMLElement {
+  const f = r.filtro_fotos;
+  const n = (v: number | undefined) => (v === undefined ? "?" : v.toLocaleString("pt-BR", { maximumFractionDigits: 2 }));
+  const ok = !!f?.ok;
+  const texto = `Filtro das fotos ligado (${f?.versao ?? "?"}, limiares ${n(f?.limiar)} e ${n(f?.limiar_alto)} explícita): cada foto é avaliada antes de ir para um pod.`;
+  const falta = r.analise === "desligada" ? "Análise das fotos desligada: o filtro das fotos não roda e nenhum vídeo é gerado." : `Filtro das fotos indisponível (${f?.erro ?? "sem detalhe"}): nenhum vídeo sai até ele voltar.`;
+  return criar("li", { className: ok ? "ok" : "falta" }, [icone(ok ? "ok" : "alerta"), criar("span", { textContent: ok ? texto : falta })]);
 }
 
 export function criarSeguranca(): Controle {

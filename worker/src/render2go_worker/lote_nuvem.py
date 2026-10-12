@@ -245,28 +245,64 @@ def _memoria_path() -> Path:
     return CACHE / "datacentros.json"
 
 
-def lembrar_datacentro(dc: str | None, mbs: float | None, motivo: str = "") -> None:
-    """Anota a rede de um datacenter (aqui, na máquina de quem roda o comando)."""
-    if not dc:
-        return
+def _memoria() -> dict:
     path = _memoria_path()
     try:
         dados = json.loads(path.read_text()) if path.is_file() else {}
     except (OSError, json.JSONDecodeError):
-        dados = {}
-    dados[dc] = {"mbs": mbs, "quando": time.time(), "motivo": motivo}
+        return {}
+    return dados if isinstance(dados, dict) else {}
+
+
+def lembrar_datacentro(dc: str | None, mbs: float | None, motivo: str = "") -> None:
+    """Anota a rede de um datacenter (aqui, na máquina de quem roda o comando): a última medida,
+    a média das recentes (metade de cada, para um host ruim não condenar o datacenter de vez) e o
+    motivo, se ele foi descartado (lento ou com instalação que não terminou)."""
+    if not dc:
+        return
+    dados = _memoria()
+    antes = dados.get(dc) or {}
+    media = antes.get("media")
+    if mbs is not None:
+        recente = time.time() - float(antes.get("quando") or 0) < MEMORIA_DIAS * 86400
+        media = round(0.5 * float(media) + 0.5 * mbs, 1) if recente and media is not None else mbs
+    dados[dc] = {
+        "mbs": mbs,
+        "media": media,
+        "n": int(antes.get("n") or 0) + (mbs is not None),
+        "quando": time.time(),
+        "motivo": motivo,
+    }
+    path = _memoria_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(dados, indent=1, ensure_ascii=False))
 
 
-def datacentros_lentos() -> set[str]:
-    path = _memoria_path()
-    try:
-        dados = json.loads(path.read_text()) if path.is_file() else {}
-    except (OSError, json.JSONDecodeError):
-        return set()
+def velocidades() -> dict[str, float]:
+    """MB/s médio do download dos modelos em cada datacenter medido nos últimos MEMORIA_DIAS."""
     limite = time.time() - MEMORIA_DIAS * 86400
-    return {dc for dc, d in dados.items() if d.get("quando", 0) > limite and d.get("motivo")}
+    out = {}
+    for dc, d in _memoria().items():
+        v = d.get("media") if d.get("media") is not None else d.get("mbs")
+        if v is not None and float(d.get("quando") or 0) > limite:
+            out[dc] = float(v)
+    return out
+
+
+def datacentros_lentos() -> set[str]:
+    limite = time.time() - MEMORIA_DIAS * 86400
+    return {dc for dc, d in _memoria().items() if d.get("quando", 0) > limite and d.get("motivo")}
+
+
+# Sem medida, a ordem dos datacenters é esta (o resto vem por último): a API fica na Alemanha, e os
+# hosts medidos até 12/10/2026 eram dos EUA (US-NC-1 e US-NC-2: os 37 GB em 63–85 s). Em 12/10, um
+# pod do serviço caiu em OC-AU-1 (Austrália), sem regra nenhuma de lugar.
+CONTINENTES = {"United States": 0, "Canada": 0, "Europe": 1, "France": 1}
+# filtros do RunPod para a 1ª tentativa de cada subida: máquina com download e disco medidos pelo
+# RunPod acima disto (0 desliga). Sem vaga com eles, a subida tenta de novo sem os filtros
+REDE_MIN_MBPS = 2000  # megabits/s (~250 MB/s: 37 GB em ~2,5 min)
+DISCO_MIN_MBS = 1000  # megabytes/s
+SEM_RAPIDOS_S = 600  # sem vaga com os filtros: a próxima subida nem tenta com eles por 10 min
 
 
 AGENTE_CMD = 'echo "$AGENT_B64" | base64 -d > /agente.py && exec python3 /agente.py'
@@ -281,6 +317,12 @@ class RunPod:
         self.chave = runpod_pods._chave()
         self.datacentros = datacentros or []
         self.volume = volume
+        # filtros de máquina rápida da 1ª tentativa (RENDER2GO_REDE_MIN_MBPS e
+        # RENDER2GO_DISCO_MIN_MBS; 0 desliga)
+        self.rede_min_mbps = int(os.environ.get("RENDER2GO_REDE_MIN_MBPS", REDE_MIN_MBPS))
+        self.disco_min_mbs = int(os.environ.get("RENDER2GO_DISCO_MIN_MBS", DISCO_MIN_MBS))
+        self._sem_rapidos_ate = 0.0
+        self._dcs_cache: tuple[float, list[dict]] | None = None
         if volume:  # o pod precisa nascer no datacenter do volume
             r = runpod_pods._rest("GET", f"/networkvolumes/{volume}", self.chave)
             dc = (r.json() or {}).get("dataCenterId") if r.status_code == 200 else None
@@ -302,45 +344,138 @@ class RunPod:
         env: dict,
         volume_gb: int = 0,
     ) -> PodInfo:
-        """`volume_gb`: disco de volume do próprio pod em /workspace (pod que hiberna, ADR 0011)."""
+        """`volume_gb`: disco de volume do próprio pod em /workspace (pod que hiberna, ADR 0011).
+
+        Escolha do host (12/10/2026), em camadas, cada uma com as GPUs na ordem pedida:
+        1. máquina rápida: download e disco medidos pelo RunPod acima de RENDER2GO_REDE_MIN_MBPS e
+           RENDER2GO_DISCO_MIN_MBS, nos datacenters da GPU do mais rápido para o mais lento na
+           medida dos nossos downloads (`velocidades`), sem os lentos lembrados;
+        2. os mesmos datacenters, sem os filtros;
+        3. qualquer datacenter (como antes; o RunPod escolhe), menos os lentos lembrados.
+        Prefere uma GPU de outra linha num host rápido a uma L40S num host lento: o que pesa na
+        espera do cliente é a subida (o dono, 12/10/2026: "não pelo custo, mas pela espera")."""
         tentativas = []
-        for opcao in opcoes:
-            # 120 GB também no pod que hiberna: a 1ª subida instala tudo no disco do contêiner
-            # (rápido) e só depois copia para o volume (com 40 GB, em 11/10, o disco encheu)
-            corpo = runpod_pods.corpo_pod(opcao, self.IMAGEM, nome, 120, env, ["8888/http"])
-            corpo["gpuCount"] = gpus
-            corpo["dockerStartCmd"] = ["bash", "-c", AGENTE_CMD]
-            if volume_gb and not self.volume:
-                corpo["volumeInGb"] = volume_gb
-                corpo["volumeMountPath"] = VOLUME_HIB
-            if self.volume:
-                corpo["networkVolumeId"] = self.volume
-                corpo["env"] = {**env, "RENDER2GO_VOLUME": "1"}
-            # com volume, o próprio volume prende o datacenter (e há datacenters com volume, como
-            # o US-NC-2, que a lista dataCenterIds da API REST não aceita)
-            dcs = None if self.volume else self.datacentros or self._datacentros_bons(opcao.gpu)
-            if dcs:
-                corpo["dataCenterIds"] = dcs
-            try:
-                pod = runpod_pods.criar(opcao, corpo, self.chave)
-            except runpod_pods.SemVaga:
-                tentativas.append(f"{opcao}: sem vaga")
-                continue
-            dc = self._datacentro_do_pod(pod["id"])
-            if self.volume and dc and dc not in self.datacentros:
-                runpod_pods.encerrar(pod["id"], self.chave)
-                raise runpod_pods.RunPodError(f"pod nasceu em {dc}, fora do datacenter do volume")
-            return PodInfo(
-                id=pod["id"],
-                url=f"https://{pod['id']}-8888.proxy.runpod.net",
-                token=env["AGENT_TOKEN"],
-                usd_h=float(pod.get("costPerHr") or 0),
-                descricao=str(opcao),
-                gpus=gpus,
-                gpu=opcao.gpu,
-                datacentro=dc,
-            )
+        for camada, filtro in self._camadas():
+            for opcao in opcoes:
+                dcs = self._dcs_da_camada(camada, opcao.gpu)
+                if (
+                    dcs is None
+                ):  # sem estoque da GPU em datacenter nenhum: fica para a última camada
+                    continue
+                corpo = self._corpo(nome, opcao, gpus, env, volume_gb, dcs, filtro, camada < 3)
+                try:
+                    pod = runpod_pods.criar(opcao, corpo, self.chave)
+                except runpod_pods.SemVaga:
+                    tentativas.append(f"{opcao}{' (máquina rápida)' if filtro else ''}: sem vaga")
+                    continue
+                dc = self._datacentro_do_pod(pod["id"])
+                if self.volume and dc and dc not in self.datacentros:
+                    runpod_pods.encerrar(pod["id"], self.chave)
+                    raise runpod_pods.RunPodError(
+                        f"pod nasceu em {dc}, fora do datacenter do volume"
+                    )
+                return PodInfo(
+                    id=pod["id"],
+                    url=f"https://{pod['id']}-8888.proxy.runpod.net",
+                    token=env["AGENT_TOKEN"],
+                    usd_h=float(pod.get("costPerHr") or 0),
+                    descricao=str(opcao) + (" · máquina rápida" if filtro else ""),
+                    gpus=gpus,
+                    gpu=opcao.gpu,
+                    datacentro=dc,
+                )
+            if (
+                filtro
+            ):  # nenhuma GPU com os filtros: as próximas subidas pulam a camada por um tempo
+                self._sem_rapidos_ate = time.monotonic() + SEM_RAPIDOS_S
         raise runpod_pods.SemVaga("; ".join(tentativas) or "nenhuma opção")
+
+    def _corpo(self, nome, opcao, gpus, env, volume_gb, dcs, filtro, ordenar) -> dict:
+        # 120 GB também no pod que hiberna: a 1ª subida instala tudo no disco do contêiner
+        # (rápido) e só depois copia para o volume (com 40 GB, em 11/10, o disco encheu)
+        corpo = runpod_pods.corpo_pod(opcao, self.IMAGEM, nome, 120, env, ["8888/http"])
+        corpo["gpuCount"] = gpus
+        corpo["dockerStartCmd"] = ["bash", "-c", AGENTE_CMD]
+        if volume_gb and not self.volume:
+            corpo["volumeInGb"] = volume_gb
+            corpo["volumeMountPath"] = VOLUME_HIB
+        if self.volume:
+            corpo["networkVolumeId"] = self.volume
+            corpo["env"] = {**env, "RENDER2GO_VOLUME": "1"}
+        if dcs:
+            corpo["dataCenterIds"] = dcs
+            if ordenar:  # na ordem da lista: os mais rápidos primeiro
+                corpo["dataCenterPriority"] = "custom"
+        return corpo | filtro
+
+    def _camadas(self) -> list[tuple[int, dict]]:
+        """(camada, filtros do RunPod): 1 rápida, 2 datacenters ordenados, 3 qualquer um."""
+        if self.volume or self.datacentros:  # datacenter decidido (volume de rede ou --datacentro)
+            return [(3, {})]
+        rapido = {}
+        if self.rede_min_mbps > 0:
+            rapido["minDownloadMbps"] = self.rede_min_mbps
+        if self.disco_min_mbs > 0:
+            rapido["minDiskBandwidthMBps"] = self.disco_min_mbs
+        camadas = [(2, {}), (3, {})]
+        if rapido and time.monotonic() >= self._sem_rapidos_ate:
+            camadas.insert(0, (1, rapido))
+        return camadas
+
+    def _dcs_da_camada(self, camada: int, gpu: str) -> list[str] | None:
+        """Datacenters da tentativa: a lista (na ordem), [] = qualquer um, None = pular."""
+        if self.volume:  # o volume de rede prende o datacenter (e há datacenters com volume, como
+            return []  # o US-NC-2, que a lista dataCenterIds da API REST não aceita)
+        if self.datacentros:
+            return self.datacentros
+        if camada < 3:
+            return self._datacentros_ordenados(gpu) or None
+        lentos = datacentros_lentos()  # última camada: qualquer um, menos os lentos lembrados
+        aceitos = self._datacentros_aceitos() if lentos else set()
+        return sorted(aceitos - lentos) if aceitos else []
+
+    def _dcs(self) -> list[dict]:
+        """Datacenters e estoque de GPU (GraphQL), lidos no máximo uma vez por minuto."""
+        agora = time.monotonic()
+        if self._dcs_cache and agora - self._dcs_cache[0] < 60:
+            return self._dcs_cache[1]
+        d = runpod_pods._graphql(
+            "{ dataCenters { id location gpuAvailability { gpuTypeId available } } }", self.chave
+        )
+        dcs = [dc for dc in d.get("dataCenters") or [] if dc.get("id")]
+        self._dcs_cache = (agora, dcs)
+        return dcs
+
+    def _datacentros_ordenados(self, gpu: str) -> list[str]:
+        """Datacenters com estoque desta GPU agora, sem os lentos lembrados, do mais rápido para o
+        mais lento na medida dos nossos downloads (`velocidades`). Os sem medida entram entre os
+        rápidos (≥ REDE_BOA_MBS) e os mais lentos, na ordem de CONTINENTES. Só IDs que a API REST
+        aceita."""
+        try:
+            dcs = self._dcs()
+        except runpod_pods.RunPodError:
+            return []
+        lentos, vel, aceitos = datacentros_lentos(), velocidades(), self._datacentros_aceitos()
+        com_gpu = [
+            dc
+            for dc in dcs
+            if dc["id"] not in lentos
+            and (not aceitos or dc["id"] in aceitos)
+            and any(
+                g.get("gpuTypeId") == gpu and g.get("available")
+                for g in dc.get("gpuAvailability") or []
+            )
+        ]
+
+        def chave(dc: dict) -> tuple:
+            v = vel.get(dc["id"])
+            if v is None:
+                return (1, CONTINENTES.get(dc.get("location") or "", 2), 0.0)
+            return (0 if v >= REDE_BOA_MBS else 2, 0, -v)
+
+        if lentos & {dc["id"] for dc in dcs}:
+            _log(f"evitando datacenters lentos: {', '.join(sorted(lentos))}")
+        return [dc["id"] for dc in sorted(com_gpu, key=chave)]
 
     def encerrar(self, pod_id: str) -> None:
         runpod_pods.encerrar(pod_id, self.chave)
@@ -364,29 +499,6 @@ class RunPod:
             return float(d["myself"]["clientBalance"])
         except (runpod_pods.RunPodError, KeyError, TypeError, ValueError):
             return None
-
-    def _datacentros_bons(self, gpu: str) -> list[str]:
-        """Datacenters com estoque dessa GPU, menos os lentos lembrados (vazio = qualquer um)."""
-        lentos = datacentros_lentos()
-        if not lentos:
-            return []
-        try:
-            d = runpod_pods._graphql(
-                "{ dataCenters { id gpuAvailability { gpuTypeId available } } }", self.chave
-            )
-        except runpod_pods.RunPodError:
-            return []
-        com_gpu = [
-            dc["id"]
-            for dc in d.get("dataCenters") or []
-            for g in dc.get("gpuAvailability") or []
-            if g.get("gpuTypeId") == gpu and g.get("available")
-        ]
-        aceitos = self._datacentros_aceitos()
-        bons = [dc for dc in com_gpu if dc not in lentos and (not aceitos or dc in aceitos)]
-        if lentos & set(com_gpu):
-            _log(f"evitando datacenters lentos: {', '.join(sorted(lentos & set(com_gpu)))}")
-        return bons
 
     def _datacentros_aceitos(self) -> set[str]:
         """IDs que a API REST aceita em dataCenterIds (lista fixa, menor que a do GraphQL).
@@ -443,28 +555,13 @@ CUDA_MINIMA = 12080  # PyTorch +cu128 exige driver com CUDA ≥ 12.8 (driver ≥
 # Rede mínima: 37 GB de modelos a 40 MB/s ≈ 15 min. Em 07/10/2026 um host RTX PRO 6000 baixava
 # a 2,9 MB/s (3,5 h só de modelos, além do limite de 2 h do pod); o normal é ~500 MB/s.
 REDE_MINIMA_MBS = 40
-REDE = (  # 4 conexões por 15 s, como o download real (xargs -P 4); soma em MB/s
-    "python3 -c 'import time,threading,urllib.request as u\n"
-    "t=[0]*4;i=time.time()\n"
-    "def f(k):\n"
-    ' h={{"User-Agent":"render2go","Range":"bytes=%d-"%(k*2**30)}}\n'
-    ' r=u.urlopen(u.Request("{url}",headers=h),timeout=20)\n'
-    " while time.time()-i<15:\n"
-    "  b=r.read(1<<22)\n"
-    "  if not b: break\n"
-    "  t[k]+=len(b)\n"
-    "h=[threading.Thread(target=f,args=(k,)) for k in range(4)]\n"
-    "[x.start() for x in h];[x.join(25) for x in h]\n"
-    'print("rede",round(sum(t)/1e6/(time.time()-i),1))\''
-)
-
-
-def url_teste_rede() -> str:
-    """O primeiro modelo do conjunto I2V (a mesma origem dos downloads de verdade)."""
-    from render2go_worker import models
-
-    sets, entradas = models.load_lock()
-    return entradas[sets["i2v_r1v2"][0]].url
+# Desde 12/10/2026, o teste de rede é o próprio download dos modelos: o bootstrap mede os primeiros
+# 10 s (aria2, 16 conexões por arquivo, 4 arquivos) e escreve "rede <MB/s>" em $R/rede. Antes, eram
+# 15 s de teste com 4 conexões, antes de começar a instalar: a subida esperava, e a medida ficava
+# abaixo do que o download de verdade fazia (73 MB/s no teste, ~310 MB/s no download, 08/10).
+ESPERA_REDE_S = 180  # a medida sai ~15 s depois do início (apt, código e 10 s de download)
+# Abaixo disto, o datacenter vai para o fim da fila nas próximas subidas (não é descartado)
+REDE_BOA_MBS = 200
 
 
 def rede_ok(saida: str) -> str | None:
@@ -620,6 +717,9 @@ class Pod:
     deadman_s: int = 0  # desligamento automático deste pod (s desde a criação ou a volta)
     hibernavel: bool = False  # ambiente e modelos no disco de volume do pod (ADR 0011)
     retomado: bool = False  # voltou da hibernação (nada foi baixado)
+    # o disco de volume foi conferido nesta subida (GUARDADO e o marcador desta versão): só assim o
+    # pod que o desligamento automático parou pode ficar no conjunto de hibernados
+    volume_ok: bool = False
 
     @property
     def nome(self) -> str:
@@ -846,36 +946,15 @@ class Orquestrador:
                 ao_agente(pod)
             except Exception as e:  # noqa: BLE001 (fica o prazo com que o pod nasceu)
                 _log(f"AVISO: pod {pod.nome}: {e}")
-        so_espelho = False  # espelho aprovado no teste de rede: os modelos vêm só dele
         if r.verificar_cuda:
             _, out = ag.exec(CUINIT, 30)
             problema = cuda_ok(out, pod.info.gpus)
             if problema:
                 raise NuvemError(problema)
-        if r.verificar_cuda and not pod.retomado:  # de volta da hibernação: nada a baixar
-            # Espelho (R2) primeiro: em 08/10/2026 ele baixou os 37 GB em 40 s (~925 MB/s), com o
-            # Hugging Face a 25–39 MB/s nos mesmos hosts. Com ele aprovado, a origem nem é testada.
-            url_espelho = self._url_teste_espelho()
-            if url_espelho:
-                _, out = ag.exec(REDE.format(url=url_espelho), 60)
-                problema = rede_ok(out)
-                so_espelho = problema is None
-                if problema:
-                    _log(f"pod {pod.nome}: espelho com problema ({problema}); testando a origem")
-            if not so_espelho:
-                _, out = ag.exec(REDE.format(url=url_teste_rede()), 60)
-                problema = rede_ok(out)
-            m = re.search(r"rede ([\d.]+)", out)
-            lembrar_datacentro(
-                pod.info.datacentro, float(m.group(1)) if m else None, problema or ""
-            )
-            if problema:
-                raise NuvemError(f"{problema} (datacenter {pod.info.datacentro or '?'})")
-            _log(f"pod {pod.nome}: {out.strip()} MB/s")
         if pod.retomado:
             _log(f"pod {pod.nome}: agente e CUDA ok; conferindo o disco de volume")
         else:
-            _log(f"pod {pod.nome}: agente, CUDA e rede ok; instalando o worker (~1–3 min)")
+            _log(f"pod {pod.nome}: agente e CUDA ok; instalando o worker (~1–3 min)")
         ag.put(self.a.repo_tgz, f"{r.raiz}/repo.tgz")
         ag.put(WORKER_DIR / "scripts" / "bootstrap_pod.sh", f"{r.raiz}/bootstrap_pod.sh")
         if pod.hibernavel:  # o bootstrap marca o disco de volume com esta versão (ADR 0011)
@@ -883,9 +962,13 @@ class Orquestrador:
         esp = getattr(self.a, "espelho", None)
         if esp and esp.presentes:  # URLs assinadas do espelho (GET, 6 h), uma por modelo
             self._enviar_texto(pod, esp.tsv(), "espelho.tsv")
-            if so_espelho:  # no host de 08/10, a origem a 25 MB/s segurou o download misto
-                self._enviar_texto(pod, "1\n", "so_espelho")
+            # o que está no espelho vem só dele: em 08/10/2026 ele baixou os 37 GB em 40 s, com o
+            # Hugging Face a 25–39 MB/s nos mesmos hosts, e o download misto ia no passo do mais
+            # lento. O curl de cada arquivo continua com a origem de reserva
+            self._enviar_texto(pod, "1\n", "so_espelho")
         ag.bg(r.instalar.format(raiz=r.raiz), f"{r.raiz}/instalar.log")
+        if r.verificar_cuda and not pod.retomado:  # de volta da hibernação: nada a baixar
+            self._medir_rede(pod)
         # cedo: o pod gravador (volume/espelho) não, porque grava os modelos depois do PRONTO
         cedo = cedo and not pod.grava_volume
         fins = ("AMBIENTE", "PRONTO", "FALHOU") if cedo else ("PRONTO", "FALHOU")
@@ -938,14 +1021,23 @@ class Orquestrador:
         finally:
             tmp.unlink(missing_ok=True)
 
-    def _url_teste_espelho(self) -> str | None:
-        """O maior modelo do espelho: o teste lê 4 trechos a partir de 0, 1, 2 e 3 GiB (com o
-        config.json de 989 bytes do filtro de imagem, o 1º em ordem, dava 0 MB/s em 11/10/2026)."""
-        esp = getattr(self.a, "espelho", None)
-        if not esp:
-            return None
-        presentes = [m for m in esp.modelos if esp.url(m)]
-        return esp.url(max(presentes, key=lambda m: m.bytes)) if presentes else None
+    def _medir_rede(self, pod: Pod) -> None:
+        """A velocidade dos primeiros 10 s do download dos modelos ("rede <MB/s>" em $R/rede,
+        escrito pelo bootstrap): host abaixo de REDE_MINIMA_MBS é descartado (o pod é encerrado e
+        outro sobe), e a medida fica na memória dos datacenters, que ordena as próximas subidas
+        (`RunPod._datacentros_ordenados`)."""
+        r = self.remoto
+        out = self._esperar(
+            pod, f"cat {r.raiz}/rede {r.raiz}/estado 2>/dev/null", ("rede", "FALHOU"), ESPERA_REDE_S
+        )
+        if not out.startswith("rede") or out.startswith("rede -"):
+            return  # falha: a espera da instalação mostra; sem download (cache): nada a medir
+        m = re.search(r"rede ([\d.]+)", out)
+        problema = rede_ok(out)
+        lembrar_datacentro(pod.info.datacentro, float(m.group(1)) if m else None, problema or "")
+        if problema:
+            raise NuvemError(f"{problema} (datacenter {pod.info.datacentro or '?'})")
+        _log(f"pod {pod.nome}: modelos baixando a {m.group(1)} MB/s ({pod.info.datacentro or '?'})")
 
     def _espelhar(self, pod: Pod) -> None:
         """Pod gravador: envia ao espelho, em segundo plano, os modelos que faltam lá."""

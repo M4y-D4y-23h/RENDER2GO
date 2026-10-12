@@ -264,6 +264,18 @@ def erro_interrompido(por: str | None) -> str:
     return "interrompido pelo cliente" if por == "cliente" else "interrompido no painel"
 
 
+FILTROS_FOTO = ("ok", "recusada", "invalida")  # fotos.filtro (render2go_servico.filtro_fotos)
+
+
+def erro_da_foto(filtro: str, detalhe: dict) -> str:
+    """O texto técnico gravado em cada vídeo cancelado de uma foto que o filtro das fotos não liberou (jobs.erro: o
+    painel vê; o cliente vê só "a foto não pôde ser usada", render2go_servico.motivos)."""
+    if filtro == "recusada":
+        nota, alta = float(detalhe.get("nota") or 0), float(detalhe.get("nota_alta") or 0)
+        return f"foto recusada pelo filtro de imagem (nota {nota:.2f}, explícita {alta:.2f})"
+    return f"foto inválida: {detalhe.get('erro') or 'não abre como foto'}"[:300]
+
+
 # dois CREATE TABLE IF NOT EXISTS ao mesmo tempo podem falhar no Postgres (pg_type duplicado)
 TRAVA_ESQUEMA = 20261008
 # tabelas do histórico (pedidos e tudo o que vem deles), na ordem de apagar (chaves estrangeiras).
@@ -345,6 +357,16 @@ COLUNAS_NOVAS = [
     ("lotes", "interrompido_por", "TEXT"),
     # vídeo barrado pelo filtro de imagem guardado na quarentena (7 dias, só o dono vê; ADR 0005)
     ("jobs", "quarentena_em", "DOUBLE PRECISION"),
+    # filtro de imagem (12/10/2026): o maior P(high) (explícito) num quadro; jobs.nsfw passou a ser a maior
+    # média de P(medium)+P(high) em 2 quadros seguidos (antes: o maior num quadro só)
+    ("jobs", "nsfw_alto", "DOUBLE PRECISION"),
+    # filtro das fotos no servidor (12/10/2026, ADR 0005; render2go_servico.filtro_fotos): a foto só vai para um pod
+    # com "ok"; "recusada" (o classificador barrou) e "invalida" (não abre como foto) cancelam os vídeos dela.
+    # NULL: ainda não avaliada. O detalhe (notas, formato, recorte ou erro) é só do painel
+    ("fotos", "filtro", "TEXT"),
+    ("fotos", "filtro_detalhe", "TEXT"),
+    # análises começadas (antes de decodificar a foto): uma foto que derruba o analisador não trava a fila dos outros
+    ("fotos", "tentativas_analise", "INTEGER"),
 ]
 MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
@@ -382,9 +404,13 @@ def novo_id(prefixo: str) -> str:
 class Banco:
     """`url`: postgresql://... ou sqlite:///caminho (ou sqlite:///:memory:)."""
 
-    def __init__(self, url: str, pool: int | None = None):
+    def __init__(self, url: str, pool: int | None = None, exigir_filtro: bool = True):
         self.url = url
         self.pg = url.startswith(("postgresql://", "postgres://"))
+        # vídeo só sai para um pod com a foto liberada pelo filtro das fotos (fotos.filtro = 'ok'). Só os testes
+        # que não tratam do filtro desligam (conftest); o serviço nunca: não há variável de ambiente para isso
+        self.exigir_filtro = exigir_filtro
+        self.fechado = False
         self._lock = threading.RLock()
         if self.pg:
             from psycopg.rows import dict_row
@@ -423,16 +449,21 @@ class Banco:
         con.close()
         return None
 
-    def lotes_para_analisar(self, limite: int = 20) -> list[str]:
-        """Lotes com foto enviada e ainda sem a análise de pessoas (serviço `render2go-servico analisar`)."""
+    def lotes_para_analisar(self, limite: int = 20, filtro: bool = False) -> list[str]:
+        """Lotes com foto enviada e ainda sem a análise de pessoas ou, com `filtro`, sem o resultado do filtro das
+        fotos (serviço `render2go-servico analisar`). Os pedidos já aprovados primeiro (os vídeos deles esperam o
+        filtro); depois, os que esperam a revisão; em cada grupo, o mais antigo."""
+        falta = "(f.analise IS NULL OR f.filtro IS NULL)" if filtro else "f.analise IS NULL"
         with self.tx() as c:
             return [
                 r["lote_id"]
                 for r in c.all(
-                    "SELECT f.lote_id, MIN(l.criado) AS criado FROM fotos f JOIN lotes l ON l.id = f.lote_id"
-                    " WHERE f.enviada = 1 AND f.analise IS NULL"
+                    "SELECT f.lote_id, MIN(l.criado) AS criado,"
+                    " MIN(CASE WHEN l.status = 'aguardando_aprovacao' THEN 1 ELSE 0 END) AS revisao"
+                    " FROM fotos f JOIN lotes l ON l.id = f.lote_id"
+                    f" WHERE f.enviada = 1 AND {falta}"
                     " AND l.status IN ('aguardando_aprovacao', 'aprovado', 'processando')"
-                    " GROUP BY f.lote_id ORDER BY criado LIMIT ?",
+                    " GROUP BY f.lote_id ORDER BY revisao, criado, f.lote_id LIMIT ?",
                     (limite,),
                 )
             ]
@@ -441,6 +472,7 @@ class Banco:
         """Fecha as conexões (fim do processo e testes). No SQLite, espera a transação de outro thread
         terminar: fechar no meio de um comando derrubava o processo (falha de segmentação nos testes, com
         um trabalho em segundo plano da API ainda gravando); depois de fechado, o uso dá erro do Python."""
+        self.fechado = True
         if self.pg:
             self._pool.close()
         else:
@@ -1861,8 +1893,8 @@ class Banco:
                 ),
                 "autorizacao": c.one("SELECT * FROM consentimentos WHERE lote_id = ?", (lote_id,)),
                 "fotos": c.all(
-                    "SELECT nome, tipo, bytes, sha256, analise, prompt AS texto FROM fotos WHERE lote_id = ?"
-                    " ORDER BY nome",
+                    "SELECT nome, tipo, bytes, sha256, analise, filtro, filtro_detalhe, prompt AS texto FROM fotos"
+                    " WHERE lote_id = ? ORDER BY nome",
                     (lote_id,),
                 ),
                 "eventos": c.all(
@@ -2766,6 +2798,83 @@ class Banco:
                 (json.dumps(analise, ensure_ascii=False), sha256, foto_id),
             )
 
+    def tentar_analise(self, foto_id: str) -> int:
+        """Conta uma análise começada, antes de decodificar a foto; devolve quantas já foram (com esta). Se o
+        processo cair no meio (memória, foto maliciosa), a conta fica, e o analisador desiste da foto depois de
+        algumas (render2go_servico.filtro_fotos.TENTATIVAS), em vez de cair de novo nela para sempre."""
+        with self.tx() as c:
+            c.run("UPDATE fotos SET tentativas_analise = COALESCE(tentativas_analise, 0) + 1 WHERE id = ?", (foto_id,))
+            r = c.one("SELECT tentativas_analise FROM fotos WHERE id = ?", (foto_id,))
+        return int(r["tentativas_analise"]) if r else 0
+
+    def salvar_filtro(self, foto_id: str, filtro: str, detalhe: dict, sha256: str | None = None) -> bool:
+        """Resultado do filtro das fotos (render2go_servico.filtro_fotos), uma vez por foto. "ok" libera os vídeos da
+        foto para os pods; "recusada" e "invalida" cancelam os que ainda não saíram, sem custo, e ficam no registro
+        do pedido (evento foto_recusada). Devolve True se o pedido fechou com isso (nada mais a gerar)."""
+        if filtro not in FILTROS_FOTO:
+            raise BancoError(f"resultado do filtro inválido: {filtro}")
+        with self.tx() as c:
+            n = c.run(
+                "UPDATE fotos SET filtro = ?, filtro_detalhe = ?, sha256 = COALESCE(?, sha256)"
+                " WHERE id = ? AND filtro IS NULL",
+                (filtro, json.dumps(detalhe, ensure_ascii=False), sha256, foto_id),
+            )
+            if not n or filtro == "ok":  # já avaliada (outro processo) ou liberada
+                return False
+            f = c.one("SELECT lote_id, nome FROM fotos WHERE id = ?", (foto_id,))
+            notas = {k: detalhe[k] for k in ("nota", "nota_alta", "erro") if detalhe.get(k) is not None}
+            self.evento(c, f["lote_id"], "foto_recusada", {"foto": f["nome"], "filtro": filtro, **notas})
+            self._cancelar_foto(c, foto_id, erro_da_foto(filtro, detalhe))
+            self._cancelar_compilacoes_sem_uso(c, f["lote_id"])
+            self._fechar_lote(c, f["lote_id"])
+            lt = c.one("SELECT status FROM lotes WHERE id = ?", (f["lote_id"],))
+            return lt["status"] in ("concluido", "concluido_com_falhas")
+
+    def liberar_foto(self, foto_id: str, quem: str) -> dict:
+        """O dono libera uma foto que o filtro recusou (falso positivo), antes da aprovação do pedido: a foto passa a
+        "ok", com quem liberou no detalhe e no registro do pedido. Depois da aprovação, os vídeos dela já foram
+        cancelados: o cliente envia a foto de novo num pedido novo."""
+        with self.tx() as c:
+            f = c.one(
+                "SELECT f.id, f.nome, f.lote_id, f.filtro, f.filtro_detalhe, l.status FROM fotos f"
+                " JOIN lotes l ON l.id = f.lote_id WHERE f.id = ?" + (" FOR UPDATE OF l" if self.pg else ""),
+                (foto_id,),
+            )
+            if f is None:
+                raise BancoError("foto não encontrada")
+            if f["filtro"] != "recusada":
+                raise BancoError("só uma foto recusada pelo filtro pode ser liberada")
+            if f["status"] != "aguardando_aprovacao":
+                raise BancoError("o pedido já foi revisto: a foto só pode ser liberada antes da aprovação")
+            detalhe = {**json.loads(f["filtro_detalhe"] or "{}"), "liberada_por": quem, "liberada_em": time.time()}
+            c.run(
+                "UPDATE fotos SET filtro = 'ok', filtro_detalhe = ? WHERE id = ?",
+                (json.dumps(detalhe, ensure_ascii=False), foto_id),
+            )
+            self.evento(c, f["lote_id"], "foto_liberada", {"foto": f["nome"], "por": quem, "nota": detalhe.get("nota")})
+            return {"lote_id": f["lote_id"], "nome": f["nome"], "nota": detalhe.get("nota")}
+
+    def _cancelar_foto(self, c, foto_id: str, erro: str) -> int:
+        """Os vídeos de uma foto que o filtro não liberou, que ainda não foram para um pod: cancelados, sem custo."""
+        return c.run(
+            "UPDATE jobs SET status = 'cancelado', erro = ?, worker = NULL, lease_ate = NULL, atualizado = ?"
+            " WHERE foto_id = ? AND tipo = 'render' AND status = 'pendente'",
+            (erro, time.time(), foto_id),
+        )
+
+    def _cancelar_compilacoes_sem_uso(self, c, lote_id: str) -> int:
+        """Tradução que nenhum vídeo vai usar (as fotos dela foram recusadas): cancelada, para não ligar um pod só
+        para traduzir. A do pedido serve às fotos sem texto próprio; a de um texto próprio, às fotos com esse texto."""
+        return c.run(
+            "UPDATE jobs SET status = 'cancelado', erro = 'nenhuma foto deste texto pôde ser usada', atualizado = ?"
+            " WHERE lote_id = ? AND tipo = 'compilar' AND status = 'pendente' AND NOT EXISTS ("
+            "SELECT 1 FROM jobs k JOIN fotos g ON g.id = k.foto_id WHERE k.lote_id = jobs.lote_id"
+            " AND k.tipo = 'render' AND k.status IN ('pendente', 'em_andamento')"
+            " AND ((jobs.foto_id IS NULL AND g.prompt IS NULL)"
+            " OR (jobs.foto_id IS NOT NULL AND g.prompt = (SELECT t.prompt FROM fotos t WHERE t.id = jobs.foto_id))))",
+            (time.time(), lote_id),
+        )
+
     def confirmar_envio(self, lote_id: str, tamanhos: dict[str, int | None]) -> list[str]:
         """tamanhos: chave → bytes no armazenamento (None = ausente). Devolve os problemas.
         Pedido do pré-pago no modo antigo (cobranca NULL): cobra o pedido inteiro na mesma transação
@@ -2833,6 +2942,16 @@ class Banco:
                     ),
                 )
             self.evento(c, lote_id, "aprovado", {"por": quem, "jobs": len(tarefas), "textos": len(primeiras)})
+            # fotos que o filtro das fotos já recusou antes da aprovação: os vídeos delas nunca vão para um pod
+            recusadas = c.all(
+                "SELECT id, filtro, filtro_detalhe FROM fotos WHERE lote_id = ? AND filtro IN ('recusada', 'invalida')",
+                (lote_id,),
+            )
+            for f in recusadas:
+                self._cancelar_foto(c, f["id"], erro_da_foto(f["filtro"], json.loads(f["filtro_detalhe"] or "{}")))
+            if recusadas:
+                self._cancelar_compilacoes_sem_uso(c, lote_id)
+                self._fechar_lote(c, lote_id)
 
     def recusar(self, lote_id: str, quem: str, motivo: str) -> None:
         with self.tx() as c:
@@ -2917,6 +3036,8 @@ class Banco:
             # os vídeos em andamento) paga por ele; senão, a conta fica de fora desta vez ("aguardando saldo")
             # e volta sozinha depois da recarga. A trava do cliente serializa com a cobrança na entrega
             sem_saldo: list[str] = []
+            # filtro das fotos (render2go_servico.filtro_fotos): vídeo só de foto liberada; a tradução é só texto
+            liberada = " AND (j.tipo = 'compilar' OR f.filtro = 'ok')" if self.exigir_filtro else ""
             for _ in range(MAX_CONTAS_SEM_SALDO):
                 fora = f" AND l.cliente_id NOT IN ({', '.join('?' * len(sem_saldo))})" if sem_saldo else ""
                 job = c.one(
@@ -2931,7 +3052,7 @@ class Banco:
                     " OR (f.prompt IS NOT NULL AND f.prompt_en IS NOT NULL))"
                     # pedidos da mesma conta, um depois do outro: os vídeos só do mais antigo em andamento
                     # (a tradução do pedido seguinte pode adiantar: é rápida e não gera vídeo)
-                    f" AND (j.tipo = 'compilar' OR NOT EXISTS ({PEDIDO_ANTERIOR_ABERTO}))"
+                    f" AND (j.tipo = 'compilar' OR NOT EXISTS ({PEDIDO_ANTERIOR_ABERTO})){liberada}"
                     f" AND j.tipo IN ({', '.join('?' * len(tipos))}){filtro_modelo}{fora}"
                     # o compilar do lote passa na frente; o de um texto próprio espera a vez como um render
                     " ORDER BY CASE WHEN j.tipo = 'compilar' AND j.foto_id IS NULL THEN 0 ELSE 1 END, l.prioridade,"
@@ -2977,7 +3098,7 @@ class Banco:
             barrado = bool(campos.get("barrado"))
             c.run(
                 "UPDATE jobs SET status = ?, segundos = ?, aviso = ?, erro = ?, similaridade = ?, bytes_video = ?,"
-                " deriva_cor = ?, salto_cor = ?, seed = ?, atualizado = ?, lease_ate = NULL, nsfw = ?,"
+                " deriva_cor = ?, salto_cor = ?, seed = ?, atualizado = ?, lease_ate = NULL, nsfw = ?, nsfw_alto = ?,"
                 " barrado_em = ?, quarentena_em = ? WHERE id = ?",
                 (
                     novo,
@@ -2991,6 +3112,7 @@ class Banco:
                     seed,
                     agora,
                     campos.get("nsfw"),
+                    campos.get("nsfw_alto"),
                     agora if barrado else None,
                     agora if barrado and campos.get("quarentena") else None,
                     job_id,
@@ -2999,7 +3121,8 @@ class Banco:
             if barrado:  # fica no histórico do pedido (auditoria) mesmo depois da limpeza dos arquivos
                 self.evento(
                     c, job["lote_id"], "video_barrado",
-                    {"arquivo": job["arquivo"], "nota": campos.get("nsfw"), "quadros": campos.get("nsfw_quadros")},
+                    {"arquivo": job["arquivo"], "nota": campos.get("nsfw"), "nota_alta": campos.get("nsfw_alto"),
+                     "quadros": campos.get("nsfw_quadros")},
                 )  # fmt: skip
             if novo == "ok" and job["tipo"] == "render":
                 self._cobrar_video(c, job)
@@ -3127,8 +3250,8 @@ class Banco:
             return {}
         with self.tx() as c:
             linhas = c.all(
-                "SELECT id, lote_id, arquivo, status, erro, tentativas, nsfw, barrado_em, quarentena_em, deriva_cor,"
-                " salto_cor, similaridade, atualizado FROM jobs"
+                "SELECT id, lote_id, arquivo, status, erro, tentativas, nsfw, nsfw_alto, barrado_em, quarentena_em,"
+                " deriva_cor, salto_cor, similaridade, atualizado FROM jobs"
                 f" WHERE lote_id IN ({', '.join('?' * len(lotes))}) AND tipo = 'render'"
                 " AND status IN ('erro', 'cancelado') ORDER BY arquivo",
                 tuple(lotes),
@@ -3265,14 +3388,15 @@ class Banco:
     def trabalho(self) -> list[dict]:
         """Para o orquestrador: renders pendentes e em andamento por lote, com o pedido
         (qualidade e duração decidem o tempo por vídeo) e a prioridade. Nos pedidos cobrados por vídeo
-        (ADR 0012), só conta o que o saldo livre da conta paga: o resto espera a recarga e não liga pod."""
+        (ADR 0012), só conta o que o saldo livre da conta paga: o resto espera a recarga e não liga pod. O vídeo
+        de uma foto ainda sem o filtro das fotos não conta: com o analisador parado, nenhum pod sobe à toa."""
         with self.tx() as c:
             linhas = c.all(
                 "SELECT l.id AS lote_id, l.pedido, l.prioridade, l.modelo, MIN(j.criado) AS mais_antigo,"
-                " SUM(CASE WHEN j.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,"
+                f" SUM(CASE WHEN j.status = 'pendente' AND {self._liberado()} THEN 1 ELSE 0 END) AS pendentes,"
                 " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS em_andamento,"
                 " l.cliente_id, l.preco_video, l.cobranca, l.criado"
-                " FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                " FROM jobs j JOIN lotes l ON l.id = j.lote_id LEFT JOIN fotos f ON f.id = j.foto_id"
                 " WHERE l.status IN ('aprovado', 'processando') AND j.status IN ('pendente', 'em_andamento')"
                 " GROUP BY l.id, l.pedido, l.prioridade, l.modelo, l.cliente_id, l.preco_video, l.cobranca, l.criado"
                 " ORDER BY l.prioridade, MIN(j.criado)"
@@ -3292,13 +3416,25 @@ class Banco:
             if int(r["pendentes"] or 0) or int(r["em_andamento"] or 0)
         ]
 
+    def _liberado(self) -> str:
+        """Condição SQL (jobs j, fotos f) para contar o job como trabalho de pod: o vídeo, com a foto liberada pelo
+        filtro das fotos; a tradução, com alguma foto do pedido liberada (com o analisador parado, nenhum pod sobe
+        só para traduzir pedidos que não vão gerar nada ainda)."""
+        if not self.exigir_filtro:
+            return "1 = 1"
+        return (
+            "((j.tipo = 'render' AND f.filtro = 'ok') OR (j.tipo = 'compilar' AND EXISTS"
+            " (SELECT 1 FROM fotos g WHERE g.lote_id = j.lote_id AND g.filtro = 'ok')))"
+        )
+
     def fila(self) -> dict[str, int]:
         """Para o orquestrador: jobs prontos para rodar e em andamento."""
         with self.tx() as c:
             r = c.one(
-                "SELECT SUM(CASE WHEN j.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,"
+                f"SELECT SUM(CASE WHEN j.status = 'pendente' AND {self._liberado()} THEN 1 ELSE 0 END) AS pendentes,"
                 " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS andamento"
-                " FROM jobs j JOIN lotes l ON l.id = j.lote_id WHERE l.status IN ('aprovado', 'processando')"
+                " FROM jobs j JOIN lotes l ON l.id = j.lote_id LEFT JOIN fotos f ON f.id = j.foto_id"
+                " WHERE l.status IN ('aprovado', 'processando')"
             )
         return {"pendentes": int(r["pendentes"] or 0), "em_andamento": int(r["andamento"] or 0)}
 

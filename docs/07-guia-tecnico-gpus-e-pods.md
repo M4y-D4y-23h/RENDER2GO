@@ -44,9 +44,9 @@ Preços da nuvem secure em **08/10/2026** (consulta à API do RunPod). Os tempos
 |---|---|
 | Host com CUDA quebrado (`cuInit` 999) | Teste de `cuInit` e de driver ≥ 12.8 no 1º minuto; pod descartado |
 | `allowedCudaVersions` excluía GPUs novas ("sem vaga" falso) | O pedido não restringe; o pod confere o driver |
-| Rede de 2–3 MB/s (37 GB = 3,5 h) | Teste de rede com 4 conexões por 15 s, mínimo 40 MB/s; descarte em ~30 s (~US$ 0,02) |
+| Rede de 2–3 MB/s (37 GB = 3,5 h) | Velocidade medida no próprio download dos modelos (desde 12/10/2026; antes, um teste de 15 s antes dele), mínimo 40 MB/s; descarte em ~30–45 s (~US$ 0,02) |
 | Teste curto aprovou host que entregava 12 MB/s | Teste sustentado; prazo de instalação de 18 min |
-| Datacenter ruim repetido | Memória de datacenters lentos por 7 dias (`~/.cache/render2go/datacentros.json`); só pede IDs que a API REST aceita |
+| Datacenter ruim repetido | Memória da velocidade medida por datacenter (`~/.cache/render2go/datacentros.json`): os lentos ficam de fora por 7 dias, e os rápidos vêm primeiro (seção 11); só pede IDs que a API REST aceita |
 | Pod que renderiza devagar | Vazão medida a cada pacote; se for > 1,6× o medido, o pod é trocado (até 2 trocas; os vídeos já feitos ficam) |
 | Sem vaga | Espera 60 s antes de gastar outra troca |
 | Proxy do RunPod com 404 transitório | Repetição só de respostas que não vêm do agente |
@@ -166,3 +166,39 @@ No primeiro uso real, um pedido com o pod desligado chegou a levar ~6 min até 3
   - o painel (seção Pods) mostra o saldo do RunPod e o prazo que um pod novo teria; o relatório de GPUs, por que cada pod saiu.
 - **Hibernação (`RENDER2GO_PODS_HIBERNADOS`):** o pod sobe do zero como sempre (disco do contêiner), copia tudo para o disco de volume próprio (`/workspace/r2g`) depois do PRONTO e, sem pedidos, é **parado** em vez de encerrado. Na volta (mesmo host), nada é baixado: links, apt do cache do volume, bytes dos modelos e PRONTO; o SHA-256 é refeito em segundo plano. O host sem GPU livre faz o orquestrador tentar o próximo hibernado e, no fim, subir um pod do zero. Detalhes, custos e riscos no ADR 0011.
 - **Medido em 11/10 (`worker/evals/gpu-2026-10-11-hibernacao/`, L40S secure):** volta em **64–66,5 s até pronto e 108–115 s até o 1º vídeo**; subida do zero em 175–208 s até pronto. Uma das 3 voltas tentadas falhou porque a GPU do host foi alugada logo depois da parada. O `/workspace` pode ser local (`md0`) ou de rede (MooseFS), conforme o host: instalar direto no MooseFS levou 581 s, por isso a 1ª subida é no disco do contêiner.
+
+## 11. Por que a subida ainda leva ~4 min, e o que mudou em 12/10/2026
+
+Pergunta do dono: há algo no código que prende a subida nesse tempo, ou que atrasa a carga dos modelos? **Não há espera artificial nem limite de tempo segurando a subida**: os ~4 min são a soma de etapas reais (seção 9: agente, CUDA e rede ~55–60 s; ambiente 60–190 s; 37 GB de modelos 44–175 s; serviços e tradução ~1 min; 1º vídeo carregando os modelos na GPU ~30–55 s). O que somava tempo sem necessidade, e saiu:
+
+| O que atrasava | Antes | Agora |
+|---|---|---|
+| Teste de rede antes do download | ~15 s com 4 conexões, só para decidir a origem | **saiu**: o próprio download é o teste. O bootstrap mede a velocidade real dos primeiros ~10 s (`$R/rede`); abaixo de 40 MB/s, o pod é descartado como antes; a medida vai para a memória do datacenter |
+| SHA-256 dos modelos | `sha256sum` do Debian bookworm (coreutils 9.1, sem libcrypto): **9,2 s por 2 GB**, todos no fim | `hashlib` do Python (OpenSSL com SHA-NI): **2,45 s por 2 GB (3,7×)**; cada arquivo conferido logo depois do próprio download, enquanto os outros baixam |
+| Download | um `aria2c` para todos (`-j 4 -x 8`), depois o `curl` do que faltou e a conferência de tudo | um `aria2c` por arquivo (`-x 16 -s 16`), 4 arquivos ao mesmo tempo, cada um conferido e marcado; arquivo errado do espelho é baixado de novo **da origem** (antes, do mesmo espelho) |
+| Escolha do host | qualquer datacenter com a GPU, evitando só os lentos medidos | camadas (abaixo), com os filtros de velocidade do próprio RunPod e a velocidade medida de cada datacenter |
+
+**Escolha do host (`lote_nuvem.RunPod.criar`):** a API REST do RunPod aceita, na criação do pod, `minDownloadMbps`, `minUploadMbps`, `minDiskBandwidthMBps`, `countryCodes` e `dataCenterPriority` (conferido em 12/10/2026 com um pedido inválido de propósito, sem criar pod). Cada subida tenta, em ordem:
+
+1. **máquina rápida:** download ≥ 2000 Mbit/s (`RENDER2GO_REDE_MIN_MBPS`, ~250 MB/s: 37 GB em ~2,5 min) e disco ≥ 1000 MB/s (`RENDER2GO_DISCO_MIN_MBS`), nos datacenters com a GPU disponível, na ordem da velocidade medida (`dataCenterPriority: custom`): primeiro os medidos ≥ 200 MB/s, depois os não medidos (América do Norte, depois Europa), por último os medidos mais lentos;
+2. os mesmos datacenters, sem os filtros;
+3. qualquer datacenter aceito, menos os lentos.
+
+Sem vaga na 1ª camada, ela é pulada por 10 min. **Memória por datacenter** (`datacentros.json`, no volume do orquestrador): a velocidade medida em cada subida entra numa média móvel (metade o valor novo, metade o histórico); os lentos (< 40 MB/s) ficam de fora por 7 dias. Os filtros do RunPod usam a velocidade anunciada da máquina, não garantida: por isso a medida real continua valendo para descartar.
+
+**Esperas que não são da subida (por desenho, não por erro):**
+
+- **teste gratuito agrupado:** com nenhum pod ligado, os pedidos de teste esperam juntar 20 vídeos ou 10 min antes de ligar um pod (`RENDER2GO_AGRUPAR_TESTE_VIDEOS` e `RENDER2GO_AGRUPAR_TESTE_MIN`). Para o teste começar mais rápido, diminua `RENDER2GO_AGRUPAR_TESTE_MIN` (ex.: 2), pagando mais subidas;
+- **revisão humana:** nos planos teste e pago, o pedido espera a aprovação no painel; só o interno é aprovado sozinho;
+- **filtro das fotos (desde 12/10):** ~2–4 s por foto no servidor; a 1ª foto é liberada em segundos e o pod sobe enquanto as outras são avaliadas.
+
+**O que encurtaria de verdade:** pods hibernados que voltam (~1 min, seção 10, quando o host tem a GPU livre), um pod ligado no horário comercial (`docs/11`, seção 3.4), um pod quente mais longo, ou o volume de rede com tudo instalado (seção 12). A avaliação completa, com o que daria vídeo "quase instantâneo", está em `docs/14`.
+
+## 12. Volume de rede de alta performance (o ícone roxo do RunPod): avaliação
+
+A recomendação recebida pelo dono fala em "diamante roxo"; no painel do RunPod, é um **raio roxo (⚡)** ao lado dos datacenters com **high-performance network storage**, e uma aba "High-performance" filtra por eles ([docs do RunPod](https://docs.runpod.io/storage/high-performance-storage)).
+
+- **O que é:** um tipo de **volume de rede** (o disco que fica no datacenter e é montado em `/workspace` por pods desse datacenter), com "até 3× a vazão e 4× as IOPS" do volume padrão em operações paralelas, "a um preço acima do padrão", que "varia por datacenter". O padrão custa US$ 0,07/GB/mês (até 1 TB) e transfere 200–400 MB/s ([volumes de rede](https://docs.runpod.io/storage/network-volumes)). Disponível em alguns datacenters dos EUA e da Europa; vale para pods e Serverless; volume padrão não vira de alta performance (é preciso criar outro e copiar).
+- **Ajuda a internet do servidor? Não.** Ele acelera a leitura e a escrita **do próprio volume**. Hoje os pods não usam volume de rede: baixam os 37 GB do espelho R2 para o disco do contêiner, e o que limita é a internet e o disco do host, que os filtros da seção 11 tratam. Escolher datacenter pelo ⚡ não deixa o download mais rápido.
+- **Quando ajudaria:** numa arquitetura diferente, com o ambiente e os modelos **já instalados num volume de rede** e montados por qualquer pod novo daquele datacenter (a "alternativa a medir" do ADR 0011). Aí nada é baixado, e o que pesa é ler 37 GB do volume: a 200–400 MB/s, ~1,5–3 min; a ~3× isso, menos de 1 min. Contra: prende os pods a um datacenter (no dia 12/10, a L40S estava com estoque "Low" nos 4 datacenters que a tinham); custa todo mês; e carregar modelo direto de volume de rede é a mesma exceção à regra do projeto que o ADR 0011 abriu (com SHA-256 refeito a cada subida).
+- **Decisão:** o ⚡ **não** entrou como critério de escolha de host (não muda o download). Entraram os filtros de velocidade do próprio RunPod e a medida real por datacenter (seção 11). Se o dono quiser a subida de ~1 min para todos os pods, e não só para os hibernados que acham a GPU livre, o próximo passo é **medir** um volume de alta performance de ~60 GB num datacenter com estoque de L40S (uma subida, alguns dólares), antes de qualquer ADR.

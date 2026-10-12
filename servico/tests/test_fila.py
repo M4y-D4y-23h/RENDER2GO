@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw
 from render2go_worker import cli_submit, fila, media
 from test_api import ADM, PAINEL, TOTP
 
-from render2go_servico import contas, suporte
+from render2go_servico import contas, filtro_fotos, suporte
 from render2go_servico.api import Config, criar_app
 from render2go_servico.db import Banco
 
@@ -64,6 +64,13 @@ class Deposito(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(corpo)))
         self.end_headers()
         self.wfile.write(corpo)
+
+
+class Neutro:
+    """Classificador falso do filtro das fotos: tudo neutro (as fotos dos testes são formas coloridas)."""
+
+    def probabilidades(self, quadros):
+        return [(0.99, 0.01, 0.0, 0.0) for _ in quadros]
 
 
 class Armazem:
@@ -113,6 +120,9 @@ def ambiente(tmp_path, monkeypatch):
         email=suporte.ConfigEmail(host="smtp.teste", para="", de="Render2Go <nao-responda@render2go.com>"),
         enviar_email=lambda cfg_, msg: enviados.append(msg),
         baixar_gravatar=lambda email: None,  # nenhum teste fala com o Gravatar de verdade (o teste troca, se precisar)
+        # o filtro das fotos dentro da API, com o portão da fila ligado (Banco.exigir_filtro): a foto só vai para o
+        # pod depois de liberada, como em produção
+        filtro=filtro_fotos.FiltroFotos(Neutro()),
     )
     porta = _porta()
     srv = uvicorn.Server(uvicorn.Config(criar_app(cfg), host="127.0.0.1", port=porta, log_level="error"))
@@ -179,6 +189,8 @@ def _lote_aprovado(amb, fotos: dict[str, bytes]):
     for e in r["envios"]:  # o "navegador" envia direto ao armazenamento
         requests.put(e["url"], data=fotos[e["original"]], timeout=10)
     assert requests.post(f"{amb.url}/api/lotes/{r['lote']}/enviado", headers=hc).status_code == 200
+    amb.cfg.analises.esperar()  # o filtro das fotos liberou as duas (em segundo plano, na API)
+    assert all(f["filtro"] == "ok" for f in amb.banco.fotos(r["lote"]))
     assert adm.post(f"{amb.url}{PAINEL}/api/lotes/{r['lote']}/aprovar").status_code == 200
     return r["lote"], hc
 

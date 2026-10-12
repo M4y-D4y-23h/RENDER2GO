@@ -22,8 +22,10 @@ PG = _pg_disponivel()
 
 @pytest.fixture(params=["sqlite", "postgres"])
 def banco(request, tmp_path):
+    """O banco dos testes, nos dois motores. O filtro das fotos (render2go_servico.filtro_fotos) fica fora da fila
+    aqui: os testes dele (test_filtro_fotos.py) e o da fila de ponta a ponta (test_fila.py) ligam o portão."""
     if request.param == "sqlite":
-        b = Banco(f"sqlite:///{tmp_path / 'b.db'}")
+        b = Banco(f"sqlite:///{tmp_path / 'b.db'}", exigir_filtro=False)
     else:
         if not PG:
             pytest.skip("Postgres de teste indisponível")
@@ -59,7 +61,7 @@ def banco(request, tmp_path):
                 "clientes",
             ):
                 con.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
-        b = Banco(PG_URL, pool=4)
+        b = Banco(PG_URL, pool=4, exigir_filtro=False)
     b.criar_esquema()
     yield b
     b.fechar()

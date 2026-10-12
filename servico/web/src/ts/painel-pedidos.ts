@@ -5,8 +5,21 @@ import { type Controle, controle, erroDeAcao, erroDeCarga, iniciarAbas, pode, se
 
 // análise automática de cada foto (render2go_servico/pessoas.py); null = ainda analisando
 type Analise = { pessoas?: number; rostos?: number; erro?: string } | null;
+// filtro das fotos (render2go_servico/filtro_fotos.py), antes de qualquer pod: null = avaliando; a foto recusada ou
+// inválida não vem como imagem (o dono a abre desfocada, na auditoria) e os vídeos dela não são gerados
+type FiltroFoto = "ok" | "recusada" | "invalida" | null;
+type DetalheFiltro = { nota?: number; nota_alta?: number; erro?: string; liberada_por?: string } | null;
 type Autorizacao = { declarante: string; quando: number; ip: string | null; dispositivo: string | null; texto_versao: string };
-type FotoPendente = { nome: string; url: string; analise?: Analise; texto?: string | null; filtro_c1?: string | null };
+type FotoPendente = {
+  id: string;
+  nome: string;
+  url: string | null;
+  analise?: Analise;
+  texto?: string | null;
+  filtro_c1?: string | null;
+  filtro?: FiltroFoto;
+  filtro_detalhe?: DetalheFiltro;
+};
 type Pendente = {
   lote: string;
   cliente: string;
@@ -26,6 +39,8 @@ type Pendente = {
   fotos_amostra?: boolean;
   fotos_com_pessoas?: number;
   fotos_analisando?: number;
+  fotos_recusadas?: number;
+  fotos_filtrando?: number;
   fotos_com_texto?: number;
   textos?: { texto: string; fotos: number; filtro_c1: string | null }[];
 };
@@ -106,6 +121,96 @@ function resumoPessoas(p: Pendente): HTMLElement | null {
   return caixa;
 }
 
+// resumo do filtro das fotos: as que não vão virar vídeo e as que ainda esperam a avaliação
+function resumoFiltro(p: Pendente): HTMLElement | null {
+  const recusadas = p.fotos_recusadas ?? p.fotos.filter((f) => f.filtro === "recusada" || f.filtro === "invalida").length;
+  const avaliando = p.fotos_filtrando ?? p.fotos.filter((f) => f.filtro == null).length;
+  if (!recusadas && !avaliando) return null;
+  const caixa = criar("div");
+  if (recusadas) {
+    aviso(
+      caixa,
+      `${plural(recusadas, "foto não passou", "fotos não passaram")} no filtro de imagem: os vídeos delas não serão gerados nem cobrados, e o cliente vê só que a foto não pôde ser usada.`,
+      "alerta",
+    );
+  }
+  if (avaliando) caixa.append(criar("p", { className: "fraco", textContent: `Filtro de imagem: avaliando ${plural(avaliando, "foto", "fotos")}…` }));
+  return caixa;
+}
+
+const notaFiltro = (v: number | undefined) => (v === undefined ? "—" : v.toLocaleString("pt-BR", { maximumFractionDigits: 2 }));
+
+/** No lugar da miniatura, a foto que o filtro das fotos não liberou: o resultado e, para o dono, abrir (desfocada, na
+ * auditoria) e liberar (falso positivo, antes de aprovar). */
+function fotoRecusada(f: FotoPendente, aoMudar: () => void): HTMLElement {
+  const d = f.filtro_detalhe ?? {};
+  const texto =
+    f.filtro === "recusada"
+      ? `Recusada pelo filtro de imagem · nota ${notaFiltro(d.nota)} · explícita ${notaFiltro(d.nota_alta)}`
+      : `Arquivo inválido: ${d.erro ?? "não abre como foto"}`;
+  const area = criar("div", { className: "area-quarentena" });
+  const msg = criar("div", { className: "aviso", hidden: true });
+  const botoes: HTMLElement[] = [];
+  if (f.filtro === "recusada" && pode("GET /api/fotos/{foto_id}/recusada")) {
+    const ver = criar("button", { type: "button", className: "botao pequeno", dados: { foco: `${f.id}:ver` } }, ["Ver a foto"]);
+    ver.addEventListener("click", async () => {
+      ocupado(ver, true);
+      try {
+        const r = await api<{ foto: string; expira_s: number }>(`api/fotos/${encodeURIComponent(f.id)}/recusada`);
+        const src = urlSegura(r.foto);
+        const midia = criar("div", { className: "quarentena desfocado" }, [src ? criar("img", { src, alt: `Foto recusada ${f.nome}` }) : null]);
+        const mostrar = criar("button", { type: "button", className: "botao pequeno", dados: { foco: `${f.id}:desfoque` } }, ["Mostrar sem desfoque"]);
+        mostrar.addEventListener("click", () => rotular(mostrar, midia.classList.toggle("desfocado") ? "Mostrar sem desfoque" : "Desfocar de novo"));
+        area.replaceChildren(
+          criar("p", {
+            className: "fraco",
+            textContent: "Cada abertura fica na auditoria; o link vale 10 min. Se aparecer criança ou adolescente, não baixe nem compartilhe: denuncie em new.safernet.org.br.",
+          }),
+          mostrar,
+          midia,
+        );
+        ver.remove();
+        mostrar.focus();
+      } catch (e) {
+        ocupado(ver, false);
+        aviso(msg, textoErro(e), "erro");
+      }
+    });
+    botoes.push(ver);
+  }
+  if (f.filtro === "recusada" && pode("POST /api/fotos/{foto_id}/liberar")) {
+    const liberar = criar("button", { type: "button", className: "botao pequeno", dados: { foco: `${f.id}:liberar` } }, ["Liberar a foto"]);
+    liberar.addEventListener("click", async () => {
+      const sim = await confirmar({
+        titulo: "Liberar a foto?",
+        texto: [
+          `O filtro de imagem recusou ${f.nome}. Liberada, ela vira vídeo como as outras quando o pedido for aprovado.`,
+          "Libere só depois de ver a foto e ter certeza de que é um engano do filtro. Fica no registro do pedido e na auditoria.",
+        ],
+        confirmar: "Liberar",
+      });
+      if (!sim) return;
+      ocupado(liberar, true);
+      try {
+        await api(`api/fotos/${encodeURIComponent(f.id)}/liberar`, { method: "POST" });
+        anunciar(`Foto ${f.nome} liberada.`);
+        aoMudar();
+      } catch (e) {
+        ocupado(liberar, false);
+        aviso(msg, textoErro(e), "erro");
+      }
+    });
+    botoes.push(liberar);
+  }
+  return criar("div", { className: "foto-recusada" }, [
+    criar("span", { className: "nome-foto", textContent: f.nome }),
+    criar("span", { textContent: texto }),
+    ...botoes,
+    msg,
+    area,
+  ]);
+}
+
 function meta(partes: (string | Node)[]): HTMLElement {
   return criar("p", { className: "meta" }, partes.map((x) => criar("span", {}, [x])));
 }
@@ -114,6 +219,10 @@ function cartaoPendente(p: Pendente, aoMudar: () => void, imagens: Map<string, H
   const msg = criar("div", { className: "aviso", hidden: true });
   const fotos = criar("div", { className: "grade" });
   for (const f of p.fotos) {
+    if (f.filtro === "recusada" || f.filtro === "invalida") {
+      fotos.append(criar("figure", { className: "foto-revisao" }, [fotoRecusada(f, aoMudar)]));
+      continue;
+    }
     const chave = `${p.lote}/${f.nome}`;
     const url = urlSegura(f.url);
     // a mesma <img> volta a cada atualização: a URL assinada muda, mas a foto não é baixada de novo
@@ -126,6 +235,8 @@ function cartaoPendente(p: Pendente, aoMudar: () => void, imagens: Map<string, H
     const link = criar("a", { href: url ?? "#", target: "_blank", rel: "noopener noreferrer", className: "foto", title: `Abrir ${f.nome} em outra aba` }, [
       img,
       p.analise_ligada ? seloAnalise(f.analise) : null,
+      f.filtro == null ? criar("span", { className: "selo", textContent: "filtro de imagem: avaliando…" }) : null,
+      f.filtro_detalhe?.liberada_por ? criar("span", { className: "selo", textContent: `liberada por ${f.filtro_detalhe.liberada_por}` }) : null,
     ]);
     const barrado = f.texto && f.filtro_c1 && f.filtro_c1 !== FILTRO_OK;
     fotos.append(
@@ -227,6 +338,7 @@ function cartaoPendente(p: Pendente, aoMudar: () => void, imagens: Map<string, H
         ? `Autorização marcada em ${quando(a.quando)} · dispositivo ${curto(a.dispositivo)} · IP ${a.ip ?? "—"} · texto ${a.texto_versao}`
         : "Autorização das pessoas das fotos: não marcada.",
     }),
+    resumoFiltro(p),
     resumoPessoas(p),
     textos,
     amostra,
@@ -243,6 +355,7 @@ const MOTIVOS_CURTOS: Record<string, string> = {
   texto: "com o texto recusado pelo filtro",
   traducao: "sem tradução do texto",
   foto: "com problema na foto",
+  foto_nao_aceita: "com a foto recusada no envio",
   interrompido_cliente: "cancelados: o cliente parou",
   interrompido_painel: "cancelados: a equipe parou",
   prazo_fotos: "cancelados: 7 dias das fotos",
@@ -256,6 +369,7 @@ type Falha = {
   erro: string | null;
   tentativas: number;
   nsfw: number | null;
+  nsfw_alto?: number | null;
   deriva_cor: number | null;
   salto_cor: number | null;
   similaridade: number | null;
@@ -309,7 +423,7 @@ async function janelaFalhas(x: ItemHistorico, origem: HTMLElement): Promise<void
     lista.replaceChildren(
       ...r.videos.map((f) => {
         const area = criar("div", { className: "area-quarentena" });
-        const notas = [plural(f.tentativas, "tentativa", "tentativas"), `filtro de imagem ${numeroOu(f.nsfw)}`, `1º quadro ${numeroOu(f.similaridade, 3)}`, `deriva ${numeroOu(f.deriva_cor, 1)}`, `salto ${numeroOu(f.salto_cor, 1)}`];
+        const notas = [plural(f.tentativas, "tentativa", "tentativas"), `filtro de imagem ${numeroOu(f.nsfw)} (explícita ${numeroOu(f.nsfw_alto ?? null)})`, `1º quadro ${numeroOu(f.similaridade, 3)}`, `deriva ${numeroOu(f.deriva_cor, 1)}`, `salto ${numeroOu(f.salto_cor, 1)}`];
         const itens: (Node | null)[] = [
           criar("strong", { textContent: f.arquivo }),
           criar("p", { textContent: f.motivo }),
@@ -472,7 +586,7 @@ export function criarRevisao(ctx: { aoContar: (n: number) => void; aoMudar: () =
       alvo,
       lotes.map((p) => ({
         chave: p.lote,
-        assinatura: JSON.stringify([p.fotos.map((f) => [f.nome, f.analise, f.texto, f.filtro_c1]), p.autorizacao, p.pedido, p.filtro_c1]),
+        assinatura: JSON.stringify([p.fotos.map((f) => [f.nome, f.analise, f.texto, f.filtro_c1, f.filtro, f.filtro_detalhe]), p.autorizacao, p.pedido, p.filtro_c1]),
         criar: () => cartaoPendente(p, mudou, imagens),
       })),
       () => vazio("Nada aguardando revisão.", "Os pedidos novos aparecem aqui assim que as fotos chegam.", "ok"),

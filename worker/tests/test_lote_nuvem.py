@@ -253,12 +253,43 @@ def test_cli_shows_the_automatic_choice_and_alternatives(pasta, tmp_path, capsys
 
 def test_bootstrap_downloads_in_parts_and_caches_the_environment():
     s = (WORKER / "scripts" / "bootstrap_pod.sh").read_text()
-    assert "aria2c" in s and "-x 8 -s 8" in s and "xargs -r -P 4" in s
+    # um pipeline por arquivo (download em 16 partes e SHA-256 logo depois), 4 arquivos por vez
+    assert "aria2c" in s and "-x 16 -s 16" in s and "xargs -r -P 4" in s and "baixar_um" in s
     assert "ambiente-$CHAVE.tar.zst" in s and "requirements.lock" in s
     # volume não POSIX: sem mv/chmod; o .sha256 do ambiente é escrito por último
     corpo = s.split("set -uo pipefail", 1)[1]
     assert " mv " not in corpo and "chmod" not in corpo
     assert s.index('rsync --inplace $R/ambiente.tar.zst "$AMB"') < s.index('"$AMB.sha256" &&')
+    # o sha256sum do coreutils 9.1 da imagem do pod não usa a instrução SHA da CPU (3,7× mais
+    # lento, medido em 12/10/2026): toda conferência passa pela função sha256 (OpenSSL do Python)
+    assert "| sha256sum -c" not in s and "sha256sum <" not in s
+
+
+def test_bootstrap_functions_load_without_side_effects(tmp_path):
+    """Com BOOTSTRAP_SO_FUNCOES=1, o script só define as funções (o teste em contêiner de
+    worker/evals/bootstrap-2026-10-12/ usa isso); a conferência por SHA-256 bate com o hashlib."""
+    import hashlib
+    import subprocess
+
+    arq = tmp_path / "modelo.bin"
+    arq.write_bytes(os.urandom(300_000))
+    raiz = tmp_path / "raiz"
+    script = WORKER / "scripts" / "bootstrap_pod.sh"
+    r = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source "{script}" x teste && declare -F principal retomada modelos baixar_um '
+            f'medir_rede confere >/dev/null && sha256 "{arq}"',
+        ],
+        env={**os.environ, "BOOTSTRAP_SO_FUNCOES": "1", "RENDER2GO_RAIZ": str(raiz)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == hashlib.sha256(arq.read_bytes()).hexdigest()
+    assert not raiz.exists()  # nada escrito: nem o estado, nem os tempos
 
 
 def test_invalid_request_budget_and_no_gpu_create_nothing(pasta, tmp_path, sem_git):
@@ -360,6 +391,39 @@ def test_agent_deadline_stops_a_hibernating_pod_before_terminating(
         assert "podStop" in pedidos[1]
 
 
+def test_a_hibernating_pod_insists_on_stop_before_terminating(monkeypatch, tmp_path):
+    """Pod que hiberna (ADR 0011): o podTerminate apaga o disco de volume. Até 12/10/2026, o agente
+    partia para ele 60 s depois de um podStop aceito, se o contêiner ainda estivesse vivo. Agora só
+    depois de PARADA_TENTATIVAS podStop, como último recurso; o pod comum encerra direto."""
+    pedidos = []
+
+    class Resposta:
+        def read(self):
+            return b'{"data": {}}'
+
+    def urlopen(req, timeout):
+        pedidos.append("podStop" if "podStop" in req.data.decode() else "podTerminate")
+        return Resposta()
+
+    monkeypatch.setenv("RUNPOD_POD_ID", "abc")
+    monkeypatch.setenv("RUNPOD_API_KEY", "k" * 20)
+    monkeypatch.setattr(pod_agente.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(pod_agente.time, "sleep", lambda s: None)
+    pod_agente.Desligamento(0.01, "parar", log=str(tmp_path / "d.txt")).rodar()
+    n = pod_agente.PARADA_TENTATIVAS
+    assert pedidos == ["podStop"] * n + ["podTerminate"]
+    pedidos.clear()
+    pod_agente.Desligamento(0.01, "encerrar", log=str(tmp_path / "e.txt")).rodar()
+    assert pedidos[0] == "podTerminate"
+
+
+def test_entrypoint_leaves_the_deadline_to_the_agent():
+    """Com o desligamento automático do agente (DEADMAN_S), o entrypoint não liga o dele (que
+    encerra com podTerminate e apagava o disco de volume do pod que hiberna)."""
+    texto = (WORKER / "entrypoint.sh").read_text()
+    assert '-n "${DEADMAN_S:-}" ]]; then\n  log "desligamento automático: o do agente' in texto
+
+
 def test_bootstrap_reads_versions_from_dockerfile():
     script = (WORKER / "scripts" / "bootstrap_pod.sh").read_text()
     for arg in ("COMFYUI_COMMIT", "UMT5_PATCH_SHA256", "OLLAMA_SHA256", "COMPILER_MODEL_DIGEST"):
@@ -425,7 +489,6 @@ def test_network_check_discards_slow_hosts():
     assert ln.rede_ok("rede 512.3") is None
     assert "rede lenta (2.9 MB/s" in ln.rede_ok("rede 2.9")
     assert "sem resposta" in ln.rede_ok("Traceback ...")
-    assert ln.url_teste_rede().startswith("https://huggingface.co/")
 
 
 def test_slow_pods_are_replaced_and_their_work_is_kept(
@@ -507,21 +570,94 @@ def test_package_without_git_has_worker_and_tools(tmp_path, monkeypatch):
     assert not any(".venv" in n for n in nomes)
 
 
-def test_the_mirror_network_test_reads_the_largest_model(tmp_path):
-    """O teste lê 4 trechos a partir de 0, 1, 2 e 3 GiB: com o config.json de 989 bytes do filtro de
-    imagem (o 1º em ordem alfabética), dava 0 MB/s e o espelho era reprovado (11/10/2026)."""
+class _Agente:
+    """Agente falso: o `cat` do estado e da medida de rede devolve o que o teste manda."""
+
+    def __init__(self, saidas):
+        self.saidas = list(saidas)
+
+    def exec(self, cmd, timeout=90):
+        return 0, self.saidas.pop(0) if len(self.saidas) > 1 else self.saidas[0]
+
+
+def test_the_download_itself_is_the_network_test(tmp_path, monkeypatch):
+    """Desde 12/10/2026 não há teste de rede antes da instalação: os primeiros 10 s do download dos
+    modelos ("rede <MB/s>", do bootstrap) decidem. Host lento sai; a medida fica na memória."""
     from argparse import Namespace
-    from types import SimpleNamespace
 
-    class Espelho:
-        modelos = [
-            SimpleNamespace(nome="config", bytes=989),
-            SimpleNamespace(nome="grande", bytes=14_803_879_958),
-            SimpleNamespace(nome="ausente", bytes=20_000_000_000),
-        ]
+    monkeypatch.setattr(ln, "CACHE", tmp_path)
+    monkeypatch.setattr(ln.time, "sleep", lambda s: None)
+    orq = ln.Orquestrador(Namespace(saida=tmp_path), [], None, ln.Remoto())
 
-        def url(self, m):
-            return None if m.nome == "ausente" else f"https://r2.teste/{m.nome}"
+    def pod(*saidas, dc="US-TX-3"):
+        info = ln.PodInfo("p1", "http://x", "t" * 40, 1.0, "teste", 1, "NVIDIA L40S", dc)
+        return ln.Pod(info, _Agente(saidas))
 
-    orq = ln.Orquestrador(Namespace(espelho=Espelho(), saida=tmp_path), [], None, ln.Remoto())
-    assert orq._url_teste_espelho() == "https://r2.teste/grande"
+    orq._medir_rede(pod("INSTALANDO", "rede 512\nINSTALANDO"))  # esperou a medida sair
+    assert ln.velocidades() == {"US-TX-3": 512.0} and not ln.datacentros_lentos()
+    with pytest.raises(ln.NuvemError, match="rede lenta"):
+        orq._medir_rede(pod("rede 12\nINSTALANDO", dc="OC-AU-1"))
+    assert ln.datacentros_lentos() == {"OC-AU-1"}
+    orq._medir_rede(pod("rede -\nINSTALANDO", dc="EU-NL-1"))  # sem download: nada a julgar
+    orq._medir_rede(pod("FALHOU apt", dc="EU-NL-1"))  # a espera da instalação mostra a falha
+    assert "EU-NL-1" not in ln.velocidades()
+    orq._medir_rede(pod("rede 800", dc="US-TX-3"))  # a média: metade de cada medida recente
+    assert ln.velocidades()["US-TX-3"] == pytest.approx(656.0)
+
+
+def test_pods_go_first_to_fast_hosts_and_measured_datacenters(tmp_path, monkeypatch):
+    """1ª tentativa com os filtros de máquina rápida do RunPod e os datacenters da GPU na ordem da
+    velocidade medida (sem os lentos); sem vaga, sem os filtros; por último, qualquer um."""
+    monkeypatch.setattr(ln, "CACHE", tmp_path)
+    monkeypatch.setattr(runpod_pods, "_chave", lambda: "k")
+
+    def dc(i, lugar, livre=True):
+        return {
+            "id": i,
+            "location": lugar,
+            "gpuAvailability": [{"gpuTypeId": "G", "available": livre}],
+        }
+
+    eua = "United States"
+    dcs = [dc("OC-AU-1", "Australia"), dc("EU-NL-1", "Europe"), dc("US-MO-1", eua)]
+    dcs += [dc("US-NC-1", eua), dc("US-KS-2", eua, livre=False), dc("EU-RO-1", "Europe")]
+    monkeypatch.setattr(runpod_pods, "_graphql", lambda q, chave=None: {"dataCenters": dcs})
+    ln.lembrar_datacentro("US-NC-1", 650.0)  # rápido medido: primeiro
+    ln.lembrar_datacentro("EU-RO-1", 90.0)  # medido abaixo de REDE_BOA_MBS: depois dos sem medida
+    ln.lembrar_datacentro("EU-NL-1", 12.0, "rede lenta")  # lento lembrado: fora
+    corpos, sem_vaga = [], [2]  # as 2 primeiras tentativas não têm vaga
+
+    def criar(opcao, corpo, chave):
+        corpos.append(corpo)
+        if sem_vaga[0]:
+            sem_vaga[0] -= 1
+            raise runpod_pods.SemVaga("nada")
+        return {"id": "novo", "costPerHr": 1.0}
+
+    monkeypatch.setattr(runpod_pods, "criar", criar)
+    rp = ln.RunPod()
+    rp._aceitos = {dc["id"] for dc in dcs}  # a lista da API REST, sem a consulta
+    monkeypatch.setattr(rp, "_datacentro_do_pod", lambda pid: "US-MO-1")
+    info = rp.criar("p", [runpod_pods.Opcao("G", "secure")], 1, {"AGENT_TOKEN": "t" * 40})
+    rapido, ordenado, qualquer = corpos
+    assert (
+        rapido["minDownloadMbps"] == ln.REDE_MIN_MBPS
+        and rapido["minDiskBandwidthMBps"] == ln.DISCO_MIN_MBS
+    )
+    ordem = [
+        "US-NC-1",
+        "US-MO-1",
+        "OC-AU-1",
+        "EU-RO-1",
+    ]  # medido rápido, sem medida (EUA, resto), lento
+    assert rapido["dataCenterIds"] == ordenado["dataCenterIds"] == ordem
+    assert rapido["dataCenterPriority"] == ordenado["dataCenterPriority"] == "custom"
+    assert "minDownloadMbps" not in ordenado and "minDownloadMbps" not in qualquer
+    # a última camada: qualquer datacenter que a API aceita, menos o lento, à escolha do RunPod
+    assert "EU-NL-1" not in qualquer["dataCenterIds"] and "US-KS-2" in qualquer["dataCenterIds"]
+    assert "dataCenterPriority" not in qualquer
+    assert info.datacentro == "US-MO-1" and info.id == "novo"
+    # sem vaga com os filtros: as subidas dos próximos 10 min nem tentam a máquina rápida
+    corpos.clear()
+    rp.criar("p", [runpod_pods.Opcao("G", "secure")], 1, {"AGENT_TOKEN": "t" * 40})
+    assert "minDownloadMbps" not in corpos[0]

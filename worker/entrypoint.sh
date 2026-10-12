@@ -70,7 +70,12 @@ if python -c "import sys; h = float(sys.argv[1]); sys.exit(0 if 0 < h <= $MAX_PO
   log "AUTO_TERMINATE_HOURS=$AUTO_TERMINATE_HOURS fora de (0, $MAX_POD_HOURS]: usando $MAX_POD_HOURS h"
   AUTO_TERMINATE_HOURS=$MAX_POD_HOURS
 fi
-if [[ "$MODE" == "pod" && -n "${RUNPOD_POD_ID:-}" ]]; then
+# Pods do lote_nuvem e do orquestrador já têm o desligamento automático do agente (DEADMAN_S, que
+# no pod que hiberna PARA em vez de encerrar, ADR 0011): um 2º aqui encerraria o pod e apagaria o
+# disco de volume (até 12/10/2026, ligava sempre, com podTerminate, 2 h depois dos serviços).
+if [[ "$MODE" == "pod" && -n "${RUNPOD_POD_ID:-}" && -n "${DEADMAN_S:-}" ]]; then
+  log "desligamento automático: o do agente do pod (DEADMAN_S)"
+elif [[ "$MODE" == "pod" && -n "${RUNPOD_POD_ID:-}" ]]; then
   secs=$(python -c "print(int(float('$AUTO_TERMINATE_HOURS') * 3600))")
   log "desligamento automático em $AUTO_TERMINATE_HOURS h"
   (sleep "$secs" && python -m render2go_worker.runpod_pods autoencerrar) &

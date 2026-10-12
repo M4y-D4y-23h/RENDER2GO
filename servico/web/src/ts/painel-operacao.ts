@@ -5,7 +5,7 @@ import { type Controle, controle, dolares, duracao, erroDeAcao, erroDeCarga, pod
 
 type Pod = { id: string; worker: string | null; gpu: string | null; usd_h: number | null; estado: string; criado: number; pronto_em: number | null; datacentro: string | null; em_andamento: number };
 type Comando = { id: string; tipo: string; alvo: string | null; criado: number; por: string | null; executado_em: number | null; resultado: string | null };
-type Hibernado = { id: string; gpu: string | null; usd_h: number | null; parado_em: number | null; voltas: number | null; falhas: number | null; em_uso: boolean | null };
+type Hibernado = { id: string; gpu: string | null; usd_h: number | null; parado_em: number | null; voltas: number | null; falhas: number | null; em_uso: boolean | null; ultima_falha?: string | null; ultima_falha_em?: number | null };
 type RunPod = { saldo_usd: number | null; saldo_em: number | null; prazo_novo_pod_s: number | null; margem_s: number; hibernados: Hibernado[]; hibernados_max: number; volume_gb: number };
 type Pods = { pods: Pod[]; pausado: boolean; pausado_em: number | null; orquestrador_visto_s: number | null; comandos: Comando[]; runpod: RunPod | null };
 type Gerador = {
@@ -73,9 +73,13 @@ function estadoRunPod(r: RunPod | null): (Node | string)[] {
   const gpus = r.hibernados.map((h) => (h.gpu ?? "GPU").replace(/^NVIDIA (GeForce )?/, ""));
   const voltas = r.hibernados.reduce((t, h) => t + (h.voltas ?? 0), 0);
   const falhas = r.hibernados.reduce((t, h) => t + (h.falhas ?? 0), 0);
-  const historico = r.hibernados.length ? ` Voltaram ${plural(voltas, "vez", "vezes")}; agora, ${plural(falhas, "tentativa seguida", "tentativas seguidas")} sem GPU livre no host.` : "";
+  const historico = r.hibernados.length ? ` Voltaram ${plural(voltas, "vez", "vezes")}; agora, ${plural(falhas, "volta seguida", "voltas seguidas")} sem dar certo.` : "";
+  // o motivo da última volta que não deu certo (ex.: a GPU do host foi alugada por outra pessoa enquanto o pod
+  // estava parado): sem ele, a subida do zero que veio no lugar parecia o pod "voltando com o disco vazio"
+  const ultima = r.hibernados.filter((h) => h.ultima_falha).sort((a, b) => (b.ultima_falha_em ?? 0) - (a.ultima_falha_em ?? 0))[0];
+  const motivo = ultima ? ` Última volta que não deu certo${ultima.ultima_falha_em ? ` (${quando(ultima.ultima_falha_em)})` : ""}: ${ultima.ultima_falha}; no lugar, subiu um pod do zero.` : "";
   const hib = r.hibernados_max
-    ? `Hibernados: ${r.hibernados.length} de ${r.hibernados_max}${gpus.length ? ` (${gpus.join(", ")})` : ""}; voltam em ~1 min quando o host tem a GPU livre.${historico} Disco de volume: ${r.volume_gb} GB por pod, ~${dolares(r.volume_gb * 0.2)} por mês parado.`
+    ? `Hibernados: ${r.hibernados.length} de ${r.hibernados_max}${gpus.length ? ` (${gpus.join(", ")})` : ""}; voltam em ~1 min quando o host tem a GPU livre.${historico}${motivo} Disco de volume: ${r.volume_gb} GB por pod, ~${dolares(r.volume_gb * 0.2)} por mês parado.`
     : "Hibernação desligada (RENDER2GO_PODS_HIBERNADOS=0): todo pod sobe do zero.";
   const saldo = `Saldo no RunPod: ${dolares(r.saldo_usd)}.`;
   if (prazo < 15 * 60) return [criar("span", { className: "selo erro" }, [icone("alerta"), "Sem saldo"]), `${saldo} Não paga 15 min de um pod: nenhum pod novo sobe. Recarregue no RunPod. ${hib}`];

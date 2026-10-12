@@ -162,9 +162,14 @@ def proporcao(foto: Path) -> float:
     return w / h
 
 
-def formato_auto(foto: Path) -> str:
-    r = proporcao(foto)
+def formato_da_proporcao(r: float) -> str:
+    """O formato automático pela largura/altura da foto (o filtro das fotos no servidor usa a mesma
+    regra para avaliar o recorte que vai virar o 1º quadro)."""
     return "vertical" if r < VERTICAL else "horizontal" if r > HORIZONTAL else "quadrado"
+
+
+def formato_auto(foto: Path) -> str:
+    return formato_da_proporcao(proporcao(foto))
 
 
 @dataclass(frozen=True)

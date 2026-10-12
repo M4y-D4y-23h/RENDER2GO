@@ -11,8 +11,9 @@ Desligamento automático: com DEADMAN_S definido, o agente encerra o próprio po
 podTerminate, depois podStop, com a chave restrita que o RunPod injeta no pod) depois de
 DEADMAN_S segundos, contados do primeiro segundo do pod. Vale mesmo que o lote_nuvem, a
 rede ou a instalação falhem.
-- Com DEADMAN_ACAO=parar (pods que hibernam, ADR 0011), a ordem se inverte: podStop primeiro
-  (o disco de volume fica no host para a próxima subida) e podTerminate se o stop falhar.
+- Com DEADMAN_ACAO=parar (pods que hibernam, ADR 0011), podStop (o disco de volume fica no host
+  para a próxima subida), repetido enquanto o contêiner não morre; podTerminate só como último
+  recurso, depois de PARADA_TENTATIVAS podStop (~20 min): uma parada lenta não apaga mais o disco.
 - `POST /deadman {"s": N}` reprograma o prazo para N s a partir de agora (o orquestrador usa o
   preço real da GPU, conhecido só depois da criação), nunca além de 2 h da subida do contêiner.
 
@@ -43,6 +44,10 @@ from urllib.parse import parse_qs, urlparse
 MAX_PUT = 2 * 1024**3  # 2 GB por arquivo (o código do repositório tem < 1 MB)
 MAX_JSON = 1024**2
 MAX_DEADMAN_S = 2 * 3600  # regra do projeto: nenhum pod ligado mais de 2 h (por subida)
+# pod que hiberna: podStop até PARADA_TENTATIVAS vezes, a cada PARADA_INTERVALO_S, antes do
+# podTerminate
+PARADA_TENTATIVAS = 10
+PARADA_INTERVALO_S = 120
 
 
 def handler(token: str, deadman: Desligamento | None = None):
@@ -190,6 +195,24 @@ class Desligamento:
             self.mudou.clear()  # o laço relê o prazo: um adiar() no meio nunca se perde
         self.desligar()
 
+    def _mandar(self, pod: str, chave: str, mutation: str) -> bool:
+        """Até 5 tentativas; True se o RunPod aceitou."""
+        for _ in range(5):
+            try:
+                req = urllib.request.Request(
+                    f"https://api.runpod.io/graphql?api_key={chave}",
+                    json.dumps({"query": mutation}).encode(),
+                    {"Content-Type": "application/json", "User-Agent": "render2go-agente"},
+                )
+                resposta = urllib.request.urlopen(req, timeout=30).read().decode()
+                self.anota(resposta[:300])
+                if '"errors"' not in resposta:
+                    return True
+            except Exception as e:  # noqa: BLE001 (registra e tenta de novo)
+                self.anota(f"erro: {e}")
+            time.sleep(10)
+        return False
+
     def desligar(self) -> None:
         pod, chave = os.environ.get("RUNPOD_POD_ID"), os.environ.get("RUNPOD_API_KEY")
         if not pod or not chave:
@@ -197,22 +220,24 @@ class Desligamento:
             return
         parar = f'mutation {{ podStop(input:{{podId:"{pod}"}}) {{ id }} }}'
         encerrar = f'mutation {{ podTerminate(input:{{podId:"{pod}"}}) }}'
-        for mutation in (parar, encerrar) if self.acao == "parar" else (encerrar, parar):
-            for _ in range(5):
-                try:
-                    req = urllib.request.Request(
-                        f"https://api.runpod.io/graphql?api_key={chave}",
-                        json.dumps({"query": mutation}).encode(),
-                        {"Content-Type": "application/json", "User-Agent": "render2go-agente"},
-                    )
-                    resposta = urllib.request.urlopen(req, timeout=30).read().decode()
-                    self.anota(resposta[:300])
-                    if '"errors"' not in resposta:
-                        break
-                except Exception as e:  # noqa: BLE001 (registra e tenta de novo)
-                    self.anota(f"erro: {e}")
-                time.sleep(10)
-            time.sleep(60)  # aceito: o contêiner morre aqui; se não morreu, a outra mutação garante
+        if self.acao != "parar":
+            for mutation in (encerrar, parar):
+                if self._mandar(pod, chave, mutation):
+                    # aceito: o contêiner morre aqui; se não morreu, a outra mutação garante
+                    time.sleep(60)
+            return
+        # pod que hiberna (ADR 0011): o podTerminate apaga o disco de volume. Até 12/10/2026, o
+        # agente partia para ele 60 s depois de um podStop aceito, se o contêiner ainda estivesse
+        # vivo (uma parada lenta do RunPod bastava). Agora insiste no podStop (a cada
+        # PARADA_INTERVALO_S) e só encerra como último recurso, depois de PARADA_TENTATIVAS: no pior
+        # caso, a GPU cobra ~PARADA_TENTATIVAS × 2 min a mais
+        for _ in range(PARADA_TENTATIVAS):
+            if self._mandar(pod, chave, parar):
+                time.sleep(PARADA_INTERVALO_S)  # aceito: o contêiner morre aqui
+            else:
+                time.sleep(30)
+        self.anota("o pod não parou depois de vários podStop: encerrando (o disco vai junto)")
+        self._mandar(pod, chave, encerrar)
 
 
 def servidor(

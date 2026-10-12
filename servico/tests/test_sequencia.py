@@ -128,6 +128,7 @@ def test_a_photo_text_refused_after_compiling_cancels_and_refunds_only_its_photo
         "deriva_cor": 6.5,
         "salto_cor": 1.2,
         "nsfw": 0.01,
+        "nsfw_alto": 0.0,
         "nsfw_quadros": 13,
     }
     assert _concluir(api, r0, **ok).json()["status"] == "ok"
