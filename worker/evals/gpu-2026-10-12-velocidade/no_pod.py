@@ -582,7 +582,7 @@ def fase_worker_e_rife(saida: Path, clas, res: dict) -> dict:
     # a compilação do SageAttention usa a CPU: as medidas do worker esperam por ela (até 20 min)
     res["extras_antes_da_fase_2"] = esperar_extras(saida, "SAGE_", 20 * 60)
     armazem_local(saida / "videos")
-    r: dict = {}
+    r: dict = res.setdefault("2_worker", {})  # parcial: uma falha no meio não apaga o que já mediu
     with Comfy(8290, [], saida / "comfy_base.log") as c:
         r["aquecimento"] = render(c, "cafe", 999, "rapida", saida / "tmp", "aquece")
         r["antes"] = rodar_worker(c, jobs_de("antes", V480, "rapida"), False, clas, "antes")
@@ -600,11 +600,13 @@ def fase_worker_e_rife(saida: Path, clas, res: dict) -> dict:
             rr = []
             for i, (foto, seed) in enumerate(V480[:2], 1):
                 x = render(c, foto, seed, "rapida", saida / "rife", f"{foto}{i}-rife", tpl)
-                base = next(m for m in r["novo"]["medidas"] if m["arquivo"] == f"{foto}{i}-v1.mp4")
-                x["render_base_s"] = base.get("render")
+                arq = f"{foto}{i}-v1.mp4"
+                base = next((m for m in r["novo"]["medidas"] if m["arquivo"] == arq), {})
+                x["render_base_s"] = base.get("render")  # None: o vídeo não saiu certo no novo
                 x["video_info"] = quadros(saida / "rife" / f"{foto}{i}-rife.mp4")
                 x["bytes"] = (saida / "rife" / f"{foto}{i}-rife.mp4").stat().st_size
-                x["bytes_base"] = (v / "novo" / f"{foto}{i}-v1.mp4").stat().st_size
+                vb = v / "novo" / arq
+                x["bytes_base"] = vb.stat().st_size if vb.is_file() else None
                 rr.append(x)
                 folha(
                     [
@@ -651,7 +653,8 @@ def microbench_sage() -> dict:
 
 def fase_sage(saida: Path, clas, res: dict) -> dict:
     estado = esperar_extras(saida, "SAGE_", 25 * 60)
-    r: dict = {"extras": estado}
+    r: dict = res.setdefault("4_sage", {})
+    r["extras"] = estado
     if not (estado.startswith("SAGE_OK") or SIMULAR):
         return r
     if not SIMULAR:
@@ -697,7 +700,7 @@ def fase_sage(saida: Path, clas, res: dict) -> dict:
         ("sage", "novo", "xicara2-v1.mp4"),
         ("sage-alta", "alta", "xicara2-v1.mp4"),
     ):
-        if (v / rodada / arq).is_file():
+        if (v / rodada / arq).is_file() and (v / base / arq).is_file():
             folha(
                 [("atual", v / base / arq, [0, 40, 80]), ("sage", v / rodada / arq, [0, 40, 80])],
                 saida / "folhas" / f"sage-{rodada}-{Path(arq).stem}.jpg",
@@ -797,10 +800,8 @@ def main() -> int:
         try:
             res[nome] = fase(a.saida, clas, res)
         except Exception as e:  # noqa: BLE001 (a próxima fase ainda roda)
-            res[nome] = {
-                "erro": f"{type(e).__name__}: {e}",
-                "trace": traceback.format_exc()[-3000:],
-            }
+            erro = {"erro": f"{type(e).__name__}: {e!r}", "trace": traceback.format_exc()[-3000:]}
+            res[nome] = {**(res.get(nome) or {}), **erro}  # o parcial da fase fica
             log(f"fase {nome} falhou: {e}")
         res[nome]["duracao_s"] = round(time.monotonic() - t0, 1)
         gravar()
