@@ -142,6 +142,14 @@ O dono perguntou se uma foto maliciosa poderia levar código ao servidor ou ao b
 
 **Dependências:** Pillow 12.3.0 no serviço e no worker, uma versão recente, que já traz as correções conhecidas dos leitores de imagem (como a do WebP de 2023, corrigida na 10.0.1). Atualizar o Pillow junto com as outras dependências, sempre com versão fixada.
 
+### 3.2 Vídeos barrados na quarentena (12/10/2026)
+
+O dono pediu para ver os vídeos que o filtro de imagem barra (ADR 0005, atualização de 12/10). As proteções:
+- **Onde fica:** só em `quarentena/<cliente>/<pedido>/` no R2, nunca em `saida/`; o cliente não recebe link nem a nota do filtro, só o motivo pela categoria. A API marca `jobs.quarentena_em` só depois de conferir que o vídeo está lá.
+- **Quem abre:** só o papel dono (`GET <painel>/api/jobs/{job}/quarentena`, no `PERMISSOES_PAINEL`; o operador recebe 403, e `test_every_panel_route_with_a_session_is_in_the_permission_map` cobre a rota). Links de 10 min; cada abertura grava `ver_quarentena` na auditoria do painel, com o pedido e o arquivo. Na página, o vídeo e a folha ficam desfocados até o dono pedir.
+- **Por quanto tempo:** 7 dias. Depois disso, a rota recusa e a regra `quarentena-7-dias` do bucket apaga (`docs/09`, seção 3). A Política de Privacidade v4 diz isso.
+- **Criança ou adolescente:** se aparecer, não baixar nem compartilhar; denunciar (SaferNet, polícia) e procurar orientação jurídica. A guarda só se justifica para a revisão e para a denúncia (ECA, art. 241-B, § 2º); o aviso fica junto do vídeo, no painel.
+
 ## 4. Escala: o que o servidor aguenta
 
 ### 4.1 Medido em 09/10/2026

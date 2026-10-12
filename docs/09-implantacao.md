@@ -6,9 +6,20 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há. Para pôr o servidor em dia, comece pela entrada mais recente: ela diz de que versão parte e quais anteriores já traz junto.
 
+### 12/10/2026 (2): parar pedido, motivo de cada falha e quarentena dos vídeos barrados
+
+**É a atualização a fazer agora.** Parte da versão da entrada abaixo (a `main` de 12/10, `693e38b`). Está na branch `claude/magical-lamport-4rrms9` até ir para a `main`. Muda a API, as páginas e o código que vai para os pods (o vídeo barrado vai para a quarentena); o banco ganha três colunas (`lotes.interrompido_em`, `lotes.interrompido_por` e `jobs.quarentena_em`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (5); [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md), atualização de 12/10.
+
+1. **Nada gerando?** O mesmo bloco 1 da entrada 11/10/2026 (abaixo).
+2. **Backup e código novo:** o bloco 2 da entrada abaixo (`pg_dump` e `git pull`).
+3. **Regra nova no R2 (uma vez só):** no Cloudflare, R2 → bucket `gpu2go` → Settings → Object lifecycle rules → Add rule: nome `quarentena-7-dias`, prefixo `quarentena/`, apagar objetos depois de 7 dias (a tabela da seção 3). Sem ela, o painel deixa de mostrar o vídeo barrado depois de 7 dias, mas o arquivo fica no bucket.
+4. **Subir:** `cd ~/GPU2GO/servico/implantacao && docker compose up -d --build`. Os pods que subirem depois disso já mandam o vídeo barrado para a quarentena; um pod ligado antes da atualização é encerrado com o orquestrador.
+5. **Conferir:** na entrada no site, a Política de Privacidade v4 para aceitar (a guarda de 7 dias do vídeo barrado). Num pedido gerando, o botão "Parar o pedido" (cliente) e "Parar o pedido" no histórico do painel; nos pedidos com falhas, o motivo de cada vídeo (cliente) e "Ver os que não saíram" (painel), com "Ver o vídeo barrado" só para o dono.
+- **Se algo der errado:** volte para `693e38b` como no bloco "Se algo der errado" da entrada abaixo. As três colunas ficam no banco sem uso; os arquivos da quarentena, até a regra do passo 3 apagar.
+
 ### 11/10/2026 (2): pods (prazo pelo preço real, motivo da saída, saldo no painel, hibernação) e filtro de imagem nos vídeos, com as mudanças de 12/10 (cobrança por vídeo, pedidos sem limite de fotos, satisfação)
 
-**É a atualização a fazer agora.** Parte da versão de 11/10/2026 (a entrada abaixo) e está na `main` desde 12/10/2026 (veio da branch `claude/magical-lamport-4rrms9`). Muda a API, o orquestrador, o analisador (fotos conferidas antes de abrir e memória limitada a 1 GB no `compose.yaml`) e o código que vai para os pods; o banco ganha quatro colunas (`jobs.nsfw`, `jobs.barrado_em`, `lotes.cobranca` e `clientes.avaliacao_descartada`) e uma tabela (`avaliacoes`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entradas de 11/10/2026 (2) a 12/10/2026 (3); [ADR 0011](adr/0011-pods-hibernados.md), [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md) e [ADR 0012](adr/0012-cobranca-por-video-entregue.md).
+Parte da versão de 11/10/2026 (a entrada abaixo) e está na `main` desde 12/10/2026 (veio da branch `claude/magical-lamport-4rrms9`). Muda a API, o orquestrador, o analisador (fotos conferidas antes de abrir e memória limitada a 1 GB no `compose.yaml`) e o código que vai para os pods; o banco ganha quatro colunas (`jobs.nsfw`, `jobs.barrado_em`, `lotes.cobranca` e `clientes.avaliacao_descartada`) e uma tabela (`avaliacoes`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entradas de 11/10/2026 (2) a 12/10/2026 (3); [ADR 0011](adr/0011-pods-hibernados.md), [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md) e [ADR 0012](adr/0012-cobranca-por-video-entregue.md).
 
 **1) Nada gerando?** Igual ao bloco 1 da entrada abaixo: o bloco 3 recria o orquestrador, que desliga os pods ligados ao parar.
 
@@ -410,6 +421,7 @@ Navegador do cliente ──fotos (URL assinada)──►  R2 (Cloudflare)  ◄�
 |---|---|---|
 | `fotos-7-dias` | `entrada/` | Apagar objetos depois de 7 dias |
 | `videos-30-dias` | `saida/` | Apagar objetos depois de 30 dias |
+| `quarentena-7-dias` | `quarentena/` | Apagar objetos depois de 7 dias (vídeos barrados pelo filtro de imagem, que só o dono vê; ADR 0005) |
 | `envios-incompletos` | (bucket todo) | Abortar envios em partes incompletos depois de 1 dia |
 
 **Não crie regra para `modelos/`:** é o espelho dos modelos, que os pods usam como reserva.

@@ -967,6 +967,72 @@ def test_satisfaction_card_after_each_finished_order(ambiente, navegador):  # no
     assert erros == [], erros
 
 
+def test_stop_an_order_and_see_why_videos_did_not_come_out(ambiente, navegador):  # noqa: F811 (fixture)
+    """Pedidos do dono (12/10/2026): parar as gerações que faltam; o motivo de cada vídeo que não saiu, para o
+    cliente e para o painel; o vídeo barrado só o dono vê, desfocado até pedir."""
+    erros: list[str] = []
+    tok = _cliente(ambiente)
+    gerando = _lote(ambiente, tok, {"g1.png": _png((40, 90, 160), "circulo"), "g2.png": _png((90, 40, 160), "barras")},
+                    aprovar=True)  # fmt: skip
+    falhou = _lote(ambiente, tok, {"f1.png": _png((160, 90, 40), "circulo"), "f2.png": _png((40, 160, 90), "barras")},
+                   aprovar=True)  # fmt: skip
+    lt = ambiente.banco.lote(falhou)
+    a, b = [j for j in ambiente.banco.jobs(falhou) if j["tipo"] == "render"]
+    agora = time.time()
+    with ambiente.banco.tx() as c:  # um vídeo barrado pelo filtro (na quarentena) e um reprovado na conferência
+        c.run("UPDATE jobs SET status = 'erro', erro = 'barrado pelo filtro de imagem (nota 0.91)', nsfw = 0.91,"
+              " barrado_em = ?, quarentena_em = ? WHERE id = ?", (agora, agora, a["id"]))  # fmt: skip
+        c.run("UPDATE jobs SET status = 'erro', erro = ? WHERE id = ?",
+              ("o produto mudou de cor ou de forma no vídeo (deriva de cor 61.0)", b["id"]))  # fmt: skip
+        c.run("UPDATE jobs SET status = 'ok' WHERE lote_id = ? AND tipo = 'compilar'", (falhou,))
+        c.run("UPDATE lotes SET status = 'concluido_com_falhas', concluido_em = ? WHERE id = ?", (agora, falhou))
+    base = f"quarentena/{lt['cliente_id']}/{falhou}/"
+    ambiente.objetos[base + a["arquivo"]] = b"mp4"
+    ambiente.objetos[base + a["arquivo"].replace(".mp4", ".jpg")] = _png((200, 200, 200), "circulo")
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, tok)
+    pg = _pagina(ctx, erros)
+    pg.goto(ambiente.url)
+    cartao = pg.locator(f"#lotes .lote:has([data-foco='{gerando}:parar'])")
+    pg.locator(f"[data-foco='{gerando}:parar']").click()
+    pg.click("dialog.confirmacao[open] button:has-text('Parar o pedido')")
+    pw.expect(cartao).to_have_count(0)  # o cartão se refaz sem o botão
+    parado = pg.locator("#lotes .lote", has_text="Pedido parado por você")
+    pw.expect(parado).to_contain_text("os vídeos que faltavam foram cancelados, sem custo")
+    pw.expect(parado).to_contain_text("2 vídeos: cancelado: você interrompeu o pedido")
+    falhas = pg.locator("#lotes .lote", has_text="2 vídeos não saíram (sem custo)").filter(has_text="filtro de imagem")
+    pw.expect(falhas).to_contain_text(
+        "1 vídeo: barrado pelo filtro de imagem: o vídeo gerado mostrava conteúdo impróprio"
+    )
+    pw.expect(falhas).to_contain_text("1 vídeo: não ficou fiel à foto")
+    falhas.locator("summary:has-text('Ver quais')").click()
+    pw.expect(falhas.locator("details")).to_contain_text(f"{b['arquivo']}: não ficou fiel à foto")
+    assert "0.91" not in falhas.inner_text() and "deriva" not in falhas.inner_text()  # o técnico fica no painel
+    assert _axe(pg) == []
+    # o painel: o resumo por motivo, a lista com o texto técnico e o vídeo barrado (só o dono), desfocado
+    adm_ctx = navegador.new_context()
+    _com_sessao(adm_ctx, ambiente, admin=True)
+    adm = _pagina(adm_ctx, erros)
+    adm.goto(f"{ambiente.url}{PAINEL}/#historico")
+    item = adm.locator("#historico-lista .hist", has_text="barrados pelo filtro de imagem")
+    pw.expect(item).to_contain_text("Não saíram: 1 barrados pelo filtro de imagem · 1 reprovados na conferência")
+    item.locator(f"[data-foco='{falhou}:falhas']").click()
+    janela = adm.locator("dialog.falhas[open]")
+    pw.expect(janela.locator(".falha")).to_have_count(2)
+    pw.expect(janela).to_contain_text("deriva de cor 61.0")
+    janela.locator(f"[data-foco='{a['id']}:quarentena']").click()
+    midia = janela.locator(".quarentena")
+    pw.expect(midia).to_have_class(re.compile(r"\bdesfocado\b"))
+    assert midia.locator("video").get_attribute("src").startswith(ambiente.armazem.base)
+    janela.locator(f"[data-foco='{a['id']}:desfoque']").click()
+    pw.expect(midia).not_to_have_class(re.compile(r"\bdesfocado\b"))
+    with ambiente.banco.tx() as c:
+        assert c.one("SELECT COUNT(*) AS n FROM auditoria_admin WHERE acao = 'ver_quarentena'")["n"] == 1
+    ctx.close()
+    adm_ctx.close()
+    assert [e for e in erros if "media" not in e.lower()] == [], erros
+
+
 class _MercadoPago:
     """Mercado Pago falso para a janela de Pix: QR de verdade (PNG) e a situação controlada pelo teste."""
 

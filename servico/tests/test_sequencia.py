@@ -134,8 +134,9 @@ def test_a_photo_text_refused_after_compiling_cancels_and_refunds_only_its_photo
     resp = api.get(f"/api/lotes/{lid}", headers=h(tok))
     lote = resp.json()
     assert lote["status"] == "concluido_com_falhas"
-    # recusa neutra (decisão do dono, 11/10/2026): o cliente não vê o motivo interno da recusa
-    assert not any("erro" in v for v in lote["videos"]) and "filtro" not in resp.text
+    # o cliente vê o motivo, pela categoria (decisão do dono, 12/10/2026), nunca o texto técnico gravado
+    assert not any("erro" in v for v in lote["videos"]) and "C1" not in resp.text
+    assert lote["videos"][1]["motivo"] == "o texto foi recusado pelo filtro de conteúdo"
     assert [(v["arquivo"], v["status"]) for v in lote["videos"]] == [
         ("foto-0-v1.mp4", "ok"),
         ("foto-1-v1.mp4", "cancelado"),

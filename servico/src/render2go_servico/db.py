@@ -257,6 +257,13 @@ MOTIVO_FOTOS_VENCIDAS = (
     " cancelados, sem custo"
 )
 TIPOS_JOB = ("compilar", "render")
+
+
+def erro_interrompido(por: str | None) -> str:
+    """O motivo gravado no vídeo cancelado porque o pedido foi interrompido (render2go_servico.motivos)."""
+    return "interrompido pelo cliente" if por == "cliente" else "interrompido no painel"
+
+
 # dois CREATE TABLE IF NOT EXISTS ao mesmo tempo podem falhar no Postgres (pg_type duplicado)
 TRAVA_ESQUEMA = 20261008
 # tabelas do histórico (pedidos e tudo o que vem deles), na ordem de apagar (chaves estrangeiras).
@@ -333,6 +340,11 @@ COLUNAS_NOVAS = [
     ("sessoes", "contexto", "TEXT"),  # desafio da verificação em duas etapas: o que a entrada guardou (JSON)
     ("auditoria_admin", "agente", "TEXT"),  # navegador de quem fez (acessos do painel por pessoa, ADR 0009)
     ("clientes", "avaliacao_descartada", "DOUBLE PRECISION"),  # "não ver novamente" no card de satisfação
+    # pedido interrompido (12/10/2026): quando e por quem ("cliente" ou o nome de acesso no painel)
+    ("lotes", "interrompido_em", "DOUBLE PRECISION"),
+    ("lotes", "interrompido_por", "TEXT"),
+    # vídeo barrado pelo filtro de imagem guardado na quarentena (7 dias, só o dono vê; ADR 0005)
+    ("jobs", "quarentena_em", "DOUBLE PRECISION"),
 ]
 MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
@@ -1760,6 +1772,7 @@ class Banco:
                 "SELECT l.id, l.cliente_id, k.nome AS cliente_nome, k.plano, k.ativo AS cliente_ativo, l.status,"
                 " l.pedido, l.n_fotos, l.ip, l.criado, l.aprovado_em, l.aprovado_por, l.concluido_em, l.motivo,"
                 " l.fotos_apagadas, l.dispositivo, l.fuso, a.declarante, a.quando AS autorizado_em,"
+                " l.interrompido_em, l.interrompido_por,"
                 " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render' AND j.status = 'ok')"
                 " AS prontos,"
                 " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render') AS total,"
@@ -2910,6 +2923,7 @@ class Banco:
                     " LEFT JOIN fotos f ON f.id = j.foto_id"
                     " LEFT JOIN inic ON inic.cliente_id = l.cliente_id"
                     " WHERE j.status = 'pendente' AND l.status IN ('aprovado', 'processando')"
+                    " AND l.interrompido_em IS NULL"
                     " AND (j.tipo = 'compilar' OR (f.prompt IS NULL AND l.prompt_en IS NOT NULL)"
                     " OR (f.prompt IS NOT NULL AND f.prompt_en IS NOT NULL))"
                     # pedidos da mesma conta, um depois do outro: os vídeos só do mais antigo em andamento
@@ -2961,7 +2975,7 @@ class Banco:
             c.run(
                 "UPDATE jobs SET status = ?, segundos = ?, aviso = ?, erro = ?, similaridade = ?, bytes_video = ?,"
                 " deriva_cor = ?, salto_cor = ?, seed = ?, atualizado = ?, lease_ate = NULL, nsfw = ?,"
-                " barrado_em = ? WHERE id = ?",
+                " barrado_em = ?, quarentena_em = ? WHERE id = ?",
                 (
                     novo,
                     campos.get("segundos"),
@@ -2975,6 +2989,7 @@ class Banco:
                     agora,
                     campos.get("nsfw"),
                     agora if barrado else None,
+                    agora if barrado and campos.get("quarentena") else None,
                     job_id,
                 ),
             )
@@ -2994,28 +3009,92 @@ class Banco:
             return self._vencer_pedidos(c, time.time())
 
     def _vencer_pedidos(self, c, agora: float) -> int:
-        """Pedidos abertos há mais de PRAZO_FOTOS_S: o armazenamento pode já ter apagado as fotos. O que não
-        está num pod (pendente, ou com o prazo do pod vencido) é cancelado, sem custo (nos pedidos por vídeo, nada
-        foi cobrado; nos de antes, `_fechar_lote` devolve), e o pedido fecha quando o que está num pod terminar.
-        Devolve quantos pedidos tiveram vídeos cancelados."""
+        """Pedidos que não devem mais gerar: abertos há mais de PRAZO_FOTOS_S (o armazenamento pode já ter apagado
+        as fotos) ou interrompidos (`interromper`; aqui, o vídeo que voltou para a fila depois, por um erro que seria
+        refeito ou pelo prazo vencido do pod). O que não está num pod (pendente, ou com o prazo do pod vencido) é
+        cancelado, sem custo (nos pedidos por vídeo, nada foi cobrado; nos de antes, `_fechar_lote` devolve), e o
+        pedido fecha quando o que está num pod terminar. Devolve quantos pedidos tiveram vídeos cancelados."""
         n = 0
         for lt in c.all(
-            "SELECT id FROM lotes WHERE status IN ('aprovado', 'processando') AND criado < ?",
+            "SELECT id, interrompido_em, interrompido_por FROM lotes WHERE status IN ('aprovado', 'processando')"
+            " AND (criado < ? OR interrompido_em IS NOT NULL)",
             (agora - PRAZO_FOTOS_S,),
         ):
+            interrompido = lt["interrompido_em"] is not None
             cancelados = c.run(
-                "UPDATE jobs SET status = 'cancelado', erro = 'fotos apagadas (prazo de 7 dias)', worker = NULL,"
-                " lease_ate = NULL, atualizado = ? WHERE lote_id = ?"
-                " AND (status = 'pendente' OR (status = 'em_andamento' AND lease_ate < ?))",
-                (agora, lt["id"], agora),
+                "UPDATE jobs SET status = 'cancelado', erro = ?, worker = NULL, lease_ate = NULL, atualizado = ?"
+                " WHERE lote_id = ? AND (status = 'pendente' OR (status = 'em_andamento' AND lease_ate < ?))",
+                (
+                    erro_interrompido(lt["interrompido_por"]) if interrompido else "fotos apagadas (prazo de 7 dias)",
+                    agora,
+                    lt["id"],
+                    agora,
+                ),
             )
             if not cancelados:
                 continue
             n += 1
-            c.run("UPDATE lotes SET motivo = ? WHERE id = ? AND motivo IS NULL", (MOTIVO_FOTOS_VENCIDAS, lt["id"]))
-            self.evento(c, lt["id"], "fotos_vencidas", {"cancelados": int(cancelados)})
+            if not interrompido:
+                c.run("UPDATE lotes SET motivo = ? WHERE id = ? AND motivo IS NULL", (MOTIVO_FOTOS_VENCIDAS, lt["id"]))
+            tipo = "interrompido_resto" if interrompido else "fotos_vencidas"
+            self.evento(c, lt["id"], tipo, {"cancelados": int(cancelados)})
             self._fechar_lote(c, lt["id"])
         return n
+
+    def interromper(self, lote_id: str, por: str, cliente_id: str | None = None) -> int:
+        """Para as gerações que faltam de um pedido em andamento (pedido do dono, 12/10/2026). O que não está num
+        pod é cancelado, sem custo (nos pedidos por vídeo, nada foi cobrado; nos de antes, `_fechar_lote` devolve);
+        o vídeo que já está num pod termina e, se sair certo, é entregue e cobrado; o pedido fecha quando ele
+        terminar. `por`: \"cliente\" ou o nome de acesso de quem parou no painel. Devolve quantos foram cancelados."""
+        agora = time.time()
+        with self.tx() as c:
+            onde, args = ("id = ? AND cliente_id = ?", (lote_id, cliente_id)) if cliente_id else ("id = ?", (lote_id,))
+            lt = c.one(f"SELECT id, status FROM lotes WHERE {onde}" + (" FOR UPDATE" if self.pg else ""), args)
+            if lt is None:
+                raise BancoError("lote não encontrado")
+            if lt["status"] not in ("aprovado", "processando"):
+                raise BancoError("o pedido não está gerando")
+            n = c.run(
+                "UPDATE jobs SET status = 'cancelado', erro = ?, worker = NULL, lease_ate = NULL, atualizado = ?"
+                " WHERE lote_id = ? AND (status = 'pendente' OR (status = 'em_andamento' AND lease_ate < ?))",
+                (erro_interrompido(por), agora, lote_id, agora),
+            )
+            c.run(
+                "UPDATE lotes SET interrompido_em = ?, interrompido_por = ? WHERE id = ? AND interrompido_em IS NULL",
+                (agora, por, lote_id),
+            )
+            self.evento(c, lote_id, "interrompido", {"por": por, "cancelados": int(n)})
+            self._fechar_lote(c, lote_id)
+        return int(n)
+
+    def marcar_recusa_texto(self, lote_id: str, foto_id: str, motivo: str) -> None:
+        """Texto próprio recusado pelo filtro depois de traduzido: os vídeos das fotos com esse texto, cancelados
+        como \"compilação do texto da foto falhou\", passam a dizer o motivo de verdade (render2go_servico.motivos)."""
+        with self.tx() as c:
+            c.run(
+                "UPDATE jobs SET erro = ? WHERE lote_id = ? AND tipo = 'render' AND status = 'cancelado'"
+                " AND erro = 'compilação do texto da foto falhou' AND foto_id IN (SELECT f.id FROM fotos f"
+                " WHERE f.lote_id = ? AND f.prompt = (SELECT g.prompt FROM fotos g WHERE g.id = ?))",
+                (motivo, lote_id, lote_id, foto_id),
+            )
+
+    def falhas_de(self, lotes: list[str]) -> dict[str, list[dict]]:
+        """Os vídeos que não saíram (erro ou cancelado) de cada pedido, com o motivo gravado e as notas dos
+        filtros (painel: o que aconteceu com cada um)."""
+        if not lotes:
+            return {}
+        with self.tx() as c:
+            linhas = c.all(
+                "SELECT id, lote_id, arquivo, status, erro, tentativas, nsfw, barrado_em, quarentena_em, deriva_cor,"
+                " salto_cor, similaridade, atualizado FROM jobs"
+                f" WHERE lote_id IN ({', '.join('?' * len(lotes))}) AND tipo = 'render'"
+                " AND status IN ('erro', 'cancelado') ORDER BY arquivo",
+                tuple(lotes),
+            )
+        por: dict[str, list[dict]] = {lid: [] for lid in lotes}
+        for j in linhas:
+            por[j["lote_id"]].append(j)
+        return por
 
     def _fechar_lote(self, c, lote_id: str) -> None:
         agora = time.time()
@@ -3105,7 +3184,7 @@ class Banco:
             return {}
         with self.tx() as c:
             linhas = c.all(
-                "SELECT id, lote_id, tipo, arquivo, status, aviso, excluido_em, foto_id FROM jobs"
+                "SELECT id, lote_id, tipo, arquivo, status, aviso, excluido_em, foto_id, erro, barrado_em FROM jobs"
                 f" WHERE lote_id IN ({', '.join('?' * len(lotes))}) AND tipo = 'render' ORDER BY arquivo",
                 tuple(lotes),
             )

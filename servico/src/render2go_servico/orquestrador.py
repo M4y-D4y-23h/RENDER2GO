@@ -726,7 +726,7 @@ class Orquestrador:
         self.comandos()
         self._revisar()
         if self.banco.vencer_pedidos():  # fotos já apagadas (7 dias): fecham sem ligar pod
-            _log("pedido aberto além do prazo das fotos: os vídeos que faltavam foram cancelados, sem custo")
+            _log("pedido vencido (7 dias das fotos) ou interrompido: o que faltava foi cancelado, sem custo")
         if self.pausado:  # parada de emergência: nada sobe até o painel retomar
             return {"desejados": 0, "ativos": len(self.ativos), "subindo": self.subindo, "pausado": True}
         trabalho = self.banco.trabalho()

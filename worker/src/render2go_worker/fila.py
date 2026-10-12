@@ -10,7 +10,8 @@ para o armazenamento (URLs assinadas, uma por arquivo). Por job:
   (render2go_worker.conferencia), **passa os quadros pelo filtro de imagem** (nudez:
   render2go_worker.filtro_imagem, ADR 0005) e só então envia o vídeo e a folha de conferência. A API
   recusa "ok" sem essas medidas; o vídeo que troca de produto no meio é refeito com outra seed; o
-  vídeo barrado pelo filtro não sai do pod (nem a folha) e não é refeito.
+  vídeo barrado pelo filtro não vai ao cliente e não é refeito: ele e a folha vão para a quarentena,
+  que só o dono vê pelo painel, por 7 dias (12/10/2026).
 
 Um laço por ComfyUI (uma GPU cada). Sem jobs por `--ocioso` segundos (o "pod quente", docs/08),
 o worker sai e o pod se desliga (desligamento automático do lote_nuvem / orquestrador). Com
@@ -328,12 +329,13 @@ class WorkerFila:
                 _log(f"{job['arquivo']}: filtro de imagem indisponível ({e}); este laço para")
                 self.filtro_falhou = True
                 return False
-            if filtro.barrado:  # nem o vídeo nem a folha são enviados; não é refeito (ADR 0005)
+            if filtro.barrado:  # não vai ao cliente nem é refeito; vai à quarentena (ADR 0005)
                 self.api.concluir(
                     jid,
                     "erro",
                     erro=f"barrado pelo filtro de imagem (nota {filtro.nota:.2f})",
                     barrado=True,
+                    quarentena=self._quarentena(job, prep.path, video, pasta, t),
                     nsfw=filtro.nota,
                     nsfw_quadros=filtro.quadros,
                     **cont,
@@ -374,6 +376,25 @@ class WorkerFila:
             f"{job['arquivo']} (lote {job['lote']}): {status}, similaridade {sim:.3f}, "
             f"{time.monotonic() - t0:.0f} s"
         )
+        return True
+
+    def _quarentena(self, job: dict, foto: Path, video: Path, pasta: Path, t: lote.Tarefa) -> bool:
+        """Vídeo barrado e a folha dele para a quarentena (ADR 0005, 12/10/2026): só o dono vê,
+        pelo painel, por 7 dias. Devolve se o vídeo foi; API antiga, sem os endereços: nada vai."""
+        url = job.get("quarentena_video_url")
+        if not url:
+            return False
+        if job.get("quarentena_folha_url"):
+            try:
+                folha = preparo.folha(foto, video, pasta / "folha.jpg", 16 * t.duracao + 1)
+                media.upload(job["quarentena_folha_url"], folha, "image/jpeg")
+            except Exception as e:  # noqa: BLE001 (a folha ajuda; o vídeo é o que importa)
+                _log(f"{job['arquivo']}: folha da quarentena não enviada ({e})")
+        try:
+            media.upload(url, video, "video/mp4")
+        except (media.MediaError, media.UnsafeUrl) as e:
+            _log(f"{job['arquivo']}: o vídeo barrado não foi para a quarentena ({e})")
+            return False
         return True
 
     def processar(self, job: dict, comfy: str) -> bool:

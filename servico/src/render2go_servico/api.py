@@ -122,8 +122,8 @@ from pydantic import BaseModel, Field
 from render2go_worker import conferencia, filtro_imagem, filtros, lote, preparo, presets
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from render2go_servico import SERVICO_DIR, contas, modelos, pagamentos, perfil, pessoas, precos, suporte
-from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_saida
+from render2go_servico import SERVICO_DIR, contas, modelos, motivos, pagamentos, perfil, pessoas, precos, suporte
+from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_quarentena, chave_saida
 from render2go_servico.db import Banco, BancoError, SaldoInsuficiente, novo_id
 
 TIPOS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
@@ -134,6 +134,7 @@ MAX_TEXTOS_FOTO = 100
 VIDEOS_POR_PAGINA = 100  # vídeos de um pedido grande por resposta (a página pede mais)
 PREVIA_REVISAO = 60  # fotos de um pedido grande que o revisor vê de cara (mais as marcadas pela análise)
 MARCADAS_REVISAO = 300  # teto das fotos marcadas (pessoas, rostos, erro) mostradas além da prévia
+QUARENTENA_S = 7 * 86400  # vídeo barrado na quarentena: o dono vê por 7 dias (regra quarentena-7-dias do bucket)
 # satisfação depois de cada pedido terminado (pedido do dono, 12/10/2026): notas de 1 (muito pouco) a 5 (muito
 # satisfeito); o card aparece nos pedidos terminados nos últimos AVALIAR_DIAS dias, ainda sem nota
 AVALIAR_DIAS = 7
@@ -248,6 +249,9 @@ PERMISSOES_PAINEL: dict[tuple[str, str], frozenset[str]] = {
     ("GET", "/api/lotes"): _TODOS,
     ("POST", "/api/lotes/{lote_id}/aprovar"): _TODOS,
     ("POST", "/api/lotes/{lote_id}/recusar"): _TODOS,
+    ("POST", "/api/lotes/{lote_id}/interromper"): _TODOS,
+    ("GET", "/api/lotes/{lote_id}/falhas"): _TODOS,
+    ("GET", "/api/jobs/{job_id}/quarentena"): _DONO,  # o vídeo barrado (ADR 0005): só o dono
     ("GET", "/api/lotes/{lote_id}/auditoria"): _TODOS,
     ("GET", "/api/historico"): _TODOS,
     ("GET", "/api/suporte"): _TODOS,
@@ -857,11 +861,6 @@ def _celula_csv(v: str) -> str:
 # Recusa do filtro de palavras (C1) para o cliente: diz as regras, nunca qual palavra ou categoria barrou
 # (11/10/2026: a categoria ajudava a testar sinônimos até passar). A categoria fica no registro de acesso
 # e no painel do revisor.
-RECUSA_FILTRO = (
-    "o texto não passou no filtro de conteúdo: ele tem palavras que não aceitamos (conteúdo adulto, crianças, "
-    "violência, armas, drogas ou pessoas reais; item 5 dos termos). Reescreva descrevendo só o produto, o "
-    "ambiente e o movimento da câmera."
-)
 
 
 def _textos_por_foto(body: Any, receita: dict) -> list[str | None]:
@@ -878,7 +877,7 @@ def _textos_por_foto(body: Any, receita: dict) -> list[str | None]:
             raise HTTPException(422, f"{f.nome}: o texto próprio da foto precisa de pelo menos 3 letras")
         d = filtros.avaliar(t)
         if not d.allowed:  # C1 também em cada texto próprio (ADR 0004)
-            raise HTTPException(422, f"{f.nome}: {RECUSA_FILTRO}")
+            raise HTTPException(422, f"{f.nome}: {motivos.recusa_texto(d.reason)}")
         try:
             presets.compose("i2v", t, receita["presets"])
         except presets.PresetError as e:
@@ -1021,7 +1020,8 @@ class ConcluirIn(BaseModel):
     # filtro de imagem nos quadros (ADR 0005): maior P(medium)+P(high) e quantos quadros passaram
     nsfw: float | None = Field(None, ge=0, le=1)
     nsfw_quadros: int | None = Field(None, ge=0, le=100000)
-    barrado: bool = False  # o worker barrou o vídeo (não enviou); não é refeito
+    barrado: bool = False  # o worker barrou o vídeo (não enviou ao cliente); não é refeito
+    quarentena: bool = False  # o vídeo barrado foi para a quarentena (só o dono vê; ADR 0005)
 
 
 class InteresseIn(BaseModel):
@@ -1999,11 +1999,12 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if body.modelo not in {m["id"] for m in modelos.disponiveis()}:
             raise HTTPException(422, "modelo de geração indisponível")
         d = filtros.avaliar(body.prompt)
-        if not d.allowed:  # C1 já na entrada (ADR 0004); a categoria só no registro de acesso
+        if not d.allowed:  # C1 já na entrada (ADR 0004): o cliente vê a categoria, nunca a palavra
             c.banco.registrar_acesso(
                 cli["id"], "pedido_recusado_filtro", origem, {"motivo": d.reason, "texto": body.prompt[:300]}
             )
-            raise HTTPException(422, RECUSA_FILTRO[0].upper() + RECUSA_FILTRO[1:])
+            recusa = motivos.recusa_texto(d.reason)
+            raise HTTPException(422, recusa[0].upper() + recusa[1:])
         rec = lote.load_receitas()
         r = rec["receitas"].get(body.receita)
         if r is None:
@@ -2156,6 +2157,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         """Um vídeo do pedido para a página; pronto (e não excluído), com os links assinados por 24 h."""
         item = {"id": j["id"], "arquivo": j["arquivo"], "status": j["status"], "aviso": j["aviso"],
                 "texto": j.get("texto"), "excluido": bool(j.get("excluido_em"))}  # fmt: skip
+        if m := motivos.motivo(j):  # por que não saiu (a categoria; o texto técnico fica no painel)
+            item["motivo"] = motivos.MOTIVOS[m]
         if j["status"] == "ok" and not j.get("excluido_em"):
             chave = chave_saida(cliente_id, lote_id, j["arquivo"])
             item["url"] = c.armazenamento.url("GET", chave, URL_DOWNLOAD_S)  # abre e toca no navegador
@@ -2241,6 +2244,16 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "excluidos": contagem["excluidos"],
             "videos": videos,
             "videos_mais": mais,  # vídeos prontos além dos listados (pedido grande)
+            "nao_sairam": motivos.resumo(jobs),  # os que não saíram, por motivo (nada disso é cobrado)
+            # interrompido (12/10/2026): quando e por quem (o cliente ou a equipe, sem o nome de acesso)
+            "interrompido_em": lt.get("interrompido_em"),
+            "interrompido_por": (
+                None
+                if not lt.get("interrompido_em")
+                else "cliente"
+                if lt.get("interrompido_por") == "cliente"
+                else "equipe"
+            ),
             "avaliacao": avaliacao,  # a nota que o cliente deu (1 a 5), se deu
             "pedir_avaliacao": pedir_avaliacao,  # mostrar o card de satisfação neste pedido
             "previsao": {"fase": "saldo"} if aguardando_saldo else _previsao(c, lt, jobs),
@@ -2548,6 +2561,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(404, "lote não encontrado")
         notas, pedir = _avaliacoes(c, cli, [lt])
         return _resumo(lt, c, cli["id"], avaliacao=notas.get(lote_id), pedir_avaliacao=lote_id in pedir)
+
+    @app.post("/api/lotes/{lote_id}/interromper")
+    def interromper_lote(lote_id: str, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """Para as gerações que faltam: o que não está num pod é cancelado, sem custo; o vídeo que já está num
+        pod termina (e, se sair certo, é entregue e cobrado). Os vídeos prontos ficam."""
+        try:
+            n = c.banco.interromper(lote_id, "cliente", cliente_id=cli["id"])
+        except BancoError as e:
+            raise HTTPException(404 if "não encontrado" in str(e) else 409, str(e)) from e
+        _se_fechou(c, lote_id)
+        return {"lote": lote_id, "cancelados": n}
 
     @app.post("/api/lotes/{lote_id}/avaliacao")
     def avaliar_lote(lote_id: str, body: AvaliacaoIn, cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -3149,6 +3173,62 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         _auditar(c, request, quem, "recusar", lote_id, {"motivo": body.motivo})
         return {"lote": lote_id, "status": "recusado"}
 
+    @rotas.post("/api/lotes/{lote_id}/interromper")
+    def interromper_painel(lote_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        try:
+            n = c.banco.interromper(lote_id, quem)
+        except BancoError as e:
+            raise HTTPException(404 if "não encontrado" in str(e) else 409, str(e)) from e
+        _se_fechou(c, lote_id)
+        _auditar(c, request, quem, "interromper", lote_id, {"cancelados": n})
+        return {"lote": lote_id, "cancelados": n}
+
+    @rotas.get("/api/lotes/{lote_id}/falhas")
+    def falhas_do_lote(lote_id: str, _: str = Depends(admin), c: Config = Depends(config)):
+        """Cada vídeo que não saiu, com o motivo para o cliente, o texto técnico e as notas dos filtros."""
+        if c.banco.lote(lote_id) is None:
+            raise HTTPException(404, "lote não encontrado")
+        limite = time.time() - QUARENTENA_S
+        return {
+            "videos": [
+                {
+                    "job": j["id"],
+                    "arquivo": j["arquivo"],
+                    "status": j["status"],
+                    "motivo": motivos.MOTIVOS[motivos.motivo(j) or "tecnico"],
+                    "erro": j["erro"],
+                    "tentativas": j["tentativas"],
+                    "nsfw": j["nsfw"],
+                    "deriva_cor": j["deriva_cor"],
+                    "salto_cor": j["salto_cor"],
+                    "similaridade": j["similaridade"],
+                    "quarentena": bool(j["quarentena_em"]) and j["quarentena_em"] >= limite,
+                }
+                for j in c.banco.falhas_de([lote_id])[lote_id]
+            ]
+        }
+
+    @rotas.get("/api/jobs/{job_id}/quarentena")
+    def ver_quarentena(job_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        """O vídeo barrado pelo filtro de imagem e a folha dele (ADR 0005): só o dono, por 7 dias, com links de
+        10 min; cada acesso fica na auditoria do painel."""
+        with c.banco.tx() as cur:
+            j = cur.one(
+                "SELECT j.id, j.arquivo, j.lote_id, j.quarentena_em, l.cliente_id FROM jobs j"
+                " JOIN lotes l ON l.id = j.lote_id WHERE j.id = ?",
+                (job_id,),
+            )
+        if j is None or not j["quarentena_em"] or j["quarentena_em"] < time.time() - QUARENTENA_S:
+            raise HTTPException(404, "vídeo barrado não encontrado (a quarentena dura 7 dias)")
+        _auditar(c, request, quem, "ver_quarentena", j["lote_id"], {"job": job_id, "arquivo": j["arquivo"]})
+        stem = Path(j["arquivo"]).stem
+        return {
+            "arquivo": j["arquivo"],
+            "video": c.armazenamento.url("GET", chave_quarentena(j["cliente_id"], j["lote_id"], j["arquivo"]), 600),
+            "folha": c.armazenamento.url("GET", chave_quarentena(j["cliente_id"], j["lote_id"], f"{stem}.jpg"), 600),
+            "expira_s": 600,
+        }
+
     @rotas.get("/api/clientes")
     def lista_clientes(busca: str | None = None, _: str = Depends(admin), c: Config = Depends(config)):
         return {
@@ -3268,6 +3348,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             lotes = c.banco.historico(grupo, limite=100)
         except BancoError as e:
             raise HTTPException(422, str(e)) from e
+        falhas = c.banco.falhas_de([lt["id"] for lt in lotes])  # os que não saíram, numa consulta só
         return {
             "lotes": [
                 {
@@ -3295,6 +3376,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "total": lt["total"],
                     "barrados": int(lt.get("barrados") or 0),  # filtro de imagem (ADR 0005): não entregues
                     "avaliacao": lt.get("avaliacao"),  # satisfação do cliente com o pedido (1 a 5)
+                    "nao_sairam": motivos.resumo(falhas.get(lt["id"], [])),
+                    "interrompido_em": lt.get("interrompido_em"),
+                    "interrompido_por": lt.get("interrompido_por"),
                 }
                 for lt in lotes
             ],
@@ -3480,6 +3564,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     3600,
                     content_type="image/jpeg",
                 ),
+                # vídeo barrado pelo filtro de imagem (ADR 0005): fica na quarentena, que só o dono vê
+                "quarentena_video_url": c.armazenamento.url(
+                    "PUT", chave_quarentena(lt["cliente_id"], lt["id"], job["arquivo"]), 3600, content_type="video/mp4"
+                ),
+                "quarentena_folha_url": c.armazenamento.url(
+                    "PUT", chave_quarentena(lt["cliente_id"], lt["id"], f"{stem}.jpg"), 3600, content_type="image/jpeg"
+                ),
             }
         return {"job": out}
 
@@ -3497,9 +3588,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         d = filtros.avaliar(body.prompt_en)
         if not d.allowed:  # C1 também no prompt compilado
             c.banco.concluir(job_id, body.worker, "erro", erro=d.reason)
-            if not job["foto_id"]:  # texto próprio recusado derruba só as fotos com esse texto
+            if job["foto_id"]:  # texto próprio recusado derruba só as fotos com esse texto, com o motivo
+                c.banco.marcar_recusa_texto(job["lote_id"], job["foto_id"], d.reason)
+            else:
                 with contextlib.suppress(BancoError):  # já recusado ou já em andamento
-                    c.banco.recusar(job["lote_id"], "filtro-c1", d.reason)
+                    c.banco.recusar(job["lote_id"], "filtro-c1", motivos.recusa_traducao(d.reason))
             _se_fechou(c, job["lote_id"])
             raise HTTPException(422, d.reason)
         if job["foto_id"]:
@@ -3513,6 +3606,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         _mesmo_worker(dono, body.worker)
         job = _do_worker(job_id, body.worker, c)
         status, erro, repetir = body.status, body.erro, body.repetir
+        quarentena = False
         barrado = job["tipo"] == "render" and (
             body.barrado or (status == "ok" and body.nsfw is not None and body.nsfw >= filtro_imagem.LIMIAR)
         )
@@ -3525,6 +3619,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     c.armazenamento.apagar(chave_saida(lt["cliente_id"], lt["id"], nome))
             status, repetir = "erro", False
             erro = f"barrado pelo filtro de imagem (nota {body.nsfw or 0:.2f})"
+            if body.quarentena:  # o pod diz que enviou: vale só se o vídeo está mesmo lá
+                with contextlib.suppress(Exception):
+                    quarentena = bool(
+                        c.armazenamento.tamanho(chave_quarentena(lt["cliente_id"], lt["id"], job["arquivo"]))
+                    )
         elif job["tipo"] == "render" and status == "ok":
             # fail-closed: o vídeo precisa estar no armazenamento, com o tamanho informado, a
             # conferência do 1º quadro precisa dizer que ele é dessa foto e a da continuidade, que
@@ -3560,6 +3659,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 nsfw=body.nsfw,
                 nsfw_quadros=body.nsfw_quadros,
                 barrado=barrado,
+                quarentena=quarentena,
                 # vídeo refeito sai de outra seed: a mesma seed repetiria o mesmo defeito
                 seed=lote.seed_de(job["seed"], job["id"], job["tentativas"]) if job["tipo"] == "render" else None,
             )

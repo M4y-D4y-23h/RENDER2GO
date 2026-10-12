@@ -123,7 +123,7 @@ export function pedirAceite(): Promise<boolean> {
     criar("p", {
       className: "dica",
       textContent:
-        "O que mudou: cada vídeo é cobrado só quando fica pronto, e o que não sai não é cobrado; sem saldo, o pedido espera a recarga e continua sozinho; os pedidos da mesma conta são feitos em ordem, sem limite de fotos nos planos pagos; o filtro automático que confere cada vídeo antes da entrega; e a pergunta de satisfação no fim de cada pedido.",
+        "O que mudou: o vídeo que o filtro automático de imagem barra fica guardado por até 7 dias, só para a revisão da equipe (Política de Privacidade); e, se você ainda não viu: cada vídeo é cobrado só quando fica pronto, e o que não sai não é cobrado; sem saldo, o pedido espera a recarga e continua sozinho; os pedidos da mesma conta são feitos em ordem, sem limite de fotos nos planos pagos; o filtro automático que confere cada vídeo antes da entrega; e a pergunta de satisfação no fim de cada pedido.",
     }),
     criar("label", { className: "marcacao", htmlFor: id }, [caixa, criar("span", { textContent: "Li e aceito os Termos de Uso e a Política de Privacidade." })]),
     msg,

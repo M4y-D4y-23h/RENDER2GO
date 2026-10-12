@@ -11,6 +11,7 @@ import {
   api,
   aviso,
   bytes,
+  confirmar,
   contador,
   criar,
   el,
@@ -20,6 +21,7 @@ import {
   minutos,
   ocupado,
   plural,
+  quando,
   reais,
   reconciliar,
   repetir,
@@ -37,7 +39,7 @@ import { criarSequencia } from "./sequencia";
 
 type Movimento = { quando: number; tipo: string; valor: number; lote_id: string | null; descricao: string | null };
 type Saldo = { pre_pago: boolean; saldo?: number; precos?: Record<string, number>; extrato?: Movimento[] };
-type Video = { id?: string; arquivo: string; status: string; aviso: string | null; url?: string; baixar?: string; texto?: string | null; excluido?: boolean };
+type Video = { id?: string; arquivo: string; status: string; aviso: string | null; url?: string; baixar?: string; texto?: string | null; excluido?: boolean; motivo?: string };
 // previsão em segundos; o cliente vê só o tempo, não as etapas internas
 type Previsao = { fase: "analise" | "fila" | "gerando" | "saldo"; inicio_max_s?: number; inicio_s?: number; fim_s?: number } | null;
 type Lote = {
@@ -64,6 +66,10 @@ type Lote = {
   // satisfação (12/10/2026): a nota dada (1 a 5) e se o card aparece neste pedido
   avaliacao?: number | null;
   pedir_avaliacao?: boolean;
+  // por que os vídeos não saíram (12/10/2026) e o pedido interrompido
+  nao_sairam?: { motivo: string; texto: string; videos: number }[];
+  interrompido_em?: number | null;
+  interrompido_por?: "cliente" | "equipe" | null;
 };
 type Envio = { original: string; url: string; tipo: string };
 
@@ -267,6 +273,36 @@ function itemVideo(lote: string, v: Video): HTMLElement {
   return criar("li", { className: "video" }, itens);
 }
 
+// recarrega a lista de pedidos (definida em criarPedidos; o cartão a usa depois de parar um pedido)
+let recarregarLista: () => void = () => undefined;
+
+/** "Parar o pedido": o que não está num pod é cancelado, sem custo; o vídeo que já está sendo gerado termina. */
+function botaoParar(l: Lote): HTMLElement {
+  const parar = criar("button", { type: "button", className: "botao perigo", dados: { foco: `${l.lote}:parar` } }, [icone("bloquear"), "Parar o pedido"]);
+  parar.addEventListener("click", async () => {
+    const ok = await confirmar({
+      titulo: "Parar este pedido?",
+      texto: [
+        "Os vídeos prontos continuam com você. Os que faltam são cancelados e não são cobrados.",
+        "O vídeo que já está sendo gerado termina e, se sair certo, é entregue e cobrado.",
+      ],
+      confirmar: "Parar o pedido",
+      perigo: true,
+    });
+    if (!ok) return;
+    ocupado(parar, true);
+    try {
+      const r = await api<{ cancelados: number }>(`/api/lotes/${l.lote}/interromper`, { method: "POST" });
+      anunciar(`Pedido parado: ${plural(r.cancelados, "vídeo cancelado", "vídeos cancelados")}, sem custo.`);
+      recarregarLista();
+    } catch (e) {
+      ocupado(parar, false);
+      anunciar(textoErro(e), true);
+    }
+  });
+  return parar;
+}
+
 // satisfação depois de cada pedido terminado (pedido do dono, 12/10/2026): uma nota por pedido, de 1 a 5
 const NOTAS = NOTAS_SATISFACAO;
 
@@ -329,7 +365,7 @@ function cartaoAvaliacao(l: Lote): HTMLElement {
 }
 
 function cartaoLote(l: Lote): HTMLElement {
-  const estado = ESTADOS[l.status] ?? l.status;
+  const estado = l.interrompido_em && l.status.startsWith("concluido") ? "Interrompido" : (ESTADOS[l.status] ?? l.status);
   const cartao = criar("article", { className: `cartao lote estado-${l.status} surgir`, attrs: { "aria-label": `Pedido de ${plural(l.fotos, "foto", "fotos")}, ${estado}` } }, [
     criar("div", { className: "lote-cab" }, [
       criar("span", { className: `selo estado-${l.status}` }, [icone(l.status.startsWith("concluido") ? "ok" : l.status === "recusado" ? "alerta" : "relogio"), estado]),
@@ -392,8 +428,32 @@ function cartaoLote(l: Lote): HTMLElement {
     }
     cartao.append(criar("p", { className: "fraco", textContent: "Os links valem por 24 h; ao voltar à página, eles são renovados." }));
   }
-  const falhas = l.falhas ?? l.videos.filter((v) => v.status === "erro").length;
-  if (falhas) cartao.append(criar("p", { className: "fraco", textContent: `${plural(falhas, "vídeo não saiu", "vídeos não saíram")}.` }));
+  if (l.interrompido_em) {
+    const quem = l.interrompido_por === "cliente" ? "por você" : "pela equipe";
+    const resto = EM_ANDAMENTO.has(l.status) ? " O vídeo que já estava sendo gerado termina." : "";
+    cartao.append(criar("p", { className: "fraco", textContent: `Pedido parado ${quem} em ${quando(l.interrompido_em)}: os vídeos que faltavam foram cancelados, sem custo.${resto}` }));
+  }
+  const naoSairam = l.nao_sairam ?? [];
+  if (naoSairam.length) {
+    // por que cada vídeo não saiu (pedido do dono, 12/10/2026); nenhum deles é cobrado
+    const total = naoSairam.reduce((n, m) => n + m.videos, 0);
+    const quais = l.videos.filter((v) => v.motivo);
+    cartao.append(
+      criar("div", { className: "nao-sairam" }, [
+        criar("p", { className: "fraco", textContent: `${plural(total, "vídeo não saiu", "vídeos não saíram")} (sem custo):` }),
+        criar("ul", { className: "fraco motivos" }, naoSairam.map((m) => criar("li", { textContent: `${plural(m.videos, "vídeo", "vídeos")}: ${m.texto}` }))),
+        quais.length
+          ? criar("details", {}, [
+              criar("summary", { textContent: "Ver quais" }),
+              criar("ul", { className: "fraco" }, quais.map((v) => criar("li", { textContent: `${v.arquivo}: ${v.motivo}` }))),
+            ])
+          : null,
+      ]),
+    );
+  } else {
+    const falhas = l.falhas ?? l.videos.filter((v) => v.status === "erro").length;
+    if (falhas) cartao.append(criar("p", { className: "fraco", textContent: `${plural(falhas, "vídeo não saiu", "vídeos não saíram")}.` }));
+  }
   const excluidos = l.excluidos ?? l.videos.filter((v) => v.excluido).length;
   if (excluidos) cartao.append(criar("p", { className: "fraco", textContent: `${plural(excluidos, "vídeo excluído", "vídeos excluídos")} por você.` }));
   if (l.por_video && l.preco_video) {
@@ -407,6 +467,7 @@ function cartaoLote(l: Lote): HTMLElement {
     const devolvido = l.cobranca.devolvido ? ` · ${reais(l.cobranca.devolvido)} voltaram para o saldo` : "";
     cartao.append(criar("p", { className: "fraco", textContent: `Custo do pedido: ${reais(l.cobranca.cobrado)}${devolvido}` }));
   }
+  if (EM_ANDAMENTO.has(l.status) && l.status !== "aguardando_aprovacao" && !l.interrompido_em) cartao.append(criar("div", { className: "acoes-pedido" }, [botaoParar(l)]));
   if (l.pedir_avaliacao) cartao.append(cartaoAvaliacao(l));
   return cartao;
 }
@@ -558,7 +619,7 @@ export function criarPedidos(ctx: {
     const itens: ItemLista[] = lotes.map((l) => ({
       chave: l.lote,
       // sem as URLs assinadas (mudam a cada consulta): o cartão só é refeito quando algo muda de fato
-      assinatura: JSON.stringify([l.status, l.prontos, l.total, l.motivo, l.previsao && textoPrevisao(l.previsao), l.pedir_avaliacao, l.videos.map((v) => [v.arquivo, v.status, !!v.url, !!v.excluido])]),
+      assinatura: JSON.stringify([l.status, l.prontos, l.total, l.motivo, l.previsao && textoPrevisao(l.previsao), l.pedir_avaliacao, l.interrompido_em, l.nao_sairam, l.videos.map((v) => [v.arquivo, v.status, !!v.url, !!v.excluido])]),
       criar: () => cartaoLote(l),
     }));
     reconciliar(lotesAlvo, itens, () => vazio("Nenhum pedido ainda", "Quando você enviar fotos, os pedidos aparecem aqui."));
@@ -580,6 +641,7 @@ export function criarPedidos(ctx: {
     return lotes.some((l) => EM_ANDAMENTO.has(l.status));
   };
   const atualizacao = repetir(listar, 10000);
+  recarregarLista = () => atualizacao.agora();
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) document.title = document.title.replace(/^✓ Vídeos prontos · /, "");
   });

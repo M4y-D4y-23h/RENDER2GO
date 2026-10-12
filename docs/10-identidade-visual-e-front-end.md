@@ -121,6 +121,9 @@ Em `servico/web/src/css/componentes.css` (os de uma página só, em `paginas.css
 | Campo | `.campo`, `.dica`, `.contador`, `.senha` | Erro: `aria-invalid="true"`; dica ligada por `aria-describedby` |
 | Caixa de marcar grande | `.marcacao` (+ `.exigida`) | A área toda é clicável |
 | Satisfação do pedido | `.avaliacao-pedido` (+ `.notas-avaliacao`, `.notas-grade`, `.acoes-avaliacao`) | No fim do cartão de cada pedido terminado nos últimos 7 dias: a pergunta como `<legend>`, 5 `.marcacao` de rádio, "Enviar" e, embaixo, "Descartar e não ver novamente" (`.botao.fantasma`); sem escolha, aviso e foco na 1ª opção; enviado, o agradecimento recebe o foco |
+| Parar o pedido | `.acoes-pedido` + `.botao.perigo` (cliente); `.botao.pequeno.perigo` no histórico do painel | Só em pedido gerando e ainda não parado; confirmação antes ("os que faltam são cancelados, sem custo; o que está sendo gerado termina"); depois, a lista se atualiza e o cartão diz quem parou e quando |
+| Por que não saiu | `.nao-sairam` (+ `ul.motivos`, `details` "Ver quais") | Cliente: total "(sem custo)" e um item por motivo, pela categoria (`render2go_servico/motivos.py`); nunca a nota do filtro nem o texto técnico |
+| Vídeo barrado (painel) | `dialog.falhas` (+ `.lista-falhas`, `.falha`, `.quarentena.desfocado`) | Só o dono vê o vídeo e a folha, desfocados (`filter: blur`) até "Mostrar sem desfoque"; o aviso sobre criança ou adolescente fica junto; o foco vai para o botão de desfoque |
 | Cartão e passo | `.cartao` (+ `.elevado`), `.passo` | Passos numerados por contador CSS |
 | Aviso | `.aviso` + `info`, `ok`, `erro`, `alerta` | Sempre com ícone e texto |
 | Selo de estado | `.selo.estado-<status>`, `.selo.pessoas` | Cores dos estados (seção 1.3) |

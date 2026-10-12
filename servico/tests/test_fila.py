@@ -411,7 +411,8 @@ def test_worker_writes_why_it_left(monkeypatch, tmp_path):
 
 @com_ffmpeg
 def test_a_video_blocked_by_the_frame_filter_never_leaves_the_pod(ambiente, monkeypatch):
-    """ADR 0005: nota alta em algum quadro = nem o vídeo nem a folha de conferência saem do pod."""
+    """ADR 0005: nota alta em algum quadro = nem o vídeo nem a folha vão para o cliente; os dois vão para a
+    quarentena, que só o dono vê pelo painel (12/10/2026)."""
     import requests
 
     monkeypatch.setattr(fila, "ESPERA_S", 0.2)
@@ -423,7 +424,9 @@ def test_a_video_blocked_by_the_frame_filter_never_leaves_the_pod(ambiente, monk
     assert lote["status"] == "concluido_com_falhas" and lote["prontos"] == 0
     (job,) = [j for j in ambiente.banco.jobs(lid) if j["tipo"] == "render"]
     assert job["barrado_em"] and job["tentativas"] == 1 and job["nsfw"] == pytest.approx(0.9)  # não refaz
-    assert not any(k.startswith("saida/") for k in ambiente.objetos)  # nada enviado
+    assert not any(k.startswith("saida/") for k in ambiente.objetos)  # nada para o cliente
+    quarentena = sorted(k.rsplit("/", 1)[1] for k in ambiente.objetos if k.startswith("quarentena/"))
+    assert quarentena == ["bolo-v1.jpg", "bolo-v1.mp4"] and job["quarentena_em"]
 
 
 @com_ffmpeg

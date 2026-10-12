@@ -1,6 +1,6 @@
 // Painel: revisão dos pedidos (nada vai para a GPU sem aprovação; ADR 0004) e o histórico, com o uso por IP e
 // por dispositivo. No pedido em sequência, cada foto com texto próprio mostra esse texto embaixo da miniatura.
-import { ESTADOS, NOTAS_SATISFACAO, anunciar, api, aviso, baixarJson, confirmar, criar, curto, el, icone, marcarErro, ocupado, plural, quando, reconciliar, tempo, textoErro, urlSegura, vazio } from "./comum";
+import { ESTADOS, NOTAS_SATISFACAO, anunciar, api, aviso, baixarJson, confirmar, criar, curto, dialogo, el, icone, marcarErro, ocupado, plural, quando, reconciliar, rotular, tempo, textoErro, urlSegura, vazio } from "./comum";
 import { type Controle, controle, erroDeAcao, erroDeCarga, iniciarAbas, pode, semLinhas, tabela, tempoCurto, trocar } from "./painel-base";
 
 // análise automática de cada foto (render2go_servico/pessoas.py); null = ainda analisando
@@ -31,6 +31,10 @@ type Pendente = {
 };
 type ItemHistorico = {
   lote: string;
+  // por que os vídeos não saíram e o pedido parado (12/10/2026)
+  nao_sairam?: { motivo: string; texto: string; videos: number }[];
+  interrompido_em?: number | null;
+  interrompido_por?: string | null;
   cliente: string;
   cliente_nome: string;
   plano: string;
@@ -232,6 +236,99 @@ function cartaoPendente(p: Pendente, aoMudar: () => void, imagens: Map<string, H
   ]);
 }
 
+// por que os vídeos não saíram (12/10/2026): o rótulo curto do painel para cada motivo (render2go_servico.motivos)
+const MOTIVOS_CURTOS: Record<string, string> = {
+  filtro_imagem: "barrados pelo filtro de imagem",
+  conferencia: "reprovados na conferência",
+  texto: "com o texto recusado pelo filtro",
+  traducao: "sem tradução do texto",
+  foto: "com problema na foto",
+  interrompido_cliente: "cancelados: o cliente parou",
+  interrompido_painel: "cancelados: a equipe parou",
+  prazo_fotos: "cancelados: 7 dias das fotos",
+  tecnico: "com erro técnico",
+};
+type Falha = {
+  job: string;
+  arquivo: string;
+  status: string;
+  motivo: string;
+  erro: string | null;
+  tentativas: number;
+  nsfw: number | null;
+  deriva_cor: number | null;
+  salto_cor: number | null;
+  similaridade: number | null;
+  quarentena: boolean;
+};
+
+const numeroOu = (v: number | null, casas = 2) => (v === null || v === undefined ? "—" : v.toLocaleString("pt-BR", { maximumFractionDigits: casas }));
+
+/** O vídeo barrado na quarentena (só o dono, ADR 0005): desfocado até a pessoa pedir; cada abertura fica na auditoria. */
+async function verQuarentena(f: Falha, alvo: HTMLElement, botao: HTMLButtonElement): Promise<void> {
+  ocupado(botao, true);
+  try {
+    const q = await api<{ video: string; folha: string; expira_s: number }>(`api/jobs/${encodeURIComponent(f.job)}/quarentena`);
+    const video = urlSegura(q.video);
+    const folha = urlSegura(q.folha);
+    const midia = criar("div", { className: "quarentena desfocado" }, [
+      video ? criar("video", { src: video, controls: true, preload: "metadata", attrs: { "aria-label": `Vídeo barrado ${f.arquivo}` } }) : null,
+      folha ? criar("img", { src: folha, alt: `Quadros do vídeo barrado ${f.arquivo}`, loading: "lazy" }) : null,
+    ]);
+    const mostrar = criar("button", { type: "button", className: "botao pequeno", dados: { foco: `${f.job}:desfoque` } }, ["Mostrar sem desfoque"]);
+    mostrar.addEventListener("click", () => rotular(mostrar, midia.classList.toggle("desfocado") ? "Mostrar sem desfoque" : "Desfocar de novo"));
+    alvo.replaceChildren(
+      criar("p", {
+        className: "fraco",
+        textContent:
+          "O filtro considerou este vídeo impróprio. Cada abertura fica na auditoria; os links valem 10 min e o vídeo é apagado 7 dias depois de barrado. Se aparecer criança ou adolescente, não baixe nem compartilhe: denuncie em new.safernet.org.br e procure orientação jurídica.",
+      }),
+      mostrar,
+      midia,
+    );
+    botao.remove();
+    mostrar.focus();
+  } catch (e) {
+    ocupado(botao, false);
+    aviso(alvo, textoErro(e), "erro");
+  }
+}
+
+/** Cada vídeo do pedido que não saiu: o motivo que o cliente vê, o texto técnico e as notas dos filtros. */
+async function janelaFalhas(x: ItemHistorico, origem: HTMLElement): Promise<void> {
+  const { d, corpo } = dialogo(`Vídeos que não saíram · ${x.cliente_nome}`, "falhas");
+  d.addEventListener("close", () => {
+    d.remove();
+    origem.focus();
+  });
+  const lista = criar("div", { className: "lista-falhas" }, [criar("p", { className: "fraco", textContent: "Carregando…" })]);
+  corpo.append(lista);
+  d.showModal();
+  try {
+    const r = await api<{ videos: Falha[] }>(`api/lotes/${encodeURIComponent(x.lote)}/falhas`);
+    lista.replaceChildren(
+      ...r.videos.map((f) => {
+        const area = criar("div", { className: "area-quarentena" });
+        const notas = [plural(f.tentativas, "tentativa", "tentativas"), `filtro de imagem ${numeroOu(f.nsfw)}`, `1º quadro ${numeroOu(f.similaridade, 3)}`, `deriva ${numeroOu(f.deriva_cor, 1)}`, `salto ${numeroOu(f.salto_cor, 1)}`];
+        const itens: (Node | null)[] = [
+          criar("strong", { textContent: f.arquivo }),
+          criar("p", { textContent: f.motivo }),
+          criar("p", { className: "fraco", textContent: `${f.erro ?? "sem detalhe"} · ${notas.join(" · ")}` }),
+        ];
+        if (f.quarentena && pode("GET /api/jobs/{job_id}/quarentena")) {
+          const ver = criar("button", { type: "button", className: "botao pequeno", dados: { foco: `${f.job}:quarentena` } }, [icone("play"), "Ver o vídeo barrado"]);
+          ver.addEventListener("click", () => void verQuarentena(f, area, ver));
+          itens.push(ver);
+        }
+        itens.push(area);
+        return criar("article", { className: "falha" }, itens);
+      }),
+    );
+  } catch (e) {
+    aviso(lista, textoErro(e), "erro");
+  }
+}
+
 function itemHistorico(x: ItemHistorico, aoMudar: () => void): HTMLElement {
   const msg = criar("div", { className: "aviso", hidden: true });
   const detalhes: string[] = [];
@@ -242,6 +339,7 @@ function itemHistorico(x: ItemHistorico, aoMudar: () => void): HTMLElement {
   detalhes.push(x.autorizado_em ? `autorização marcada em ${quando(x.autorizado_em)}` : "sem autorização marcada");
   if (x.modelo) detalhes.push(`modelo ${x.modelo}`);
   if (x.avaliacao) detalhes.push(`satisfação do cliente: ${NOTAS_SATISFACAO[x.avaliacao - 1] ?? x.avaliacao}`);
+  if (x.interrompido_em) detalhes.push(`parado em ${quando(x.interrompido_em)} por ${x.interrompido_por === "cliente" ? "o cliente" : (x.interrompido_por ?? "?")}`);
   const registro = criar("button", { type: "button", className: "botao pequeno", dados: { foco: `${x.lote}:auditoria` } }, [icone("baixar"), "Baixar registro de auditoria"]);
   registro.addEventListener("click", async () => {
     ocupado(registro, true);
@@ -256,6 +354,37 @@ function itemHistorico(x: ItemHistorico, aoMudar: () => void): HTMLElement {
   const acoes = criar("div", { className: "acoes" }, [registro]);
   // filtro de imagem nos quadros (ADR 0005): o vídeo não foi entregue; o registro de auditoria tem a nota
   if (x.barrados) acoes.append(criar("span", { className: "selo erro" }, [icone("alerta"), `${plural(x.barrados, "vídeo barrado", "vídeos barrados")} pelo filtro de imagem`]));
+  const naoSairam = (x.nao_sairam ?? []).reduce((n, m) => n + m.videos, 0);
+  if (naoSairam && pode("GET /api/lotes/{lote_id}/falhas")) {
+    const ver = criar("button", { type: "button", className: "botao pequeno", dados: { foco: `${x.lote}:falhas` } }, [icone("alerta"), `Ver os que não saíram (${naoSairam})`]);
+    ver.addEventListener("click", () => void janelaFalhas(x, ver));
+    acoes.append(ver);
+  }
+  if ((x.status === "aprovado" || x.status === "processando") && !x.interrompido_em && pode("POST /api/lotes/{lote_id}/interromper")) {
+    const parar = criar("button", { type: "button", className: "botao pequeno perigo", dados: { foco: `${x.lote}:parar` } }, [icone("bloquear"), "Parar o pedido"]);
+    parar.addEventListener("click", async () => {
+      const ok = await confirmar({
+        titulo: "Parar este pedido?",
+        texto: [
+          `Os vídeos que faltam do pedido de ${x.cliente_nome} são cancelados, sem custo; os prontos ficam com o cliente.`,
+          "O vídeo que já está sendo gerado termina. O cliente vê que a equipe parou o pedido.",
+        ],
+        confirmar: "Parar o pedido",
+        perigo: true,
+      });
+      if (!ok) return;
+      ocupado(parar, true);
+      try {
+        const r = await api<{ cancelados: number }>(`api/lotes/${encodeURIComponent(x.lote)}/interromper`, { method: "POST" });
+        anunciar(`Pedido parado: ${plural(r.cancelados, "vídeo cancelado", "vídeos cancelados")}.`);
+        aoMudar();
+      } catch (e) {
+        ocupado(parar, false);
+        erroDeAcao(e, msg);
+      }
+    });
+    acoes.append(parar);
+  }
   if (!x.cliente_ativo) acoes.append(criar("span", { className: "selo erro" }, [icone("bloquear"), "Conta desativada"]));
   else if (pode("POST /api/clientes/{cliente_id}/desativar")) {
     const botao = criar("button", { type: "button", className: "botao pequeno perigo", dados: { foco: `${x.lote}:desativar` } }, [icone("bloquear"), "Desativar esta conta"]);
@@ -289,6 +418,9 @@ function itemHistorico(x: ItemHistorico, aoMudar: () => void): HTMLElement {
     criar("p", { className: "pedido", textContent: x.prompt }),
     meta([plural(x.fotos, "foto", "fotos"), `IP ${x.ip ?? "—"}`, `dispositivo ${curto(x.dispositivo)}`]),
     criar("p", { className: "fraco", textContent: detalhes.join(" · ") }),
+    x.nao_sairam?.length
+      ? criar("p", { className: "fraco", textContent: `Não saíram: ${x.nao_sairam.map((m) => `${m.videos} ${MOTIVOS_CURTOS[m.motivo] ?? m.texto}`).join(" · ")}` })
+      : null,
   ];
   if (x.motivo) {
     const m = criar("div");

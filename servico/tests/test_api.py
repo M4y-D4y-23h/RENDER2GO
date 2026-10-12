@@ -548,10 +548,11 @@ def test_history_ip_usage_and_client_deactivation(api):
 def test_content_filter_blocks_at_entry_and_on_compiled_prompt(api):
     tok = _cliente(api)
     r = _lote(api, tok, prompt="um homem segura uma arma")
-    # o cliente vê as regras, nunca qual palavra ou categoria barrou (ajudava a testar sinônimos)
+    # o cliente vê a categoria que barrou (decisão do dono, 12/10/2026), nunca a palavra nem o código interno
     assert r.status_code == 422 and "filtro de conteúdo" in r.json()["detail"]
-    assert "armas" in r.json()["detail"] and "C1" not in r.json()["detail"]  # a lista é a dos termos
-    assert r.json()["detail"] == _lote(api, tok, prompt="uma modelo pelada").json()["detail"]
+    assert "ele pede armas" in r.json()["detail"] and "C1" not in r.json()["detail"]
+    nua = _lote(api, tok, prompt="uma modelo pelada").json()["detail"]
+    assert "ele pede conteúdo sexual ou adulto" in nua and "pelada" not in nua
     # a categoria fica no registro de acesso (Marco Civil), para o dono ver quem insiste
     with api.banco.tx() as c:
         regs = c.all("SELECT detalhe FROM acessos WHERE evento = 'pedido_recusado_filtro'")
@@ -906,9 +907,13 @@ def test_the_frame_filter_is_required_and_a_blocked_video_never_reaches_the_clie
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
     assert lote["status"] == "concluido_com_falhas" and lote["prontos"] == 0
     assert lote["cobranca"] == {"cobrado": 0, "devolvido": 0}  # como todo vídeo que não sai (ADR 0012)
-    assert "barrado" not in json.dumps(lote) and not any(v.get("url") for v in lote["videos"])
-    # o dono vê no histórico e no registro de auditoria
+    # o cliente vê o motivo (decisão do dono, 12/10/2026), nunca a nota do filtro nem um link do vídeo
+    texto = "barrado pelo filtro de imagem: o vídeo gerado mostrava conteúdo impróprio"
+    assert [v.get("motivo") for v in lote["videos"]] == [texto, texto] and "nota" not in json.dumps(lote)
+    assert lote["nao_sairam"] == [{"motivo": "filtro_imagem", "texto": texto, "videos": 2}]
+    assert not any(v.get("url") for v in lote["videos"])
+    # o dono vê no histórico (por motivo) e no registro de auditoria
     (x,) = [x for x in api.get(f"{PAINEL}/api/historico", headers=ADM).json()["lotes"] if x["lote"] == lid]
-    assert x["barrados"] == 2
+    assert x["barrados"] == 2 and x["nao_sairam"] == [{"motivo": "filtro_imagem", "texto": texto, "videos": 2}]
     aud = api.get(f"{PAINEL}/api/lotes/{lid}/auditoria", headers=ADM).json()
     assert sum(e["tipo"] == "video_barrado" for e in aud["eventos"]) == 2

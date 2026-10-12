@@ -21,3 +21,8 @@ def chave_entrada(cliente: str, lote: str, nome: str) -> str:
 
 def chave_saida(cliente: str, lote: str, nome: str) -> str:
     return f"saida/{cliente}/{lote}/{nome}"
+
+
+def chave_quarentena(cliente: str, lote: str, nome: str) -> str:
+    """Vídeo barrado pelo filtro de imagem e a folha dele: só o dono vê, pelo painel (ADR 0005), por 7 dias."""
+    return f"quarentena/{cliente}/{lote}/{nome}"

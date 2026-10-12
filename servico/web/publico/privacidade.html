@@ -16,7 +16,7 @@
 <meta name="format-detection" content="telephone=no">
 <meta name="application-name" content="Render2Go">
 <meta name="apple-mobile-web-app-title" content="Render2Go">
-<link rel="stylesheet" href="/estatico/estilo.css?v=1bbbd43fccb7" integrity="sha384-6VU0oM/PpIn66o2/RsslgrucvzvYLFM8YxLyicOV/4XymNsU97ann30Wodm+zBlN">
+<link rel="stylesheet" href="/estatico/estilo.css?v=a1d33e084c7e" integrity="sha384-w6ZsMP4eNE7fKIHWBY/vxnC9ykVzDtwpT/LUyKyjNhrDJ3xH5Cw7ZQShwDaWhzvj">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -59,8 +59,8 @@
 <article class="recipiente estreito texto-legal com-indice">
 <div class="cab-pagina">
 <h1>Política de Privacidade</h1>
-<p class="lead">Versão privacidade-v3, de 11 de outubro de 2026 (as anteriores: privacidade-v2, de 10 de outubro, e privacidade-v1, de 9 de outubro de 2026). Explica como tratamos dados pessoais, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).</p>
-<p>O que mudou nesta versão: o filtro automático de imagem que confere cada vídeo gerado antes da entrega (seção 6), o registro do pedido recusado pelo filtro de conteúdo, com o texto enviado (registros de acesso), e a avaliação de satisfação de cada pedido, se você responder. Na versão 2: nome e sobrenome no perfil, foto do Gravatar (só se você ligar), verificação em duas etapas, troca de e-mail, lista de aparelhos conectados, desativar a conta, preferência de tema e a exclusão de um vídeo pela tela Logs.</p>
+<p class="lead">Versão privacidade-v4, de 12 de outubro de 2026 (as anteriores: privacidade-v3, de 11 de outubro, privacidade-v2, de 10 de outubro, e privacidade-v1, de 9 de outubro de 2026). Explica como tratamos dados pessoais, conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018, LGPD).</p>
+<p>O que mudou nesta versão: o vídeo barrado pelo filtro automático de imagem fica guardado por até 7 dias, numa área separada, só para a revisão da equipe (seção 6). Na versão 3: o filtro automático de imagem que confere cada vídeo gerado antes da entrega (seção 6), o registro do pedido recusado pelo filtro de conteúdo, com o texto enviado (registros de acesso), e a avaliação de satisfação de cada pedido, se você responder. Na versão 2: nome e sobrenome no perfil, foto do Gravatar (só se você ligar), verificação em duas etapas, troca de e-mail, lista de aparelhos conectados, desativar a conta, preferência de tema e a exclusão de um vídeo pela tela Logs.</p>
 </div>
 <nav aria-labelledby="t-indice" class="indice">
 <h2 id="t-indice">Nesta página</h2>
@@ -100,6 +100,7 @@
 <tr><td>Identificador aleatório do aparelho, idioma, tela, fuso e outros sinais do navegador (e um resumo deles); verificação “não sou um robô”</td><td>Prevenir robôs, contas falsas e abuso do teste gratuito</td><td>Legítimo interesse (IX)</td></tr>
 <tr><td>Fotos enviadas, texto do pedido e vídeos gerados</td><td>Gerar e entregar os vídeos; revisão humana do pedido</td><td>Execução do contrato (V)</td></tr>
 <tr><td>Análise automática “contém pessoas” das fotos e o resumo (SHA-256) de cada foto</td><td>Alertar o revisor quando há pessoas, para conferir a autorização; auditoria</td><td>Legítimo interesse (IX), em proteção das pessoas retratadas</td></tr>
+<tr><td>Vídeo gerado que o filtro automático de imagem barrou, com a nota do filtro (guardado por até 7 dias, sem acesso pelo cliente)</td><td>Revisão humana da decisão automática e apuração de uso indevido do serviço</td><td>Legítimo interesse (IX) e exercício regular de direitos (VI)</td></tr>
 <tr><td>Declaração de autorização de imagem (texto, versão, data, IP, aparelho e sinais do navegador)</td><td>Provar que a autorização foi declarada</td><td>Exercício regular de direitos (VI)</td></tr>
 <tr><td>Recargas: valor, situação, identificador do Pix e os 4 últimos dígitos do CPF/CNPJ</td><td>Creditar o saldo, conciliar pagamentos, obrigações fiscais</td><td>Execução do contrato (V) e obrigação legal (II)</td></tr>
 <tr><td>Mensagens ao suporte e e-mail para resposta</td><td>Responder e resolver o seu pedido</td><td>Execução do contrato (V) e legítimo interesse (IX)</td></tr>
@@ -130,6 +131,7 @@
 <ul>
 <li><strong>Fotos enviadas:</strong> apagadas quando o pedido termina (no máximo 7 dias).</li>
 <li><strong>Vídeos gerados:</strong> 30 dias, ou até você excluir o vídeo na tela Logs da sua conta.</li>
+<li><strong>Vídeos barrados pelo filtro de imagem:</strong> 7 dias, numa área separada, sem acesso pelo cliente; depois, apagados.</li>
 <li><strong>Códigos de entrada:</strong> valem 10 minutos e são apagados em até 2 dias.</li>
 <li><strong>Registros de acesso:</strong> 6 meses (Marco Civil da Internet), depois apagados.</li>
 <li><strong>Extrato, recargas e pagamentos:</strong> 5 anos (obrigações fiscais e de consumo).</li>
@@ -151,7 +153,7 @@
 <section id="decisoes-automatizadas" aria-labelledby="t-automaticas">
 <h2 id="t-automaticas">6. Decisões automatizadas</h2>
 <p>Filtros automáticos de conteúdo e a detecção de pessoas ajudam a revisão, mas a decisão de aprovar ou recusar um pedido é de uma pessoa. Se um pedido seu for recusado, o motivo aparece no seu painel e você pode pedir revisão pelo suporte.</p>
-<p>Depois de gerado, cada vídeo passa ainda por um <strong>filtro automático de imagem</strong>, que procura nudez nos quadros. O vídeo barrado por ele não é entregue nem guardado, e o valor dele volta para o seu saldo; ficam só o registro de que foi barrado e a nota do filtro. Essa decisão é automática: você pode pedir a revisão dela pelo suporte, e uma pessoa confere o pedido e a foto.</p>
+<p>Depois de gerado, cada vídeo passa ainda por um <strong>filtro automático de imagem</strong>, que procura nudez nos quadros. O vídeo barrado por ele não é entregue nem cobrado, e você vê o motivo no pedido. Ele fica guardado por até 7 dias numa área separada, que só o responsável pelo serviço acessa, com registro de cada acesso, para a revisão humana da decisão automática e para apurar uso indevido do serviço (LGPD, art. 20, e legítimo interesse); depois, é apagado. Ficam o registro de que foi barrado e a nota do filtro. Você pode pedir a revisão da decisão pelo suporte, e uma pessoa confere o pedido, a foto e o vídeo.</p>
 </section>
 <section id="seguranca" aria-labelledby="t-seguranca">
 <h2 id="t-seguranca">7. Segurança</h2>

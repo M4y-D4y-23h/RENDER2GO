@@ -2163,3 +2163,66 @@ html:not([data-convite]) #convite {
   justify-items: start;
   gap: var(--esp-1);
 }
+
+/* por que os vídeos não saíram (12/10/2026) e "Parar o pedido" */
+.nao-sairam {
+  display: grid;
+  gap: var(--esp-1);
+}
+
+.nao-sairam p,
+.nao-sairam ul {
+  margin: 0;
+}
+
+.nao-sairam ul {
+  padding-left: 1.25rem;
+}
+
+.acoes-pedido {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+  margin-top: var(--esp-2);
+}
+
+/* painel: os vídeos que não saíram e o vídeo barrado na quarentena (desfocado até o dono pedir; ADR 0005) */
+.lista-falhas {
+  display: grid;
+  gap: var(--esp-3);
+}
+
+.lista-falhas .falha {
+  display: grid;
+  gap: var(--esp-1);
+  padding-bottom: var(--esp-3);
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.lista-falhas .falha p {
+  margin: 0;
+}
+
+.area-quarentena:empty {
+  display: none;
+}
+
+.area-quarentena,
+.quarentena {
+  display: grid;
+  gap: var(--esp-2);
+}
+
+.quarentena video,
+.quarentena img {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie-2);
+}
+
+.quarentena.desfocado video,
+.quarentena.desfocado img {
+  filter: blur(28px);
+}
