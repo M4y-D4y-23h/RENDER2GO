@@ -4,6 +4,7 @@ compilador falso e um "ComfyUI" falso que gera o vídeo a partir da foto prepara
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -466,3 +467,153 @@ def test_the_image_filter_is_preloaded_when_the_models_are_ready(monkeypatch, tm
     assert w.estado_modelos() == "esperando" and not c.carregado.is_set()
     estado.write_text("PRONTO\n")
     assert w.estado_modelos() == "ok" and c.carregado.wait(5)
+
+
+def _em_andamento(amb, lid, n, prazo=10):
+    """Espera `n` vídeos do pedido num pod (o adiantado inclusive)."""
+    fim = time.monotonic() + prazo
+    while time.monotonic() < fim:
+        jobs = [j for j in amb.banco.jobs(lid) if j["tipo"] == "render" and j["status"] == "em_andamento"]
+        if len(jobs) >= n:
+            return True
+        time.sleep(0.02)
+    return False
+
+
+@com_ffmpeg
+@pytest.mark.parametrize("adiantar", [True, False])
+def test_the_gpu_does_not_wait_for_the_upload_or_the_next_photo(ambiente, monkeypatch, tmp_path, adiantar):
+    """12/10/2026: enquanto a GPU gera um vídeo, o próximo já está pego e preparado e o anterior é conferido e
+    enviado. Aqui, o envio do 1º vídeo só termina depois que o 2º começa na GPU; um de cada vez, nunca."""
+    import requests
+
+    monkeypatch.setattr(fila, "ESPERA_S", 0.2)
+    fotos = {f"f{i}.png": _png((40 + 60 * i, 90, 160), "circulo") for i in range(3)}
+    lid, hc = _lote_aprovado(ambiente, fotos)
+    gerar, na_gpu, segundo = _submit_de(), [], threading.Event()
+
+    def submit(a):
+        na_gpu.append(a.image)
+        if len(na_gpu) == 2:
+            segundo.set()
+        return gerar(a)
+
+    enviar, esperou = media.upload, []
+
+    def upload(url, path, tipo):
+        if tipo == "video/mp4" and not esperou:  # o 1º vídeo: o 2º já está na GPU?
+            esperou.append(segundo.wait(10 if adiantar else 1))
+        return enviar(url, path, tipo)
+
+    monkeypatch.setattr(media, "upload", upload)
+    pastas = tmp_path / "tmp"
+    pastas.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(pastas))
+    w = _worker(ambiente, submit)
+    w.cfg.adiantar = adiantar
+    assert w.rodar() == 0
+    assert esperou == [adiantar] and not list(pastas.iterdir())
+    lote = requests.get(f"{ambiente.url}/api/lotes/{lid}", headers=hc).json()
+    assert lote["status"] == "concluido" and lote["prontos"] == 3
+    assert len(w.medidas) == 3 and all({"preparo", "espera_gpu", "gpu", "envio"} <= set(m) for m in w.medidas)
+    jobs = [j for j in ambiente.banco.jobs(lid) if j["tipo"] == "render"]
+    assert all(j["tentativas"] == 1 and j["segundos"] is not None for j in jobs)
+
+
+@com_ffmpeg
+def test_a_video_picked_ahead_is_not_rendered_when_the_client_stops_the_order(ambiente, monkeypatch):
+    import requests
+
+    monkeypatch.setattr(fila, "ESPERA_S", 0.2)
+    lid, hc = _lote_aprovado(ambiente, {f"f{i}.png": _png((40 + 90 * i, 90, 160), "circulo") for i in range(2)})
+    gerar, na_gpu = _submit_de(), []
+
+    def submit(a):  # durante o 1º vídeo, o 2º já foi pego; o cliente para o pedido
+        na_gpu.append(a.image)
+        if len(na_gpu) == 1:
+            assert _em_andamento(ambiente, lid, 2)
+            assert requests.post(f"{ambiente.url}/api/lotes/{lid}/interromper", headers=hc).json()["cancelados"] == 0
+        return gerar(a)
+
+    assert _worker(ambiente, submit).rodar() == 0
+    assert len(na_gpu) == 1  # o adiantado não foi para a GPU
+    lote = requests.get(f"{ambiente.url}/api/lotes/{lid}", headers=hc).json()
+    assert lote["status"] == "concluido_com_falhas" and lote["prontos"] == 1
+    assert lote["nao_sairam"][0]["motivo"] == "interrompido_cliente" and lote["nao_sairam"][0]["videos"] == 1
+    assert lote["cobranca"]["cobrado"] == lote["preco_video"]  # só o entregue
+
+
+@com_ffmpeg
+def test_when_the_gpu_fails_the_video_picked_ahead_goes_back_without_an_attempt(ambiente, monkeypatch, tmp_path):
+    monkeypatch.setattr(fila, "ESPERA_S", 0.2)
+    lid, _ = _lote_aprovado(ambiente, {f"f{i}.png": _png((40 + 90 * i, 90, 160), "circulo") for i in range(2)})
+
+    def submit(a):
+        assert _em_andamento(ambiente, lid, 2)
+        return cli_submit.EXIT_UNREACHABLE, {"error": "ComfyUI fora do ar"}
+
+    pastas = tmp_path / "tmp"
+    pastas.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(pastas))  # as pastas dos vídeos, para conferir a limpeza
+    w = _worker(ambiente, submit)
+    w.cfg.motivo_em = tmp_path / "fila.motivo"
+    assert w.rodar() == 0 and w.cfg.motivo_em.read_text() == "gpu\n"
+    jobs = sorted((j for j in ambiente.banco.jobs(lid) if j["tipo"] == "render"), key=lambda j: j["arquivo"])
+    assert [(j["status"], j["tentativas"]) for j in jobs] == [("pendente", 1), ("pendente", 0)]
+    assert not list(pastas.iterdir())  # nem a foto do adiantado fica no disco
+
+
+@com_ffmpeg
+def test_near_the_pod_time_limit_the_next_video_is_not_picked_ahead(ambiente, monkeypatch):
+    monkeypatch.setattr(fila, "ESPERA_S", 0.2)
+    lid, _ = _lote_aprovado(ambiente, {f"f{i}.png": _png((40 + 90 * i, 90, 160), "circulo") for i in range(2)})
+    gerar, no_pod = _submit_de(), []
+
+    def submit(a):  # durante o 1º vídeo, o 2º não é pego (esperando 1 s para dar tempo a ele)
+        no_pod.append(_em_andamento(ambiente, lid, 2, prazo=1))
+        return gerar(a)
+
+    w = _worker(ambiente, submit)
+    w.cfg.ate = time.time() + fila.GPU_PADRAO_S / 2  # cabe um vídeo, não dois
+    assert w.rodar() == 0 and no_pod[0] is False
+
+
+def test_the_gpu_warms_up_only_when_there_is_no_order_waiting(monkeypatch):
+    monkeypatch.setenv("RENDER2GO_SAFETY", "c1-revisao-humana")
+    monkeypatch.setattr(fila, "ESPERA_S", 0.01)
+    chamadas = []
+
+    def submit(a):
+        chamadas.append((a.width, a.height, a.duration, a.prompt_en))
+        assert a.image.is_file()
+        a.out.write_bytes(b"x")
+        return cli_submit.EXIT_OK, {}
+
+    class Vazia:
+        def reivindicar(self, tipos=None):
+            return None
+
+    cfg = fila.Config(comfy=["x"], ocioso_s=0.05, aquecer=True)
+    assert fila.WorkerFila(Vazia(), cfg, submit=submit).rodar() == 0
+    assert chamadas == [(256, 256, 3, fila.AQUECER_PROMPT)]  # uma vez só, e nada sai do pod
+
+    def falha(a):
+        raise RuntimeError("ComfyUI fora do ar")
+
+    cfg = fila.Config(comfy=["x"], ocioso_s=0.05, aquecer=True)  # aquecer que falha não muda nada
+    assert fila.WorkerFila(Vazia(), cfg, submit=falha).rodar() == 0
+
+
+@com_ffmpeg
+def test_with_an_order_waiting_the_gpu_does_not_warm_up(ambiente, monkeypatch):
+    monkeypatch.setattr(fila, "ESPERA_S", 0.2)
+    _lote_aprovado(ambiente, {"bolo.png": _png((40, 90, 160), "circulo")})
+    gerar, prompts = _submit_de(), []
+
+    def submit(a):
+        prompts.append(a.prompt_en)
+        return gerar(a)
+
+    w = _worker(ambiente, submit)
+    w.cfg.aquecer = True
+    assert w.rodar() == 0 and len(prompts) == 1 and fila.AQUECER_PROMPT not in prompts

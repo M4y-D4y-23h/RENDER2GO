@@ -3003,6 +3003,45 @@ class Banco:
             self._fechar_lote(c, job["lote_id"])
             return {**job, "status": novo}
 
+    def iniciar(self, job_id: str, worker: str, lease_s: float = 900) -> bool:
+        """O pod vai pôr na GPU um vídeo que pegou adiantado (render2go_worker.fila, 12/10/2026: a GPU não espera,
+        o próximo vídeo é pego e preparado enquanto ela gera o atual). O prazo do pod recomeça aqui. Se o pedido foi
+        parado enquanto o vídeo esperava no pod, ele é cancelado, sem custo, como os outros que ainda não tinham
+        ido para a GPU, e o pod não o gera (False)."""
+        agora = time.time()
+        with self.tx() as c:
+            job = c.one(
+                "SELECT j.id, j.lote_id, j.worker, j.status, l.interrompido_em, l.interrompido_por FROM jobs j"
+                " JOIN lotes l ON l.id = j.lote_id WHERE j.id = ?" + (" FOR UPDATE OF j" if self.pg else ""),
+                (job_id,),
+            )
+            if job is None or job["worker"] != worker or job["status"] != "em_andamento":
+                raise BancoError("job não está com este worker")
+            if job["interrompido_em"] is None:
+                c.run("UPDATE jobs SET lease_ate = ?, atualizado = ? WHERE id = ?", (agora + lease_s, agora, job_id))
+                return True
+            c.run(
+                "UPDATE jobs SET status = 'cancelado', erro = ?, worker = NULL, lease_ate = NULL, atualizado = ?"
+                " WHERE id = ?",
+                (erro_interrompido(job["interrompido_por"]), agora, job_id),
+            )
+            self.evento(c, job["lote_id"], "interrompido_resto", {"cancelados": 1})
+            self._fechar_lote(c, job["lote_id"])
+            return False
+
+    def devolver(self, job_id: str, worker: str) -> None:
+        """Vídeo pego adiantado que o pod não vai gerar (o laço dele parou: limite de tempo, GPU ou filtro): volta
+        para a fila sem contar tentativa, porque nunca foi para a GPU."""
+        with self.tx() as c:
+            n = c.run(
+                "UPDATE jobs SET status = 'pendente', worker = NULL, lease_ate = NULL, atualizado = ?,"
+                " tentativas = CASE WHEN tentativas > 0 THEN tentativas - 1 ELSE 0 END"
+                " WHERE id = ? AND worker = ? AND status = 'em_andamento'",
+                (time.time(), job_id, worker),
+            )
+            if not n:
+                raise BancoError("job não está com este worker")
+
     def vencer_pedidos(self) -> int:
         """Para o orquestrador, a cada ciclo: ver `_vencer_pedidos`."""
         with self.tx() as c:

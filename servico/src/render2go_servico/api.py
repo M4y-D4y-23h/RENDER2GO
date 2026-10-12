@@ -84,6 +84,10 @@ encerrado; o nome do worker vem do token), sem porta de entrada nos pods (eles p
     POST /api/worker/jobs/{id}/concluir  "ok" de render só com o vídeo no armazenamento, a
                                        conferência do 1º quadro acima do limiar e a da
                                        continuidade dentro dos limites (docs/08)
+    POST /api/worker/jobs/{id}/iniciar   vídeo pego adiantado indo para a GPU: renova o prazo; com
+                                       o pedido parado, cancela sem custo (a GPU não espera)
+    POST /api/worker/jobs/{id}/devolver  vídeo pego adiantado que o pod não vai gerar: volta para
+                                       a fila sem contar tentativa
 
 Páginas: / (cliente), /suporte, /termos, /privacidade e /cookies, e o painel no caminho secreto,
 compiladas em servico/web/publico (docs/10). Os arquivos de /estatico/ levam ?v=<hash> e ficam um ano
@@ -1030,6 +1034,10 @@ class InteresseIn(BaseModel):
 
 class RecusaIn(BaseModel):
     motivo: str = Field(min_length=3, max_length=500)
+
+
+class WorkerIn(BaseModel):
+    worker: str = Field(min_length=3, max_length=100)
 
 
 class ReivindicarIn(BaseModel):
@@ -3667,6 +3675,30 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(409, str(e)) from e
         _se_fechou(c, job["lote_id"])
         return {"status": r["status"]}
+
+    @app.post("/api/worker/jobs/{job_id}/iniciar")
+    def iniciar(job_id: str, body: WorkerIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
+        """Vídeo pego adiantado indo para a GPU: renova o prazo; com o pedido parado, cancela (seguir: false)."""
+        _mesmo_worker(dono, body.worker)
+        job = _do_worker(job_id, body.worker, c)
+        try:
+            seguir = c.banco.iniciar(job_id, body.worker)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        if not seguir:
+            _se_fechou(c, job["lote_id"])
+        return {"seguir": seguir}
+
+    @app.post("/api/worker/jobs/{job_id}/devolver")
+    def devolver(job_id: str, body: WorkerIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
+        """Vídeo pego adiantado que o pod não vai gerar: volta para a fila sem contar tentativa."""
+        _mesmo_worker(dono, body.worker)
+        _do_worker(job_id, body.worker, c)
+        try:
+            c.banco.devolver(job_id, body.worker)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        return {"ok": True}
 
     def origem_armazenamento() -> str:
         """Só o armazenamento (R2) além da própria API: fotos sobem e vídeos descem de lá."""

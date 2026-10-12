@@ -2,9 +2,21 @@
 (pedidos do dono, 12/10/2026)."""
 
 import json
+import time
 
 import pytest
-from test_api import ADM, PAINEL, _cliente, _concluir, _enviar_tudo, _job, _lote, api, h  # noqa: F401 (fixture api)
+from test_api import (  # noqa: F401 (fixture api)
+    ADM,
+    PAINEL,
+    WORKER,
+    _cliente,
+    _concluir,
+    _enviar_tudo,
+    _job,
+    _lote,
+    api,
+    h,
+)
 from test_sequencia import _prompt
 
 from render2go_servico import motivos
@@ -66,6 +78,48 @@ def test_a_stopped_order_never_goes_back_to_the_queue(api):  # noqa: F811 (fixtu
     jobs = {j["id"]: j for j in api.banco.jobs(lid) if j["tipo"] == "render"}
     assert {j["status"] for j in jobs.values()} == {"cancelado"}
     assert api.banco.lote(lid)["status"] == "concluido_com_falhas"
+
+
+def _worker(api, job, rota, worker="pod-1"):  # noqa: F811 (fixture)
+    return api.post(f"/api/worker/jobs/{job['job_id']}/{rota}", headers=h(WORKER), json={"worker": worker})
+
+
+def test_a_video_picked_ahead_is_cancelled_if_the_order_stops_before_it_reaches_the_gpu(api):  # noqa: F811
+    """A GPU não espera (12/10/2026): o pod pega o próximo vídeo enquanto gera o atual. Se o cliente para o pedido
+    nesse meio-tempo, o vídeo adiantado não vai para a GPU: é cancelado sem custo, como os que estavam na fila."""
+    tok = _cliente(api)
+    lid = _gerando(api, tok, n=2)
+    atual, adiantado = _job(api), _job(api)
+    assert _worker(api, adiantado, "iniciar", worker="pod-2").status_code == 409  # de outro pod
+    r = _worker(api, adiantado, "iniciar")
+    assert r.status_code == 200 and r.json() == {"seguir": True}
+    with api.banco.tx() as c:  # o prazo do pod recomeça na GPU
+        assert c.one("SELECT lease_ate FROM jobs WHERE id = ?", (adiantado["job_id"],))["lease_ate"] > time.time() + 800
+    _concluir(api, adiantado, status="erro", erro="x", repetir=True)  # volta para a fila; o pod pega de novo
+    adiantado = _job(api)
+    assert api.post(f"/api/lotes/{lid}/interromper", headers=h(tok)).json()["cancelados"] == 0  # os dois num pod
+    assert _worker(api, adiantado, "iniciar").json() == {"seguir": False}
+    assert _worker(api, adiantado, "iniciar").status_code == 409  # já cancelado
+    assert _entregar(api, atual) == "ok"
+    lote = api.get(f"/api/lotes/{lid}", headers=h(tok)).json()
+    assert lote["status"] == "concluido_com_falhas" and lote["prontos"] == 1
+    assert lote["nao_sairam"] == [{"motivo": "interrompido_cliente", "texto": motivos.MOTIVOS["interrompido_cliente"],
+                                   "videos": 1}]  # fmt: skip
+    assert lote["cobranca"] == {"cobrado": lote["preco_video"], "devolvido": 0}
+
+
+def test_a_video_picked_ahead_and_not_rendered_goes_back_without_counting_an_attempt(api):  # noqa: F811 (fixture)
+    tok = _cliente(api)
+    lid = _gerando(api, tok, n=1)
+    job = _job(api)
+    assert _worker(api, job, "devolver", worker="pod-2").status_code == 409
+    assert _worker(api, job, "devolver").status_code == 200
+    (j,) = [j for j in api.banco.jobs(lid) if j["tipo"] == "render"]
+    assert j["status"] == "pendente" and j["tentativas"] == 0 and j["worker"] is None
+    assert _worker(api, job, "devolver").status_code == 409  # não está mais com o pod
+    de_novo = _job(api)
+    assert de_novo["job_id"] == job["job_id"] and de_novo["seed"] == job["seed"]  # a mesma seed: nunca foi gerado
+    assert _entregar(api, de_novo) == "ok"
 
 
 def test_the_panel_stops_an_order_and_the_audit_records_it(api):  # noqa: F811 (fixture)
