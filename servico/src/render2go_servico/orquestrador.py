@@ -560,11 +560,11 @@ class Orquestrador:
             else:
                 self._tirar_hibernado(pf.pod.info.id)
         finally:
-            with self.lock:
-                self.encerrando.pop(pf.pod.info.id, None)
             self._registrar("gerador_fim", pf.gerador, texto)
             self._registrar("gerador_motivo", pf.gerador, texto)  # o _revisar já tirou da previsão
             self._registrar("gerador_desligado", pf.gerador)  # fim da cobrança da GPU
+            with self.lock:  # só depois do registro: quem vê o pod fora de "encerrando" lê o motivo final
+                self.encerrando.pop(pf.pod.info.id, None)
 
     def _encerrar_pod(self, pf: PodFila, motivo: str, esperar_espelho: bool = True) -> None:
         """Encerra o pod; o gravador antes termina o envio ao espelho (com prazo)."""
@@ -572,11 +572,11 @@ class Orquestrador:
         try:
             self.pods_ln.encerrar(pf.pod, motivo, esperar_espelho=esperar_espelho)
         finally:
-            with self.lock:
-                self.encerrando.pop(pf.pod.info.id, None)
             self._registrar("gerador_fim", pf.gerador, motivo)
             self._registrar("gerador_motivo", pf.gerador, motivo)  # o _revisar pode ter gravado um antes
             self._registrar("gerador_desligado", pf.gerador)  # fim da cobrança do pod
+            with self.lock:  # só depois do registro: quem vê o pod fora de "encerrando" lê o motivo final
+                self.encerrando.pop(pf.pod.info.id, None)
 
     def _registrar_token(self, pf: PodFila) -> None:
         """O pod que sai perde o token na hora (nunca derruba o encerramento)."""
