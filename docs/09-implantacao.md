@@ -6,13 +6,13 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há. Para pôr o servidor em dia, comece pela entrada mais recente: ela diz de que versão parte e quais anteriores já traz junto.
 
-### 11/10/2026 (2): pods (prazo pelo preço real, motivo da saída, saldo no painel, hibernação) e filtro de imagem nos vídeos
+### 11/10/2026 (2): pods (prazo pelo preço real, motivo da saída, saldo no painel, hibernação) e filtro de imagem nos vídeos, com as mudanças de 12/10 (cobrança por vídeo, pedidos sem limite de fotos, satisfação)
 
-**É a atualização a fazer agora.** Parte da versão de 11/10/2026 (a entrada abaixo) e está na branch `claude/magical-lamport-4rrms9` até ir para a `main` (pull request no GitHub). Muda a API, o orquestrador, o analisador (fotos conferidas antes de abrir e memória limitada a 1 GB no `compose.yaml`) e o código que vai para os pods; o banco ganha quatro colunas (`jobs.nsfw`, `jobs.barrado_em`, `lotes.cobranca` e `clientes.avaliacao_descartada`) e uma tabela (`avaliacoes`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entradas de 11/10/2026 (2) a 12/10/2026 (3); [ADR 0011](adr/0011-pods-hibernados.md), [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md) e [ADR 0012](adr/0012-cobranca-por-video-entregue.md).
+**É a atualização a fazer agora.** Parte da versão de 11/10/2026 (a entrada abaixo) e está na `main` desde 12/10/2026 (veio da branch `claude/magical-lamport-4rrms9`). Muda a API, o orquestrador, o analisador (fotos conferidas antes de abrir e memória limitada a 1 GB no `compose.yaml`) e o código que vai para os pods; o banco ganha quatro colunas (`jobs.nsfw`, `jobs.barrado_em`, `lotes.cobranca` e `clientes.avaliacao_descartada`) e uma tabela (`avaliacoes`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entradas de 11/10/2026 (2) a 12/10/2026 (3); [ADR 0011](adr/0011-pods-hibernados.md), [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md) e [ADR 0012](adr/0012-cobranca-por-video-entregue.md).
 
 **1) Nada gerando?** Igual ao bloco 1 da entrada abaixo: o bloco 3 recria o orquestrador, que desliga os pods ligados ao parar.
 
-**2) Backup e código novo** (depois de a branch entrar na `main`):
+**2) Backup e código novo** (a `main` de 12/10/2026):
 ```bash
 cd ~/GPU2GO && git log -1 --format='%h %ad %s' --date=short | tee ~/versao-antes-$(date +%F).txt
 cd servico/implantacao

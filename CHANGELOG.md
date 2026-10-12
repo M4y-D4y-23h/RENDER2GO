@@ -2,6 +2,10 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 12/10/2026 (4): tudo da branch na `main`
+
+A pedido do dono, as mudanças das entradas 11/10/2026 (2) a 12/10/2026 (3), feitas na branch `claude/magical-lamport-4rrms9`, entram na `main` (avanço direto, sem conflito; CI verde no mesmo código). Publicação no servidor: `docs/09`, entrada 11/10/2026 (2). Na próxima entrada no site, cada conta aceita os Termos de Uso v3 e a Política de Privacidade v3.
+
 ## 12/10/2026 (3): pergunta de satisfação no fim de cada pedido
 
 Motivo: pedido do dono de 12/10 ("após cada rodada finalizada, um card com a pergunta 'o quão satisfeito você está com a sua geração', as opções muito pouco, pouco, neutro, satisfeito e muito satisfeito, um botão 'enviar' e, embaixo, 'descartar e não ver novamente', que faz esse card não aparecer mais para aquela conta"). Branch `claude/magical-lamport-4rrms9`.
