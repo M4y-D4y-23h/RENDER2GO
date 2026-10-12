@@ -2,6 +2,22 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 12/10/2026 (6): diagnóstico da qualidade e avaliação das recomendações de velocidade
+
+Pedido do dono depois dos testes no site. Sem mudança de código: análise em `docs/06`, seção 9.
+- **Fora do contexto:**
+  - causa mais provável: o pedido vago vira um prompt sem assunto, o mesmo para todas as fotos, e o estilo "Livre" não tem câmera;
+  - os modelos e o tradutor foram feitos para conteúdo adulto, o que explica pessoas aparecendo e vídeos barrados;
+  - não há guia negativa com CFG 1;
+  - vídeos acima de ~5 s repetem o movimento.
+  - Correções sem ADR (tradutor v7, receitas v4, teto de 5 s) e com ADR (a troca de modelo já prevista, legenda por foto, NAG).
+- **Velocidade:**
+  - FP8 já está em uso;
+  - GGUF é mais lento;
+  - `--fp8_e4m3fn` nem existe;
+  - `--highvram` e FlashAttention-2 não ajudam aqui;
+  - SageAttention 2.2 e a interpolação para 32 fps (RIFE, já no ComfyUI v0.38.0) merecem um teste em GPU de ~50 min (~US$ 0,90).
+
 ## 12/10/2026 (5): parar pedido, motivo de cada falha e quarentena dos vídeos barrados
 
 Motivo: testes do dono no site de 12/10 (um pedido de 10 fotos com 5 vídeos que não saíram, o painel mostrando "4 barrados" e nada explicando o 5º). Pedidos: "interromper as gerações restantes de forma segura", "um jeito de eu como admin acessar esses vídeos bloqueados" e, "mudando o que eu disse anteriormente", "uma justificativa de recusa, tanto na recusa dos prompts, como na falha e recusa das gerações". Branch `claude/magical-lamport-4rrms9`. Publicação: `docs/09`, entrada 12/10/2026 (2) (com uma regra nova no R2).

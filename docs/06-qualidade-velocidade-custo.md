@@ -125,3 +125,49 @@ Como garantir "slow pan" e "cinematic zoom":
 | 3. Preparo → prompt → render | **Pronto:** `preparo` → compilador uma vez → render fp8 com cálculo em bf16 → folha de conferência |
 | 3b. Acabamento (32 fps, 720p/1080p, zoom) | Pronto na CPU (`acabamento.py`); falta rodar no lote |
 | 4. O vídeo vai para a pasta do cliente | Falta o armazenamento (ADR 0003) |
+
+## 9. Diagnóstico e avaliações de 12/10/2026 (pedido do dono)
+
+Depois dos testes do dono no site (pedido "deixe bonito, com um movimento suave", estilo "Livre"): vídeos fugindo do contexto, elementos sem cabimento, movimento repetitivo, objetos parados se mexendo e itens mudando; 4 de 10 barrados pelo filtro de imagem. Análise do código e dos registros, sem GPU; os números de velocidade marcados como estimativa não foram medidos.
+
+### 9.1 Por que os vídeos fogem do contexto (o mais provável primeiro)
+
+1. **Pedido vago vira um prompt sem assunto, o mesmo para todas as fotos.** O tradutor só vê o texto, não a foto (`worker/src/render2go_worker/compiler.py`), roda uma vez por pedido, e cada vídeo usa o mesmo `prompt_en`. O estilo "Livre", o 1º da lista, não tem preset de câmera, só "natural pace, fluid motion" (`worker/presets/receitas.v3.json`, `presets.v3.json`); o v6 escreve frases como "the main subject stays in place while soft light glides across it… Static camera." (`worker/prompts/compiler-i2v.v6.txt`). Em 09/10, um caso vago parecido virou "She stays in place…": uma pessoa inventada (`worker/evals/compiler/cases.v2.json`).
+2. **Modelos e tradutor feitos para conteúdo adulto.** O checkpoint "R1" da comunidade e o codificador de texto `nsfw_wan_umt5_xxl_v2` (`worker/workflows/i2v_r1v2.v1.contract.json`; `docs/12`, seção 1), e o prompt do tradutor v6 começa com "This is an adult content pipeline" e manda traduzir nudez ao pé da letra. Explica pessoas e corpos aparecendo e boa parte dos vídeos barrados.
+3. **Sem guia negativa:** com CFG 1, o prompt negativo não tem efeito (`referencia/especificacao-pipeline-manual.md`).
+4. **Duração e recorte:** acima de ~5 s o modelo repete o movimento e deforma (a mesma especificação); o formato "auto" recorta a foto em três formatos fixos e amplia as pequenas.
+5. **As conferências não veem isso:** elas comparam o 1º quadro com a foto e a cor do centro ao longo do vídeo (`conferencia.py`); não veem objeto novo, pessoa nova nem movimento em laço. O filtro de imagem barra com nota ≥ 0,35 (o cartão do modelo usa 0,5), confere também o 1º quadro, que é a própria foto do cliente, e ainda não foi calibrado com fotos reais (ADR 0005, "Antes de aceitar").
+
+**Correções propostas:**
+- **Sem ADR:**
+  - tradutor `compiler-i2v.v7.txt` sem as linhas de conteúdo adulto, com a rodada de fidelidade incluindo este texto;
+  - `receitas.v4.json` com o "Livre" ganhando uma câmera suave;
+  - um exemplo de texto mais concreto na página;
+  - traduzir de novo quando o prompt inventa uma pessoa que o pedido não citou;
+  - teto de 5 s, ou 5 s com interpolação (seção 9.2).
+- **Com ADR e teste em GPU:**
+  - a troca de modelo que o dono já previu: arquivos oficiais da Comfy-Org (Wan 2.2 I2V fp8_scaled, codificador padrão e o LoRA lightx2v de 4 passos) e um Qwen 2.5 7B Instruct comum no tradutor;
+  - legenda de cada foto com o Qwen2.5-VL-7B (Apache-2.0; o 3B não serve, licença não comercial, `docs/12`);
+  - guia negativa com CFG 1 (NAG).
+
+### 9.2 Recomendações de velocidade que o dono recebeu
+
+| Recomendação | Como está o projeto | Veredito |
+|---|---|---|
+| Pesos em FP8 | Já são: os pesos do R1 v2 estão em fp8 e4m3 com escala (`comfy_quant`, `models.lock.json`), e o ComfyUI v0.38.0 já multiplica em fp8 nessas GPUs. Por isso o `--fast fp8_matrix_mult` não ganhou nada no teste de 06/10 (L40S: 55 s em 480p e 180 s em 720p, vídeos de 5 s) | Nada a fazer |
+| GGUF | Economiza VRAM, mas é mais lento: desquantiza cada camada antes de multiplicar. Medido no ADR 0001: Q6_K 77,2 s × fp8 56,5 s | Não usar |
+| `--fp8_e4m3fn` | Esse nome não existe: o ComfyUI nem inicia (argumento ambíguo). Os reais (`--fp8_e4m3fn-unet`, `--fp8_e4m3fn-text-enc`) só mudam arquivos que não são fp8 | Não usar |
+| `--highvram` / `--gpu-only` | Os dois especialistas já ficam na VRAM de 48 GB; essas opções desligam a gerência de memória que protege do Ollama (mesma GPU) e não cabem na 4090 | Não usar; manter `--reserve-vram` |
+| FlashAttention-2 | O PyTorch 2.8 (SDPA) já usa os núcleos do FA2 | Não usar |
+| SageAttention 2.2 | Núcleos ~2,5× mais rápidos que o FA2 em L20/L40 e 1,5–1,8× no vídeo inteiro em outros modelos (arXiv 2411.10958); **estimativa** aqui: ~20% menos tempo em 480p e 30–40% em 720p. Precisa de um wheel compilado para o torch 2.8.0+cu128 (sm89 e sm120, fixado por SHA-256 no espelho R2) e de `gcc` no pod; a mesma seed passa a dar outro vídeo (reconferir os limiares) | Testar em GPU; ADR se ganhar |
+| `--enable-triton-backend` | Com cu128, partes da quantização fp8 rodam em PyTorch puro; **estimativa** de 2–5% | Testar junto |
+| Interpolar 16 → 32 fps | O ComfyUI v0.38.0 já tem nós de RIFE e FILM; pesos RIFE v4.25 (MIT, 22,7 MB, `Comfy-Org/frame_interpolation`); **estimativa** de 1–3 s de GPU por vídeo. Riscos: fantasma em movimento rápido, texto e rótulos deformados. A conferência e o filtro continuam no vídeo de 16 fps (a 32 fps, o salto de um corte cai para menos do limite) | Testar em GPU; ADR (muda o vídeo entregue). GIMM-VFI não (licença não comercial) |
+
+**Teste em GPU proposto** (um pod L40S secure, ~50 min, ~US$ 0,90, com desligamento automático e encerrado no fim):
+1. Três configurações com as mesmas 8 receitas SFW em 480p e 2 em 720p, com seeds fixas:
+   - A: a atual;
+   - B: com SageAttention 2.2;
+   - C: B mais `--enable-triton-backend`.
+2. Medir tempo por etapa, VRAM, notas da conferência e do filtro, e a semelhança com A; comparar às cegas, com a regra de decisão escrita antes.
+3. RIFE ×2 nos vídeos de A, com tempo e tamanho do arquivo.
+
