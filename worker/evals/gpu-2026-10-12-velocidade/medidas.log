@@ -1,0 +1,540 @@
+13:11:12 [medida] fase 1_frio
+13:11:23 [medida] ComfyUI 8288 no ar em 11.1 s ()
+enfileirado: 006ba707-c456-4fe5-957b-32ad918d4771
+  executando nó 129:90
+  executando nó 97
+  executando nó 129:84
+  executando nó 129:89
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:131
+  executando nó 129:116
+  executando nó 129:125
+  executando nó 129:120
+  executando nó 129:119
+  executando nó 129:117
+  executando nó 129:95
+  executando nó 129:116
+  executando nó 129:104
+  executando nó 129:124
+  executando nó 129:125
+  executando nó 129:122
+  executando nó 129:120
+  executando nó 129:118
+  executando nó 129:119
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:96
+  executando nó 129:117
+  executando nó 129:103
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:12:20 [medida] frio: True em 56.55 s (ComfyUI [56.2]), VRAM 40661 MiB
+enfileirado: fbf466e2-c32a-42d1-9c8a-5d37ae2432e8
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:13:11 [medida] quente: True em 50.99 s (ComfyUI [50.67]), VRAM 40725 MiB
+13:13:30 [medida] ComfyUI 8289 no ar em 10.5 s ()
+enfileirado: a074c04e-87ac-4b5a-be4a-f954a4640c00
+  executando nó 129:162
+  executando nó 129:90
+  executando nó 97
+  executando nó 129:84
+  executando nó 129:89
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:131
+  executando nó 129:116
+  executando nó 129:125
+  executando nó 129:120
+  executando nó 129:119
+  executando nó 129:117
+  executando nó 129:95
+  executando nó 129:116
+  executando nó 129:104
+  executando nó 129:124
+  executando nó 129:125
+  executando nó 129:122
+  executando nó 129:120
+  executando nó 129:118
+  executando nó 129:119
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:96
+  executando nó 129:117
+  executando nó 129:103
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:13:47 [fila] GPU http://127.0.0.1:8289 aquecida em 16.6 s: os modelos já estão na memória
+enfileirado: bc3eb560-8f1b-4bd2-90e0-16941abd33da
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:14:38 [medida] depois_de_aquecer: True em 51.03 s (ComfyUI [50.69]), VRAM 41141 MiB
+13:14:46 [medida] fase 2_worker
+13:19:17 [medida] ComfyUI 8290 no ar em 10.5 s ()
+enfileirado: 0b605a92-104e-4588-b88c-51ce6bbb97e6
+  executando nó 129:162
+  executando nó 129:90
+  executando nó 97
+  executando nó 129:84
+  executando nó 129:89
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:131
+  executando nó 129:116
+  executando nó 129:125
+  executando nó 129:120
+  executando nó 129:119
+  executando nó 129:117
+  executando nó 129:95
+  executando nó 129:116
+  executando nó 129:104
+  executando nó 129:124
+  executando nó 129:125
+  executando nó 129:122
+  executando nó 129:120
+  executando nó 129:118
+  executando nó 129:119
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:96
+  executando nó 129:117
+  executando nó 129:103
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:20:12 [medida] aquece: True em 55.05 s (ComfyUI [54.74]), VRAM 40661 MiB
+13:20:12 [fila] 1 GPU(s); filtros c1-revisao-humana; sai após 0 s sem jobs; adiantar: False; aquecer: False
+13:20:12 [fila] filtro de imagem carregado
+enfileirado: 6cf54ffd-1ac0-458a-a8ad-796b93153d6a
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:21:04 [fila] cafe1-v1.mp4 (lote antes): o produto mudou de cor ou de forma no vídeo (deriva de cor 55.0); refazendo
+enfileirado: a86cb93b-3c6a-4c40-9323-9395df1c169a
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:21:58 [fila] xicara2-v1.mp4 (lote antes): ok, similaridade 0.999; preparo 0.6 s, espera_gpu 0.6 s, gpu_parada 1.1 s, gpu 51.1 s, render 51.0 s, conferencia 0.4 s, filtro 0.6 s, envio 1.4 s, total 54.1 s
+enfileirado: dab10616-b4d6-4757-9a64-6499c544dd5b
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:22:52 [fila] cafe3-v1.mp4 (lote antes): ok, similaridade 1.000; preparo 0.6 s, espera_gpu 0.6 s, gpu_parada 3.1 s, gpu 51.0 s, render 51.0 s, conferencia 0.4 s, filtro 0.4 s, envio 1.4 s, total 53.8 s
+enfileirado: 788fa7f6-f563-4f85-8dd4-082d68bfcc22
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:23:51 [fila] xicara4-v1.mp4 (lote antes): ok, similaridade 0.999; preparo 0.6 s, espera_gpu 0.6 s, gpu_parada 2.8 s, gpu 55.8 s, render 50.8 s, conferencia 0.4 s, filtro 0.4 s, envio 1.4 s, total 58.6 s
+enfileirado: 4e7bcd2e-f5d5-43ab-baad-d5ed99f75403
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:24:43 [fila] cafe5-v1.mp4 (lote antes): o produto mudou de cor ou de forma no vídeo (deriva de cor 59.2); refazendo
+enfileirado: e0febe75-4a98-4c2a-b643-0058b3729472
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:25:37 [fila] xicara6-v1.mp4 (lote antes): ok, similaridade 0.999; preparo 0.6 s, espera_gpu 0.6 s, gpu_parada 1.1 s, gpu 50.8 s, render 50.8 s, conferencia 0.4 s, filtro 0.4 s, envio 1.4 s, total 53.6 s
+13:25:38 [fila] fim: 4 vídeo(s) ok, 0 com falha; sem pedidos (pod quente vencido)
+13:25:38 [medida] antes: 4/6 ok em 325.7 s (54.3 s/vídeo); GPU parada 2.03 s entre vídeos
+13:25:38 [fila] 1 GPU(s); filtros c1-revisao-humana; sai após 0 s sem jobs; adiantar: True; aquecer: False
+13:25:38 [fila] filtro de imagem carregado
+enfileirado: ec36fd57-b5b5-430d-b635-05141ff18d70
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: b354785b-10c4-4b7e-8ccc-4781f6d80698
+  executando nó 97
+  executando nó 129:98
+13:26:30 [fila] cafe1-v1.mp4 (lote novo): o produto mudou de cor ou de forma no vídeo (deriva de cor 55.1); refazendo
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: bf201251-3aa1-4f13-b4a4-c1340ffd504c
+  executando nó 97
+  executando nó 129:98
+13:27:23 [fila] xicara2-v1.mp4 (lote novo): ok, similaridade 0.999; preparo 0.6 s, espera_gpu 0.0 s, gpu_parada 0.0 s, gpu 50.8 s, render 50.8 s, conferencia 0.7 s, filtro 0.5 s, envio 1.4 s, total 104.6 s
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: 81f5b5bb-07ac-4a13-ad83-8ec8e38fdf47
+  executando nó 97
+  executando nó 129:98
+13:28:14 [fila] cafe3-v1.mp4 (lote novo): ok, similaridade 1.000; preparo 0.6 s, espera_gpu 0.0 s, gpu_parada 0.0 s, gpu 51.2 s, render 51.2 s, conferencia 0.8 s, filtro 0.5 s, envio 1.4 s, total 104.7 s
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: d5d061ad-e742-4e11-8078-2504e4a8a158
+  executando nó 97
+  executando nó 129:98
+13:29:05 [fila] xicara4-v1.mp4 (lote novo): ok, similaridade 0.999; preparo 0.6 s, espera_gpu 0.0 s, gpu_parada 0.0 s, gpu 51.0 s, render 51.0 s, conferencia 0.7 s, filtro 0.4 s, envio 1.4 s, total 104.8 s
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: 4fcd07d7-4700-498f-b7d3-9557d87774e6
+  executando nó 97
+  executando nó 129:98
+13:29:55 [fila] cafe5-v1.mp4 (lote novo): o produto mudou de cor ou de forma no vídeo (deriva de cor 59.3); refazendo
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:30:47 [fila] xicara6-v1.mp4 (lote novo): ok, similaridade 0.999; preparo 0.6 s, espera_gpu 0.0 s, gpu_parada 0.0 s, gpu 51.0 s, render 51.0 s, conferencia 0.4 s, filtro 0.4 s, envio 1.4 s, total 104.4 s
+13:30:48 [fila] fim: 4 vídeo(s) ok, 0 com falha; sem pedidos (pod quente vencido)
+13:30:48 [medida] novo: 4/6 ok em 310.0 s (51.7 s/vídeo); GPU parada 0.04 s entre vídeos
+13:30:48 [fila] 1 GPU(s); filtros c1-revisao-humana; sai após 0 s sem jobs; adiantar: True; aquecer: False
+13:30:48 [fila] filtro de imagem carregado
+enfileirado: e0b40b86-9d4b-4484-ba02-6c20cce61815
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: 7b96fd90-9ca4-460c-8e5b-b23b664b4334
+  executando nó 97
+  executando nó 129:98
+13:33:40 [fila] cafe1-v1.mp4 (lote alta): o produto mudou de cor ou de forma no vídeo (deriva de cor 60.9); refazendo
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:36:32 [fila] xicara2-v1.mp4 (lote alta): ok, similaridade 1.000; preparo 0.8 s, espera_gpu 0.0 s, gpu_parada 0.0 s, gpu 170.3 s, render 170.3 s, conferencia 0.5 s, filtro 0.4 s, envio 1.5 s, total 343.7 s
+13:36:33 [fila] fim: 1 vídeo(s) ok, 0 com falha; sem pedidos (pod quente vencido)
+13:36:33 [medida] alta: 1/2 ok em 345.1 s (172.5 s/vídeo); GPU parada 0.04 s entre vídeos
+enfileirado: 74a5efeb-0358-478c-bf36-7f69c75d7ecb
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 900
+  executando nó 901
+  passo 1/80 (nó 901)
+  passo 6/80 (nó 901)
+  passo 9/80 (nó 901)
+  passo 12/80 (nó 901)
+  passo 15/80 (nó 901)
+  passo 18/80 (nó 901)
+  passo 21/80 (nó 901)
+  passo 24/80 (nó 901)
+  passo 27/80 (nó 901)
+  passo 30/80 (nó 901)
+  passo 33/80 (nó 901)
+  passo 36/80 (nó 901)
+  passo 39/80 (nó 901)
+  passo 42/80 (nó 901)
+  passo 45/80 (nó 901)
+  passo 48/80 (nó 901)
+  passo 51/80 (nó 901)
+  passo 54/80 (nó 901)
+  passo 57/80 (nó 901)
+  passo 60/80 (nó 901)
+  passo 63/80 (nó 901)
+  passo 66/80 (nó 901)
+  passo 69/80 (nó 901)
+  passo 71/80 (nó 901)
+  passo 74/80 (nó 901)
+  passo 77/80 (nó 901)
+  passo 80/80 (nó 901)
+  executando nó 129:94
+  executando nó 108
+13:37:32 [medida] cafe1-rife: True em 57.96 s (ComfyUI [57.43]), VRAM 34441 MiB
+13:37:41 [medida] fase 2_worker falhou: 
+13:37:41 [medida] fase 4_sage
+13:37:56 [medida] ComfyUI 8291 no ar em 10.5 s (--use-sage-attention)
+enfileirado: bcb37b04-2ed0-49d2-8f16-166e823b5011
+  executando nó 129:162
+  executando nó 129:90
+  executando nó 97
+  executando nó 129:84
+  executando nó 129:89
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:131
+  executando nó 129:116
+  executando nó 129:125
+  executando nó 129:120
+  executando nó 129:119
+  executando nó 129:117
+  executando nó 129:95
+  executando nó 129:116
+  executando nó 129:104
+  executando nó 129:124
+  executando nó 129:125
+  executando nó 129:122
+  executando nó 129:120
+  executando nó 129:118
+  executando nó 129:119
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:96
+  executando nó 129:117
+  executando nó 129:103
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:38:46 [medida] aquece-sage: True em 48.97 s (ComfyUI [48.68]), VRAM 40809 MiB
+13:38:46 [fila] 1 GPU(s); filtros c1-revisao-humana; sai após 0 s sem jobs; adiantar: True; aquecer: False
+13:38:46 [fila] filtro de imagem carregado
+enfileirado: ad80f052-c244-4370-ad1c-321162018f07
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: 392ee685-d60c-483a-ab66-0ea3ea4c333e
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+13:39:30 [fila] cafe1-v1.mp4 (lote sage): o produto mudou de cor ou de forma no vídeo (deriva de cor 59.9); refazendo
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: 568a4664-b89c-460a-bd0c-4a14ccbd4480
+  executando nó 97
+  executando nó 129:98
+13:40:15 [fila] xicara2-v1.mp4 (lote sage): ok, similaridade 0.999; preparo 0.5 s, espera_gpu 0.0 s, gpu_parada 0.0 s, gpu 43.3 s, render 43.3 s, conferencia 0.7 s, filtro 0.5 s, envio 1.4 s, total 89.0 s
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: 55f48eac-800d-44c1-94c7-d22e8d5b2182
+  executando nó 97
+  executando nó 129:98
+13:40:57 [fila] cafe3-v1.mp4 (lote sage): o produto mudou de cor ou de forma no vídeo (deriva de cor 40.4); refazendo
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: 27997dc3-6606-45a2-8d6e-b6f906cf70d9
+  executando nó 97
+  executando nó 129:98
+13:41:42 [fila] xicara4-v1.mp4 (lote sage): ok, similaridade 0.999; preparo 0.6 s, espera_gpu 0.0 s, gpu_parada 0.0 s, gpu 43.3 s, render 43.3 s, conferencia 0.7 s, filtro 0.5 s, envio 1.4 s, total 89.4 s
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: ef30b107-db53-42c3-9806-7912aa236199
+  executando nó 97
+  executando nó 129:98
+13:42:24 [fila] cafe5-v1.mp4 (lote sage): o produto mudou de cor ou de forma no vídeo (deriva de cor 60.7); refazendo
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:43:08 [fila] xicara6-v1.mp4 (lote sage): ok, similaridade 0.999; preparo 0.5 s, espera_gpu 0.0 s, gpu_parada 0.0 s, gpu 43.1 s, render 43.1 s, conferencia 0.4 s, filtro 0.4 s, envio 1.4 s, total 88.5 s
+13:43:09 [fila] fim: 3 vídeo(s) ok, 0 com falha; sem pedidos (pod quente vencido)
+13:43:09 [medida] sage480: 3/6 ok em 263.1 s (43.9 s/vídeo); GPU parada 0.04 s entre vídeos
+13:43:09 [fila] 1 GPU(s); filtros c1-revisao-humana; sai após 0 s sem jobs; adiantar: True; aquecer: False
+13:43:09 [fila] filtro de imagem carregado
+enfileirado: fed46a01-d16d-47eb-ba0f-f69f52ff6280
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+enfileirado: 950ee5e5-1f01-41e1-8d8e-8e5cf4fa6c15
+  executando nó 97
+  executando nó 129:98
+13:45:17 [fila] cafe1-v1.mp4 (lote sage-alta): o produto mudou de cor ou de forma no vídeo (deriva de cor 60.5); refazendo
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+13:47:24 [fila] xicara2-v1.mp4 (lote sage-alta): ok, similaridade 1.000; preparo 0.8 s, espera_gpu 0.0 s, gpu_parada 0.0 s, gpu 125.4 s, render 125.3 s, conferencia 0.5 s, filtro 0.5 s, envio 1.5 s, total 254.1 s
+13:47:24 [fila] fim: 1 vídeo(s) ok, 0 com falha; sem pedidos (pod quente vencido)
+13:47:24 [medida] sage720: 1/2 ok em 255.4 s (127.7 s/vídeo); GPU parada 0.04 s entre vídeos
+13:47:39 [medida] FIM
+FIM_DO_ROTEIRO

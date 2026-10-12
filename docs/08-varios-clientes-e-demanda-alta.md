@@ -63,7 +63,7 @@ Os itens 1 a 3 e 6 já estão no código da fase 3 (rascunho, em pausa); o 4 est
    - o orquestrador (`servico/.../orquestrador.py`) usa a mesma regra do `lote_nuvem --pods auto`;
    - o worker sai após 3 min sem jobs, e o pod é encerrado.
 4. **Worker da fila, orquestrador, páginas e implantação:**
-   - worker da fila: `render2go_worker/fila.py`;
+   - worker da fila: `render2go_worker/fila.py`; desde 12/10/2026, a GPU não espera: o próximo vídeo é pego e preparado e o anterior conferido e enviado durante a geração, e o vídeo pego adiantado passa pela API antes de ir para a GPU (pedido parado não o gera; laço que para o devolve à fila sem contar tentativa; CHANGELOG, 12/10/2026 (8));
    - páginas: `/` e o painel do dono (endereço secreto desde 09/10/2026, ADR 0007);
    - Dockerfile, CI e `docs/09-implantacao.md`.
 

@@ -1,0 +1,46 @@
+{
+ "roteiro_terminou": true,
+ "baixado_1": [
+  "resultado.json",
+  "estado_extras",
+  "folhas/sage-sage-alta-xicara2-v1.jpg",
+  "folhas/sage-sage-xicara2-v1.jpg",
+  "comfy_base.log",
+  "comfy_frio1.log",
+  "comfy_frio2.log",
+  "comfy_sage.log",
+  "sage_build.log",
+  "medidas.log",
+  "extras.log",
+  "bootstrap.log",
+  "tempos"
+ ],
+ "complemento_terminou": true,
+ "baixado_2": [
+  "resultado.json",
+  "estado_extras",
+  "folhas/rife-cafe.jpg",
+  "folhas/rife-xicara.jpg",
+  "folhas/sage-sage-alta-xicara2-v1.jpg",
+  "folhas/sage-sage-xicara2-v1.jpg",
+  "folhas/sage-sage-xicara4-v1.jpg",
+  "folhas/sage-sage-xicara6-v1.jpg",
+  "comfy_base.log",
+  "comfy_frio1.log",
+  "comfy_frio2.log",
+  "comfy_rife.log",
+  "comfy_sage.log",
+  "sage_build.log",
+  "medidas.log",
+  "extras.log",
+  "bootstrap.log",
+  "tempos"
+ ],
+ "complemento.json": true,
+ "complemento.log": true,
+ "pod_depois": {
+  "data": {
+   "pod": null
+  }
+ }
+}

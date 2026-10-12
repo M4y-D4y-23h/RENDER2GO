@@ -1,0 +1,451 @@
+{
+ "inicio": 1791810667.3464234,
+ "fases": "124",
+ "ambiente": {
+  "nproc": 128,
+  "mem_gb": 1511.6,
+  "gpu": "NVIDIA L40S, 580.126.09, 46068 MiB",
+  "api_rtt_s": [
+   0.175,
+   0.048,
+   0.036,
+   0.043,
+   0.04,
+   0.038
+  ],
+  "latencia_usada": {
+   "api": 0.04,
+   "foto": 0.5,
+   "folha": 0.3,
+   "video": 0.8
+  }
+ },
+ "1_frio": {
+  "subida_comfy_s": [
+   11.1,
+   10.5
+  ],
+  "frio": {
+   "nome": "frio",
+   "foto": "cafe",
+   "seed": 1001,
+   "dims": [
+    832,
+    480
+   ],
+   "ok": true,
+   "erro": null,
+   "tempos": {
+    "upload_s": 0.01,
+    "render_s": 56.53,
+    "download_s": 0.0,
+    "total_s": 56.55
+   },
+   "total_s": 56.55,
+   "vram_pico_mib": 40661,
+   "executado_s": [
+    56.2
+   ],
+   "log": [
+    "\u001b[32m[INFO]\u001b[0m Requested to load WanTEModel",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WanVAE",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WAN21",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WAN21",
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 56.20 seconds\u001b[0m"
+   ],
+   "sha": "7009cc2092602f24"
+  },
+  "quente": {
+   "nome": "quente",
+   "foto": "cafe",
+   "seed": 1001,
+   "dims": [
+    832,
+    480
+   ],
+   "ok": true,
+   "erro": null,
+   "tempos": {
+    "upload_s": 0.01,
+    "render_s": 50.97,
+    "download_s": 0.0,
+    "total_s": 50.99
+   },
+   "total_s": 50.99,
+   "vram_pico_mib": 40725,
+   "executado_s": [
+    50.67
+   ],
+   "log": [
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 50.67 seconds\u001b[0m"
+   ],
+   "sha": "786970fa46892126"
+  },
+  "aquecer_s": 16.6,
+  "aquecer_executado_s": [
+   16.27
+  ],
+  "aquecer_log": [
+   "\u001b[32m[INFO]\u001b[0m Requested to load WanTEModel",
+   "\u001b[32m[INFO]\u001b[0m Requested to load WanVAE",
+   "\u001b[32m[INFO]\u001b[0m Requested to load WAN21",
+   "\u001b[32m[INFO]\u001b[0m Requested to load WAN21",
+   "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 16.27 seconds\u001b[0m"
+  ],
+  "depois_de_aquecer": {
+   "nome": "depois_de_aquecer",
+   "foto": "cafe",
+   "seed": 1001,
+   "dims": [
+    832,
+    480
+   ],
+   "ok": true,
+   "erro": null,
+   "tempos": {
+    "upload_s": 0.01,
+    "render_s": 51.01,
+    "download_s": 0.0,
+    "total_s": 51.03
+   },
+   "total_s": 51.03,
+   "vram_pico_mib": 41141,
+   "executado_s": [
+    50.69
+   ],
+   "log": [
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 50.69 seconds\u001b[0m"
+   ],
+   "sha": "377cd3159f7bd46c"
+  },
+  "mesmo_video": false,
+  "duracao_s": 213.8
+ },
+ "extras_antes_da_fase_2": "SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 964ee18cf8c8a6421bb3009111ecaf5f57da9f41d440f3aca78c2caa7a50fa42",
+ "3_rife": {
+  "extras": "RIFE_OK"
+ },
+ "2_worker": {
+  "erro": "StopIteration: ",
+  "trace": "Traceback (most recent call last):\n  File \"/root/render2go/no_pod.py\", line 798, in main\n    res[nome] = fase(a.saida, clas, res)\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/render2go/no_pod.py\", line 603, in fase_worker_e_rife\n    base = next(m for m in r[\"novo\"][\"medidas\"] if m[\"arquivo\"] == f\"{foto}{i}-v1.mp4\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nStopIteration\n",
+  "duracao_s": 1374.5
+ },
+ "4_sage": {
+  "extras": "SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 964ee18cf8c8a6421bb3009111ecaf5f57da9f41d440f3aca78c2caa7a50fa42",
+  "instalacao": "Using Python 3.12.15 environment at: /opt/venv\nResolved 1 package in 1ms\nPrepared 1 package in 44ms\nInstalled 1 package in 1ms\n + sageattention==2.2.0 (from file:///root/render2go/medidas/sageattention-2.2.0-cp312-cp312-linux_x86_64.whl)\n",
+  "atencao_sozinha": {
+   "ok": true,
+   "saida": "{'sage_ms': 60.0, 'sdpa_ms': 108.4, 'cos': 0.99923}",
+   "erro": "",
+   "segundos_com_compilacao": 5.3
+  },
+  "sage_ligado": true,
+  "primeiro_video": {
+   "nome": "aquece-sage",
+   "foto": "cafe",
+   "seed": 999,
+   "dims": [
+    832,
+    480
+   ],
+   "ok": true,
+   "erro": null,
+   "tempos": {
+    "upload_s": 0.01,
+    "render_s": 48.95,
+    "download_s": 0.0,
+    "total_s": 48.97
+   },
+   "total_s": 48.97,
+   "vram_pico_mib": 40809,
+   "executado_s": [
+    48.68
+   ],
+   "log": [
+    "\u001b[32m[INFO]\u001b[0m Requested to load WanTEModel",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WanVAE",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WAN21",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WAN21",
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 48.68 seconds\u001b[0m"
+   ],
+   "sha": "f36a439ffe088306"
+  },
+  "sage480": {
+   "nome": "sage480",
+   "adiantar": true,
+   "videos": 6,
+   "ok": 3,
+   "falhas": 0,
+   "total_s": 263.1,
+   "por_video_s": 43.9,
+   "gpu_parada_media_s": 0.04,
+   "render_medio_s": 43.2,
+   "medidas": [
+    {
+     "job": "sage-2",
+     "arquivo": "xicara2-v1.mp4",
+     "preparo": 0.54,
+     "espera_gpu": 0.04,
+     "gpu_parada": 0.04,
+     "gpu": 43.3,
+     "render": 43.28,
+     "conferencia": 0.67,
+     "filtro": 0.51,
+     "envio": 1.41,
+     "total": 89.0
+    },
+    {
+     "job": "sage-4",
+     "arquivo": "xicara4-v1.mp4",
+     "preparo": 0.56,
+     "espera_gpu": 0.04,
+     "gpu_parada": 0.04,
+     "gpu": 43.32,
+     "render": 43.31,
+     "conferencia": 0.68,
+     "filtro": 0.47,
+     "envio": 1.4,
+     "total": 89.38
+    },
+    {
+     "job": "sage-6",
+     "arquivo": "xicara6-v1.mp4",
+     "preparo": 0.54,
+     "espera_gpu": 0.04,
+     "gpu_parada": 0.04,
+     "gpu": 43.09,
+     "render": 43.07,
+     "conferencia": 0.41,
+     "filtro": 0.41,
+     "envio": 1.4,
+     "total": 88.5
+    }
+   ],
+   "concluidos": {
+    "sage-1": {
+     "status": "erro",
+     "erro": "o produto mudou de cor ou de forma no vídeo (deriva de cor 59.9)",
+     "repetir": true,
+     "deriva_cor": 59.88,
+     "salto_cor": 3.69
+    },
+    "sage-2": {
+     "status": "ok",
+     "segundos": 43.3,
+     "similaridade": 0.9995,
+     "bytes_video": 211569,
+     "aviso": null,
+     "nsfw": 0.0002,
+     "nsfw_quadros": 21,
+     "deriva_cor": 2.17,
+     "salto_cor": 1.14
+    },
+    "sage-3": {
+     "status": "erro",
+     "erro": "o produto mudou de cor ou de forma no vídeo (deriva de cor 40.4)",
+     "repetir": true,
+     "deriva_cor": 40.41,
+     "salto_cor": 4.99
+    },
+    "sage-4": {
+     "status": "ok",
+     "segundos": 43.4,
+     "similaridade": 0.9995,
+     "bytes_video": 223804,
+     "aviso": null,
+     "nsfw": 0.0001,
+     "nsfw_quadros": 21,
+     "deriva_cor": 2.71,
+     "salto_cor": 1.23
+    },
+    "sage-5": {
+     "status": "erro",
+     "erro": "o produto mudou de cor ou de forma no vídeo (deriva de cor 60.7)",
+     "repetir": true,
+     "deriva_cor": 60.72,
+     "salto_cor": 2.85
+    },
+    "sage-6": {
+     "status": "ok",
+     "segundos": 43.1,
+     "similaridade": 0.9994,
+     "bytes_video": 224838,
+     "aviso": null,
+     "nsfw": 0.0001,
+     "nsfw_quadros": 21,
+     "deriva_cor": 3.1,
+     "salto_cor": 1.26
+    }
+   },
+   "chamadas": {
+    "reivindicar": 11,
+    "iniciar": 5,
+    "concluir": 6
+   },
+   "vram_pico_mib": 41289,
+   "executado_s": [
+    42.78,
+    42.99,
+    43.19,
+    43.0,
+    42.87,
+    42.76
+   ],
+   "erros_sage": 0,
+   "log": [
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 42.78 seconds\u001b[0m",
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 42.99 seconds\u001b[0m",
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 43.19 seconds\u001b[0m",
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 43.00 seconds\u001b[0m",
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 42.87 seconds\u001b[0m",
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 42.76 seconds\u001b[0m"
+   ]
+  },
+  "sage720": {
+   "nome": "sage720",
+   "adiantar": true,
+   "videos": 2,
+   "ok": 1,
+   "falhas": 0,
+   "total_s": 255.4,
+   "por_video_s": 127.7,
+   "gpu_parada_media_s": 0.04,
+   "render_medio_s": 125.3,
+   "medidas": [
+    {
+     "job": "sage-alta-2",
+     "arquivo": "xicara2-v1.mp4",
+     "preparo": 0.8,
+     "espera_gpu": 0.04,
+     "gpu_parada": 0.04,
+     "gpu": 125.36,
+     "render": 125.34,
+     "conferencia": 0.51,
+     "filtro": 0.5,
+     "envio": 1.5,
+     "total": 254.06
+    }
+   ],
+   "concluidos": {
+    "sage-alta-1": {
+     "status": "erro",
+     "erro": "o produto mudou de cor ou de forma no vídeo (deriva de cor 60.5)",
+     "repetir": true,
+     "deriva_cor": 60.51,
+     "salto_cor": 2.64
+    },
+    "sage-alta-2": {
+     "status": "ok",
+     "segundos": 125.4,
+     "similaridade": 0.9996,
+     "bytes_video": 421456,
+     "aviso": "foto pequena (640x439), ampliada 2.0x",
+     "nsfw": 0.0001,
+     "nsfw_quadros": 21,
+     "deriva_cor": 2.66,
+     "salto_cor": 1.07
+    }
+   },
+   "chamadas": {
+    "reivindicar": 7,
+    "iniciar": 1,
+    "concluir": 2
+   },
+   "vram_pico_mib": 44201,
+   "executado_s": [
+    125.84,
+    125.04
+   ],
+   "erros_sage": 0,
+   "log": [
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 125.84 seconds\u001b[0m",
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 125.04 seconds\u001b[0m"
+   ]
+  },
+  "erros_sage_no_log": 0,
+  "comparacao": [
+   {
+    "arquivo": "sage/cafe1-v1.mp4",
+    "erro": "vídeo ausente",
+    "status": "erro",
+    "similaridade": null,
+    "deriva_cor": 59.88,
+    "salto_cor": 3.69,
+    "nsfw": null
+   },
+   {
+    "arquivo": "sage/xicara2-v1.mp4",
+    "ssim": 0.99165,
+    "psnr": 40.88472,
+    "iguais": false,
+    "status": "ok",
+    "similaridade": 0.9995,
+    "deriva_cor": 2.17,
+    "salto_cor": 1.14,
+    "nsfw": 0.0002
+   },
+   {
+    "arquivo": "sage/cafe3-v1.mp4",
+    "erro": "vídeo ausente",
+    "status": "erro",
+    "similaridade": null,
+    "deriva_cor": 40.41,
+    "salto_cor": 4.99,
+    "nsfw": null
+   },
+   {
+    "arquivo": "sage/xicara4-v1.mp4",
+    "ssim": 0.989465,
+    "psnr": 38.813705,
+    "iguais": false,
+    "status": "ok",
+    "similaridade": 0.9995,
+    "deriva_cor": 2.71,
+    "salto_cor": 1.23,
+    "nsfw": 0.0001
+   },
+   {
+    "arquivo": "sage/cafe5-v1.mp4",
+    "erro": "vídeo ausente",
+    "status": "erro",
+    "similaridade": null,
+    "deriva_cor": 60.72,
+    "salto_cor": 2.85,
+    "nsfw": null
+   },
+   {
+    "arquivo": "sage/xicara6-v1.mp4",
+    "ssim": 0.986938,
+    "psnr": 37.534806,
+    "iguais": false,
+    "status": "ok",
+    "similaridade": 0.9994,
+    "deriva_cor": 3.1,
+    "salto_cor": 1.26,
+    "nsfw": 0.0001
+   },
+   {
+    "arquivo": "sage-alta/cafe1-v1.mp4",
+    "erro": "vídeo ausente",
+    "status": "erro",
+    "similaridade": null,
+    "deriva_cor": 60.51,
+    "salto_cor": 2.64,
+    "nsfw": null
+   },
+   {
+    "arquivo": "sage-alta/xicara2-v1.mp4",
+    "ssim": 0.98156,
+    "psnr": 34.403149,
+    "iguais": false,
+    "status": "ok",
+    "similaridade": 0.9996,
+    "deriva_cor": 2.66,
+    "salto_cor": 1.07,
+    "nsfw": 0.0001
+   }
+  ],
+  "duracao_s": 598.0
+ },
+ "fim": 1791812859.068278
+}

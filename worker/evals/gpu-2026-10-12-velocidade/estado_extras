@@ -1,0 +1,7 @@
+1791810665 RIFE_OK
+1791810665 apt_livre
+1791810672 cuda-keyring sha256 e7f219eab6fe4819cdb5c15b98233dc3420302d9c00883219cd3d896857cf48d
+1791810723 nvcc release 12.8
+1791810725 ferramentas ninja==1.13.2 packaging==26.3 setuptools==84.0.0 wheel==0.48.0 
+1791810725 compilando: 128 núcleos, 1511 GB, 64 processos
+1791811146 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 964ee18cf8c8a6421bb3009111ecaf5f57da9f41d440f3aca78c2caa7a50fa42

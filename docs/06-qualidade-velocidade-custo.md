@@ -21,7 +21,7 @@
 | BF16 puro | **Não** | Dobra a VRAM sem ganho visível. Hoje: pesos fp8 com cálculo em bf16 |
 | INT8 / GGUF | Só em GPU sem fp8 | Ampere (A40) |
 | Aceleração `--fast` fp8 | **Não** | Medido na L40S: ~55 s com e sem |
-| SageAttention | Talvez | A medir (pacote novo, ADR) |
+| SageAttention | Talvez | Medido em 12/10: −15% em 480p e −26% em 720p, mas um vídeo a mais reprovou na conferência; teste maior antes de um ADR (seção 9.2) |
 | Cache em volume de rede | Hoje, não | Download do Hugging Face: ~2 min e grátis. Melhor: imagem com os modelos (ADR 0002) |
 
 ## 2. GPU mais potente e paralelismo
@@ -159,15 +159,12 @@ Depois dos testes do dono no site (pedido "deixe bonito, com um movimento suave"
 | `--fp8_e4m3fn` | Esse nome não existe: o ComfyUI nem inicia (argumento ambíguo). Os reais (`--fp8_e4m3fn-unet`, `--fp8_e4m3fn-text-enc`) só mudam arquivos que não são fp8 | Não usar |
 | `--highvram` / `--gpu-only` | Os dois especialistas já ficam na VRAM de 48 GB; essas opções desligam a gerência de memória que protege do Ollama (mesma GPU) e não cabem na 4090 | Não usar; manter `--reserve-vram` |
 | FlashAttention-2 | O PyTorch 2.8 (SDPA) já usa os núcleos do FA2 | Não usar |
-| SageAttention 2.2 | Núcleos ~2,5× mais rápidos que o FA2 em L20/L40 e 1,5–1,8× no vídeo inteiro em outros modelos (arXiv 2411.10958); **estimativa** aqui: ~20% menos tempo em 480p e 30–40% em 720p. Precisa de um wheel compilado para o torch 2.8.0+cu128 (sm89 e sm120, fixado por SHA-256 no espelho R2) e de `gcc` no pod; a mesma seed passa a dar outro vídeo (reconferir os limiares) | Testar em GPU; ADR se ganhar |
-| `--enable-triton-backend` | Com cu128, partes da quantização fp8 rodam em PyTorch puro; **estimativa** de 2–5% | Testar junto |
-| Interpolar 16 → 32 fps | O ComfyUI v0.38.0 já tem nós de RIFE e FILM; pesos RIFE v4.25 (MIT, 22,7 MB, `Comfy-Org/frame_interpolation`); **estimativa** de 1–3 s de GPU por vídeo. Riscos: fantasma em movimento rápido, texto e rótulos deformados. A conferência e o filtro continuam no vídeo de 16 fps (a 32 fps, o salto de um corte cai para menos do limite) | Testar em GPU; ADR (muda o vídeo entregue). GIMM-VFI não (licença não comercial) |
+| SageAttention 2.2 | **Medido em 12/10** (L40S): a atenção 1,8× mais rápida; o vídeo inteiro **−15,3% em 480p** (42,9 × 50,7 s) e **−26,3% em 720p** (125,4 × 170,2 s); SSIM 0,98–0,99 contra a atenção atual, iguais a olho. Mas um vídeo a mais reprovou na conferência (deriva de cor 40,4, limite 40; os do café sobem 1–5 pontos). Precisa de um wheel compilado (fixado por SHA-256 no espelho R2) e de `gcc` no pod | **Não entra agora** (a regra escrita antes proíbe reprovação a mais); teste maior de ~24 vídeos (~US$ 0,75) decide |
+| `--enable-triton-backend` | Com cu128, partes da quantização fp8 rodam em PyTorch puro; **estimativa** de 2–5% | Não medido (fora do pedido de 12/10) |
+| Interpolar 16 → 32 fps | Nós de RIFE e FILM já no ComfyUI v0.38.0; pesos RIFE v4.25 (MIT, 22,7 MB, `Comfy-Org/frame_interpolation`). **Medido em 12/10:** +4,4 a +5,0 s por vídeo 480p de 5 s (+9%), arquivo +10%, sem fantasma nos movimentos lentos testados. A conferência e o filtro continuam no vídeo de 16 fps (a 32 fps, o salto de um corte cai para menos do limite) | **Proposta: [ADR 0013](adr/0013-interpolacao-rife.md)**, decisão do dono (muda o vídeo entregue). GIMM-VFI não (licença não comercial) |
+| A GPU não espera (da proposta FastAPI/asyncio) | O worker da fila (`fila.py`) fazia um vídeo de cada vez: baixar e preparar a foto, gerar, conferir, filtrar e enviar. Agora pega e prepara o próximo e confere e envia o anterior enquanto a GPU gera. **Medido em 12/10:** GPU parada entre vídeos de 2,03 s para 0,04 s; 54,3 → 51,7 s por vídeo (−4,8%, com a rede simulada; com a rede de verdade, o ganho é o tempo real do envio e do download) | **Feito**, ligado por padrão (`--sem-adiantar` desliga) |
+| Carregar o modelo no boot (da mesma proposta) | O 1º vídeo de um ComfyUI novo leva 56,2 s contra 50,7 s quente (num pod novo; na volta da hibernação, ~26 s a mais). Com a fila vazia logo depois do PRONTO, o worker aquece com um vídeo pequeno e descartado (16,6 s de GPU) e o 1º pedido sai em 50,7 s | **Feito**, ligado (só age com a fila vazia; `--sem-aquecer` desliga) |
+| `torch.compile` (da mesma proposta) | Compila de novo a cada tamanho de vídeo e pode mudar o resultado | Fora, por decisão do dono (12/10) |
 
-**Teste em GPU proposto** (um pod L40S secure, ~50 min, ~US$ 0,90, com desligamento automático e encerrado no fim):
-1. Três configurações com as mesmas 8 receitas SFW em 480p e 2 em 720p, com seeds fixas:
-   - A: a atual;
-   - B: com SageAttention 2.2;
-   - C: B mais `--enable-triton-backend`.
-2. Medir tempo por etapa, VRAM, notas da conferência e do filtro, e a semelhança com A; comparar às cegas, com a regra de decisão escrita antes.
-3. RIFE ×2 nos vídeos de A, com tempo e tamanho do arquivo.
+**Teste em GPU feito em 12/10/2026** (`worker/evals/gpu-2026-10-12-velocidade/`, um pod L40S secure, 47 min, US$ 0,86, com desligamento automático e encerrado no fim): o worker de antes e o novo, o aquecimento, o SageAttention 2.2 (compilado no pod, do commit da tag v2.2.0) e o RIFE ×2, com fotos SFW e seeds fixas, e as regras de decisão escritas antes da medição. Resultado na tabela acima; o detalhe, as folhas de quadros e o incidente do roteiro (a fase 2 caiu e o pod foi retomado para refazê-la), no LEIAME da medição.
 

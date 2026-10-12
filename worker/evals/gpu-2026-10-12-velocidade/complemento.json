@@ -1,0 +1,244 @@
+{
+ "inventario": {
+  "alta": [
+   "xicara2-v1.mp4"
+  ],
+  "antes": [
+   "cafe3-v1.mp4",
+   "xicara2-v1.mp4",
+   "xicara4-v1.mp4",
+   "xicara6-v1.mp4"
+  ],
+  "novo": [
+   "cafe3-v1.mp4",
+   "xicara2-v1.mp4",
+   "xicara4-v1.mp4",
+   "xicara6-v1.mp4"
+  ],
+  "sage": [
+   "xicara2-v1.mp4",
+   "xicara4-v1.mp4",
+   "xicara6-v1.mp4"
+  ],
+  "sage-alta": [
+   "xicara2-v1.mp4"
+  ]
+ },
+ "antes_x_novo": {
+  "cafe3-v1.mp4": {
+   "ssim": 0.990485,
+   "psnr": 43.789491,
+   "iguais": false
+  },
+  "xicara2-v1.mp4": {
+   "ssim": 0.996616,
+   "psnr": 48.531437,
+   "iguais": false
+  },
+  "xicara4-v1.mp4": {
+   "ssim": 0.996537,
+   "psnr": 48.341289,
+   "iguais": false
+  },
+  "xicara6-v1.mp4": {
+   "ssim": 0.995862,
+   "psnr": 47.608371,
+   "iguais": false
+  }
+ },
+ "sage_x_atual": {
+  "sage/xicara2-v1.mp4": {
+   "ssim": 0.99165,
+   "psnr": 40.88472,
+   "iguais": false
+  },
+  "sage/xicara4-v1.mp4": {
+   "ssim": 0.989465,
+   "psnr": 38.813705,
+   "iguais": false
+  },
+  "sage/xicara6-v1.mp4": {
+   "ssim": 0.986938,
+   "psnr": 37.534806,
+   "iguais": false
+  },
+  "sage-alta/xicara2-v1.mp4": {
+   "ssim": 0.98156,
+   "psnr": 34.403149,
+   "iguais": false
+  }
+ },
+ "rife": [
+  {
+   "base": {
+    "nome": "cafe-1001-base",
+    "foto": "cafe",
+    "seed": 1001,
+    "dims": [
+     832,
+     480
+    ],
+    "ok": true,
+    "erro": null,
+    "tempos": {
+     "upload_s": 0.0,
+     "render_s": 51.04,
+     "download_s": 0.0,
+     "total_s": 51.06
+    },
+    "total_s": 51.06,
+    "vram_pico_mib": 40112,
+    "executado_s": [
+     50.75
+    ],
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 50.75 seconds\u001b[0m"
+    ],
+    "sha": "ebbb71f7bff89c70",
+    "video_info": {
+     "quadros": 81,
+     "fps": "16/1"
+    },
+    "bytes": 486121
+   },
+   "rife": {
+    "nome": "cafe-1001-rife",
+    "foto": "cafe",
+    "seed": 1001,
+    "dims": [
+     832,
+     480
+    ],
+    "ok": true,
+    "erro": null,
+    "tempos": {
+     "upload_s": 0.0,
+     "render_s": 56.35,
+     "download_s": 0.01,
+     "total_s": 56.37
+    },
+    "total_s": 56.37,
+    "vram_pico_mib": 40528,
+    "executado_s": [
+     55.78
+    ],
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m Requested to load IFNet",
+     "Frame interpolation:   0%|          | 0/80 [00:00<?, ?it/s]",
+     "Frame interpolation:   1%|▏         | 1/80 [00:00<00:48,  1.64it/s]",
+     "Frame interpolation:   6%|▋         | 5/80 [00:00<00:09,  7.76it/s]",
+     "Frame interpolation:  11%|█▏        | 9/80 [00:00<00:05, 13.71it/s]",
+     "Frame interpolation:  15%|█▌        | 12/80 [00:01<00:04, 16.94it/s]",
+     "Frame interpolation:  20%|██        | 16/80 [00:01<00:02, 22.20it/s]",
+     "Frame interpolation:  25%|██▌       | 20/80 [00:01<00:02, 26.55it/s]",
+     "Frame interpolation:  30%|███       | 24/80 [00:01<00:01, 29.29it/s]",
+     "Frame interpolation:  35%|███▌      | 28/80 [00:01<00:01, 32.14it/s]",
+     "Frame interpolation:  40%|████      | 32/80 [00:01<00:01, 33.48it/s]",
+     "Frame interpolation:  45%|████▌     | 36/80 [00:01<00:01, 29.96it/s]",
+     "Frame interpolation:  50%|█████     | 40/80 [00:01<00:01, 32.41it/s]",
+     "Frame interpolation:  55%|█████▌    | 44/80 [00:01<00:01, 34.09it/s]",
+     "Frame interpolation:  60%|██████    | 48/80 [00:01<00:00, 35.66it/s]",
+     "Frame interpolation:  65%|██████▌   | 52/80 [00:02<00:00, 35.70it/s]",
+     "Frame interpolation:  70%|███████   | 56/80 [00:02<00:00, 35.48it/s]",
+     "Frame interpolation:  76%|███████▋  | 61/80 [00:02<00:00, 32.89it/s]",
+     "Frame interpolation:  81%|████████▏ | 65/80 [00:02<00:00, 34.60it/s]",
+     "Frame interpolation:  86%|████████▋ | 69/80 [00:02<00:00, 35.12it/s]",
+     "Frame interpolation:  92%|█████████▎| 74/80 [00:02<00:00, 38.36it/s]",
+     "Frame interpolation:  98%|█████████▊| 78/80 [00:02<00:00, 38.17it/s]",
+     "Frame interpolation: 100%|██████████| 80/80 [00:02<00:00, 27.62it/s]",
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 55.78 seconds\u001b[0m"
+    ],
+    "sha": "aa66ff9bfed1f097",
+    "video_info": {
+     "quadros": 161,
+     "fps": "32/1"
+    },
+    "bytes": 530800
+   }
+  },
+  {
+   "base": {
+    "nome": "xicara-1002-base",
+    "foto": "xicara",
+    "seed": 1002,
+    "dims": [
+     832,
+     480
+    ],
+    "ok": true,
+    "erro": null,
+    "tempos": {
+     "upload_s": 0.0,
+     "render_s": 51.14,
+     "download_s": 0.0,
+     "total_s": 51.15
+    },
+    "total_s": 51.15,
+    "vram_pico_mib": 40178,
+    "executado_s": [
+     50.71
+    ],
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 50.71 seconds\u001b[0m"
+    ],
+    "sha": "d885ee3f830c8f8d",
+    "video_info": {
+     "quadros": 81,
+     "fps": "16/1"
+    },
+    "bytes": 212408
+   },
+   "rife": {
+    "nome": "xicara-1002-rife",
+    "foto": "xicara",
+    "seed": 1002,
+    "dims": [
+     832,
+     480
+    ],
+    "ok": true,
+    "erro": null,
+    "tempos": {
+     "upload_s": 0.0,
+     "render_s": 55.46,
+     "download_s": 0.0,
+     "total_s": 55.47
+    },
+    "total_s": 55.47,
+    "vram_pico_mib": 40178,
+    "executado_s": [
+     55.08
+    ],
+    "log": [
+     "Frame interpolation:   0%|          | 0/80 [00:00<?, ?it/s]",
+     "Frame interpolation:   5%|▌         | 4/80 [00:00<00:01, 38.88it/s]",
+     "Frame interpolation:  10%|█         | 8/80 [00:00<00:01, 37.98it/s]",
+     "Frame interpolation:  16%|█▋        | 13/80 [00:00<00:01, 41.75it/s]",
+     "Frame interpolation:  22%|██▎       | 18/80 [00:00<00:01, 34.79it/s]",
+     "Frame interpolation:  28%|██▊       | 22/80 [00:00<00:01, 35.63it/s]",
+     "Frame interpolation:  34%|███▍      | 27/80 [00:00<00:01, 38.64it/s]",
+     "Frame interpolation:  40%|████      | 32/80 [00:00<00:01, 40.67it/s]",
+     "Frame interpolation:  46%|████▋     | 37/80 [00:00<00:01, 35.52it/s]",
+     "Frame interpolation:  51%|█████▏    | 41/80 [00:01<00:01, 36.63it/s]",
+     "Frame interpolation:  57%|█████▊    | 46/80 [00:01<00:00, 39.14it/s]",
+     "Frame interpolation:  64%|██████▍   | 51/80 [00:01<00:00, 40.62it/s]",
+     "Frame interpolation:  70%|███████   | 56/80 [00:01<00:00, 35.87it/s]",
+     "Frame interpolation:  75%|███████▌  | 60/80 [00:01<00:00, 36.86it/s]",
+     "Frame interpolation:  80%|████████  | 64/80 [00:01<00:00, 37.66it/s]",
+     "Frame interpolation:  85%|████████▌ | 68/80 [00:01<00:00, 38.17it/s]",
+     "Frame interpolation:  90%|█████████ | 72/80 [00:01<00:00, 38.54it/s]",
+     "Frame interpolation:  95%|█████████▌| 76/80 [00:02<00:00, 37.86it/s]",
+     "Frame interpolation: 100%|██████████| 80/80 [00:02<00:00, 30.96it/s]",
+     "Frame interpolation: 100%|██████████| 80/80 [00:02<00:00, 36.40it/s]",
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 55.08 seconds\u001b[0m"
+    ],
+    "sha": "ac12ca724a9593f4",
+    "video_info": {
+     "quadros": 161,
+     "fps": "32/1"
+    },
+    "bytes": 232891
+   }
+  }
+ ]
+}

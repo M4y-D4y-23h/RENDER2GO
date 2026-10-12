@@ -6,6 +6,15 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há. Para pôr o servidor em dia, comece pela entrada mais recente: ela diz de que versão parte e quais anteriores já traz junto.
 
+### 12/10/2026 (3): a GPU não espera e aquecimento (na branch, ainda não na `main`)
+
+**Só depois de entrar na `main`** (decisão do dono). Parte da versão da entrada abaixo e muda a API (duas rotas de worker, `iniciar` e `devolver`) e o código que vai para os pods (`render2go_worker/fila.py`: o próximo vídeo é preparado e o anterior enviado enquanto a GPU gera; aquecimento com a fila vazia). Sem coluna nova no banco, sem variável nova no `.env` e sem regra nova no R2. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (8); medição em `worker/evals/gpu-2026-10-12-velocidade/`.
+
+1. **Nada gerando, backup e código novo:** os blocos 1 e 2 da entrada abaixo.
+2. **Subir:** `cd ~/GPU2GO/servico/implantacao && docker compose up -d --build`. API e pods sobem juntos com o mesmo código (o orquestrador empacota o worker do próprio contêiner), então não há pod novo falando com a API antiga.
+3. **Conferir:** num pedido de vários vídeos, tudo sai como antes, um pouco mais rápido; na seção "GPUs" do painel, o "Uso da GPU" passa a contar só o tempo de GPU de cada vídeo (antes somava também o download da foto e o envio). Parar um pedido no meio continua sem custo para o que não foi gerado. O tempo de cada etapa ("preparo", "gpu_parada", "gpu", "conferencia", "filtro", "envio") e o "GPU ... aquecida em N s" ficam no log do worker no pod (`/root/render2go/fila.log`), que vai embora com o pod.
+- **Se algo der errado:** volte para a versão da entrada abaixo. Para manter o código novo sem a sobreposição, o worker aceita `--sem-adiantar` e `--sem-aquecer` (o comando fica em `FILA_CMD`, no `orquestrador.py`).
+
 ### 12/10/2026 (2): parar pedido, motivo de cada falha e quarentena dos vídeos barrados
 
 **É a atualização a fazer agora.** Parte da versão da entrada abaixo (a `main` de 12/10, `693e38b`) e está na `main` desde 12/10/2026 (veio da branch `claude/magical-lamport-4rrms9`). Muda a API, as páginas e o código que vai para os pods (o vídeo barrado vai para a quarentena); o banco ganha três colunas (`lotes.interrompido_em`, `lotes.interrompido_por` e `jobs.quarentena_em`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (5); [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md), atualização de 12/10.
