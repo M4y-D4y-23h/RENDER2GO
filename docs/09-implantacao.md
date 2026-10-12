@@ -455,7 +455,7 @@ docker compose logs -f api orquestrador     # Ctrl+C para sair dos logs
 | `RENDER2GO_EMAIL_DOMINIOS_EXTRA` | Opcional: domínios de e-mail aceitos além da lista padrão |
 | `RENDER2GO_API_URL` | `https://` + domínio; é por ela que os pods falam com a API |
 | `RUNPOD_API_KEY` | O orquestrador cria e encerra pods |
-| `RENDER2GO_MAX_PODS`, `RENDER2GO_MAX_USD_H` | Teto de pods e de gasto por hora (o gasto de um pod novo conta pelo preço da GPU mais cara da lista que tiver vaga) |
+| `RENDER2GO_MAX_PODS`, `RENDER2GO_MAX_USD_H` | Teto de pods (padrão 8; acima de 8 só vale desde 12/10/2026) e de gasto por hora (o gasto de um pod novo conta pelo preço da GPU mais cara da lista que tiver vaga) |
 | `RENDER2GO_PRAZO_MIN` | Opcional: prazo de entrega em minutos (mais pods, mais custo) |
 | `RENDER2GO_AGRUPAR_TESTE_MIN`, `RENDER2GO_AGRUPAR_TESTE_VIDEOS` | Opcional: testes gratuitos esperam juntar 20 vídeos ou 10 min antes de subir um pod (padrões) |
 | `RENDER2GO_GPUS` | Opcional: GPUs em ordem de preferência, separadas por vírgula, com o nome exato do RunPod. Padrão: `NVIDIA L40S,NVIDIA RTX 6000 Ada Generation,NVIDIA RTX PRO 6000 Blackwell Server Edition,NVIDIA GeForce RTX 4090`. Para trocar: edite e rode `docker compose up -d orquestrador` |

@@ -246,7 +246,8 @@ class Orquestrador:
         if not videos:
             return 0
         s_medio = segundos / videos
-        pods, _ = ln.escolher_pods(videos, videos, 1, s_medio, self.cfg.prazo_min)
+        # o teto é RENDER2GO_MAX_PODS (antes de 12/10/2026, a regra do lote_nuvem parava em 8 pods)
+        pods, _ = ln.escolher_pods(videos, videos, 1, s_medio, self.cfg.prazo_min, max_pods=self.cfg.max_pods)
         return min(pods, self.cfg.max_pods)
 
     def _preco(self) -> float:

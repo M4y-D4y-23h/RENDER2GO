@@ -572,10 +572,16 @@ MAX_PODS_AUTO = 8
 
 
 def escolher_pods(
-    n_videos: int, n_pacotes: int, gpus_por_pod: int, s_video: float, prazo_min: int | None
+    n_videos: int,
+    n_pacotes: int,
+    gpus_por_pod: int,
+    s_video: float,
+    prazo_min: int | None,
+    max_pods: int = MAX_PODS_AUTO,
 ) -> tuple[int, str]:
     """Quantos pods usar: o mínimo que cumpre o prazo, ou (sem prazo) o máximo que mantém
-    cada pod com pelo menos TRABALHO_MIN_POD_S de vídeos. Nunca mais pods que pacotes."""
+    cada pod com pelo menos TRABALHO_MIN_POD_S de vídeos. Nunca mais pods que pacotes nem que
+    `max_pods` (o serviço passa RENDER2GO_MAX_PODS; a linha de comando fica nos 8 de sempre)."""
     trabalho_s = n_videos * s_video / gpus_por_pod  # GPU-segundos por pod, se fosse um só
     if prazo_min:
         livre_s = prazo_min * 60 - SUBIDA_S
@@ -584,7 +590,7 @@ def escolher_pods(
     else:
         pods = int(trabalho_s // TRABALHO_MIN_POD_S)
         motivo = f"cada pod com ≥ {TRABALHO_MIN_POD_S // 60} min de vídeos"
-    teto = min(MAX_PODS_AUTO, max(1, n_pacotes))
+    teto = min(max_pods, max(1, n_pacotes))
     if prazo_min and pods > teto:
         motivo += f" (não cabe: no máximo {teto} pods)"
     return max(1, min(pods, teto)), motivo

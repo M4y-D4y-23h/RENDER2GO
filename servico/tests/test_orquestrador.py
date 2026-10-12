@@ -147,6 +147,17 @@ def test_no_work_no_pods(orq):
     assert o.provedor.criados == []
 
 
+def test_a_big_queue_asks_for_up_to_the_configured_number_of_pods(orq):
+    """Fila grande (5.000 vídeos de 5 s em 480p): o teto é RENDER2GO_MAX_PODS. Antes de 12/10/2026, a
+    regra do lote_nuvem parava em 8, mesmo com RENDER2GO_MAX_PODS=30 (o docs/13 prometia 30)."""
+    trabalho = [{"pedido": {"qualidade": "rapida", "duracao": 5}, "pendentes": 5000, "em_andamento": 0}]
+    assert orq().desejados(trabalho) == ln.MAX_PODS_AUTO == 8  # sem RENDER2GO_MAX_PODS: os 8 de sempre
+    assert orq(max_pods=30).desejados(trabalho) == 30
+    assert orq(max_pods=4).desejados(trabalho) == 4
+    poucos = [{"pedido": {"qualidade": "rapida", "duracao": 5}, "pendentes": 20, "em_andamento": 0}]
+    assert orq(max_pods=30).desejados(poucos) == 1  # cada pod com pelo menos 10 min de vídeos
+
+
 def test_each_cycle_marks_the_loop_alive(orq):
     o = orq(intervalo_s=0.05)  # o healthcheck do compose confere a idade do arquivo "vivo"
     t = threading.Thread(target=o.rodar, daemon=True)
