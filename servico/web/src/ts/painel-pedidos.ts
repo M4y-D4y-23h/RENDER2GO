@@ -1,6 +1,6 @@
 // Painel: revisão dos pedidos (nada vai para a GPU sem aprovação; ADR 0004) e o histórico, com o uso por IP e
 // por dispositivo. No pedido em sequência, cada foto com texto próprio mostra esse texto embaixo da miniatura.
-import { ESTADOS, anunciar, api, aviso, baixarJson, confirmar, criar, curto, el, icone, marcarErro, ocupado, plural, quando, reconciliar, tempo, textoErro, urlSegura, vazio } from "./comum";
+import { ESTADOS, NOTAS_SATISFACAO, anunciar, api, aviso, baixarJson, confirmar, criar, curto, el, icone, marcarErro, ocupado, plural, quando, reconciliar, tempo, textoErro, urlSegura, vazio } from "./comum";
 import { type Controle, controle, erroDeAcao, erroDeCarga, iniciarAbas, pode, semLinhas, tabela, tempoCurto, trocar } from "./painel-base";
 
 // análise automática de cada foto (render2go_servico/pessoas.py); null = ainda analisando
@@ -53,6 +53,7 @@ type ItemHistorico = {
   prontos: number;
   total: number;
   barrados?: number;
+  avaliacao?: number | null; // satisfação do cliente (1 a 5)
 };
 type UsoIp = { ip: string; pedidos: number; fotos: number; fotos_teste: number; clientes: number; dispositivos: number; ultimo: number };
 type UsoDispositivo = {
@@ -240,6 +241,7 @@ function itemHistorico(x: ItemHistorico, aoMudar: () => void): HTMLElement {
   if (x.fotos_apagadas) detalhes.push("fotos de entrada já apagadas");
   detalhes.push(x.autorizado_em ? `autorização marcada em ${quando(x.autorizado_em)}` : "sem autorização marcada");
   if (x.modelo) detalhes.push(`modelo ${x.modelo}`);
+  if (x.avaliacao) detalhes.push(`satisfação do cliente: ${NOTAS_SATISFACAO[x.avaliacao - 1] ?? x.avaliacao}`);
   const registro = criar("button", { type: "button", className: "botao pequeno", dados: { foco: `${x.lote}:auditoria` } }, [icone("baixar"), "Baixar registro de auditoria"]);
   registro.addEventListener("click", async () => {
     ocupado(registro, true);

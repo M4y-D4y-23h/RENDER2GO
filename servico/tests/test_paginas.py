@@ -912,6 +912,61 @@ def test_a_big_order_shows_the_first_videos_and_loads_the_rest_on_demand(ambient
     assert erros == [], erros
 
 
+def test_satisfaction_card_after_each_finished_order(ambiente, navegador):  # noqa: F811 (fixture)
+    """Pedido do dono (12/10/2026): no fim de cada pedido, "O quão satisfeito você está com a sua geração?", as
+    5 notas, "Enviar" e, embaixo, "Descartar e não ver novamente" (a conta não vê mais a pergunta)."""
+    erros: list[str] = []
+    tok = _cliente(ambiente)
+    a = _lote(ambiente, tok, {"s1.png": _png((40, 90, 160), "circulo")}, pronto=True)
+    b = _lote(ambiente, tok, {"s2.png": _png((200, 120, 60), "barras")}, pronto=True)
+    with ambiente.banco.tx() as c:
+        c.run("UPDATE lotes SET concluido_em = ? WHERE id IN (?, ?)", (time.time(), a, b))
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, tok)
+    pg = _pagina(ctx, erros)
+    pg.goto(ambiente.url)
+    cards = pg.locator("#lotes .avaliacao-pedido")
+    pw.expect(cards).to_have_count(2)
+    card = pg.locator(f"#lotes .avaliacao-pedido[data-avaliacao='{a}']")
+    assert card.locator("legend").inner_text() == "O quão satisfeito você está com a sua geração?"
+    notas = ["Muito pouco", "Pouco", "Neutro", "Satisfeito", "Muito satisfeito"]
+    assert card.locator(".marcacao").all_inner_texts() == notas
+    assert card.locator("button").all_inner_texts() == ["Enviar", "Descartar e não ver novamente"]
+    card.locator("button:has-text('Enviar')").click()  # sem escolher: o aviso e o foco na 1ª opção
+    pw.expect(card.locator(".aviso.erro")).to_contain_text("Escolha uma das opções")
+    pw.expect(card.locator("input[value='1']")).to_be_focused()
+    card.locator("label:has-text('Muito satisfeito')").click()
+    pw.expect(card.locator(".aviso.erro")).to_have_count(0)
+    card.locator("input[value='4']").check()  # Satisfeito
+    card.locator("button:has-text('Enviar')").click()
+    pw.expect(card.locator(".aviso.ok")).to_have_text("Obrigado! Sua avaliação: Satisfeito.")
+    pw.expect(card.locator(".aviso.ok")).to_be_focused()
+    assert ambiente.banco.avaliacoes_de([a, b]) == {a: 4}
+    assert _axe(pg) == []
+    # "Descartar e não ver novamente": a pergunta sai de todos os pedidos, também depois de recarregar
+    pg.locator(f"#lotes [data-foco='{b}:descartar-avaliacao']").click()
+    pw.expect(pg.locator(f"#lotes [data-avaliacao='{b}']")).to_have_count(0)
+    pw.expect(pg.locator("#titulo-pedidos")).to_be_focused()
+    pg.reload()
+    pg.wait_for_selector("#lotes .lote")
+    pw.expect(cards).to_have_count(0)
+    with ambiente.banco.tx() as c:
+        assert c.one("SELECT avaliacao_descartada FROM clientes")["avaliacao_descartada"]
+    # no painel: a média dos últimos 30 dias e a nota de cada pedido no histórico
+    adm_ctx = navegador.new_context()
+    _com_sessao(adm_ctx, ambiente, admin=True)
+    adm = _pagina(adm_ctx, erros)
+    adm.goto(f"{ambiente.url}{PAINEL}/#visao-geral")
+    satisfacao = adm.locator("#resumo-satisfacao")
+    pw.expect(satisfacao).to_contain_text("4 de 5 (Satisfeito)")
+    pw.expect(satisfacao).to_contain_text("Não querem mais a pergunta1 conta")
+    adm.click("#menu-painel a[data-secao=historico]")
+    pw.expect(adm.locator("#historico-lista")).to_contain_text("satisfação do cliente: Satisfeito")
+    ctx.close()
+    adm_ctx.close()
+    assert erros == [], erros
+
+
 class _MercadoPago:
     """Mercado Pago falso para a janela de Pix: QR de verdade (PNG) e a situação controlada pelo teste."""
 

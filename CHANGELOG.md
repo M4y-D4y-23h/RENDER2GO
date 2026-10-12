@@ -2,6 +2,16 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 12/10/2026 (3): pergunta de satisfação no fim de cada pedido
+
+Motivo: pedido do dono de 12/10 ("após cada rodada finalizada, um card com a pergunta 'o quão satisfeito você está com a sua geração', as opções muito pouco, pouco, neutro, satisfeito e muito satisfeito, um botão 'enviar' e, embaixo, 'descartar e não ver novamente', que faz esse card não aparecer mais para aquela conta"). Branch `claude/magical-lamport-4rrms9`.
+
+- **Página:** no fim do cartão de cada pedido terminado (pronto ou com falhas), "O quão satisfeito você está com a sua geração?", com as 5 opções, "Enviar" e, embaixo, "Descartar e não ver novamente". Sem escolher, o aviso e o foco na 1ª opção; enviado, "Obrigado! Sua avaliação: ...". O descarte tira a pergunta de todos os pedidos da conta, também dos seguintes. A pergunta aparece nos pedidos terminados nos últimos 7 dias (`AVALIAR_DIAS`; os antigos não pedem, para a conta não ver dezenas de perguntas de uma vez).
+- **API e banco:** `POST /api/lotes/{lote}/avaliacao` (nota de 1 a 5, uma por pedido terminado; a 2ª não muda a 1ª), `POST /api/conta/avaliacoes/descartar`; a lista de pedidos traz `avaliacao` e `pedir_avaliacao`. Tabela nova `avaliacoes` e coluna `clientes.avaliacao_descartada`, criadas sozinhas na partida. As notas saem com a exclusão da conta e com `apagar-historico`.
+- **Painel:** visão geral com "Satisfação dos clientes (30 dias)" (média, total, quantas de cada opção e quantas contas não querem mais a pergunta); no histórico, a nota de cada pedido.
+- **Política de privacidade v3** (ainda não publicada, então sem versão nova): a avaliação entra na lista de dados (legítimo interesse) e na exclusão da conta.
+- **Testes:** `servico/tests/test_avaliacao.py` (uma vez por pedido, janela de 7 dias, só pedido terminado e da própria conta, descarte por conta, painel, exclusão da conta e histórico) e, no navegador, `test_satisfaction_card_after_each_finished_order` (com o axe-core e o painel). O Postgres de teste e o teste de invasão apagam a tabela nova entre as rodadas.
+
 ## 12/10/2026 (2): pedidos sem limite de fotos, enviados em partes (ADR 0012)
 
 Motivo: pedido do dono de 12/10 ("o envio deve ser ilimitado para contas pagas e internas; mesmo que hajam 10.000 pedidos, a geração será como ter 100, só mais demorada"). Branch `claude/magical-lamport-4rrms9`.

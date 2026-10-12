@@ -134,6 +134,10 @@ MAX_TEXTOS_FOTO = 100
 VIDEOS_POR_PAGINA = 100  # vídeos de um pedido grande por resposta (a página pede mais)
 PREVIA_REVISAO = 60  # fotos de um pedido grande que o revisor vê de cara (mais as marcadas pela análise)
 MARCADAS_REVISAO = 300  # teto das fotos marcadas (pessoas, rostos, erro) mostradas além da prévia
+# satisfação depois de cada pedido terminado (pedido do dono, 12/10/2026): notas de 1 (muito pouco) a 5 (muito
+# satisfeito); o card aparece nos pedidos terminados nos últimos AVALIAR_DIAS dias, ainda sem nota
+AVALIAR_DIAS = 7
+TERMINADOS = ("concluido", "concluido_com_falhas")
 DIAS_EXTRATO = (7, 30, 90, 365, 0)  # períodos do extrato (0 = tudo)
 MAX_LINHAS_CSV = 5000
 RESOLUCAO_EXTRATO = {"rapida": "480p", "alta": "720p"}
@@ -971,6 +975,10 @@ class SuporteIn(BaseModel):
     mensagem: str = Field(min_length=10, max_length=2000)
     email: str | None = Field(None, max_length=200)
     turnstile: str | None = Field(None, max_length=2048)
+
+
+class AvaliacaoIn(BaseModel):
+    nota: int = Field(ge=1, le=5)  # 1 muito pouco, 2 pouco, 3 neutro, 4 satisfeito, 5 muito satisfeito
 
 
 class FotosIn(BaseModel):
@@ -2189,6 +2197,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         cobranca: dict | None = None,
         pedido: dict | None = None,
         livre: int | None = None,
+        avaliacao: int | None = None,
+        pedir_avaliacao: bool = False,
     ) -> dict:
         if jobs is None:
             jobs = [j for j in c.banco.jobs(lt["id"]) if j["tipo"] == "render"]
@@ -2231,6 +2241,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "excluidos": contagem["excluidos"],
             "videos": videos,
             "videos_mais": mais,  # vídeos prontos além dos listados (pedido grande)
+            "avaliacao": avaliacao,  # a nota que o cliente deu (1 a 5), se deu
+            "pedir_avaliacao": pedir_avaliacao,  # mostrar o card de satisfação neste pedido
             "previsao": {"fase": "saldo"} if aguardando_saldo else _previsao(c, lt, jobs),
             # pré-pago: quanto o pedido custou e quanto já voltou para o saldo; no modo por vídeo, o que já
             # foi cobrado dos vídeos entregues, o preço de cada um e se espera a recarga
@@ -2334,7 +2346,22 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         jobs = c.banco.jobs_de(ids, com_texto=[i for i in ids if pedidos[i].get("textos_por_foto")])
         cobr = c.banco.cobrancas([lt["id"] for lt in lotes if lt["preco_video"] is not None])
         livre = c.banco.saldo_livre(cli["id"]) if any(lt.get("cobranca") == "video" for lt in lotes) else None
-        return [_resumo(lt, c, cli["id"], jobs[lt["id"]], cobr.get(lt["id"]), pedidos[lt["id"]], livre) for lt in lotes]
+        notas, pedir = _avaliacoes(c, cli, lotes)
+        return [
+            _resumo(lt, c, cli["id"], jobs[lt["id"]], cobr.get(lt["id"]), pedidos[lt["id"]], livre,
+                    avaliacao=notas.get(lt["id"]), pedir_avaliacao=lt["id"] in pedir)
+            for lt in lotes
+        ]  # fmt: skip
+
+    def _avaliacoes(c: Config, cli: dict, lotes: list[dict]) -> tuple[dict[str, int], set[str]]:
+        """As notas já dadas e os pedidos que mostram o card de satisfação: terminados nos últimos AVALIAR_DIAS
+        dias e ainda sem nota, numa conta que não escolheu \"Descartar e não ver novamente\"."""
+        terminados = [lt for lt in lotes if lt["status"] in TERMINADOS]
+        notas = c.banco.avaliacoes_de([lt["id"] for lt in terminados])
+        if cli.get("avaliacao_descartada"):
+            return notas, set()
+        desde = time.time() - AVALIAR_DIAS * 86400
+        return notas, {lt["id"] for lt in terminados if lt["id"] not in notas and (lt["concluido_em"] or 0) >= desde}
 
     @app.get("/api/saldo")
     def meu_saldo(cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -2519,7 +2546,23 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         lt = c.banco.lote(lote_id, cli["id"])
         if lt is None:
             raise HTTPException(404, "lote não encontrado")
-        return _resumo(lt, c, cli["id"])
+        notas, pedir = _avaliacoes(c, cli, [lt])
+        return _resumo(lt, c, cli["id"], avaliacao=notas.get(lote_id), pedir_avaliacao=lote_id in pedir)
+
+    @app.post("/api/lotes/{lote_id}/avaliacao")
+    def avaliar_lote(lote_id: str, body: AvaliacaoIn, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """\"O quão satisfeito você está com a sua geração?\": uma nota por pedido terminado."""
+        try:
+            c.banco.avaliar(lote_id, cli["id"], body.nota)
+        except BancoError as e:
+            raise HTTPException(404 if "não encontrado" in str(e) else 409, str(e)) from e
+        return {"ok": True}
+
+    @app.post("/api/conta/avaliacoes/descartar")
+    def descartar_avaliacoes(cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """\"Descartar e não ver novamente\": o card de satisfação não aparece mais nesta conta."""
+        c.banco.descartar_avaliacoes(cli["id"])
+        return {"ok": True}
 
     # -- pagamentos (ADR 0008) --------------------------------------------------------------
 
@@ -2986,6 +3029,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(422, "fuso inválido")
         local = time.time() + fuso_min * 60
         r = c.banco.resumo_painel(local - local % 86400 - fuso_min * 60)
+        r["satisfacao"] = c.banco.resumo_avaliacoes(time.time() - 30 * 86400)  # notas dos últimos 30 dias
         vivo, pausa = c.banco.ler_estado("orquestrador_vivo"), c.banco.ler_estado("pausado")
         r["orquestrador_visto_s"] = round(time.time() - float(vivo["atualizado"]), 1) if vivo else None
         r["pausado"] = bool(pausa and pausa["valor"] == "1")
@@ -3250,6 +3294,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "prontos": lt["prontos"],
                     "total": lt["total"],
                     "barrados": int(lt.get("barrados") or 0),  # filtro de imagem (ADR 0005): não entregues
+                    "avaliacao": lt.get("avaliacao"),  # satisfação do cliente com o pedido (1 a 5)
                 }
                 for lt in lotes
             ],

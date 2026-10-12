@@ -6,6 +6,7 @@ import {
   ESTADOS,
   ErroApi,
   type ItemLista,
+  NOTAS_SATISFACAO,
   anunciar,
   api,
   aviso,
@@ -60,6 +61,9 @@ type Lote = {
   falhas?: number;
   excluidos?: number;
   videos_mais?: number;
+  // satisfação (12/10/2026): a nota dada (1 a 5) e se o card aparece neste pedido
+  avaliacao?: number | null;
+  pedir_avaliacao?: boolean;
 };
 type Envio = { original: string; url: string; tipo: string };
 
@@ -263,6 +267,67 @@ function itemVideo(lote: string, v: Video): HTMLElement {
   return criar("li", { className: "video" }, itens);
 }
 
+// satisfação depois de cada pedido terminado (pedido do dono, 12/10/2026): uma nota por pedido, de 1 a 5
+const NOTAS = NOTAS_SATISFACAO;
+
+function cartaoAvaliacao(l: Lote): HTMLElement {
+  const opcoes = NOTAS.map((rotulo, i) =>
+    criar("label", { className: "marcacao" }, [
+      criar("input", { type: "radio", name: `nota-${l.lote}`, value: String(i + 1), dados: { foco: `${l.lote}:nota:${i + 1}` } }),
+      criar("span", { textContent: rotulo }),
+    ]),
+  );
+  const grupo = criar("fieldset", { className: "notas-avaliacao" }, [
+    criar("legend", { textContent: "O quão satisfeito você está com a sua geração?" }),
+    criar("div", { className: "notas-grade" }, opcoes),
+  ]);
+  const msg = criar("div", { className: "aviso", hidden: true, attrs: { tabindex: "-1" } });
+  const enviar = criar("button", { type: "button", className: "botao primario", dados: { foco: `${l.lote}:avaliar` } }, ["Enviar"]);
+  const descartar = criar("button", { type: "button", className: "botao fantasma", dados: { foco: `${l.lote}:descartar-avaliacao` } }, [
+    "Descartar e não ver novamente",
+  ]);
+  const caixa = criar("div", { className: "avaliacao-pedido", dados: { avaliacao: l.lote } }, [grupo, msg, criar("div", { className: "acoes-avaliacao" }, [enviar, descartar])]);
+  enviar.addEventListener("click", async () => {
+    const marcada = grupo.querySelector<HTMLInputElement>("input:checked");
+    if (!marcada) {
+      aviso(msg, "Escolha uma das opções antes de enviar.", "erro");
+      grupo.querySelector<HTMLInputElement>("input")?.focus();
+      anunciar("Escolha uma das opções antes de enviar.", true);
+      return;
+    }
+    ocupado(enviar, true);
+    try {
+      await api(`/api/lotes/${l.lote}/avaliacao`, { method: "POST", body: JSON.stringify({ nota: Number(marcada.value) }) });
+      l.avaliacao = Number(marcada.value);
+      l.pedir_avaliacao = false;
+      aviso(msg, `Obrigado! Sua avaliação: ${NOTAS[Number(marcada.value) - 1]}.`, "ok");
+      grupo.remove();
+      caixa.querySelector(".acoes-avaliacao")?.remove();
+      msg.focus();
+    } catch (e) {
+      ocupado(enviar, false);
+      aviso(msg, textoErro(e), "erro");
+      anunciar(textoErro(e), true);
+    }
+  });
+  grupo.addEventListener("change", () => aviso(msg, ""));
+  descartar.addEventListener("click", async () => {
+    ocupado(descartar, true);
+    try {
+      await api("/api/conta/avaliacoes/descartar", { method: "POST" });
+      // a pergunta sai de todos os pedidos desta conta (o servidor não a manda mais)
+      for (const c of document.querySelectorAll(".avaliacao-pedido")) c.remove();
+      el("titulo-pedidos").focus();
+      anunciar("Pronto: a pergunta de satisfação não aparece mais.");
+    } catch (e) {
+      ocupado(descartar, false);
+      aviso(msg, textoErro(e), "erro");
+      anunciar(textoErro(e), true);
+    }
+  });
+  return caixa;
+}
+
 function cartaoLote(l: Lote): HTMLElement {
   const estado = ESTADOS[l.status] ?? l.status;
   const cartao = criar("article", { className: `cartao lote estado-${l.status} surgir`, attrs: { "aria-label": `Pedido de ${plural(l.fotos, "foto", "fotos")}, ${estado}` } }, [
@@ -342,6 +407,7 @@ function cartaoLote(l: Lote): HTMLElement {
     const devolvido = l.cobranca.devolvido ? ` · ${reais(l.cobranca.devolvido)} voltaram para o saldo` : "";
     cartao.append(criar("p", { className: "fraco", textContent: `Custo do pedido: ${reais(l.cobranca.cobrado)}${devolvido}` }));
   }
+  if (l.pedir_avaliacao) cartao.append(cartaoAvaliacao(l));
   return cartao;
 }
 
@@ -492,7 +558,7 @@ export function criarPedidos(ctx: {
     const itens: ItemLista[] = lotes.map((l) => ({
       chave: l.lote,
       // sem as URLs assinadas (mudam a cada consulta): o cartão só é refeito quando algo muda de fato
-      assinatura: JSON.stringify([l.status, l.prontos, l.total, l.motivo, l.previsao && textoPrevisao(l.previsao), l.videos.map((v) => [v.arquivo, v.status, !!v.url, !!v.excluido])]),
+      assinatura: JSON.stringify([l.status, l.prontos, l.total, l.motivo, l.previsao && textoPrevisao(l.previsao), l.pedir_avaliacao, l.videos.map((v) => [v.arquivo, v.status, !!v.url, !!v.excluido])]),
       criar: () => cartaoLote(l),
     }));
     reconciliar(lotesAlvo, itens, () => vazio("Nenhum pedido ainda", "Quando você enviar fotos, os pedidos aparecem aqui."));

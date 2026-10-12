@@ -61,6 +61,9 @@ export function icone(nome: NomeIcone, classes = ""): SVGSVGElement {
 
 const ICONE_AVISO: Record<TipoAviso, NomeIcone> = { info: "info", ok: "ok", erro: "alerta", alerta: "alerta" };
 
+/** Satisfação com um pedido terminado (12/10/2026): o rótulo de cada nota, da 1 à 5. */
+export const NOTAS_SATISFACAO = ["Muito pouco", "Pouco", "Neutro", "Satisfeito", "Muito satisfeito"];
+
 /** Mostra (ou esconde, com texto vazio) uma caixa de aviso com ícone. */
 export function aviso(alvo: HTMLElement, texto: string | (Node | string)[], tipo: TipoAviso = "info"): void {
   alvo.className = `aviso ${tipo}`;

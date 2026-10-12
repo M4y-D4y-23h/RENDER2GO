@@ -2123,3 +2123,43 @@ html:not([data-convite]) #convite {
     width: min(100% - 2rem, 40rem);
   }
 }
+
+/* satisfação depois de cada pedido terminado (12/10/2026): a pergunta, as 5 notas, "Enviar" e, embaixo,
+   "Descartar e não ver novamente" */
+.avaliacao-pedido {
+  display: grid;
+  gap: var(--esp-3);
+  margin-top: var(--esp-2);
+  padding-top: var(--esp-4);
+  border-top: 1px solid var(--cor-borda);
+}
+
+.notas-avaliacao {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.notas-avaliacao > legend {
+  margin-bottom: var(--esp-2);
+  padding: 0;
+  font-weight: 650;
+}
+
+.notas-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: var(--esp-2);
+}
+
+.notas-grade .marcacao {
+  align-items: center;
+  padding: var(--esp-2) var(--esp-3);
+}
+
+.acoes-avaliacao {
+  display: grid;
+  justify-items: start;
+  gap: var(--esp-1);
+}

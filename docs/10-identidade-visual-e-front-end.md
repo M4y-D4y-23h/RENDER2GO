@@ -120,6 +120,7 @@ Em `servico/web/src/css/componentes.css` (os de uma página só, em `paginas.css
 | Botão | `.botao` + `primario`, `sucesso`, `perigo`, `fantasma`, `pequeno`, `largo` | Ocupado: `aria-busy="true"` (anel girando, desativado) |
 | Campo | `.campo`, `.dica`, `.contador`, `.senha` | Erro: `aria-invalid="true"`; dica ligada por `aria-describedby` |
 | Caixa de marcar grande | `.marcacao` (+ `.exigida`) | A área toda é clicável |
+| Satisfação do pedido | `.avaliacao-pedido` (+ `.notas-avaliacao`, `.notas-grade`, `.acoes-avaliacao`) | No fim do cartão de cada pedido terminado nos últimos 7 dias: a pergunta como `<legend>`, 5 `.marcacao` de rádio, "Enviar" e, embaixo, "Descartar e não ver novamente" (`.botao.fantasma`); sem escolha, aviso e foco na 1ª opção; enviado, o agradecimento recebe o foco |
 | Cartão e passo | `.cartao` (+ `.elevado`), `.passo` | Passos numerados por contador CSS |
 | Aviso | `.aviso` + `info`, `ok`, `erro`, `alerta` | Sempre com ícone e texto |
 | Selo de estado | `.selo.estado-<status>`, `.selo.pessoas` | Cores dos estados (seção 1.3) |

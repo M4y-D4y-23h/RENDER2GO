@@ -45,6 +45,7 @@ def banco(request, tmp_path):
                 "limites",
                 "codigos",
                 "sessoes",
+                "avaliacoes",
                 "interesses",
                 "movimentos",
                 "geradores",

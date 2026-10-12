@@ -66,6 +66,7 @@ TABELAS = [
     "limites",
     "codigos",
     "sessoes",
+    "avaliacoes",
     "interesses",
     "movimentos",
     "geradores",

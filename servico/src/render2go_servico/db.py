@@ -190,6 +190,11 @@ ESQUEMA = [
         criado DOUBLE PRECISION NOT NULL, criado_por TEXT, expira DOUBLE PRECISION NOT NULL,
         usado_em DOUBLE PRECISION, cancelado_em DOUBLE PRECISION, totp_pendente TEXT,
         totp_confirmado_em DOUBLE PRECISION, totp_contador BIGINT, ip TEXT)""",
+    # satisfação com um pedido terminado (pedido do dono, 12/10/2026): uma nota por pedido, de 1 (muito pouco) a 5
+    # (muito satisfeito); o "não ver novamente" fica na conta (clientes.avaliacao_descartada)
+    """CREATE TABLE IF NOT EXISTS avaliacoes (
+        lote_id TEXT PRIMARY KEY REFERENCES lotes(id), cliente_id TEXT NOT NULL REFERENCES clientes(id),
+        nota INTEGER NOT NULL, quando DOUBLE PRECISION NOT NULL)""",
 ]
 # índices: depois das colunas novas (um banco antigo ganha a coluna antes do índice que a usa)
 INDICES = [
@@ -225,6 +230,8 @@ INDICES = [
     "CREATE INDEX IF NOT EXISTS auditoria_admin_alvo ON auditoria_admin (alvo, quando)",
     "CREATE INDEX IF NOT EXISTS admin_convites_usuario ON admin_convites (usuario, criado)",
     "CREATE INDEX IF NOT EXISTS sessoes_admin ON sessoes (admin)",
+    "CREATE INDEX IF NOT EXISTS avaliacoes_quando ON avaliacoes (quando)",
+    "CREATE INDEX IF NOT EXISTS avaliacoes_cliente ON avaliacoes (cliente_id)",
 ]
 # vídeos já iniciados (ou prontos) de cada cliente nos pedidos em andamento: a vez na fila é por cliente
 INICIADOS_POR_CLIENTE = (
@@ -260,6 +267,7 @@ HISTORICO = (
     "consentimentos",
     "fotos",
     "eventos",
+    "avaliacoes",
     "lotes",
     "suporte",
     "geradores",
@@ -324,6 +332,7 @@ COLUNAS_NOVAS = [
     ("sessoes", "confirmada_ate", "DOUBLE PRECISION"),  # confirmação recente ("é você mesmo?") até
     ("sessoes", "contexto", "TEXT"),  # desafio da verificação em duas etapas: o que a entrada guardou (JSON)
     ("auditoria_admin", "agente", "TEXT"),  # navegador de quem fez (acessos do painel por pessoa, ADR 0009)
+    ("clientes", "avaliacao_descartada", "DOUBLE PRECISION"),  # "não ver novamente" no card de satisfação
 ]
 MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
@@ -705,6 +714,7 @@ class Banco:
                 "UPDATE sessoes SET revogada_em = ? WHERE cliente_id = ? AND revogada_em IS NULL", (agora, cliente_id)
             )
             c.run("DELETE FROM interesses WHERE cliente_id = ?", (cliente_id,))
+            c.run("DELETE FROM avaliacoes WHERE cliente_id = ?", (cliente_id,))
             c.run("DELETE FROM codigos_recuperacao WHERE cliente_id = ?", (cliente_id,))
             c.run("UPDATE suporte SET email = NULL WHERE cliente_id = ?", (cliente_id,))
 
@@ -1753,9 +1763,10 @@ class Banco:
                 " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render' AND j.status = 'ok')"
                 " AS prontos,"
                 " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.tipo = 'render') AS total,"
-                " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.barrado_em IS NOT NULL) AS barrados"
-                " FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
-                f" LEFT JOIN consentimentos a ON a.lote_id = l.id WHERE {onde}"
+                " (SELECT COUNT(*) FROM jobs j WHERE j.lote_id = l.id AND j.barrado_em IS NOT NULL) AS barrados,"
+                " v.nota AS avaliacao FROM lotes l JOIN clientes k ON k.id = l.cliente_id"
+                " LEFT JOIN consentimentos a ON a.lote_id = l.id"
+                f" LEFT JOIN avaliacoes v ON v.lote_id = l.id WHERE {onde}"
                 " ORDER BY l.criado DESC LIMIT ?",
                 (*args, limite),
             )
@@ -2319,6 +2330,59 @@ class Banco:
                 )
             self.evento(c, lote_id, "fotos_acrescentadas", {"fotos": len(fotos)})
             return c.all(f"SELECT * FROM fotos WHERE id IN ({', '.join('?' * len(ids))}) ORDER BY nome", tuple(ids))
+
+    # -- satisfação ------------------------------------------------------------------------
+
+    def avaliar(self, lote_id: str, cliente_id: str, nota: int) -> None:
+        """Satisfação com um pedido terminado, de 1 a 5: uma por pedido (a 2ª vez não muda a 1ª)."""
+        if not 1 <= nota <= 5:
+            raise BancoError("nota de 1 a 5")
+        with self.tx() as c:
+            lt = c.one("SELECT status FROM lotes WHERE id = ? AND cliente_id = ?", (lote_id, cliente_id))
+            if lt is None:
+                raise BancoError("lote não encontrado")
+            if lt["status"] not in ("concluido", "concluido_com_falhas"):
+                raise BancoError("o pedido ainda não terminou")
+            c.run(
+                "INSERT INTO avaliacoes (lote_id, cliente_id, nota, quando) VALUES (?, ?, ?, ?)"
+                " ON CONFLICT (lote_id) DO NOTHING",
+                (lote_id, cliente_id, nota, time.time()),
+            )
+
+    def avaliacoes_de(self, lotes: list[str]) -> dict[str, int]:
+        """A nota de cada pedido que já tem uma (lista de pedidos do cliente: uma consulta só)."""
+        if not lotes:
+            return {}
+        with self.tx() as c:
+            linhas = c.all(
+                f"SELECT lote_id, nota FROM avaliacoes WHERE lote_id IN ({', '.join('?' * len(lotes))})", tuple(lotes)
+            )
+        return {r["lote_id"]: int(r["nota"]) for r in linhas}
+
+    def descartar_avaliacoes(self, cliente_id: str) -> None:
+        """\"Descartar e não ver novamente\": o card de satisfação deixa de aparecer nesta conta."""
+        with self.tx() as c:
+            c.run(
+                "UPDATE clientes SET avaliacao_descartada = ? WHERE id = ? AND avaliacao_descartada IS NULL",
+                (time.time(), cliente_id),
+            )
+
+    def resumo_avaliacoes(self, desde: float) -> dict[str, Any]:
+        """Para o painel: quantas notas de cada (1 a 5) desde `desde`, a média e quantas contas pediram para não
+        ver mais a pergunta."""
+        with self.tx() as c:
+            linhas = c.all("SELECT nota, COUNT(*) AS n FROM avaliacoes WHERE quando >= ? GROUP BY nota", (desde,))
+            descartaram = c.one(
+                "SELECT COUNT(*) AS n FROM clientes WHERE avaliacao_descartada IS NOT NULL AND excluido_em IS NULL"
+            )
+        por_nota = {int(r["nota"]): int(r["n"]) for r in linhas}
+        total = sum(por_nota.values())
+        return {
+            "por_nota": [por_nota.get(k, 0) for k in range(1, 6)],
+            "total": total,
+            "media": round(sum(k * v for k, v in por_nota.items()) / total, 2) if total else None,
+            "descartaram": int(descartaram["n"]),
+        }
 
     # -- suporte --------------------------------------------------------------------------
 

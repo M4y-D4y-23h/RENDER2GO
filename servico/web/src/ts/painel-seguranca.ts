@@ -1,7 +1,7 @@
 // Painel: a visão geral (o que pede atenção agora e os números de hoje), os acessos por pessoa (convites de
 // primeiro acesso, papéis e quem pode entrar; ADR 0009), a auditoria (quem fez o quê, em quem, quando e de onde,
 // com o antes e o depois, filtros, página seguinte e planilha) e a configuração do servidor.
-import { type NomeIcone, anunciar, api, aviso, confirmar, copiarTexto, criar, dialogo, el, icone, marcarErro, ocupado, plural, quando, reais, tempo } from "./comum";
+import { NOTAS_SATISFACAO, type NomeIcone, anunciar, api, aviso, confirmar, copiarTexto, criar, dialogo, el, icone, marcarErro, ocupado, plural, quando, reais, tempo } from "./comum";
 import {
   type Controle,
   PAPEIS,
@@ -39,6 +39,7 @@ export type Resumo = {
   orquestrador_visto_s: number | null;
   pausado: boolean;
   avisos?: string[];
+  satisfacao?: { por_nota: number[]; total: number; media: number | null; descartaram: number };
 };
 
 // -- visão geral ----------------------------------------------------------------------------------------------
@@ -56,15 +57,25 @@ function cartaoResumo(c: Cartao): HTMLElement {
 
 export function criarVisaoGeral(): { desenhar: (r: Resumo) => void } {
   const regiao = el("visao-geral-dados");
-  let partes: { agora: HTMLElement; hoje: HTMLElement; avisos: HTMLElement; atualizado: HTMLElement } | null = null;
+  let partes: { agora: HTMLElement; hoje: HTMLElement; satisfacao: HTMLElement; avisos: HTMLElement; atualizado: HTMLElement } | null = null;
   const desenhar = (r: Resumo) => {
     if (!partes) {
       const agora = criar("div", { className: "cartoes-resumo", id: "resumo-agora" });
       const hoje = criar("dl", { className: "numeros", id: "resumo-hoje", attrs: { "aria-labelledby": "t-hoje" } });
+      const satisfacao = criar("dl", { className: "numeros", id: "resumo-satisfacao", attrs: { "aria-labelledby": "t-satisfacao" } });
       const avisos = criar("div", { className: "subsecao-dados", id: "resumo-avisos" });
       const atualizado = criar("p", { className: "fraco atualizado", id: "atualizado" });
-      regiao.replaceChildren(criar("h2", { id: "t-agora", className: "visualmente-oculto", textContent: "Agora" }), agora, criar("h2", { id: "t-hoje", textContent: "Hoje" }), hoje, avisos, atualizado);
-      partes = { agora, hoje, avisos, atualizado };
+      regiao.replaceChildren(
+        criar("h2", { id: "t-agora", className: "visualmente-oculto", textContent: "Agora" }),
+        agora,
+        criar("h2", { id: "t-hoje", textContent: "Hoje" }),
+        hoje,
+        criar("h2", { id: "t-satisfacao", textContent: "Satisfação dos clientes (30 dias)" }),
+        satisfacao,
+        avisos,
+        atualizado,
+      );
+      partes = { agora, hoje, satisfacao, avisos, atualizado };
     }
     const visto = r.orquestrador_visto_s;
     const semSinal = visto === null || visto >= 120;
@@ -126,6 +137,19 @@ export function criarVisaoGeral(): { desenhar: (r: Resumo) => void } {
     ];
     if (r.cobrado_hoje !== undefined) hoje.push(numero("Cobrado", dinheiro(r.cobrado_hoje)), numero("Devolvido", dinheiro(r.devolvido_hoje)), numero("Recargas", dinheiro(r.recargas_hoje)));
     trocar(partes.hoje, hoje, JSON.stringify([r.pedidos_hoje, r.videos_hoje, r.contas_novas_24h, r.cobrado_hoje, r.devolvido_hoje, r.recargas_hoje]));
+    // "O quão satisfeito você está com a sua geração?" (card no fim de cada pedido; 12/10/2026)
+    const s = r.satisfacao ?? { por_nota: [0, 0, 0, 0, 0], total: 0, media: null, descartaram: 0 };
+    const media = s.media === null ? "Sem avaliações" : `${s.media.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} de 5 (${NOTAS_SATISFACAO[Math.round(s.media) - 1]})`;
+    trocar(
+      partes.satisfacao,
+      [
+        numero("Média", media),
+        numero("Avaliações", s.total.toLocaleString("pt-BR")),
+        ...NOTAS_SATISFACAO.map((rotulo, i) => numero(rotulo, (s.por_nota[i] ?? 0).toLocaleString("pt-BR"))),
+        numero("Não querem mais a pergunta", plural(s.descartaram, "conta", "contas")),
+      ],
+      JSON.stringify(s),
+    );
     const avisos = r.avisos ?? [];
     trocar(
       partes.avisos,

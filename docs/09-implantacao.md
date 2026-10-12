@@ -8,7 +8,7 @@ Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem p
 
 ### 11/10/2026 (2): pods (prazo pelo preço real, motivo da saída, saldo no painel, hibernação) e filtro de imagem nos vídeos
 
-**É a atualização a fazer agora.** Parte da versão de 11/10/2026 (a entrada abaixo) e está na branch `claude/magical-lamport-4rrms9` até ir para a `main` (pull request no GitHub). Muda a API, o orquestrador, o analisador (fotos conferidas antes de abrir e memória limitada a 1 GB no `compose.yaml`) e o código que vai para os pods; o banco ganha só duas colunas (`jobs.nsfw` e `jobs.barrado_em`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entradas 11/10/2026 (2) e (3); [ADR 0011](adr/0011-pods-hibernados.md) e [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md).
+**É a atualização a fazer agora.** Parte da versão de 11/10/2026 (a entrada abaixo) e está na branch `claude/magical-lamport-4rrms9` até ir para a `main` (pull request no GitHub). Muda a API, o orquestrador, o analisador (fotos conferidas antes de abrir e memória limitada a 1 GB no `compose.yaml`) e o código que vai para os pods; o banco ganha quatro colunas (`jobs.nsfw`, `jobs.barrado_em`, `lotes.cobranca` e `clientes.avaliacao_descartada`) e uma tabela (`avaliacoes`), criadas sozinhas na partida. O que muda e por quê: CHANGELOG, entradas de 11/10/2026 (2) a 12/10/2026 (3); [ADR 0011](adr/0011-pods-hibernados.md), [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md) e [ADR 0012](adr/0012-cobranca-por-video-entregue.md).
 
 **1) Nada gerando?** Igual ao bloco 1 da entrada abaixo: o bloco 3 recria o orquestrador, que desliga os pods ligados ao parar.
 
@@ -34,9 +34,9 @@ docker compose ps --format "table {{.Service}}\t{{.Status}}"
 docker compose logs --since 10m orquestrador | tail -20
 ```
 
-- **Conferir depois:** no painel, seção **Pods**, a 2ª linha mostra o saldo do RunPod e o prazo que um pod novo teria ("Saldo ok", "Saldo baixo" ou "Sem saldo") e os hibernados. No 1º pedido, o relatório de **GPUs** mostra o pod e, quando ele sair, o motivo ("fila vazia", "limite de tempo do pod" ou "hibernado (fila vazia)"). Quem entra no site vê os Termos de Uso v3 (cobrança por vídeo entregue, pedidos em ordem, ADR 0012) e a política de privacidade v3 para aceitar.
+- **Conferir depois:** no painel, seção **Pods**, a 2ª linha mostra o saldo do RunPod e o prazo que um pod novo teria ("Saldo ok", "Saldo baixo" ou "Sem saldo") e os hibernados. No 1º pedido, o relatório de **GPUs** mostra o pod e, quando ele sair, o motivo ("fila vazia", "limite de tempo do pod" ou "hibernado (fila vazia)"). Quem entra no site vê os Termos de Uso v3 (cobrança por vídeo entregue, pedidos em ordem, ADR 0012) e a política de privacidade v3 para aceitar. No fim de cada pedido, o cartão do pedido pergunta a satisfação do cliente; a visão geral do painel mostra a média dos últimos 30 dias, e o histórico, a nota de cada pedido.
 - **1º pod depois da atualização:** o espelho dos modelos no R2 já tem os 2 arquivos do filtro de imagem (enviados em 11/10); se não tiver, o 1º pod os envia, como na entrada 08/10 (noite).
-- **Se algo der errado:** `cd ~/GPU2GO && git checkout <versão do bloco 2> && cd servico/implantacao && docker compose up -d --build`. As duas colunas novas ficam no banco sem uso. Os pods hibernados (se ligou o bloco 4) ficam parados no RunPod: encerre-os pelo painel do RunPod (nome `render2go-fila-...`), porque a versão antiga não os conhece.
+- **Se algo der errado:** `cd ~/GPU2GO && git checkout <versão do bloco 2> && cd servico/implantacao && docker compose up -d --build`. As colunas e a tabela novas ficam no banco sem uso. **Volte só sem pedidos pagos em andamento:** os pedidos criados na versão nova são cobrados por vídeo entregue (ADR 0012), e a versão antiga, que não sabe disso, entregaria os vídeos que faltam sem cobrar. Os pods hibernados (se ligou o bloco 4) ficam parados no RunPod: encerre-os pelo painel do RunPod (nome `render2go-fila-...`), porque a versão antiga não os conhece.
 
 ### 11/10/2026: área do cliente, painel em seções e acessos por pessoa
 
