@@ -92,6 +92,11 @@ FROM runtime AS slim
 ARG WITH_COMPILER_MODEL=1
 ARG COMPILER_MODEL=huihui_ai/qwen2.5-abliterate:7b
 ARG COMPILER_MODEL_DIGEST=sha256:212345411ab817a8d7669ed63f24a30f2e2a2cd297455a6aad1de50c82f7691c
+# legenda por foto (ADR 0014; Qwen2.5-VL-7B-Instruct, Apache 2.0), fixada pelo digest da camada de pesos: fora da
+# imagem; o pod a baixa com RENDER2GO_LEGENDA_POR_FOTO=1 (scripts/bootstrap_pod.sh) e a roda num 2º Ollama, só em
+# CPU (entrypoint.sh)
+ARG LEGENDA_MODEL=qwen2.5vl:7b
+ARG LEGENDA_MODEL_DIGEST=sha256:a99b7f834d754b88f122d865f32758ba9f0994a83f8363df2c1e71c17605a025
 
 COPY pyproject.toml models.lock.json entrypoint.sh /opt/render2go/worker/
 COPY src /opt/render2go/worker/src

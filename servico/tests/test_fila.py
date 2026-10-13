@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 import pytest
 import uvicorn
 from PIL import Image, ImageDraw
-from render2go_worker import cli_submit, compiler, fila, media
+from render2go_worker import cli_submit, compiler, fila, legenda, media
 from test_api import ADM, PAINEL, TOTP
 
 from render2go_servico import contas, filtro_fotos, suporte
@@ -172,7 +172,7 @@ def entrar_painel(url: str):
     raise AssertionError(r.text)
 
 
-def _lote_aprovado(amb, fotos: dict[str, bytes]):
+def _lote_aprovado(amb, fotos: dict[str, bytes], prompt="a câmera se aproxima devagar do produto"):
     import requests
 
     adm = entrar_painel(amb.url)
@@ -181,7 +181,7 @@ def _lote_aprovado(amb, fotos: dict[str, bytes]):
     assert adm.post(f"{amb.url}{PAINEL}/api/clientes/{cid}/saldo", json=saldo).ok
     hc = {"Authorization": f"Bearer {token}"}
     corpo = {
-        "prompt": "a câmera se aproxima devagar do produto",
+        "prompt": prompt,
         "duracao": 4,
         "fotos": [{"nome": n, "tipo": "image/png", "bytes": len(b)} for n, b in fotos.items()],
     }
@@ -640,3 +640,90 @@ def test_with_an_order_waiting_the_gpu_does_not_warm_up(ambiente, monkeypatch):
     w = _worker(ambiente, submit)
     w.cfg.aquecer = True
     assert w.rodar() == 0 and len(prompts) == 1 and fila.AQUECER_PROMPT not in prompts
+
+
+@com_ffmpeg
+def test_with_the_caption_per_photo_each_video_gets_the_prompt_of_its_own_photo(ambiente, monkeypatch):
+    """Legenda por foto (ADR 0014): cada foto ganha a sua tradução, com a legenda feita no Ollama de CPU enquanto
+    a GPU gera o vídeo da foto anterior. Num pedido vago, o movimento padrão nomeia o assunto de cada foto; a
+    legenda que falha (qualquer erro) deixa a foto sem ela, e o pedido termina do mesmo jeito."""
+    import json
+
+    import requests
+
+    monkeypatch.setattr(fila, "ESPERA_S", 0.2)
+    ambiente.cfg.legenda_por_foto = True
+    fotos = {f"f{i}.png": _png((40 + 60 * i, 90, 160), "circulo") for i in range(3)}
+    lid, hc = _lote_aprovado(ambiente, fotos, prompt="deixa bonito")
+    gerar, gerando, prompts, chamadas = _submit_de(), threading.Event(), [], []
+    assuntos = iter(["the chocolate cake", None, "the coffee cup"])  # None: a legenda da 2ª foto falha
+    legendou = [threading.Event() for _ in range(3)]
+
+    def submit(a):
+        gerando.set()
+        prompts.append(a.prompt_en)
+        if len(prompts) < 3:  # a GPU "gera" até a legenda da próxima foto chegar (ou 10 s, e o teste falha)
+            legendou[len(prompts)].wait(10)
+        try:
+            return gerar(a)
+        finally:
+            gerando.clear()
+
+    def legendar(foto, **kw):
+        chamadas.append((gerando.is_set(), kw.get("threads")))
+        legendou[len(chamadas) - 1].set()
+        assunto = next(assuntos)
+        if assunto is None:
+            raise RuntimeError("Ollama de CPU caiu no meio")
+        return legenda.Legenda(
+            descricao=f"A photo of {assunto} on a table.", categoria="comida", assunto=assunto, pessoas=False,
+            texto=False, segundos=0.1,
+        )  # fmt: skip
+
+    monkeypatch.setattr(legenda, "legendar", legendar)
+    w, traducoes = _worker(ambiente, submit), []
+    w.compile_fn = lambda texto, **kw: traducoes.append(kw["seed"]) or _compilar(texto, **kw)
+    w.cfg.legenda = True
+    assert w.rodar() == 0
+    # o pedido e as 3 fotos têm a mesma entrada no tradutor (o v6 não vê a legenda): ele responde uma vez só, com a
+    # seed do pedido
+    assert traducoes == [fila.semente_do_pedido(lid)]
+    lote = requests.get(f"{ambiente.url}/api/lotes/{lid}", headers=hc).json()
+    assert lote["status"] == "concluido" and lote["prontos"] == 3
+    assert "chocolate" not in json.dumps(lote)  # a legenda nunca vai para o cliente
+    # a 1ª foto, sem vídeo na GPU ainda; as outras, durante o vídeo da foto anterior; metade das CPUs, no mínimo 2
+    assert [g for g, _ in chamadas] == [False, True, True] and all(t >= 2 for _, t in chamadas)
+    fotos_b = {f["nome"]: f for f in ambiente.banco.fotos(lid)}
+    assert json.loads(fotos_b["f0"]["legenda"])["assunto"] == "the chocolate cake"
+    assert fotos_b["f1"]["legenda"] is None and fotos_b["f2"]["categoria"] == "comida"
+    assert prompts[0].startswith("The chocolate cake ") and prompts[2].startswith("The coffee cup ")
+    assert not prompts[1].startswith(("The chocolate", "The coffee"))  # sem legenda: o movimento padrão do estilo
+
+
+def test_the_translator_answers_the_same_input_once_and_the_order_has_its_own_seed(monkeypatch):
+    """O cache do worker (ADR 0014): a mesma entrada não volta ao tradutor (que, a cada chamada, carregaria na GPU
+    entre dois vídeos); outra seed (a nova tentativa da pessoa inventada) pergunta de novo; recusa não fica guardada."""
+    monkeypatch.setenv("RENDER2GO_SAFETY", "c1-revisao-humana")
+    chamadas = []
+
+    def compilar(texto, **kw):
+        chamadas.append(kw["seed"])
+        if texto == "recusa":
+            raise compiler.CompilerRefused("REFUSED")
+        return _compilar(texto, **kw)
+
+    w = fila.WorkerFila(SimpleNamespace(), fila.Config(comfy=["x"]), compile_fn=compilar)
+    kw = {"profile": "i2v", "version": 6, "seed": 7, "suffix": "", "camera_preset": None, "model": "m"}
+    primeira = w._compilar_em_cache("o produto gira", **kw)
+    assert w._compilar_em_cache("o produto gira", **kw) is primeira and chamadas == [7]
+    w._compilar_em_cache("o produto gira", **{**kw, "seed": 107})
+    w._compilar_em_cache("o produto gira", **{**kw, "model": "outro"})
+    assert chamadas == [7, 107, 7]
+    for _ in range(2):
+        with pytest.raises(compiler.CompilerRefused):
+            w._compilar_em_cache("recusa", **kw)
+    assert chamadas == [7, 107, 7, 7, 7]
+    for i in range(fila.TRADUCOES_EM_CACHE + 5):
+        w._compilar_em_cache(f"texto {i}", **kw)
+    assert len(w._traducoes) == fila.TRADUCOES_EM_CACHE
+    assert fila.semente_do_pedido("lote_a") == fila.semente_do_pedido("lote_a") != fila.semente_do_pedido("lote_b")

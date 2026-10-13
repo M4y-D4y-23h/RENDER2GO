@@ -19,7 +19,7 @@ import pytest
 
 WORKER = Path(__file__).resolve().parents[1]
 I2V_TEMPLATE = WORKER / "workflows" / "i2v_r1v2.v1.api.json"
-T2V_TEMPLATES = sorted((WORKER / "workflows" / "experimental").glob("*.api.json"))
+T2V_TEMPLATES = sorted((WORKER / "workflows" / "experimental").glob("t2v_*.api.json"))
 FAKE_MP4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
 
 

@@ -959,6 +959,8 @@ class Orquestrador:
         ag.put(WORKER_DIR / "scripts" / "bootstrap_pod.sh", f"{r.raiz}/bootstrap_pod.sh")
         if pod.hibernavel:  # o bootstrap marca o disco de volume com esta versão (ADR 0011)
             self._enviar_texto(pod, versao_hibernacao() + "\n", "versao_hib")
+        if getattr(self.a, "legenda", False):  # legenda por foto (ADR 0014): o modelo de visão
+            self._enviar_texto(pod, "1\n", "legenda")
         esp = getattr(self.a, "espelho", None)
         if esp and esp.presentes:  # URLs assinadas do espelho (GET, 6 h), uma por modelo
             self._enviar_texto(pod, esp.tsv(), "espelho.tsv")
@@ -994,8 +996,13 @@ class Orquestrador:
         sem_modelos = "" if modelos_prontos else "export REQUIRE_MODELS=0; "
         # na volta da hibernação, a GPU é a mesma em que o PyTorch já rodou (o cuInit confere)
         sem_teste = "export SKIP_GPU_CHECK=1; " if pod.retomado else ""
+        # legenda por foto (ADR 0014): o entrypoint sobe o 2º Ollama, só em CPU
+        legenda = (
+            "export RENDER2GO_LEGENDA_POR_FOTO=1; " if getattr(self.a, "legenda", False) else ""
+        )
         ag.bg(
-            f"export COMFY_POR_GPU={self.a.comfy_por_gpu}; {sem_modelos}{sem_teste}{r.servicos}",
+            f"export COMFY_POR_GPU={self.a.comfy_por_gpu}; "
+            f"{sem_modelos}{sem_teste}{legenda}{r.servicos}",
             f"{r.raiz}/servicos.log",
         )
         self._esperar(
@@ -1383,6 +1390,9 @@ def versao_hibernacao() -> str:
         r"^LAYOUT_HIB=(\S+)", (WORKER_DIR / "scripts" / "bootstrap_pod.sh").read_text(), re.M
     )
     h.update((layout.group(1) if layout else "?").encode())
+    # legenda por foto (ADR 0014): o volume ganha o modelo de visão; sem a chave, a versão de antes
+    if os.environ.get("RENDER2GO_LEGENDA_POR_FOTO", "").strip() == "1":
+        h.update(b"legenda")
     return h.hexdigest()[:16]
 
 

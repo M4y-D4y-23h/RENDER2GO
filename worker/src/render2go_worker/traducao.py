@@ -196,14 +196,35 @@ def tem_pessoas(analise: Any) -> bool:
         return False
 
 
-def regra_sem_pessoas(texto: str, analises: Iterable[Any]) -> bool:
+def regra_sem_pessoas(texto: str, analises: Iterable[Any], legendas: Iterable[Any] = ()) -> bool:
     """A regra da pessoa inventada vale para esta tradução? Sim, se o texto do cliente não cita
     ninguém e alguma das fotos que vão usar o prompt não tem pessoas (ou não tem a análise). Sem
-    foto: sim."""
+    foto: sim. Com a legenda por foto (ADR 0014), a regra só fica mais rígida: vale também se
+    alguma legenda diz que a foto não tem pessoas, mesmo que a análise diga que tem."""
     if texto_cita_pessoa(texto):
         return False
     analises = list(analises)
+    if any(leg is not None and not leg["pessoas"] for leg in map(campos_legenda, legendas)):
+        return True
     return not analises or not all(tem_pessoas(a) for a in analises)
+
+
+def campos_legenda(legenda: Any) -> dict[str, Any] | None:
+    """A legenda da foto (render2go_worker.legenda.Legenda, ou o dict que a API guarda) com os
+    campos que a tradução usa; None sem legenda ou fora do formato (a foto segue sem ela)."""
+    if legenda is None:
+        return None
+    d = legenda if isinstance(legenda, dict) else getattr(legenda, "__dict__", None)
+    if not isinstance(d, dict):
+        return None
+    campos = {k: d.get(k) for k in ("descricao", "categoria", "assunto", "pessoas")}
+    if not all(
+        isinstance(campos[k], str) and campos[k] for k in ("descricao", "categoria", "assunto")
+    ):
+        return None
+    if not isinstance(campos["pessoas"], bool):
+        return None
+    return campos
 
 
 def _receita(receitas: dict[str, Any], receita_id: str) -> dict[str, Any]:
@@ -278,19 +299,27 @@ def entrada(
     sem_pessoas: bool,
     versao: int,
     selections: dict[str, str] | None = None,
+    legenda: Any = None,
 ) -> presets.Composed:
     """A entrada do compilador: o texto, os presets do estilo (`selections` valem por cima) e, no
-    Livre, a câmera suave se o texto não fala da câmera; com a regra da pessoa inventada e um prompt
-    que a entende (v7 em diante), a linha "pessoas: nenhuma"."""
+    Livre, a câmera suave se o texto não fala da câmera; com a legenda da foto e um prompt que a
+    entende (v8 em diante), as linhas "foto" e "categoria"; com a regra da pessoa inventada e um
+    prompt que a entende (v7 em diante), a linha "pessoas: nenhuma"."""
     r = _receita(receitas, receita_id)
     sel = {**r["presets"], **(selections or {})}
     cam = r.get("camera_padrao")
     if cam and "camera" not in sel and not texto_fala_da_camera(texto):
         sel["camera"] = cam
     composed = presets.compose(r["modo"], texto, sel)
-    linha = compiler.PROFILES["i2v"].get("linha_pessoas")
-    if sem_pessoas and linha and versao >= linha:
-        composed = dataclasses.replace(composed, text=composed.text + "\npessoas: nenhuma")
+    perfil = compiler.PROFILES["i2v"]
+    extra = []
+    leg = campos_legenda(legenda)
+    if leg is not None and perfil.get("linha_legenda") and versao >= perfil["linha_legenda"]:
+        extra += [f"foto: {leg['descricao']}", f"categoria: {leg['categoria']}"]
+    if sem_pessoas and perfil.get("linha_pessoas") and versao >= perfil["linha_pessoas"]:
+        extra.append("pessoas: nenhuma")
+    if extra:
+        composed = dataclasses.replace(composed, text="\n".join([composed.text, *extra]))
     return composed
 
 
@@ -332,20 +361,37 @@ def traduzir(
     version: int | None = None,
     seed: int | None = None,
     selections: dict[str, str] | None = None,
+    legenda: Any = None,
     **kw: Any,
 ) -> Traducao:
     """Traduz um pedido I2V com as regras do serviço. `sem_pessoas`: None = na dúvida, sim (a regra
     só não vale se o texto do cliente cita alguém). `assunto`: o da foto no movimento padrão (vazio
-    = o do texto fixo). `kw` vai para o compilador (ollama_url, model, keep_alive...).
+    = o do texto fixo). `legenda`: a da foto (render2go_worker.legenda, ADR 0014): a categoria e o
+    assunto dela valem no movimento padrão, a regra da pessoa inventada vale também se ela diz que a
+    foto não tem pessoas, e o prompt v8 em diante a recebe. `kw` vai para o compilador (ollama_url,
+    model, keep_alive...).
     CompilerRefused e os erros do compilador sobem para quem chama: o pedido vago também passa pelo
     compilador, para a regra REFUSED continuar valendo, mas o texto dele não é usado."""
     t0 = time.monotonic()
     version = version or compiler.PROFILES["i2v"]["version"]
+    leg = campos_legenda(legenda)
+    if leg is not None:  # a foto como ela é vale mais que o que o estilo supõe
+        categoria = leg["categoria"]
+        assunto = assunto or leg["assunto"]
     categoria = categoria or categoria_da_receita(receitas, receita_id)
-    sem = (True if sem_pessoas is None else sem_pessoas) and not texto_cita_pessoa(texto)
+    base = True if sem_pessoas is None else sem_pessoas
+    if leg is not None and not leg["pessoas"]:  # análise ou legenda sem pessoas: a regra vale
+        base = True
+    sem = base and not texto_cita_pessoa(texto)
     vago = pedido_vago(texto)
     composed = entrada(
-        receitas, receita_id, texto, sem_pessoas=sem, versao=version, selections=selections
+        receitas,
+        receita_id,
+        texto,
+        sem_pessoas=sem,
+        versao=version,
+        selections=selections,
+        legenda=leg,
     )
     recusadas: list[str] = []
     rejeitados: list[str] = []

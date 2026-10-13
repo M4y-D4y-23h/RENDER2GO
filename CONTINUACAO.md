@@ -173,7 +173,23 @@ test_with_an_order_waiting_the_gpu_does_not_warm_up
    - `docs/09`: entrada de publicação, sem variável nova.
 4. Todos os testes (worker, serviço com Postgres e navegador), build conferido e geradores; reler o diff; commit da Fase 1 e push.
 
-## 3. Fase 2 (ADR 0014, proposto): começada
+## 3. Fase 2 (ADR 0014, proposto): **fechada na 3ª sessão de 13/10** (commit da Fase 2)
+
+**Resultado:** o tradutor comum (`qwen2.5:7b-instruct`) e o v8 **não cumpriram o critério 6** (56,7% × 69,5% de casos certos; v8 pior que o v7, perdeu aspas e copiou o texto de um rótulo). O tradutor continua o abliterado com o v6; a legenda fica só no código (categoria e assunto do movimento padrão, regra da pessoa). **A combinação D foi redefinida antes da rodada em GPU** (ADR 0014, "Critérios"): D = B + legenda por foto só no código, com o tradutor de produção; a rodada gera em D só os vídeos cujo prompt muda (os vagos e uma pessoa barrada pela legenda). Também na 3ª sessão: legenda em CPU medida (77–79 s por foto em 4 vCPU; `worker/evals/legenda/`), threads pela cota do cgroup (o pod via 128 CPUs do host), download do modelo de visão em segundo plano depois do AMBIENTE, erro inesperado na legenda nunca derruba o laço, seed do tradutor fixa por pedido com cache no pod (uma tradução só por pedido com a legenda por foto), `publico/` reconstruído (faltava no WIP), testes novos (`test_fila.py`, `test_orquestrador.py`, `test_lote_nuvem.py`, `test_legenda.py`), CI com o `build_i2v_templates.py --check`, docs (ADR 0014, RESULTADOS, CHANGELOG 13/10/2026 (2), CLAUDE.md, `docs/09` entrada 13/10/2026 (2): não publicar sozinha; a entrada da Fase 1 aponta para o commit `e40ac27`).
+
+**Atenção para a Fase 4:** se a legenda por foto não for aceita, voltar a Política de Privacidade para a v5 (página, `contas.DOCUMENTOS`, `confirmacao.ts`) antes de qualquer publicação, e ajustar a entrada 13/10/2026 (2) do `docs/09`.
+
+O que estava escrito antes, para referência (2ª sessão):
+
+**Feito na 2ª sessão (no commit "WIP Fase 2", sem testes completos ainda):**
+- `qwen2.5:7b-instruct` e `qwen2.5vl:7b` baixados no Ollama de CPU (`/opt/ollama-cpu/models`; os blobs com os digests e bytes abaixo). O abliterado foi tirado de lá (os números do v6 já estão registrados; para baixar de novo: `ollama pull huihui_ai/qwen2.5-abliterate:7b`, blob `sha256:212345411ab8…`).
+- `worker/src/render2go_worker/legenda.py` + `worker/prompts/legenda.v1.txt` + `worker/tests/test_legenda.py` (28 passam): o JSON de esquema fixo, `conferir` e `de_dict` (a API confere de novo), assunto só com caracteres seguros, sem aspas na descrição, foto reduzida a 512 px, `num_gpu` 0.
+- `worker/prompts/compiler-i2v.v8.txt` (v7 + as linhas `foto` e `categoria`); `compiler.PROFILES` com `linha_legenda: 8`; `traducao.traduzir(..., legenda=)`, `entrada(..., legenda=)`, `regra_sem_pessoas(texto, analises, legendas)` e `campos_legenda`.
+- `worker/evals/compiler/cases.v4.json` (os 64 da v3 iguais + 13 `i2v-v4-*` com legenda escrita à mão, todas passando no `legenda.conferir`), `fidelity.py` com a legenda.
+- Rodadas em CPU do `qwen2.5:7b-instruct` com v7 e com v8 nos casos v4 (`worker/evals/compiler/relatorios/2026-10-13-cpu-i2v{7,8}-casos-v4-instruct-7b.*`): **em andamento**; critério 6 = instruct+v7 contra o abliterado+v6 (69,5% / 96,5% / aspas 100% / REFUSED 0 de 9) nos casos da v3, e v8 ≥ v7 nos casos v4.
+- Servidor: `RENDER2GO_LEGENDA_POR_FOTO` (Config.legenda_por_foto, só 0 ou 1), colunas `lotes.legenda`, `fotos.legenda` e `fotos.categoria`; `Banco.aprovar(..., legenda=)` (um compilar por foto, mais o do pedido), `definir_prompt_da_foto`, portão do filtro também na tradução por foto, `reivindicar` (o vídeo espera o prompt da própria foto), `_fechar_lote`, `_cancelar_compilacoes_sem_uso`, `marcar_recusa_texto`, `trabalho()` sem contar a tradução por foto como vídeo; API: o job leva a foto, a rota do prompt confere a legenda (`legenda.de_dict`) e a regra da pessoa com ela; painel (histórico, "vídeos que não saíram" e auditoria); privacidade v6. **Falta:** testes do servidor (incluindo o dos 10 pods com saldo para 3 no Postgres), o worker da fila (`fila.py`: legenda durante o vídeo anterior), o pod (Ollama de CPU na 11435, `bootstrap_pod.sh`, `entrypoint.sh`, orquestrador, versão da hibernação), o tradutor candidato no `Dockerfile`, a medição da legenda em CPU, docs e o commit da fase.
+
+O que estava escrito antes, para referência:
 
 ### Feito (no commit WIP)
 
@@ -253,7 +269,10 @@ test_with_an_order_waiting_the_gpu_does_not_warm_up
 5. **Espelho R2** dos 5 arquivos (`worker/scripts/espelhar.py`) antes de qualquer produção. É um passo do servidor e vai no `docs/09`.
 6. CLAUDE.md (comando `python tools/build_i2v_templates.py --check`), testes e commit da Fase 2.
 
-## 4. Fase 3: rodada em GPU (sem limite de orçamento)
+## 4. Fase 3: rodada em GPU (sem limite de orçamento): **em andamento (3ª sessão de 13/10)**
+
+Plano da 3ª sessão (antes de qualquer vídeo): fotos de `fixtures/sfw` (xícara, café, padaria com pessoas) e 7 CC0 do Wikimedia Commons (comida, bebida, fachada, interior, roupa, carro, cosmético com rótulo), um pedido concreto (no estilo da foto) e um vago ("deixa bonito", no Livre) por foto, seeds fixas, 5 s. 480p: A, B e D (só os prompts que mudam). 720p: A e B nos pedidos concretos, com a legenda rodando no Ollama de CPU durante os vídeos de B (interferência e memória). SageAttention na vencedora, com os mesmos vídeos de 480p. As renderizações passam pelo `fila.WorkerFila` de verdade (conferência e filtro iguais aos da produção), com uma API de mentira no pod. Folhas por vídeo com um código aleatório (julgamento às cegas pela lista do LEIAME) e folhas lado a lado depois. Registrar o saldo antes e depois. Saldo às 08:30 de 13/10: US$ 9,40; L40S secure US$ 1,09/h; pod hibernado de produção `render2go-fila-dca936-2` (EXITED): **não tocar**.
+
 
 **Orçamento:** sem teto e sem saldo mínimo (decisão do dono de 13/10; seção 1). Registrar o saldo do RunPod antes e depois da rodada, para o custo do relatório. A credencial vai pelo proxy (`*.runpod.io`).
 

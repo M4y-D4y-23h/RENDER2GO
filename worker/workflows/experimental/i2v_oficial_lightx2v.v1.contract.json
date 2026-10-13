@@ -1,0 +1,94 @@
+{
+  "_comment": "Candidato I2V do ADR 0014 (proposto): Wan 2.2 I2V A14B oficial em fp8 com escala, codificador umt5_xxl original e LoRA lightx2v de 4 passos (gerado por tools/build_i2v_templates.py; só vai para a produção com o ADR aceito).",
+  "template": "i2v_oficial_lightx2v",
+  "version": 1,
+  "comfyui": "0.38.0",
+  "params": {
+    "image": {
+      "node": "97",
+      "input": "image",
+      "type": "str",
+      "required": true
+    },
+    "prompt_en": {
+      "node": "129:93",
+      "input": "text",
+      "type": "str",
+      "required": true,
+      "max_len": 2000
+    },
+    "width": {
+      "node": "129:98",
+      "input": "width",
+      "type": "int",
+      "default": 640,
+      "min": 256,
+      "max": 1280,
+      "multiple_of": 16
+    },
+    "height": {
+      "node": "129:98",
+      "input": "height",
+      "type": "int",
+      "default": 640,
+      "min": 256,
+      "max": 1280,
+      "multiple_of": 16
+    },
+    "duration_s": {
+      "node": "129:161",
+      "input": "value",
+      "type": "int",
+      "default": 5,
+      "min": 3,
+      "max": 7,
+      "as_float": true
+    },
+    "seed": {
+      "node": "129:86",
+      "input": "noise_seed",
+      "type": "int",
+      "required": true,
+      "min": 0,
+      "max": 18446744073709551615
+    },
+    "filename_prefix": {
+      "node": "108",
+      "input": "filename_prefix",
+      "type": "str",
+      "default": "video/render2go",
+      "max_len": 120
+    }
+  },
+  "constraints": {
+    "max_area": 921600
+  },
+  "fixed": {
+    "129:103.shift": 5.000000000000001,
+    "129:104.shift": 5.000000000000001,
+    "129:118.value": 4,
+    "129:122.value": 1,
+    "129:124.value": 2,
+    "129:131.value": true,
+    "129:162.value": 16,
+    "129:163.expression": "floor (a * b + 1)",
+    "129:201.lora_name": "wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+    "129:201.strength_model": 1.0,
+    "129:202.lora_name": "wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+    "129:202.strength_model": 1.0,
+    "129:84.clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+    "129:84.type": "wan",
+    "129:89.text": "",
+    "129:90.vae_name": "wan_2.1_vae.safetensors",
+    "129:95.unet_name": "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+    "129:96.unet_name": "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
+  },
+  "forbidden_classes": [
+    "OllamaGenerateV2",
+    "OllamaConnectivityV2",
+    "LoraLoader"
+  ],
+  "experimental": true,
+  "model_set": "i2v_oficial",
+  "extra_custom_nodes": []
+}

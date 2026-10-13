@@ -367,6 +367,13 @@ COLUNAS_NOVAS = [
     ("fotos", "filtro_detalhe", "TEXT"),
     # análises começadas (antes de decodificar a foto): uma foto que derruba o analisador não trava a fila dos outros
     ("fotos", "tentativas_analise", "INTEGER"),
+    # legenda por foto (ADR 0014, proposto; RENDER2GO_LEGENDA_POR_FOTO): o pedido aprovado com a chave ligada ganha
+    # uma tradução por foto, com a legenda dela (1). NULL: o pedido de antes, um prompt por texto
+    ("lotes", "legenda", "INTEGER"),
+    # a descrição automática da foto (JSON de render2go_worker.legenda: descricao, categoria, assunto, pessoas, texto,
+    # modelo, versao) e a categoria dela: só o painel e a auditoria veem, nunca o cliente; saem com o histórico
+    ("fotos", "legenda", "TEXT"),
+    ("fotos", "categoria", "TEXT"),
 ]
 MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
@@ -1819,6 +1826,25 @@ class Banco:
                 (*args, limite),
             )
 
+    def legendas_de(self, lotes: list[str], por_lote: int = 20) -> dict[str, dict]:
+        """As legendas das fotos (legenda por foto, ADR 0014) de cada pedido, para o histórico do painel: quantas
+        fotos têm legenda e as primeiras `por_lote` (nome, categoria e a legenda em JSON), na ordem da lista."""
+        if not lotes:
+            return {}
+        with self.tx() as c:
+            linhas = c.all(
+                "SELECT lote_id, nome, categoria, legenda FROM fotos"
+                f" WHERE lote_id IN ({', '.join('?' * len(lotes))}) AND legenda IS NOT NULL ORDER BY lote_id, nome",
+                tuple(lotes),
+            )
+        out: dict[str, dict] = {}
+        for f in linhas:
+            d = out.setdefault(f["lote_id"], {"total": 0, "fotos": []})
+            d["total"] += 1
+            if len(d["fotos"]) < por_lote:
+                d["fotos"].append({"nome": f["nome"], "categoria": f["categoria"], "legenda": f["legenda"]})
+        return out
+
     def uso_por_ip(self, limite: int = 50, dias: int = 90) -> list[dict]:
         """Fotos e pedidos por IP nos últimos `dias` (só lotes que passaram do envio e não foram recusados)."""
         with self.tx() as c:
@@ -1893,8 +1919,8 @@ class Banco:
                 ),
                 "autorizacao": c.one("SELECT * FROM consentimentos WHERE lote_id = ?", (lote_id,)),
                 "fotos": c.all(
-                    "SELECT nome, tipo, bytes, sha256, analise, filtro, filtro_detalhe, prompt AS texto FROM fotos"
-                    " WHERE lote_id = ? ORDER BY nome",
+                    "SELECT nome, tipo, bytes, sha256, analise, filtro, filtro_detalhe, prompt AS texto, prompt_en,"
+                    " legenda, categoria FROM fotos WHERE lote_id = ? ORDER BY nome",
                     (lote_id,),
                 ),
                 "eventos": c.all(
@@ -2864,14 +2890,18 @@ class Banco:
 
     def _cancelar_compilacoes_sem_uso(self, c, lote_id: str) -> int:
         """Tradução que nenhum vídeo vai usar (as fotos dela foram recusadas): cancelada, para não ligar um pod só
-        para traduzir. A do pedido serve às fotos sem texto próprio; a de um texto próprio, às fotos com esse texto."""
+        para traduzir. A do pedido serve às fotos sem texto próprio; a de um texto próprio, às fotos com esse texto;
+        com a legenda por foto (ADR 0014), a de cada foto só à própria foto (e ela nunca vai para um pod com a foto
+        recusada: ficaria pendente para sempre e o pedido não fecharia)."""
         return c.run(
             "UPDATE jobs SET status = 'cancelado', erro = 'nenhuma foto deste texto pôde ser usada', atualizado = ?"
             " WHERE lote_id = ? AND tipo = 'compilar' AND status = 'pendente' AND NOT EXISTS ("
-            "SELECT 1 FROM jobs k JOIN fotos g ON g.id = k.foto_id WHERE k.lote_id = jobs.lote_id"
-            " AND k.tipo = 'render' AND k.status IN ('pendente', 'em_andamento')"
+            "SELECT 1 FROM jobs k JOIN fotos g ON g.id = k.foto_id JOIN lotes m ON m.id = k.lote_id"
+            " WHERE k.lote_id = jobs.lote_id AND k.tipo = 'render' AND k.status IN ('pendente', 'em_andamento')"
             " AND ((jobs.foto_id IS NULL AND g.prompt IS NULL)"
-            " OR (jobs.foto_id IS NOT NULL AND g.prompt = (SELECT t.prompt FROM fotos t WHERE t.id = jobs.foto_id))))",
+            " OR (jobs.foto_id IS NOT NULL AND m.legenda = 1 AND g.id = jobs.foto_id)"
+            " OR (jobs.foto_id IS NOT NULL AND COALESCE(m.legenda, 0) = 0"
+            " AND g.prompt = (SELECT t.prompt FROM fotos t WHERE t.id = jobs.foto_id))))",
             (time.time(), lote_id),
         )
 
@@ -2898,28 +2928,38 @@ class Banco:
                 self.evento(c, lote_id, "enviado")
         return problemas
 
-    def aprovar(self, lote_id: str, quem: str, tarefas: list[dict]) -> None:
-        """tarefas: [{foto_id, variacao, seed, arquivo}] — cria os jobs (fail-closed: só aqui)."""
+    def aprovar(self, lote_id: str, quem: str, tarefas: list[dict], legenda: bool = False) -> None:
+        """tarefas: [{foto_id, variacao, seed, arquivo}] — cria os jobs (fail-closed: só aqui). `legenda` (ADR 0014,
+        RENDER2GO_LEGENDA_POR_FOTO): cada foto ganha a sua tradução, com a foto e a legenda dela, no lugar da tradução
+        por texto próprio; os vídeos dela esperam o prompt dela (`reivindicar`). A tradução do pedido fica (ela passa
+        o texto pelo C1 uma vez e põe o pedido em "processando")."""
         agora = time.time()
         with self.tx() as c:
             lote = c.one("SELECT * FROM lotes WHERE id = ?", (lote_id,))
             if lote is None or lote["status"] != "aguardando_aprovacao":
                 raise BancoError("lote não está aguardando aprovação")
             c.run(
-                "UPDATE lotes SET status = 'aprovado', aprovado_em = ?, aprovado_por = ? WHERE id = ?",
-                (agora, quem, lote_id),
+                "UPDATE lotes SET status = 'aprovado', aprovado_em = ?, aprovado_por = ?, legenda = ? WHERE id = ?",
+                (agora, quem, 1 if legenda else None, lote_id),
             )
             c.run(
                 "INSERT INTO jobs (id, lote_id, tipo, status, criado, atualizado)"
                 " VALUES (?, ?, 'compilar', 'pendente', ?, ?)",
                 (novo_id("job"), lote_id, agora, agora),
             )
-            # textos próprios: um compilar por texto distinto, preso à 1ª foto (na ordem da lista) que o usa;
-            # o arquivo "<foto>-v0" põe a compilação logo antes dos renders dessa foto na fila
+            # textos próprios: um compilar por texto distinto, preso à 1ª foto (na ordem da lista) que o usa; com a
+            # legenda por foto, um compilar por foto. O arquivo "<foto>-v0" põe a compilação logo antes dos renders
+            # dessa foto na fila
             primeiras: dict[str, dict] = {}
-            for f in c.all("SELECT id, nome, prompt FROM fotos WHERE lote_id = ? AND prompt IS NOT NULL ORDER BY nome",
-                           (lote_id,)):  # fmt: skip
-                primeiras.setdefault(f["prompt"], f)
+            if legenda:
+                for f in c.all("SELECT id, nome FROM fotos WHERE lote_id = ? ORDER BY nome", (lote_id,)):
+                    primeiras[f["id"]] = f
+            else:
+                for f in c.all(
+                    "SELECT id, nome, prompt FROM fotos WHERE lote_id = ? AND prompt IS NOT NULL ORDER BY nome",
+                    (lote_id,),
+                ):
+                    primeiras.setdefault(f["prompt"], f)
             for f in primeiras.values():
                 c.run(
                     "INSERT INTO jobs (id, lote_id, tipo, foto_id, arquivo, status, criado, atualizado)"
@@ -2941,7 +2981,13 @@ class Banco:
                         agora,
                     ),
                 )
-            self.evento(c, lote_id, "aprovado", {"por": quem, "jobs": len(tarefas), "textos": len(primeiras)})
+            detalhe: dict[str, Any] = {"por": quem, "jobs": len(tarefas), "textos": len(primeiras)}
+            if legenda:  # "textos" continua contando os textos próprios distintos
+                distintos = c.one(
+                    "SELECT COUNT(DISTINCT prompt) AS n FROM fotos WHERE lote_id = ? AND prompt IS NOT NULL", (lote_id,)
+                )
+                detalhe |= {"textos": int(distintos["n"]), "legenda_por_foto": len(primeiras)}
+            self.evento(c, lote_id, "aprovado", detalhe)
             # fotos que o filtro das fotos já recusou antes da aprovação: os vídeos delas nunca vão para um pod
             recusadas = c.all(
                 "SELECT id, filtro, filtro_detalhe FROM fotos WHERE lote_id = ? AND filtro IN ('recusada', 'invalida')",
@@ -2977,6 +3023,30 @@ class Banco:
                 (prompt_en, f["lote_id"], f["prompt"]),
             )
             self.evento(c, f["lote_id"], "prompt_foto", {"compilador": compilador, "fotos": n, **(detalhe or {})})
+
+    def definir_prompt_da_foto(
+        self, foto_id: str, prompt_en: str, compilador: str, legenda: dict | None, detalhe: dict | None = None
+    ) -> None:
+        """Legenda por foto (ADR 0014): o prompt de uma foto só, com a legenda dela (None: a legenda falhou e a foto
+        seguiu sem ela, com a categoria do estilo). A legenda fica com a foto: o painel e a auditoria veem, o cliente
+        nunca; sai com a limpeza do histórico."""
+        with self.tx() as c:
+            f = c.one("SELECT lote_id, nome FROM fotos WHERE id = ?", (foto_id,))
+            if f is None:
+                raise BancoError("foto não encontrada")
+            c.run(
+                "UPDATE fotos SET prompt_en = ?, legenda = ?, categoria = ? WHERE id = ? AND prompt_en IS NULL",
+                (
+                    prompt_en,
+                    json.dumps(legenda, ensure_ascii=False) if legenda else None,
+                    (legenda or {}).get("categoria"),
+                    foto_id,
+                ),
+            )
+            self.evento(
+                c, f["lote_id"], "prompt_foto",
+                {"compilador": compilador, "foto": f["nome"], "legenda": legenda is not None, **(detalhe or {})},
+            )  # fmt: skip
 
     def fotos_da_traducao(self, lote_id: str, foto_id: str | None) -> list[dict]:
         """As fotos que vão usar uma tradução (render2go_worker.traducao: a regra da pessoa inventada olha a análise
@@ -3055,8 +3125,13 @@ class Banco:
             # os vídeos em andamento) paga por ele; senão, a conta fica de fora desta vez ("aguardando saldo")
             # e volta sozinha depois da recarga. A trava do cliente serializa com a cobrança na entrega
             sem_saldo: list[str] = []
-            # filtro das fotos (render2go_servico.filtro_fotos): vídeo só de foto liberada; a tradução é só texto
-            liberada = " AND (j.tipo = 'compilar' OR f.filtro = 'ok')" if self.exigir_filtro else ""
+            # filtro das fotos (render2go_servico.filtro_fotos): vídeo só de foto liberada; a tradução é só texto, menos
+            # a da legenda por foto (ADR 0014), que leva a foto ao pod: essa também só com a foto liberada
+            liberada = (
+                " AND ((j.tipo = 'compilar' AND (j.foto_id IS NULL OR COALESCE(l.legenda, 0) = 0)) OR f.filtro = 'ok')"
+                if self.exigir_filtro
+                else ""
+            )
             for _ in range(MAX_CONTAS_SEM_SALDO):
                 fora = f" AND l.cliente_id NOT IN ({', '.join('?' * len(sem_saldo))})" if sem_saldo else ""
                 job = c.one(
@@ -3067,8 +3142,11 @@ class Banco:
                     " LEFT JOIN inic ON inic.cliente_id = l.cliente_id"
                     " WHERE j.status = 'pendente' AND l.status IN ('aprovado', 'processando')"
                     " AND l.interrompido_em IS NULL"
-                    " AND (j.tipo = 'compilar' OR (f.prompt IS NULL AND l.prompt_en IS NOT NULL)"
-                    " OR (f.prompt IS NOT NULL AND f.prompt_en IS NOT NULL))"
+                    # o vídeo espera o prompt dele: o do pedido, o do texto próprio da foto ou, com a legenda por
+                    # foto (ADR 0014), o da própria foto
+                    " AND (j.tipo = 'compilar' OR (l.legenda = 1 AND f.prompt_en IS NOT NULL)"
+                    " OR (COALESCE(l.legenda, 0) = 0 AND ((f.prompt IS NULL AND l.prompt_en IS NOT NULL)"
+                    " OR (f.prompt IS NOT NULL AND f.prompt_en IS NOT NULL))))"
                     # pedidos da mesma conta, um depois do outro: os vídeos só do mais antigo em andamento
                     # (a tradução do pedido seguinte pode adiantar: é rápida e não gera vídeo)
                     f" AND (j.tipo = 'compilar' OR NOT EXISTS ({PEDIDO_ANTERIOR_ABERTO})){liberada}"
@@ -3253,8 +3331,17 @@ class Banco:
 
     def marcar_recusa_texto(self, lote_id: str, foto_id: str, motivo: str) -> None:
         """Texto próprio recusado pelo filtro depois de traduzido: os vídeos das fotos com esse texto, cancelados
-        como \"compilação do texto da foto falhou\", passam a dizer o motivo de verdade (render2go_servico.motivos)."""
+        como \"compilação do texto da foto falhou\", passam a dizer o motivo de verdade (render2go_servico.motivos).
+        Com a legenda por foto (ADR 0014), só os vídeos da própria foto ("compilação da foto falhou")."""
         with self.tx() as c:
+            lt = c.one("SELECT legenda FROM lotes WHERE id = ?", (lote_id,))
+            if lt is not None and lt["legenda"] == 1:
+                c.run(
+                    "UPDATE jobs SET erro = ? WHERE lote_id = ? AND tipo = 'render' AND status = 'cancelado'"
+                    " AND erro = 'compilação da foto falhou' AND foto_id = ?",
+                    (motivo, lote_id, foto_id),
+                )
+                return
             c.run(
                 "UPDATE jobs SET erro = ? WHERE lote_id = ? AND tipo = 'render' AND status = 'cancelado'"
                 " AND erro = 'compilação do texto da foto falhou' AND foto_id IN (SELECT f.id FROM fotos f"
@@ -3268,11 +3355,14 @@ class Banco:
         if not lotes:
             return {}
         with self.tx() as c:
+            # a legenda e a categoria da foto (legenda por foto, ADR 0014): o painel mostra junto de cada vídeo
             linhas = c.all(
-                "SELECT id, lote_id, arquivo, status, erro, tentativas, nsfw, nsfw_alto, barrado_em, quarentena_em,"
-                " deriva_cor, salto_cor, similaridade, atualizado FROM jobs"
-                f" WHERE lote_id IN ({', '.join('?' * len(lotes))}) AND tipo = 'render'"
-                " AND status IN ('erro', 'cancelado') ORDER BY arquivo",
+                "SELECT j.id, j.lote_id, j.arquivo, j.status, j.erro, j.tentativas, j.nsfw, j.nsfw_alto, j.barrado_em,"
+                " j.quarentena_em, j.deriva_cor, j.salto_cor, j.similaridade, j.atualizado,"
+                " f.legenda AS foto_legenda, f.categoria AS foto_categoria"
+                " FROM jobs j LEFT JOIN fotos f ON f.id = j.foto_id"
+                f" WHERE j.lote_id IN ({', '.join('?' * len(lotes))}) AND j.tipo = 'render'"
+                " AND j.status IN ('erro', 'cancelado') ORDER BY j.arquivo",
                 tuple(lotes),
             )
         por: dict[str, list[dict]] = {lid: [] for lid in lotes}
@@ -3282,22 +3372,34 @@ class Banco:
 
     def _fechar_lote(self, c, lote_id: str) -> None:
         agora = time.time()
-        # compilação que falhou de vez: os renders que dependiam dela não têm como rodar. A do lote derruba
-        # as fotos sem texto próprio; a de um texto próprio, só as fotos com esse texto
-        c.run(
-            "UPDATE jobs SET status = 'cancelado', erro = 'compilação falhou', atualizado = ?"
-            " WHERE lote_id = ? AND tipo = 'render' AND status = 'pendente' AND EXISTS"
-            " (SELECT 1 FROM jobs k WHERE k.lote_id = ? AND k.tipo = 'compilar' AND k.foto_id IS NULL"
-            " AND k.status = 'erro') AND foto_id IN (SELECT id FROM fotos WHERE lote_id = ? AND prompt IS NULL)",
-            (agora, lote_id, lote_id, lote_id),
-        )
-        c.run(
-            "UPDATE jobs SET status = 'cancelado', erro = 'compilação do texto da foto falhou', atualizado = ?"
-            " WHERE lote_id = ? AND tipo = 'render' AND status = 'pendente' AND foto_id IN"
-            " (SELECT f.id FROM fotos f WHERE f.lote_id = ? AND f.prompt IN (SELECT t.prompt FROM jobs k"
-            " JOIN fotos t ON t.id = k.foto_id WHERE k.lote_id = ? AND k.tipo = 'compilar' AND k.status = 'erro'))",
-            (agora, lote_id, lote_id, lote_id),
-        )
+        por_foto = c.one("SELECT legenda FROM lotes WHERE id = ?", (lote_id,))
+        if por_foto is not None and por_foto["legenda"] == 1:
+            # legenda por foto (ADR 0014): cada vídeo depende só da tradução da própria foto
+            c.run(
+                "UPDATE jobs SET status = 'cancelado', erro = 'compilação da foto falhou', atualizado = ?"
+                " WHERE lote_id = ? AND tipo = 'render' AND status = 'pendente' AND foto_id IN"
+                " (SELECT k.foto_id FROM jobs k WHERE k.lote_id = ? AND k.tipo = 'compilar' AND k.foto_id IS NOT NULL"
+                " AND k.status = 'erro')",
+                (agora, lote_id, lote_id),
+            )
+        else:
+            # compilação que falhou de vez: os renders que dependiam dela não têm como rodar. A do lote derruba
+            # as fotos sem texto próprio; a de um texto próprio, só as fotos com esse texto
+            c.run(
+                "UPDATE jobs SET status = 'cancelado', erro = 'compilação falhou', atualizado = ?"
+                " WHERE lote_id = ? AND tipo = 'render' AND status = 'pendente' AND EXISTS"
+                " (SELECT 1 FROM jobs k WHERE k.lote_id = ? AND k.tipo = 'compilar' AND k.foto_id IS NULL"
+                " AND k.status = 'erro') AND foto_id IN (SELECT id FROM fotos WHERE lote_id = ? AND prompt IS NULL)",
+                (agora, lote_id, lote_id, lote_id),
+            )
+            c.run(
+                "UPDATE jobs SET status = 'cancelado', erro = 'compilação do texto da foto falhou', atualizado = ?"
+                " WHERE lote_id = ? AND tipo = 'render' AND status = 'pendente' AND foto_id IN"
+                " (SELECT f.id FROM fotos f WHERE f.lote_id = ? AND f.prompt IN (SELECT t.prompt FROM jobs k"
+                " JOIN fotos t ON t.id = k.foto_id WHERE k.lote_id = ? AND k.tipo = 'compilar'"
+                " AND k.status = 'erro'))",
+                (agora, lote_id, lote_id, lote_id),
+            )
         self._estornar_videos(c, lote_id)
         r = c.one(
             "SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('ok', 'erro', 'cancelado') THEN 1 ELSE 0 END) AS fim,"
@@ -3408,12 +3510,17 @@ class Banco:
         """Para o orquestrador: renders pendentes e em andamento por lote, com o pedido
         (qualidade e duração decidem o tempo por vídeo) e a prioridade. Nos pedidos cobrados por vídeo
         (ADR 0012), só conta o que o saldo livre da conta paga: o resto espera a recarga e não liga pod. O vídeo
-        de uma foto ainda sem o filtro das fotos não conta: com o analisador parado, nenhum pod sobe à toa."""
+        de uma foto ainda sem o filtro das fotos não conta: com o analisador parado, nenhum pod sobe à toa. A tradução
+        de cada foto (legenda por foto, ADR 0014) vem junto do vídeo dela e não conta como mais um vídeo (contaria o
+        pedido duas vezes e subiria pods à toa)."""
+        # COALESCE: com legenda NULL (o pedido de antes), "NOT (... = 1)" daria NULL e zeraria a contagem
+        por_foto = "(j.tipo = 'compilar' AND j.foto_id IS NOT NULL AND COALESCE(l.legenda, 0) = 1)"
         with self.tx() as c:
             linhas = c.all(
                 "SELECT l.id AS lote_id, l.pedido, l.prioridade, l.modelo, MIN(j.criado) AS mais_antigo,"
-                f" SUM(CASE WHEN j.status = 'pendente' AND {self._liberado()} THEN 1 ELSE 0 END) AS pendentes,"
-                " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS em_andamento,"
+                f" SUM(CASE WHEN j.status = 'pendente' AND {self._liberado()} AND NOT {por_foto} THEN 1 ELSE 0 END)"
+                " AS pendentes,"
+                f" SUM(CASE WHEN j.status = 'em_andamento' AND NOT {por_foto} THEN 1 ELSE 0 END) AS em_andamento,"
                 " l.cliente_id, l.preco_video, l.cobranca, l.criado"
                 " FROM jobs j JOIN lotes l ON l.id = j.lote_id LEFT JOIN fotos f ON f.id = j.foto_id"
                 " WHERE l.status IN ('aprovado', 'processando') AND j.status IN ('pendente', 'em_andamento')"
@@ -3442,7 +3549,10 @@ class Banco:
         if not self.exigir_filtro:
             return "1 = 1"
         return (
-            "((j.tipo = 'render' AND f.filtro = 'ok') OR (j.tipo = 'compilar' AND EXISTS"
+            "((j.tipo = 'render' AND f.filtro = 'ok')"
+            # a tradução da legenda por foto (ADR 0014) leva a foto ao pod: só com a foto liberada
+            " OR (j.tipo = 'compilar' AND j.foto_id IS NOT NULL AND l.legenda = 1 AND f.filtro = 'ok')"
+            " OR (j.tipo = 'compilar' AND (j.foto_id IS NULL OR COALESCE(l.legenda, 0) = 0) AND EXISTS"
             " (SELECT 1 FROM fotos g WHERE g.lote_id = j.lote_id AND g.filtro = 'ok')))"
         )
 

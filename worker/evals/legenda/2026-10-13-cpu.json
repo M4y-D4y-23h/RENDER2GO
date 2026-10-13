@@ -1,0 +1,58 @@
+{
+ "data": "2026-10-13",
+ "maquina": "4 vCPU Intel Xeon @ 2.1 GHz (AMX), 15 GB de RAM, sem GPU",
+ "ollama": "0.35.1",
+ "modelo": "qwen2.5vl:7b",
+ "digest": "sha256:a99b7f834d754b88f122d865f32758ba9f0994a83f8363df2c1e71c17605a025",
+ "formato": "832x480 (preparo.preparar), reduzida a 512 px (legenda.LADO_MAX)",
+ "medidas": [
+  {
+   "foto": "produto-xicara.jpg",
+   "threads": 4,
+   "segundos": 503.1,
+   "legenda": {
+    "descricao": "The white ceramic cup and saucer with green and gold floral designs are displayed against a neutral background.",
+    "categoria": "produto",
+    "assunto": "the ceramic cup and saucer",
+    "pessoas": false,
+    "texto": false,
+    "modelo": "qwen2.5vl:7b",
+    "versao": 1,
+    "segundos": 503.03
+   },
+   "erro": null
+  },
+  {
+   "foto": "produto-cafe.jpg",
+   "threads": 4,
+   "segundos": 77.1,
+   "legenda": {
+    "descricao": "A white cup of coffee sits on a saucer surrounded by roasted coffee beans.",
+    "categoria": "comida",
+    "assunto": "the cup of coffee",
+    "pessoas": false,
+    "texto": false,
+    "modelo": "qwen2.5vl:7b",
+    "versao": 1,
+    "segundos": 77.09
+   },
+   "erro": null
+  },
+  {
+   "foto": "pessoas-padaria-1900.jpg",
+   "threads": 4,
+   "segundos": 78.9,
+   "legenda": {
+    "descricao": "A group of men in a tent with sacks and barrels, possibly in a historical setting.",
+    "categoria": "geral",
+    "assunto": "the men in the tent",
+    "pessoas": true,
+    "texto": false,
+    "modelo": "qwen2.5vl:7b",
+    "versao": 1,
+    "segundos": 78.83
+   },
+   "erro": null
+  }
+ ]
+}

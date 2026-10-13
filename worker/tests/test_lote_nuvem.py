@@ -662,3 +662,14 @@ def test_pods_go_first_to_fast_hosts_and_measured_datacenters(tmp_path, monkeypa
     corpos.clear()
     rp.criar("p", [runpod_pods.Opcao("G", "secure")], 1, {"AGENT_TOKEN": "t" * 40})
     assert "minDownloadMbps" not in corpos[0]
+
+
+def test_the_hibernation_version_changes_with_the_caption_key(monkeypatch):
+    # legenda por foto (ADR 0014): o volume com o modelo de visão é outro (e vice-versa)
+    monkeypatch.delenv("RENDER2GO_LEGENDA_POR_FOTO", raising=False)
+    sem = ln.versao_hibernacao()
+    monkeypatch.setenv("RENDER2GO_LEGENDA_POR_FOTO", "0")
+    assert ln.versao_hibernacao() == sem
+    monkeypatch.setenv("RENDER2GO_LEGENDA_POR_FOTO", "1")
+    com = ln.versao_hibernacao()
+    assert com != sem and len(com) == 16

@@ -238,6 +238,37 @@ def test_services_and_worker_start_while_models_still_download(orq, banco, tmp_p
         assert c.one("SELECT estado FROM geradores")["estado"] == "encerrado"
 
 
+@pytest.mark.parametrize("legenda", [True, False])
+def test_the_caption_per_photo_key_reaches_the_bootstrap_the_services_and_the_worker(orq, banco, legenda):
+    """Legenda por foto (ADR 0014): com a chave, o bootstrap baixa o modelo de visão (o marcador `legenda`), o
+    entrypoint sobe o Ollama de CPU (a variável nos serviços) e o worker legenda cada foto (o fila.env)."""
+    _lote(banco, 2, plano="pago")
+    o = orq(fila_cmd="sleep 30", legenda=legenda)
+    o.remoto.servicos = "echo LEGENDA=${RENDER2GO_LEGENDA_POR_FOTO:-0}; echo '[render2go] pronto'"
+    assert o.ciclo()["subindo"] == 1
+    assert _esperar(lambda: len(o.ativos) == 1)
+    pf, raiz = next(iter(o.ativos.values())), o.remoto.raiz
+    marcador = pf.pod.agente.exec(f"cat {raiz}/legenda 2>/dev/null || echo SEM", 10)[1].strip()
+    servicos = pf.pod.agente.exec(f"cat {raiz}/servicos.log", 10)[1]
+    env = pf.pod.agente.exec(f"cat {raiz}/fila.env", 10)[1]
+    assert (marcador == "1") is legenda and (marcador == "SEM") is not legenda
+    assert f"LEGENDA={int(legenda)}" in servicos and ("RENDER2GO_LEGENDA_POR_FOTO=1" in env) is legenda
+    o.encerrar_todos("fim do teste")
+
+
+def test_the_caption_key_comes_from_the_environment_only_as_1(monkeypatch):
+    for k, v in {
+        "RENDER2GO_API_URL": "https://api.teste",
+        "RENDER2GO_WORKER_TOKENS": "w" * 40,
+        "RENDER2GO_R2_ENDPOINT": "https://conta.r2.cloudflarestorage.com",
+    }.items():
+        monkeypatch.setenv(k, v)
+    assert ConfigOrq.do_ambiente().legenda is False  # padrão: desligada
+    for valor, ligado in (("1", True), ("0", False), ("sim", False), ("", False)):
+        monkeypatch.setenv("RENDER2GO_LEGENDA_POR_FOTO", valor)
+        assert ConfigOrq.do_ambiente().legenda is ligado
+
+
 def test_gpu_list_cycle_and_warm_time_come_from_the_environment(monkeypatch):
     for k, v in {
         "RENDER2GO_API_URL": "https://api.teste",

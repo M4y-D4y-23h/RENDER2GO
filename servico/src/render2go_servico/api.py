@@ -122,8 +122,9 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, RedirectResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from render2go_worker import conferencia, filtro_imagem, filtros, lote, preparo, presets, traducao
+from render2go_worker import legenda as legenda_mod
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from render2go_servico import (
@@ -602,6 +603,9 @@ class Config:
     mp: pagamentos.ConfigMP | None = None
     provedor_pagamento: Callable[[pagamentos.ConfigMP], Any] = pagamentos.MercadoPago
     analise: str = "api"  # "api" (thread na API), "separada" (serviço próprio) ou "desligada"
+    # legenda por foto (ADR 0014, proposto; RENDER2GO_LEGENDA_POR_FOTO=1): o pedido aprovado ganha uma tradução por
+    # foto, com a legenda dela; os pedidos aprovados antes continuam como foram
+    legenda_por_foto: bool = False
     retrato_s: float = RETRATO_S  # validade do retrato da fila e dos pods (0: sempre lê do banco)
     # foto do perfil: quem baixa do Gravatar (os testes trocam; nenhum teste fala com o Gravatar de verdade)
     baixar_gravatar: Callable[[str], Any] = perfil.baixar_gravatar
@@ -705,6 +709,9 @@ class Config:
         analise = os.environ.get("RENDER2GO_ANALISE", "api").strip().lower()
         if analise not in ("api", "separada", "desligada"):
             raise SystemExit("RENDER2GO_ANALISE: api, separada ou desligada")
+        legenda = os.environ.get("RENDER2GO_LEGENDA_POR_FOTO", "0").strip() or "0"
+        if legenda not in ("0", "1"):
+            raise SystemExit("RENDER2GO_LEGENDA_POR_FOTO: 0 (desligada) ou 1 (ligada)")
         banco = Banco(os.environ["RENDER2GO_DB_URL"])
         banco.criar_esquema()
         return cls(
@@ -725,6 +732,7 @@ class Config:
             admin_ips=[r for r in os.environ.get("RENDER2GO_ADMIN_IPS", "").split(",") if r.strip()],
             mp=pagamentos.ConfigMP.do_ambiente(),
             analise=analise,
+            legenda_por_foto=legenda == "1",
         )
 
     def limitar(self, chave: str) -> None:
@@ -960,34 +968,62 @@ def _analise(f: dict) -> Any:
         return None  # análise ilegível: vale como indisponível (na dúvida, sem pessoas)
 
 
+def legenda_da_foto(f: dict | None) -> dict | None:
+    """A legenda guardada da foto (fotos.legenda, ADR 0014), conferida de novo; None sem ela ou fora do formato."""
+    if f is None or not f.get("legenda"):
+        return None
+    try:
+        return legenda_mod.de_dict(json.loads(f["legenda"])).como_dict()
+    except (ValueError, legenda_mod.LegendaError):
+        return None
+
+
+def _por_foto(lt: dict, foto: dict | None) -> bool:
+    """A tradução desta foto é a dela só (legenda por foto, ADR 0014)."""
+    return foto is not None and lt.get("legenda") == 1
+
+
 def regras_traducao(c: Config, lt: dict, pedido: dict, foto: dict | None) -> dict:
     """As regras da tradução de um pedido (render2go_worker.traducao): a categoria da foto (a do estilo) e se
     a regra da pessoa inventada vale: o texto não cita ninguém e alguma foto que vai usar o prompt não tem
-    pessoas ou não tem a análise (na dúvida, sem pessoas). `foto`: a do texto próprio (None: o do pedido)."""
-    texto = foto["prompt"] if foto is not None and foto["prompt"] else pedido["prompt"]
-    fotos = c.banco.fotos_da_traducao(lt["id"], foto["id"] if foto is not None and foto["prompt"] else None)
+    pessoas ou não tem a análise (na dúvida, sem pessoas). `foto`: a do texto próprio ou, com a legenda por foto
+    (ADR 0014), a da tradução, que vale só para ela (None: o do pedido). A legenda ainda não existe aqui: o pod a
+    faz e a regra dela vale lá e de novo na rota do prompt."""
+    if _por_foto(lt, foto):
+        texto, fotos = foto["prompt"] or pedido["prompt"], [foto]
+    else:
+        texto = foto["prompt"] if foto is not None and foto["prompt"] else pedido["prompt"]
+        fotos = c.banco.fotos_da_traducao(lt["id"], foto["id"] if foto is not None and foto["prompt"] else None)
     return {
         "sem_pessoas": traducao.regra_sem_pessoas(texto, [_analise(f) for f in fotos]),
         "categoria": traducao.categoria_da_receita(lote.load_receitas(), pedido["receita"]),
     }
 
 
-def sem_pessoa_inventada(c: Config, lt: dict, pedido: dict, foto: dict | None, prompt_en: str, onde: str) -> str:
+def sem_pessoa_inventada(
+    c: Config, lt: dict, pedido: dict, foto: dict | None, prompt_en: str, onde: str, legenda: dict | None = None
+) -> str:
     """Nenhum vídeo sai com pessoa inventada no prompt (13/10/2026): com a regra valendo (`regras_traducao`) e o
     prompt citando alguém, vale o movimento padrão, sem pessoa, e o pedido ganha o evento (só o painel vê).
     `onde`: "traducao" (o prompt que o pod mandou) ou "render" (o de cada vídeo, na hora de ir para o pod: pega
-    também o que foi traduzido antes desta regra)."""
+    também o que foi traduzido antes desta regra). Com a legenda da foto (ADR 0014; `legenda` na tradução, a
+    guardada no vídeo), a regra vale também se ela diz que a foto não tem pessoas, e o movimento padrão usa a
+    categoria e o assunto dela."""
+    receitas = lote.load_receitas()
     if onde == "render" and foto is not None:  # a foto do vídeo: a análise dela, o texto que ela usa
+        legenda = legenda_da_foto(foto)
+    if (onde == "render" and foto is not None) or _por_foto(lt, foto):
         texto = foto["prompt"] or pedido["prompt"]
-        vale = traducao.regra_sem_pessoas(texto, [_analise(foto)])
-        categoria = traducao.categoria_da_receita(lote.load_receitas(), pedido["receita"])
+        vale = traducao.regra_sem_pessoas(texto, [_analise(foto)], [legenda] if legenda else [])
+        categoria = (legenda or {}).get("categoria") or traducao.categoria_da_receita(receitas, pedido["receita"])
     else:
         r = regras_traducao(c, lt, pedido, foto)
         vale, categoria = r["sem_pessoas"], r["categoria"]
     achadas = traducao.prompt_cita_pessoa(prompt_en) if vale else []
     if not achadas:
         return prompt_en
-    padrao = traducao.prompt_padrao(lote.load_receitas(), pedido["receita"], categoria, sem_pessoas=True)
+    assunto = (legenda or {}).get("assunto") or ""
+    padrao = traducao.prompt_padrao(receitas, pedido["receita"], categoria, sem_pessoas=True, assunto=assunto)
     c.banco.registrar_evento(
         lt["id"],
         "prompt_pessoa_inventada",
@@ -1187,9 +1223,19 @@ class PromptIn(BaseModel):
     padrao: bool = False
     tentativas: int = Field(1, ge=1, le=10)
     pessoas_recusadas: list[str] = Field(default_factory=list, max_length=40)
+    # a legenda da foto (ADR 0014; render2go_worker.legenda.Legenda.como_dict), só na tradução de uma foto com a
+    # legenda por foto; a API confere de novo (legenda.de_dict) e, fora do formato, a foto segue sem ela
+    legenda: dict[str, Any] | None = None
 
     def model_post_init(self, _: Any) -> None:
         self.pessoas_recusadas = [p[:40] for p in self.pessoas_recusadas]
+
+    @field_validator("legenda")
+    @classmethod
+    def _legenda_pequena(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        if v is not None and len(json.dumps(v, ensure_ascii=False)) > 2000:
+            raise ValueError("legenda grande demais")
+        return v
 
 
 class ConcluirIn(BaseModel):
@@ -3400,7 +3446,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             for k in range(1, pedido["variacoes"] + 1)
         ]
         try:
-            c.banco.aprovar(lote_id, quem, tarefas)
+            c.banco.aprovar(lote_id, quem, tarefas, legenda=c.legenda_por_foto)
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
         _se_fechou(c, lote_id)  # todas as fotos recusadas pelo filtro das fotos: o pedido já fecha na aprovação
@@ -3449,6 +3495,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "salto_cor": j["salto_cor"],
                     "similaridade": j["similaridade"],
                     "quarentena": bool(j["quarentena_em"]) and j["quarentena_em"] >= limite,
+                    # legenda por foto (ADR 0014): a descrição automática da foto e a categoria (só o painel)
+                    "legenda": (legenda_da_foto({"legenda": j["foto_legenda"]}) or {}).get("descricao"),
+                    "categoria": j["foto_categoria"],
                 }
                 for j in c.banco.falhas_de([lote_id])[lote_id]
             ]
@@ -3617,6 +3666,19 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         except BancoError as e:
             raise HTTPException(422, str(e)) from e
         falhas = c.banco.falhas_de([lt["id"] for lt in lotes])  # os que não saíram, numa consulta só
+        legendas = c.banco.legendas_de([lt["id"] for lt in lotes])  # legenda por foto (ADR 0014): só o painel
+
+        def _legendas(lid: str) -> dict | None:
+            d = legendas.get(lid)
+            if d is None:
+                return None
+            fotos = [
+                {"nome": f["nome"], "categoria": f["categoria"], "legenda": leg.get("descricao")}
+                for f in d["fotos"]
+                if (leg := legenda_da_foto({"legenda": f["legenda"]})) is not None
+            ]
+            return {"total": d["total"], "fotos": fotos}
+
         return {
             "lotes": [
                 {
@@ -3647,6 +3709,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "nao_sairam": motivos.resumo(falhas.get(lt["id"], [])),
                     "interrompido_em": lt.get("interrompido_em"),
                     "interrompido_por": lt.get("interrompido_por"),
+                    "legendas": _legendas(lt["id"]),
                 }
                 for lt in lotes
             ],
@@ -3740,6 +3803,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         for f in a["fotos"]:
             f["analise"] = js(f["analise"])
             f["filtro_detalhe"] = js(f["filtro_detalhe"])
+            f["legenda"] = js(f.get("legenda"))  # legenda por foto (ADR 0014): a descrição automática
         for e in a["eventos"]:
             e["detalhe"] = js(e["detalhe"])
         return a
@@ -3804,8 +3868,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         pedido = json.loads(lt["pedido"])
         foto = c.banco.foto(job["foto_id"]) if job["foto_id"] else None
         if job["tipo"] == "compilar" and foto is not None:
-            # texto próprio de uma foto: o worker compila esse texto como compilaria o do pedido
-            pedido = {**pedido, "prompt": foto["prompt"]}
+            # texto próprio de uma foto: o worker compila esse texto como compilaria o do pedido; na tradução da
+            # legenda por foto (ADR 0014), o texto próprio da foto ou, sem ele, o do pedido
+            pedido = {**pedido, "prompt": foto["prompt"] or pedido["prompt"]}
         out: dict[str, Any] = {
             "job_id": job["id"],
             "tipo": job["tipo"],
@@ -3816,9 +3881,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         }
         if job["tipo"] == "compilar":  # categoria da foto e a regra da pessoa inventada (render2go_worker.traducao)
             out["regras"] = regras_traducao(c, lt, pedido, foto)
+            if _por_foto(lt, foto):  # legenda por foto (ADR 0014): a foto vai junto (só liberada, `reivindicar`)
+                out |= {
+                    "legenda": True,
+                    "arquivo": job["arquivo"],
+                    "foto_url": c.armazenamento.url("GET", foto["chave"], 3600),
+                    "foto_ext": TIPOS[foto["tipo"]],
+                }
         if job["tipo"] == "render":
             stem = Path(job["arquivo"]).stem
-            prompt_en = foto["prompt_en"] if foto["prompt"] else lt["prompt_en"]
+            # o do texto próprio da foto ou, com a legenda por foto (ADR 0014), o da própria foto; senão, o do pedido
+            prompt_en = foto["prompt_en"] if foto["prompt"] or _por_foto(lt, foto) else lt["prompt_en"]
             out |= {
                 # a última barreira antes do pod: nenhum vídeo sai com pessoa inventada no prompt
                 "prompt_en": sem_pessoa_inventada(c, lt, pedido, foto, prompt_en, "render"),
@@ -3871,12 +3944,20 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(422, d.reason)
         lt = c.banco.lote(job["lote_id"])
         foto = c.banco.foto(job["foto_id"]) if job["foto_id"] else None
-        prompt_en = sem_pessoa_inventada(c, lt, json.loads(lt["pedido"]), foto, body.prompt_en, "traducao")
+        leg = None
+        if _por_foto(lt, foto) and body.legenda is not None:  # a legenda que o pod fez, conferida de novo aqui
+            try:
+                leg = legenda_mod.de_dict(body.legenda).como_dict()
+            except legenda_mod.LegendaError:
+                leg = None  # fora do formato: a foto segue sem legenda (nunca uma legenda pela metade)
+        prompt_en = sem_pessoa_inventada(c, lt, json.loads(lt["pedido"]), foto, body.prompt_en, "traducao", leg)
         detalhe = {"vago": body.vago, "padrao": body.padrao or prompt_en != body.prompt_en,
                    "tentativas": body.tentativas, "pessoas_recusadas": body.pessoas_recusadas}  # fmt: skip
         if prompt_en != body.prompt_en and not filtros.avaliar(prompt_en).allowed:  # o padrão é fixo, mas confere
             raise HTTPException(500, "o movimento padrão não passou no filtro")
-        if job["foto_id"]:
+        if _por_foto(lt, foto):
+            c.banco.definir_prompt_da_foto(job["foto_id"], prompt_en, body.compilador, leg, detalhe)
+        elif job["foto_id"]:
             c.banco.definir_prompt_foto(job["foto_id"], prompt_en, body.compilador, detalhe)
         else:
             c.banco.definir_prompt(job["lote_id"], prompt_en, body.compilador, detalhe)

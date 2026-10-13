@@ -22,6 +22,7 @@
 #                     (padrão e máximo: 2; regra do projeto, nenhum pod sem limite)
 #   TERMINATE_ON_BAD_GPU  modo pod no RunPod: encerra o pod se a GPU falhar (padrão: 1)
 #   RENDER2GO_SAFETY, RENDER2GO_ALLOWED_URL_HOSTS  obrigatórias no serverless (ver jobs.py)
+#   RENDER2GO_LEGENDA_POR_FOTO=1  modo pod: o 2º Ollama, só em CPU, em 127.0.0.1:11435 (legenda por foto, ADR 0014)
 set -euo pipefail
 
 MODE="${MODE:-pod}"
@@ -130,6 +131,18 @@ setsid ollama serve > >(sed -u 's/^/[ollama] /') 2>&1 &
 OLLAMA_PID=$!
 wait_http "http://$OLLAMA_HOST/api/version" 60 "Ollama"
 
+# 4b. Legenda por foto (ADR 0014, RENDER2GO_LEGENDA_POR_FOTO=1): um 2º Ollama, só em CPU (nenhuma GPU visível:
+# zero VRAM, o Wan e o tradutor ficam com a GPU), para o modelo de visão. Fora da supervisão: se ele cair, as fotos
+# seguem sem legenda (render2go_worker.legenda nunca bloqueia o pedido) e o pod continua
+LEGENDA_PID=""
+if [[ "${RENDER2GO_LEGENDA_POR_FOTO:-0}" == "1" ]]; then
+  log "subindo o Ollama da legenda (só CPU) em 127.0.0.1:11435"
+  CUDA_VISIBLE_DEVICES="" HIP_VISIBLE_DEVICES="" ROCR_VISIBLE_DEVICES="" GGML_VK_VISIBLE_DEVICES="" \
+    OLLAMA_HOST=127.0.0.1:11435 OLLAMA_KEEP_ALIVE=-1 OLLAMA_NUM_PARALLEL=1 \
+    setsid ollama serve > >(sed -u 's/^/[ollama-cpu] /') 2>&1 &
+  LEGENDA_PID=$!
+fi
+
 # 5. ComfyUI: COMFY_POR_GPU processos por GPU (CUDA_VISIBLE_DEVICES), portas consecutivas ----
 # Com mais de um por GPU, cada processo reserva a VRAM dos outros (--reserve-vram), para os
 # dois não disputarem a memória inteira.
@@ -169,10 +182,10 @@ if [[ "$MODE" == "serverless" ]]; then
 fi
 
 # 6. Supervisão: se um serviço cair, derruba os outros e sai com erro   ----------------------
-trap 'kill -TERM "$OLLAMA_PID" "${COMFY_PIDS[@]}" $HANDLER_PID $DEADMAN_PID 2>/dev/null || true' TERM INT
+trap 'kill -TERM "$OLLAMA_PID" "${COMFY_PIDS[@]}" $HANDLER_PID $DEADMAN_PID $LEGENDA_PID 2>/dev/null || true' TERM INT
 set +e
 wait -n "$OLLAMA_PID" "${COMFY_PIDS[@]}" $HANDLER_PID
 status=$?
-kill -TERM "$OLLAMA_PID" "${COMFY_PIDS[@]}" $HANDLER_PID $DEADMAN_PID 2>/dev/null
+kill -TERM "$OLLAMA_PID" "${COMFY_PIDS[@]}" $HANDLER_PID $DEADMAN_PID $LEGENDA_PID 2>/dev/null
 wait
 die "um dos serviços terminou (código $status)"

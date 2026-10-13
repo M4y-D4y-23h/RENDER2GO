@@ -42,6 +42,8 @@ jobs:
         run: uv run python ../tools/derive_i2v_template.py --check
       - name: Templates T2V candidatos em dia com o I2V
         run: uv run python ../tools/build_t2v_templates.py --check
+      - name: Template I2V candidato dos modelos oficiais em dia (ADR 0014)
+        run: uv run python ../tools/build_i2v_templates.py --check
       - name: Dockerfiles da integração GitHub do RunPod em dia
         run: uv run python ../tools/build_runpod_dockerfiles.py --check
 

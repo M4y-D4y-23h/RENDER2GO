@@ -35,10 +35,12 @@ PROFILES: dict[str, dict] = {
         "options": {"temperature": 0.3, "num_ctx": 4096},
         "words": (40, 90),
         # faixa própria de cada versão do prompt (o padrão é "words")
-        "words_by_version": {5: (15, 60), 6: (15, 60), 7: (15, 60)},
+        "words_by_version": {5: (15, 60), 6: (15, 60), 7: (15, 60), 8: (15, 60)},
         # 1ª versão que entende a linha "pessoas: nenhuma" (foto sem pessoas;
         # render2go_worker.traducao)
         "linha_pessoas": 7,
+        # 1ª versão que entende as linhas "foto" e "categoria" (legenda por foto, ADR 0014)
+        "linha_legenda": 8,
     },
     "t2v": {
         "version": 3,

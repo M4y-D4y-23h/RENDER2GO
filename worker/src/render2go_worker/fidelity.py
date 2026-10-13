@@ -1,6 +1,7 @@
 """Testes de fidelidade do compilador: pedido em pt → propriedades esperadas na saída.
 
-Cada caso (worker/evals/compiler/cases.v3.json: os da v2, iguais, mais os de 13/10/2026) declara:
+Cada caso (worker/evals/compiler/cases.v4.json: os da v3, iguais, mais os com a legenda da foto)
+declara:
 - `must`: grupos de termos; cada grupo precisa aparecer (basta um termo do grupo);
 - `forbid`: termos que indicam invenção ou tradução errada (nenhum pode aparecer);
 - `order`: grupos que precisam aparecer nessa ordem (ordem das ações);
@@ -13,6 +14,10 @@ Casos com `receita` (v3) passam pelo caminho do serviço (render2go_worker.tradu
 estilo, câmera suave do Livre, pedido vago (VAGUE) e, com `sem_pessoas`, a regra da pessoa inventada
 (traduz de novo e, no fim, o movimento padrão), com a conferência "pessoa" (nenhuma pessoa no prompt
 final). `categoria`: a da foto (padrão: a do estilo). Os casos só com `presets` seguem como antes.
+Casos com `legenda` (v4, ADR 0014): a legenda da foto escrita à mão (descricao, categoria,
+assunto, pessoas, texto), como o modelo de visão a daria; ela vale no código para qualquer versão
+(categoria e assunto do movimento padrão, e a regra da pessoa, que também vale se a legenda diz
+"sem pessoas"), e só o prompt v8 em diante a recebe na entrada.
 
 A comparação é pelo início da palavra (`walk` casa com `walks`, `walking`), sem
 diferenciar maiúsculas; um termo terminado em espaço (`"man "`) exige a palavra inteira.
@@ -32,7 +37,7 @@ from typing import Any
 
 from render2go_worker import WORKER_DIR, compiler, lote, presets, traducao
 
-CASES_FILE = WORKER_DIR / "evals" / "compiler" / "cases.v3.json"
+CASES_FILE = WORKER_DIR / "evals" / "compiler" / "cases.v4.json"
 QUOTED = re.compile(r'"([^"\n]+)"')
 
 
@@ -62,7 +67,12 @@ class CaseResult:
 
 
 def _sem_pessoas(case: dict[str, Any]) -> bool:
-    return bool(case.get("sem_pessoas")) and not traducao.texto_cita_pessoa(case["text"])
+    """A regra da pessoa inventada vale no caso: a foto sem pessoas (`sem_pessoas`, ou a legenda que
+    diz que não tem) e o pedido sem ninguém."""
+    if traducao.texto_cita_pessoa(case["text"]):
+        return False
+    leg = traducao.campos_legenda(case.get("legenda"))
+    return bool(case.get("sem_pessoas")) or (leg is not None and not leg["pessoas"])
 
 
 def _find(text: str, term: str) -> int:
@@ -90,6 +100,7 @@ def case_input(
             case["text"],
             sem_pessoas=_sem_pessoas(case),
             versao=version or compiler.PROFILES[case["profile"]]["version"],
+            legenda=case.get("legenda"),
         )
         return c.text, c.suffix
     if case.get("presets") is not None:
@@ -174,6 +185,7 @@ def run_case(
                 receitas=lote.load_receitas(),
                 categoria=case.get("categoria"),
                 sem_pessoas=bool(case.get("sem_pessoas")),
+                legenda=case.get("legenda"),
                 version=version,
                 seed=seed,
                 ollama_url=ollama_url,

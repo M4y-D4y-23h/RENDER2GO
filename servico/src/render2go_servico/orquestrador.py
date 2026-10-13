@@ -137,6 +137,8 @@ class ConfigOrq:
     ocioso_s: float = 180  # pod quente: sem jobs por esse tempo, o worker sai e o pod é encerrado
     hibernados: int = 0  # pods parados com tudo instalado, prontos para voltar em ~1 min (ADR 0011)
     volume_gb: int = 70  # disco de volume de cada pod que pode hibernar (cobrado parado: US$ 0,20/GB/mês)
+    # legenda por foto (ADR 0014, RENDER2GO_LEGENDA_POR_FOTO=1): o pod baixa o modelo de visão e sobe o Ollama de CPU
+    legenda: bool = False
 
     @classmethod
     def do_ambiente(cls) -> ConfigOrq:
@@ -163,6 +165,7 @@ class ConfigOrq:
             ocioso_s=max(60.0, float(os.environ.get("RENDER2GO_POD_OCIOSO_MIN", 3)) * 60),
             hibernados=max(0, int(os.environ.get("RENDER2GO_PODS_HIBERNADOS", 0))),
             volume_gb=max(40, int(os.environ.get("RENDER2GO_POD_VOLUME_GB", 70))),
+            legenda=os.environ.get("RENDER2GO_LEGENDA_POR_FOTO", "").strip() == "1",
         )
 
 
@@ -208,6 +211,7 @@ class Orquestrador:
             saida=cfg.estado,
             qualidade="rapida",
             orcamento_usd=cfg.max_usd_h * 2,
+            legenda=cfg.legenda,  # o pod com o modelo de visão e o Ollama de CPU (ADR 0014)
         )
         self.pods_ln = ln.Orquestrador(a, [], self.provedor, remoto or ln.Remoto())
         self.remoto = self.pods_ln.remoto
@@ -325,6 +329,8 @@ class Orquestrador:
         }
         if self.cfg.segredo_aprovacao:
             linhas["RENDER2GO_SEGREDO_APROVACAO"] = self.cfg.segredo_aprovacao
+        if self.cfg.legenda:  # legenda por foto (ADR 0014): o worker legenda cada foto no Ollama de CPU
+            linhas["RENDER2GO_LEGENDA_POR_FOTO"] = "1"
         # limiares do filtro de imagem do .env: o pod barra com a mesma regra com que a API confere
         for nome in filtro_imagem.LIMITES:
             if os.environ.get(nome, "").strip():

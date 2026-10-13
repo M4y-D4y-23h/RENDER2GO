@@ -1,5 +1,5 @@
 {
-  "_comment": "Modelos do worker. bytes conferem com a seção 2 da especificação; sha256 é o OID LFS do Hugging Face na revisão fixada (consultado em 05/10/2026). Destino relativo a COMFYUI_DIR/models. Os conjuntos t2v_* são só para o bake-off do T2V (docs/adr/0001); as LoRAs Lightning T2V v1.1 da Comfy-Org têm o mesmo SHA-256 dos arquivos de lightx2v/Wan2.2-Lightning (Seko-V1.1).",
+  "_comment": "Modelos do worker. bytes conferem com a seção 2 da especificação; sha256 é o OID LFS do Hugging Face na revisão fixada (consultado em 05/10/2026). Destino relativo a COMFYUI_DIR/models. Os conjuntos t2v_* são só para o bake-off do T2V (docs/adr/0001); as LoRAs Lightning T2V v1.1 da Comfy-Org têm o mesmo SHA-256 dos arquivos de lightx2v/Wan2.2-Lightning (Seko-V1.1). O conjunto i2v_oficial (13/10/2026) é o candidato do ADR 0014 (proposto): os arquivos oficiais do Wan 2.2 I2V A14B em fp8 com escala e o LoRA lightx2v de 4 passos v1 (o mesmo SHA-256 do lightx2v/Wan2.2-Lightning, Seko-V1) da Comfy-Org, e o codificador umt5_xxl original (Comfy-Org/Wan_2.1_ComfyUI_repackaged); licença Apache 2.0 conferida nos cartões em 13/10/2026. O i2v_r1v2 continua o de produção até o ADR ser aceito.",
   "sets": {
     "i2v_r1v2": [
       "wan22_i2v_r1v2_high",
@@ -24,6 +24,16 @@
       "lightning_t2v_v11_low",
       "nsfw_umt5_xxl_v2_fp8",
       "wan21_vae"
+    ],
+    "i2v_oficial": [
+      "wan22_i2v_high_fp8",
+      "wan22_i2v_low_fp8",
+      "lightning_i2v_v1_high",
+      "lightning_i2v_v1_low",
+      "umt5_xxl_fp8",
+      "wan21_vae",
+      "nsfw_freepik_modelo",
+      "nsfw_freepik_config"
     ]
   },
   "models": {
@@ -134,6 +144,51 @@
       "bytes": 989,
       "sha256": "39f53e86cc4868e0e11396b523c906f376621f54c1025ffc9ee2ee840542a41b",
       "license": "mit"
+    },
+    "wan22_i2v_high_fp8": {
+      "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "revision": "ee6f4a40737a995bf5818954cfce6d59443b0f04",
+      "path": "split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+      "dest": "diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+      "bytes": 14294742832,
+      "sha256": "6122e79d55e0f235698d11d657f3b196c5273c830da00b2b013c5a048d5e6a42",
+      "license": "apache-2.0"
+    },
+    "wan22_i2v_low_fp8": {
+      "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "revision": "ee6f4a40737a995bf5818954cfce6d59443b0f04",
+      "path": "split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+      "dest": "diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+      "bytes": 14294742832,
+      "sha256": "5471a457b6ac404202a5fbe6c11595a3d5641fc766b00f38763f72303fffc21e",
+      "license": "apache-2.0"
+    },
+    "lightning_i2v_v1_high": {
+      "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "revision": "ee6f4a40737a995bf5818954cfce6d59443b0f04",
+      "path": "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+      "dest": "loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+      "bytes": 1226977424,
+      "sha256": "d176c808d6fc461999b68e321efcb7501b20b8c3797523ed0df14f7d1deff11e",
+      "license": "apache-2.0"
+    },
+    "lightning_i2v_v1_low": {
+      "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+      "revision": "ee6f4a40737a995bf5818954cfce6d59443b0f04",
+      "path": "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+      "dest": "loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+      "bytes": 1226977424,
+      "sha256": "024f21de095bc8fad9809ded3e9e49a2e170dcf27075da8145ba7d60d8aab7f9",
+      "license": "apache-2.0"
+    },
+    "umt5_xxl_fp8": {
+      "repo": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+      "revision": "123acf1cc74bccbb9bfff8ac1ee72edc08c2341d",
+      "path": "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "dest": "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "bytes": 6735906897,
+      "sha256": "c3355d30191f1f066b26d93fba017ae9809dce6c627dda5f6a66eaa651204f68",
+      "license": "apache-2.0"
     }
   }
 }

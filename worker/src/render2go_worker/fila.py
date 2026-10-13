@@ -63,6 +63,7 @@ from render2go_worker import (
     compiler,
     conferencia,
     filtro_imagem,
+    legenda,
     lote,
     media,
     preparo,
@@ -84,6 +85,7 @@ GPU_PADRAO_S = 300
 # aquecimento: o mesmo template, no menor tamanho e duração que ele aceita, com uma imagem cinza
 AQUECER_LADO, AQUECER_DURACAO = 256, 3
 AQUECER_PROMPT = "A plain gray background. The camera stays still."
+TRADUCOES_EM_CACHE = 64  # resultados do compilador guardados no pod (WorkerFila._compilar_em_cache)
 # por que o worker saiu (o mais grave entre os laços vale para o pod)
 MOTIVOS = {
     "modelos": "a instalação dos modelos falhou ou passou do prazo",
@@ -93,6 +95,7 @@ MOTIVOS = {
     "ocioso": "sem pedidos (pod quente vencido)",
 }
 TIPOS = {"jpg": ".jpg", "png": ".png", "webp": ".webp"}
+OLLAMA_CPU = legenda.OLLAMA_CPU  # o 2º Ollama do pod, só em CPU (legenda por foto, ADR 0014)
 
 
 class FilaError(Exception):
@@ -175,6 +178,15 @@ class ApiFila:
             raise FilaError(f"devolver: HTTP {r.status_code} {r.text[:200]}")
 
 
+def semente_do_pedido(lote_id: str) -> int:
+    """A seed do tradutor, fixa por pedido: a mesma tradução para todas as fotos do pedido (a do
+    pedido e, com a legenda por foto, a de cada foto) e em qualquer pod; outra em cada pedido.
+    Antes de 13/10/2026, sem seed (uma aleatória a cada chamada)."""
+    return (
+        int.from_bytes(hashlib.sha256(f"traducao:{lote_id}".encode()).digest()[:4], "big") % 10**9
+    )
+
+
 def carimbo_ok(segredo: str | None, job: dict) -> bool:
     """Confere o carimbo de aprovação (HMAC, ADR 0004) quando o segredo foi dado ao worker."""
     if not segredo:
@@ -200,6 +212,8 @@ class Config:
     motivo_em: Path | None = None  # arquivo onde o worker escreve por que saiu (MOTIVOS)
     adiantar: bool = True  # a GPU não espera: o próximo é preparado e o anterior enviado durante
     aquecer: bool = False  # sem pedido depois do PRONTO: um vídeo descartado carrega os modelos
+    legenda: bool = False  # legenda por foto (ADR 0014): o modelo de visão no Ollama de CPU
+    ollama_cpu: str = OLLAMA_CPU
 
 
 @dataclasses.dataclass
@@ -254,6 +268,7 @@ class WorkerFila:
         self.modelos_ok = cfg.modelos is None
         self.motivos: list[str] = []  # um por laço que terminou (chaves de MOTIVOS)
         self.medidas: list[dict] = []  # etapas de cada vídeo que terminou (log e medições em GPU)
+        self._traducoes: dict[tuple, compiler.CompileResult] = {}  # _compilar_em_cache
 
     def estado_modelos(self) -> str:
         """Estado dos modelos: "ok" (renderiza), "esperando" (só traduz) ou "falhou" (sai). Lido a
@@ -311,6 +326,12 @@ class WorkerFila:
             self.api.concluir(job["job_id"], "erro", erro=f"filtro: {d.reason}")
             return
         regras = job.get("regras") or {}
+        # tradução por foto (legenda por foto, ADR 0014): a legenda feita durante o vídeo anterior
+        # ou, sem ela, agora
+        if "_legenda" in job:
+            leg = job["_legenda"]
+        else:
+            leg = self._legendar(job) if job.get("legenda") else None
         try:
             tr = traducao.traduzir(
                 pedido["prompt"],
@@ -319,7 +340,9 @@ class WorkerFila:
                 categoria=regras.get("categoria"),
                 sem_pessoas=regras.get("sem_pessoas"),
                 assunto=regras.get("assunto") or "",
-                compile_fn=self.compile_fn,
+                legenda=leg,
+                compile_fn=self._compilar_em_cache,
+                seed=semente_do_pedido(job["lote"]),
                 ollama_url=self.cfg.ollama,
                 model=self.cfg.model,
                 keep_alive=0,  # libera a VRAM antes dos renders
@@ -345,14 +368,68 @@ class WorkerFila:
             padrao=tr.padrao,
             tentativas=tr.tentativas,
             pessoas_recusadas=list(tr.pessoas_recusadas),
+            legenda=leg.como_dict() if leg is not None else None,
         )
         self.api.concluir(job["job_id"], "ok")
         como = " (movimento padrão)" if tr.padrao else ""
         _log(f"lote {job['lote']}: prompt compilado ({tr.word_count} palavras{como})")
 
-    def _tarefa(self, job: dict, foto: Path) -> lote.Tarefa:
+    def _compilar_em_cache(self, texto: str, **kw: Any) -> compiler.CompileResult:
+        """O compilador, com o resultado guardado pela entrada inteira (o texto composto, que traz o
+        pedido, os termos do estilo e, do v7 em diante, as linhas da foto; a versão; a seed; o
+        sufixo; a câmera e o modelo). Na legenda por foto (ADR 0014), cada foto do pedido ganha a
+        sua tradução, mas o prompt de produção não vê a legenda: a entrada é a mesma em todas as
+        fotos, e sem o cache cada uma recarregaria o tradutor na GPU (keep_alive 0) entre dois
+        vídeos para repetir o mesmo texto. Recusa e erro não ficam guardados (a próxima foto
+        pergunta de novo); a seed da nova tentativa da pessoa inventada muda a chave."""
+        chave = (
+            texto, kw.get("profile"), kw.get("version"), kw.get("seed"), kw.get("suffix"),
+            kw.get("camera_preset"), kw.get("model"),
+        )  # fmt: skip
+        with self.lock:
+            guardado = self._traducoes.get(chave)
+        if guardado is not None:
+            return guardado
+        r = self.compile_fn(texto, **kw)
+        with self.lock:
+            self._traducoes[chave] = r
+            while len(self._traducoes) > TRADUCOES_EM_CACHE:  # o mais antigo sai
+                self._traducoes.pop(next(iter(self._traducoes)))
+        return r
+
+    def _legendar(self, job: dict) -> legenda.Legenda | None:
+        """A legenda da foto de uma tradução por foto (ADR 0014): a foto baixada, conferida e no
+        formato do vídeo (o 1º quadro que ele vai ter), no Ollama de CPU. Com a legenda desligada
+        neste pod ou com qualquer erro: None (a foto segue sem legenda; nunca bloqueia o pedido)."""
+        if not self.cfg.legenda:
+            return None
+        t0 = time.monotonic()
+        pasta = Path(tempfile.mkdtemp(prefix="render2go-legenda-"))
+        try:
+            foto = pasta / f"foto{TIPOS.get(job.get('foto_ext', ''), '.jpg')}"
+            media.download(job["foto_url"], foto, MAX_BYTES_FOTO)
+            media.check_image(foto, max_pixels=preparo.MAX_PIXELS)
+            t = self._tarefas(job, foto, job["arquivo"].rsplit("-v", 1)[0])[0]
+            prep = preparo.preparar(foto, t.width, t.height, pasta / "preparada.png")
+            # metade das CPUs do contêiner (a cota, não as do host); a outra metade fica com o
+            # ComfyUI e com a conferência do vídeo anterior
+            leg = legenda.tentar(
+                prep.path, ollama_url=self.cfg.ollama_cpu, threads=legenda.threads_da_legenda()
+            )
+        except Exception as e:  # noqa: BLE001 (a legenda nunca bloqueia o pedido nem o laço da GPU)
+            _log(f"AVISO: {job.get('arquivo')}: a foto segue sem legenda ({str(e)[:200]})")
+            return None
+        finally:
+            shutil.rmtree(pasta, ignore_errors=True)
+        if leg is not None:
+            _log(
+                f"{job['arquivo']}: legenda em {time.monotonic() - t0:.1f} s "
+                f"({leg.categoria}: {leg.assunto})"
+            )
+        return leg
+
+    def _tarefas(self, job: dict, foto: Path, nome: str) -> list[lote.Tarefa]:
         p = job["pedido"]
-        nome = Path(job["arquivo"]).stem.rsplit("-v", 1)[0]
         pedido = lote.Pedido(
             receita=p["receita"],
             acao=p["prompt"],
@@ -364,6 +441,10 @@ class WorkerFila:
         tarefas, erros = lote._tarefas(foto, nome, pedido, p["qualidade"], self.receitas)
         if erros:
             raise FilaError("; ".join(erros))
+        return tarefas
+
+    def _tarefa(self, job: dict, foto: Path) -> lote.Tarefa:
+        tarefas = self._tarefas(job, foto, Path(job["arquivo"]).stem.rsplit("-v", 1)[0])
         t = next((t for t in tarefas if t.arquivo == job["arquivo"]), None)
         if t is None:
             raise FilaError(f"arquivo {job['arquivo']} fora do pedido")
@@ -700,6 +781,8 @@ class WorkerFila:
         if not self._aceito(job):
             return FEITO
         if job["tipo"] == "compilar":
+            if job.get("legenda"):  # a legenda corre aqui, durante o vídeo atual na GPU (ADR 0014)
+                job["_legenda"] = self._legendar(job)
             return job
         return self._preparar(job) or FEITO
 
@@ -819,6 +902,8 @@ def main(argv: list[str] | None = None) -> int:
         motivo_em=a.motivo,
         adiantar=not a.sem_adiantar,
         aquecer=not a.sem_aquecer,
+        # legenda por foto (ADR 0014): o orquestrador põe a chave no fila.env com o Ollama de CPU
+        legenda=os.environ.get("RENDER2GO_LEGENDA_POR_FOTO", "").strip() == "1",
     )
     return WorkerFila(ApiFila(a.api, token, a.worker), cfg).rodar()
 

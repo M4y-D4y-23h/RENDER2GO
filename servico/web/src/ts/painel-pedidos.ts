@@ -73,6 +73,8 @@ type ItemHistorico = {
   total: number;
   barrados?: number;
   avaliacao?: number | null; // satisfação do cliente (1 a 5)
+  // legenda por foto (ADR 0014): quantas fotos têm a descrição automática e as primeiras (só o painel)
+  legendas?: { total: number; fotos: { nome: string; categoria: string | null; legenda: string | null }[] } | null;
 };
 type UsoIp = { ip: string; pedidos: number; fotos: number; fotos_teste: number; clientes: number; dispositivos: number; ultimo: number };
 type UsoDispositivo = {
@@ -374,6 +376,9 @@ type Falha = {
   salto_cor: number | null;
   similaridade: number | null;
   quarentena: boolean;
+  // legenda por foto (ADR 0014): a descrição automática da foto e a categoria (só o painel, nunca o cliente)
+  legenda?: string | null;
+  categoria?: string | null;
 };
 
 const numeroOu = (v: number | null, casas = 2) => (v === null || v === undefined ? "—" : v.toLocaleString("pt-BR", { maximumFractionDigits: casas }));
@@ -428,6 +433,7 @@ async function janelaFalhas(x: ItemHistorico, origem: HTMLElement): Promise<void
           criar("strong", { textContent: f.arquivo }),
           criar("p", { textContent: f.motivo }),
           criar("p", { className: "fraco", textContent: `${f.erro ?? "sem detalhe"} · ${notas.join(" · ")}` }),
+          f.legenda ? criar("p", { className: "fraco", textContent: `Legenda da foto (${f.categoria ?? "sem categoria"}): ${f.legenda}` }) : null,
         ];
         if (f.quarentena && pode("GET /api/jobs/{job_id}/quarentena")) {
           const ver = criar("button", { type: "button", className: "botao pequeno", dados: { foco: `${f.job}:quarentena` } }, [icone("play"), "Ver o vídeo barrado"]);
@@ -441,6 +447,16 @@ async function janelaFalhas(x: ItemHistorico, origem: HTMLElement): Promise<void
   } catch (e) {
     aviso(lista, textoErro(e), "erro");
   }
+}
+
+/** Legenda por foto (ADR 0014): a descrição automática de cada foto, que o tradutor recebeu (só o painel). */
+function legendasDoPedido(x: ItemHistorico): HTMLElement | null {
+  const l = x.legendas;
+  if (!l?.total) return null;
+  const itens = l.fotos.map((f) => criar("li", { textContent: `${f.nome} (${f.categoria ?? "sem categoria"}): ${f.legenda ?? "—"}` }));
+  const resto = l.total - l.fotos.length;
+  if (resto > 0) itens.push(criar("li", { className: "fraco", textContent: `e mais ${plural(resto, "foto", "fotos")} (no registro de auditoria)` }));
+  return criar("details", { className: "legendas" }, [criar("summary", { textContent: `Legendas automáticas das fotos (${l.total})` }), criar("ul", {}, itens)]);
 }
 
 function itemHistorico(x: ItemHistorico, aoMudar: () => void): HTMLElement {
@@ -535,6 +551,7 @@ function itemHistorico(x: ItemHistorico, aoMudar: () => void): HTMLElement {
     x.nao_sairam?.length
       ? criar("p", { className: "fraco", textContent: `Não saíram: ${x.nao_sairam.map((m) => `${m.videos} ${MOTIVOS_CURTOS[m.motivo] ?? m.texto}`).join(" · ")}` })
       : null,
+    legendasDoPedido(x),
   ];
   if (x.motivo) {
     const m = criar("div");

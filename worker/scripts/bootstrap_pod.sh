@@ -347,6 +347,21 @@ ambiente() {
   [[ "${SKIP_GPU_CHECK:-0}" == "1" ]] || /opt/venv/bin/python $W/scripts/gpu_check.py  # 1: só testes sem GPU
 }
 
+# legenda por foto (ADR 0014; $R/legenda, do orquestrador): o modelo de visão, conferido pelo digest, num Ollama
+# só para o download (porta 11436: o 11434 e o 11435 são dos serviços). Roda em segundo plano depois do AMBIENTE,
+# junto com os modelos do vídeo: nada espera por ele, e sem ele as fotos seguem sem legenda
+legenda_modelo() {
+  [[ -f $R/legenda ]] || return 0
+  local opid ok=1
+  OLLAMA_HOST=127.0.0.1:11436 ollama serve > $R/legenda_ollama.log 2>&1 &
+  opid=$!
+  for _ in $(seq 1 60); do curl -fsS -o /dev/null http://127.0.0.1:11436/api/version && break; sleep 1; done
+  OLLAMA_HOST=127.0.0.1:11436 ollama pull "$(arg LEGENDA_MODEL)" \
+    && test -f "$OLLAMA_MODELS/blobs/$(arg LEGENDA_MODEL_DIGEST | tr : -)" && ok=0
+  kill $opid 2>/dev/null; wait $opid 2>/dev/null
+  if [[ $ok == 0 ]]; then marca legenda; else echo "AVISO: o modelo da legenda não baixou (fotos sem legenda)"; fi
+}
+
 # pod que hiberna, depois do PRONTO: tudo o que a volta usa, copiado do disco do contêiner (já
 # conferido) para $L; o marcador só no fim, com os bytes de cada modelo conferidos no volume
 guardar_local() {
@@ -420,10 +435,13 @@ principal() {
   ambiente > $R/ambiente.log 2>&1 || { kill $MPID 2>/dev/null; falha "ambiente (ver ambiente.log)"; }
   marca ambiente_pronto
   echo AMBIENTE > $EST
+  legenda_modelo > $R/legenda.log 2>&1 &
+  LPID=$!
   wait $MPID || falha "modelos (ver modelos.log)"
   marca pronto
   echo PRONTO > $EST
   echo PRONTO
+  wait $LPID  # o volume (cache e hibernação) só é gravado com o modelo da legenda já baixado (ou desistido)
   guardar > $R/guardar.log 2>&1
   if [[ -n "$L" && -n "$VERSAO" ]]; then  # pod que hiberna: copia para o disco de volume (com o pod no ar)
     guardar_local > $R/guardar_local.log 2>&1 || echo "AVISO: disco de volume incompleto" >> $R/guardar_local.log

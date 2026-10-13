@@ -6,11 +6,19 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há. Para pôr o servidor em dia, comece pela entrada mais recente: ela diz de que versão parte e quais anteriores já traz junto.
 
+### 13/10/2026 (2): legenda por foto e modelos oficiais preparados (ADR 0014, proposto): não publicar sozinha
+
+**Não é para publicar agora.** Está na branch `claude/magical-lamport-4rrms9`, depois da entrada abaixo (13/10/2026), e prepara o que a rodada em GPU do [ADR 0014](adr/0014-modelos-oficiais-tradutor-e-legenda.md) mede: o conjunto `i2v_oficial` no `models.lock.json` e o template candidato (fora da produção), a legenda por foto (desligada, `RENDER2GO_LEGENDA_POR_FOTO=0`) e a seed do tradutor fixa por pedido. Ela vai ao servidor junto com a decisão da rodada (a entrada da Fase 4, acima desta quando existir), porque publicá-la sozinha só teria custo:
+- os pods hibernados seriam encerrados e refeitos uma vez (a versão da hibernação inclui o `models.lock.json` e o `worker/Dockerfile`, que mudaram), com o download inteiro na 1ª subida de cada um;
+- a Política de Privacidade v6 (a descrição automática de cada foto) pediria o aceite de todas as contas por um recurso desligado.
+
+Se for preciso publicar antes (uma correção urgente por cima dela), os efeitos são estes, além dos da entrada abaixo: o banco ganha três colunas (`lotes.legenda`, `fotos.legenda` e `fotos.categoria`), criadas sozinhas na partida; a variável nova `RENDER2GO_LEGENDA_POR_FOTO` fica em 0 (o padrão) até o aceite do ADR 0014; os hibernados se refazem no 1º ciclo do orquestrador; cada conta aceita a Política de Privacidade v6 na próxima entrada; e as traduções feitas dali em diante usam uma seed fixa por pedido (o resultado para o cliente é o de hoje: um prompt por pedido, agora o mesmo em qualquer pod). O que muda e por quê: CHANGELOG, entrada 13/10/2026 (2).
+
 ### 13/10/2026: pedido vago e pessoa inventada no código, receitas v4, teto de 5 s e página do pedido
 
-**É a atualização a fazer agora.** Está na branch `claude/magical-lamport-4rrms9`, que já traz a entrada abaixo (12/10/2026 (4)): se o servidor ainda não está nela, os passos 2 a 6 dela valem aqui também, nesta mesma subida. Muda a API, as páginas e o código que vai para os pods (`render2go_worker/traducao.py`, receitas e presets v4). Sem coluna nova no banco, sem variável nova no `.env`, sem regra nova no R2, e os pods hibernados continuam valendo (a versão da hibernação não muda). O que muda e por quê: CHANGELOG, entrada 13/10/2026; `docs/06`, seção 9.4.
+**É a atualização a fazer agora**, no commit `e40ac27` (a Fase 1 do pedido de 13/10; a branch já segue com a entrada acima, que não é para publicar sozinha). Está na branch `claude/magical-lamport-4rrms9`, que já traz a entrada abaixo (12/10/2026 (4)): se o servidor ainda não está nela, os passos 2 a 6 dela valem aqui também, nesta mesma subida. Muda a API, as páginas e o código que vai para os pods (`render2go_worker/traducao.py`, receitas e presets v4). Sem coluna nova no banco, sem variável nova no `.env`, sem regra nova no R2, e os pods hibernados continuam valendo (a versão da hibernação não muda). O que muda e por quê: CHANGELOG, entrada 13/10/2026; `docs/06`, seção 9.4.
 
-1. **Nada gerando, backup e código novo:** os blocos 1 e 2 da entrada 11/10/2026 (2), com `git pull` da branch acima.
+1. **Nada gerando, backup e código novo:** os blocos 1 e 2 da entrada 11/10/2026 (2), com `git fetch origin claude/magical-lamport-4rrms9 && git checkout e40ac27` no lugar do `git pull` (o commit da Fase 1, sem o que vem depois).
 2. **Subir:** `cd ~/GPU2GO/servico/implantacao && docker compose up -d --build`. API e pods sobem juntos com o mesmo código (o orquestrador empacota o worker do próprio contêiner).
 3. **Conferir:**
    - na página do pedido: duração "Padrão do estilo", 4 s e 5 s (sem 6 e 7); o exemplo concreto de cada estilo, o botão "Usar o texto pronto do estilo" e a dica do 720p embaixo da qualidade;
