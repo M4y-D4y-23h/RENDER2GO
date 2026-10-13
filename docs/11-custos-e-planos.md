@@ -87,14 +87,14 @@ Uma alternativa mais barata é deixar o pod quente esperar mais entre pedidos: `
 
 - **Sem planos nem assinaturas.** O cliente do plano `pago` tem um saldo em reais, recarrega quando quiser e paga por segundo de vídeo:
 
-  | Qualidade | Preço por segundo | 4 s | 5 s | 7 s |
-  |---|---|---|---|---|
-  | 480p (rápida) | **R$ 0,25** (US$ 0,05) | R$ 1,00 | R$ 1,25 | R$ 1,75 |
-  | 720p (alta) | **R$ 0,50** (US$ 0,10) | R$ 2,00 | R$ 2,50 | R$ 3,50 |
+  | Qualidade | Preço por segundo | 4 s | 5 s |
+  |---|---|---|---|
+  | 480p (rápida) | **R$ 0,25** (US$ 0,05) | R$ 1,00 | R$ 1,25 |
+  | 720p (alta) | **R$ 0,50** (US$ 0,10) | R$ 2,00 | R$ 2,50 |
 
   - Os valores em dólar usam o câmbio de R$ 5,00 que o dono escolheu. Com o câmbio real do cartão (~R$ 5,70, seção 1), R$ 0,25 equivale a ~US$ 0,044.
   - Mudam no `.env`, sem mexer no código: `RENDER2GO_PRECO_480P_S` e `RENDER2GO_PRECO_720P_S` (`docs/09`, seção 4).
-- **Duração:** de 4 a 7 s. Vídeos de 3 s existem só no teste gratuito.
+- **Duração:** 4 ou 5 s (desde 13/10/2026; eram de 4 a 7 s). Acima de 5 s, o modelo repete o movimento e deforma (`docs/06`, seção 9.1). Vídeos de 3 s existem só no teste gratuito. Os pedidos de 6 e 7 s feitos antes de 13/10 seguem como foram feitos (o pod aceita até 7 s).
 - **Cobrança (desde 12/10/2026, [ADR 0012](adr/0012-cobranca-por-video-entregue.md)):** cada vídeo é cobrado quando fica pronto (conferência e filtro aprovados); o vídeo que não sai e o pedido recusado não custam nada, então não há estorno. Para criar o pedido, o saldo precisa pagar o 1º vídeo; a página mostra a estimativa do pedido inteiro e quantos vídeos o saldo atual paga. Sem saldo para o próximo vídeo, o pedido espera ("Aguardando saldo") e continua sozinho depois da recarga, sem segurar pod. As fotos ficam guardadas 7 dias: o pedido que não termina nesse prazo fecha, e o que faltava é cancelado sem custo. Sem limite de fotos por pedido nem por dia nos planos pago e interno.
 - **Pedidos de antes de 12/10/2026:** seguem a regra antiga até o fim: cobrados inteiros quando as fotos chegaram; o recusado volta inteiro e cada vídeo que não sai volta sozinho para o saldo.
 - **Recarga:** pelo próprio cliente, por Pix, creditada sozinha quando o Mercado Pago confirma (ADR 0008); ou à mão, pelo dono, no painel ou pelo terminal (`docs/09`, seção 5.1.7). O extrato fica guardado e o cliente vê os últimos movimentos na página.
@@ -109,12 +109,10 @@ GPU em reais a ~R$ 5,70 por dólar. "Sobra" é o preço menos imposto e taxa de 
 |---|---|---|---|
 | 4 s, 480p | R$ 1,00 | ~R$ 0,09 | R$ 0,71–0,81 (71–81%) |
 | 5 s, 480p | R$ 1,25 | ~R$ 0,12 | R$ 0,88–1,01 (70–81%) |
-| 7 s, 480p | R$ 1,75 | ~R$ 0,17 | R$ 1,23–1,41 (70–80%) |
 | 4 s, 720p | R$ 2,00 | ~R$ 0,23 | R$ 1,37–1,57 (69–79%) |
 | 5 s, 720p | R$ 2,50 | ~R$ 0,34 | R$ 1,66–1,91 (66–76%) |
-| 7 s, 720p | R$ 3,50 | ~R$ 0,56 | R$ 2,24–2,59 (64–74%) |
 
-- **Medidos:** 5 s em 480p, 5 s e 7 s em 720p (seção 2). Os de 4 s e 7 s em 480p e 4 s em 720p são proporcionais ao tempo medido.
+- **Medidos:** 5 s em 480p e em 720p (seção 2). Os de 4 s são proporcionais ao tempo medido. (Os de 7 s, que deixaram de ser vendidos em 13/10/2026, rendiam R$ 1,75 e R$ 3,50, com a GPU a ~R$ 0,17 e ~R$ 0,56.)
 - **Subida do pod:** ~R$ 0,63 por vez na L40S (seção 2). Num pedido de um vídeo só de 4 s, ela come quase toda a sobra; a partir de 3 ou 4 vídeos por subida, pesa pouco. Pedidos seguidos aproveitam o pod quente.
 - **Ainda não descontados:** o seu tempo de revisão, os custos fixos (~R$ 43/mês), os vídeos refeitos por qualidade (no teste das receitas, 2 de 8 não ficaram bons), a taxa do Mercado Pago em cada recarga por Pix (depende da conta; confira em "Seu negócio → Custos", ADR 0008) e o provedor de e-mail dos códigos de entrada.
 - **O custo medido pelo dono** (~US$ 0,03 por vídeo de 3 s, já com as subidas, na RTX PRO 6000) dá ~R$ 0,17: ainda bem abaixo do menor preço (R$ 1,00).

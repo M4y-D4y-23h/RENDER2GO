@@ -61,10 +61,20 @@ def _relatorio(tmp_path):
         return list(csv.DictReader(f))
 
 
-def test_shipped_recipes_are_valid_and_use_v3_presets():
+def test_shipped_recipes_are_valid_and_use_v4_presets():
     data = lote.load_receitas()
-    assert data["presets_version"] == presets.load()["version"] == 3
+    assert data["presets_version"] == presets.load()["version"] == 4
+    # v4: todas as receitas da v3, iguais, mais a categoria, o movimento fixo e o exemplo da página
+    v3 = json.loads((presets.WORKER_DIR / "presets" / "receitas.v3.json").read_text())
+    assert set(data["receitas"]) == set(v3["receitas"])
+    novos = {"categoria", "acao_en", "assunto", "exemplo", "camera_padrao"}
+    for nome, r in data["receitas"].items():
+        assert {k: v for k, v in r.items() if k not in novos} == v3["receitas"][nome]
+        assert r["categoria"] in data["categorias"] and r["exemplo"]
+    assert data["receitas"]["livre"]["camera_padrao"] == "suave"
+    assert set(data["movimentos"]) == set(data["categorias"])
     # v3: todas as receitas da v2, iguais, mais a continuidade "cena-unica" em todas
+    data = v3
     v2 = json.loads((presets.WORKER_DIR / "presets" / "receitas.v2.json").read_text())
     assert set(data["receitas"]) == set(v2["receitas"])
     for nome, r in data["receitas"].items():
@@ -169,6 +179,7 @@ def test_cli_requires_prompt_or_sheet(tmp_path, capsys):
 def test_end_to_end_compiles_once_and_resumes(pasta, tmp_path, fake_comfy, fake_ollama):
     a = _args(pasta, tmp_path, "--prompt", "a câmera se aproxima devagar", comfy=(fake_comfy.url,))
     a.ollama = fake_ollama.url
+    fake_ollama.response = "The product stays in place as the camera slowly moves closer."
     assert lote.executar(a) == lote.EXIT_OK
     saida = tmp_path / "saida"
     assert sorted(p.name for p in saida.glob("*.mp4")) == [
@@ -263,3 +274,18 @@ def test_gpus_shortcut_uses_consecutive_ports(tmp_path):
     assert a.comfy == [f"http://127.0.0.1:{p}" for p in (8188, 8189, 8190)] and a.fila == 1
     with pytest.raises(SystemExit):
         lote.parse([str(tmp_path), "--saida", "s", "--prompt", "x", "--gpus", "2", "--comfy", "u"])
+
+
+def test_orders_made_before_the_5s_cap_still_render_up_to_7s(tmp_path):
+    # o serviço vende até 5 s desde 13/10/2026 (render2go_servico.precos.DURACAO_MAX); os pedidos de
+    # antes, com 6 e 7 s, seguem como foram feitos: o pod continua aceitando até 7 s
+    foto = tmp_path / "f.png"
+    Image.new("RGB", (64, 64), (120, 90, 60)).save(foto)
+    for d in (6, 7):
+        p = lote.Pedido(receita="livre", duracao=d)
+        tarefas, erros = lote._tarefas(foto, "f", p, "rapida", lote.load_receitas())
+        assert not erros and tarefas[0].duracao == d
+    _, erros = lote._tarefas(
+        foto, "f", lote.Pedido(receita="livre", duracao=8), "rapida", lote.load_receitas()
+    )
+    assert erros == ["duracao 8: de 3 a 7 segundos"]

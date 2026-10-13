@@ -2965,8 +2965,9 @@ class Banco:
             self._estornar_lote(c, lote_id, f"pedido recusado: {motivo}"[:200])
             self.evento(c, lote_id, "recusado", {"por": quem, "motivo": motivo})
 
-    def definir_prompt_foto(self, foto_id: str, prompt_en: str, compilador: str) -> None:
-        """Prompt compilado do texto próprio de uma foto: vale para todas as fotos do lote com o mesmo texto."""
+    def definir_prompt_foto(self, foto_id: str, prompt_en: str, compilador: str, detalhe: dict | None = None) -> None:
+        """Prompt compilado do texto próprio de uma foto: vale para todas as fotos do lote com o mesmo texto.
+        `detalhe`: como a tradução saiu (render2go_worker.traducao: vago, movimento padrão, pessoa inventada)."""
         with self.tx() as c:
             f = c.one("SELECT lote_id, prompt FROM fotos WHERE id = ?", (foto_id,))
             if f is None or f["prompt"] is None:
@@ -2975,20 +2976,38 @@ class Banco:
                 "UPDATE fotos SET prompt_en = ? WHERE lote_id = ? AND prompt = ? AND prompt_en IS NULL",
                 (prompt_en, f["lote_id"], f["prompt"]),
             )
-            self.evento(c, f["lote_id"], "prompt_foto", {"compilador": compilador, "fotos": n})
+            self.evento(c, f["lote_id"], "prompt_foto", {"compilador": compilador, "fotos": n, **(detalhe or {})})
+
+    def fotos_da_traducao(self, lote_id: str, foto_id: str | None) -> list[dict]:
+        """As fotos que vão usar uma tradução (render2go_worker.traducao: a regra da pessoa inventada olha a análise
+        delas): a do pedido (`foto_id` None) serve às fotos sem texto próprio; a de um texto próprio, às fotos com esse
+        texto. As que o filtro das fotos recusou ficam de fora (não viram vídeo)."""
+        recusadas = " AND COALESCE(f.filtro, '') NOT IN ('recusada', 'invalida')"
+        with self.tx() as c:
+            if foto_id is None:
+                return c.all(f"SELECT f.* FROM fotos f WHERE f.lote_id = ? AND f.prompt IS NULL{recusadas}", (lote_id,))
+            return c.all(
+                "SELECT f.* FROM fotos f WHERE f.lote_id = ?"
+                f" AND f.prompt = (SELECT t.prompt FROM fotos t WHERE t.id = ?){recusadas}",
+                (lote_id, foto_id),
+            )
+
+    def registrar_evento(self, lote_id: str | None, tipo: str, detalhe: Any = None) -> None:
+        with self.tx() as c:
+            self.evento(c, lote_id, tipo, detalhe)
 
     def foto(self, foto_id: str) -> dict | None:
         with self.tx() as c:
             return c.one("SELECT * FROM fotos WHERE id = ?", (foto_id,))
 
-    def definir_prompt(self, lote_id: str, prompt_en: str, compilador: str) -> None:
+    def definir_prompt(self, lote_id: str, prompt_en: str, compilador: str, detalhe: dict | None = None) -> None:
         with self.tx() as c:
             c.run(
                 "UPDATE lotes SET prompt_en = ?, compilador = ?, status = 'processando'"
                 " WHERE id = ? AND prompt_en IS NULL",
                 (prompt_en, compilador, lote_id),
             )
-            self.evento(c, lote_id, "prompt", {"compilador": compilador})
+            self.evento(c, lote_id, "prompt", {"compilador": compilador, **(detalhe or {})})
 
     # -- fila -----------------------------------------------------------------------------
 

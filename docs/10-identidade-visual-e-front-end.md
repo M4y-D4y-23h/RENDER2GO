@@ -82,7 +82,7 @@ Os tokens ficam em `servico/web/src/css/tokens.css`. O tema segue o aparelho (`p
 ### 1.7 Voz e texto
 
 - Português do Brasil, tratamento por "você", frases curtas.
-- Botões dizem o que fazem: "Enviar pedido com 3 fotos", "Usar este exemplo", "Baixar".
+- Botões dizem o que fazem: "Enviar pedido com 3 fotos", "Usar o texto pronto do estilo", "Baixar".
 - Plural correto ("1 foto", "2 fotos"), sem "foto(s)".
 - Erro diz o que fazer ("Escreva o motivo da recusa (o cliente vê)"), e o foco vai para o campo.
 - O cliente vê tempo e estado, nunca as etapas internas (regra da previsão, docs/09, seção 5.1.3).

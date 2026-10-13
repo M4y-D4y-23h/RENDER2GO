@@ -136,7 +136,7 @@
         <h2 id="titulo-como">Como funciona</h2>
         <ol>
           <li><span><strong>Envie as fotos.</strong> Dezenas de uma vez, do celular ou do computador.</span></li>
-          <li><span><strong>Diga o que deve acontecer.</strong> Em português, do seu jeito, simples (“deixe bonito”) ou detalhado (“a câmera se aproxima devagar do produto”).</span></li>
+          <li><span><strong>Diga o que deve acontecer.</strong> Em português, do seu jeito: o que se mexe e como a câmera anda (“a câmera se aproxima devagar do bolo e o vapor sobe da xícara”). Pedido sem movimento, como “deixe bonito”, ganha um movimento suave escolhido para a foto.</span></li>
           <li><span><strong>Baixe os vídeos.</strong> Um vídeo curto por foto, depois de uma revisão rápida do pedido.</span></li>
         </ol>
       </section>
@@ -237,23 +237,24 @@
                       <label for="prompt" id="rotulo-prompt">O que deve acontecer nos vídeos?</label>
                       <textarea id="prompt" required minlength="3" maxlength="600" spellcheck="true" autocapitalize="sentences" placeholder="Ex.: a câmera gira devagar em volta do carro" aria-describedby="prompt-dica prompt-contador"></textarea>
                       <div class="linha-campo">
-                        <p class="dica" id="prompt-dica">Escreva em português, do seu jeito. O texto vale para cada foto, uma de cada vez: descreva o que acontece numa foto só. Pode ser simples ou detalhado.</p>
+                        <p class="dica" id="prompt-dica">Escreva em português, do seu jeito. O texto vale para cada foto, uma de cada vez: descreva o que se mexe numa foto só e, se quiser, como a câmera anda.</p>
                         <span class="contador" id="prompt-contador">0/600</span>
                       </div>
                       <p class="dica nota-textos" id="nota-textos" hidden></p>
                       <details class="exemplos-pedido">
                         <summary>Ver exemplos de pedido</summary>
                         <ul>
-                          <li><strong>Simples:</strong> “deixe bonito, com um movimento suave”</li>
-                          <li><strong>Simples:</strong> “vídeo de apresentação do carro”</li>
-                          <li><strong>Detalhado:</strong> “a câmera gira devagar em volta do carro e os faróis acendem”</li>
-                          <li><strong>Detalhado:</strong> “o vapor sobe do prato e a câmera se aproxima devagar”</li>
+                          <li><strong>Comida:</strong> “a câmera se aproxima devagar do bolo e o vapor sobe da xícara”</li>
+                          <li><strong>Carro:</strong> “a câmera gira devagar em volta do carro e os faróis acendem”</li>
+                          <li><strong>Cosmético:</strong> “a luz passa devagar pelo frasco de perfume”</li>
+                          <li><strong>Fachada:</strong> “as folhas da árvore balançam na frente da loja”</li>
+                          <li><strong>Roupa:</strong> “o vestido balança leve com o vento”</li>
                         </ul>
-                        <p class="dica">Cada vídeo mostra só o que está na foto, numa cena contínua. Evite pedir troca de produto, cortes ou texto escrito no vídeo.</p>
+                        <p class="dica">Diga o que se mexe na foto. Cada vídeo mostra só o que está nela, numa cena contínua: evite pedir pessoas ou objetos que a foto não tem, troca de produto, cortes ou texto escrito no vídeo. Pedido sem movimento (“deixe bonito”) ganha um movimento suave escolhido para a foto.</p>
                       </details>
                       <div class="sugestao" id="sugestao" hidden>
                         <p>Exemplo para este estilo: <q id="sugestao-texto"></q></p>
-                        <button type="button" class="botao pequeno" id="usar-sugestao"><!--@icone brilho-->Usar este exemplo</button>
+                        <button type="button" class="botao pequeno" id="usar-sugestao"><!--@icone brilho-->Usar o texto pronto do estilo</button>
                       </div>
                     </div>
                     <div class="sequencia pilha" id="sequencia" hidden>
@@ -298,16 +299,15 @@
                         <option value="3">3 s</option>
                         <option value="4">4 s</option>
                         <option value="5">5 s</option>
-                        <option value="6">6 s</option>
-                        <option value="7">7 s</option>
                       </select>
                     </div>
                     <div class="campo">
                       <label for="qualidade">Qualidade</label>
-                      <select id="qualidade">
+                      <select id="qualidade" aria-describedby="qualidade-dica">
                         <option value="rapida">Rápida (prévia, 480p)</option>
                         <option value="alta">Alta (720p)</option>
                       </select>
+                      <p class="dica" id="qualidade-dica">Produto com rótulo ou texto pequeno: escolha Alta (720p).</p>
                     </div>
                   </div>
                   <div class="campo">

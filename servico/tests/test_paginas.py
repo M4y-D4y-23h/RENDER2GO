@@ -107,7 +107,8 @@ def test_client_and_reviewer_pages_end_to_end(ambiente, navegador, tmp_path):  #
     cli.click("#aviso-cookies button:has-text('Gerenciar')")
     assert cli.locator("#ck-necessarios").is_checked() and cli.locator("#ck-necessarios").is_disabled()
     assert not cli.locator("#ck-estatisticas").is_checked()
-    cli.click("#aviso-cookies button:has-text('Salvar escolhas')")
+    with cli.expect_response(lambda r: r.url.endswith("/api/cookies")):  # o aviso some antes de o envio terminar
+        cli.click("#aviso-cookies button:has-text('Salvar escolhas')")
     cli.wait_for_selector("#aviso-cookies", state="detached")
     with ambiente.banco.tx() as c:
         (ck,) = c.all("SELECT escolha FROM cookies")
@@ -695,12 +696,18 @@ def test_photo_preview_removal_suggestion_counter_and_required_authorization(amb
     assert pg.locator("#enviar").inner_text() == "Enviar pedido com 2 fotos"
     pg.click("#limpar")
     assert pg.locator("#previa").is_hidden() and pg.locator("#enviar").inner_text() == "Enviar pedido"
-    # sugestão do estilo e contador de caracteres
-    pg.select_option("#receita", "comida-prato")
-    assert pg.locator("#sugestao-texto").inner_text() == "vapor sobe do prato quente, a câmera se aproxima devagar"
+    # sugestão do estilo e contador de caracteres: o exemplo concreto (receitas v4) só é mostrado; o botão copia o
+    # texto pronto do estilo, que serve para qualquer foto (o exemplo cita um produto que as fotos podem não ter)
+    pg.select_option("#receita", "livre")
+    assert "do bolo" in pg.locator("#sugestao-texto").inner_text()
     pg.click("#usar-sugestao")
-    assert pg.input_value("#prompt") == "vapor sobe do prato quente, a câmera se aproxima devagar"
-    assert pg.locator("#prompt-contador").inner_text() == "56/600"
+    assert pg.input_value("#prompt") == "a cena ganha movimento natural e suave"
+    pg.select_option("#receita", "comida-prato")
+    assert pg.locator("#sugestao-texto").inner_text() == "o vapor sobe do prato quente e a câmera se aproxima devagar"
+    pg.click("#usar-sugestao")
+    pronto = "vapor sobe do prato quente, a câmera se aproxima devagar"
+    assert pg.input_value("#prompt") == pronto
+    assert pg.locator("#prompt-contador").inner_text() == f"{len(pronto)}/600"
     # sem fotos, o envio avisa e leva o foco para a escolha das fotos
     pg.click("#enviar")
     assert "Escolha as fotos" in pg.locator("#msg").inner_text()
@@ -757,35 +764,33 @@ def _texto(pg, seletor):
 
 def test_prepaid_balance_price_and_top_up_by_the_owner(ambiente, navegador, tmp_path):  # noqa: F811 (fixture)
     erros: list[str] = []
-    tok = _cliente(ambiente, saldo="3,00")
+    tok = _cliente(ambiente, saldo="2,40")
     ctx = navegador.new_context()
     _com_sessao(ctx, ambiente, tok)
     pg = _pagina(ctx, erros)
     pg.goto(ambiente.url)
     pg.wait_for_selector("#saldo:not([hidden])")
     _escolher_finalidade(pg)
-    assert _texto(pg, "#saldo-valor") == "R$ 3,00"
+    assert _texto(pg, "#saldo-valor") == "R$ 2,40"
     precos = _texto(pg, "#saldo-precos")
     assert precos == "480p: R$ 0,25 por segundo de vídeo · 720p: R$ 0,50 por segundo de vídeo"
     assert pg.locator("#adicionar-saldo").is_hidden()  # recarga por Pix desligada neste servidor
     assert "fale com a gente pelo suporte" in pg.locator("#saldo-recarga").inner_text()
-    # 3 s é só do teste gratuito; o padrão do estilo mostra a duração
-    assert pg.locator("#duracao option").all_inner_texts() == ["Padrão do estilo (5 s)", "4 s", "5 s", "6 s", "7 s"]
+    # 3 s é só do teste gratuito e, desde 13/10/2026, 5 s é o teto; o padrão do estilo mostra a duração
+    assert pg.locator("#duracao option").all_inner_texts() == ["Padrão do estilo (5 s)", "4 s", "5 s"]
     assert _texto(pg, "#custo") == "Cada vídeo de 5 s em 480p custa R$ 1,25, cobrado só quando fica pronto."
     fotos = [_salvar(tmp_path, f"f{i}.png", _png((40 * i, 90, 160), "circulo")) for i in range(1, 3)]
     pg.set_input_files("#fotos", [str(f) for f in fotos])
     custo = pw.expect(pg.locator("#custo"))
     cobrados = "cobrados um a um, só quando ficam prontos"
-    custo.to_have_text(f"Estimativa: 2 vídeos de 5 s em 480p = R$ 2,50, {cobrados}")
-    pg.select_option("#qualidade", "alta")  # R$ 2,50 cada: o saldo de R$ 3,00 paga 1 agora
-    custo.to_have_text(
-        f"Estimativa: 2 vídeos de 5 s em 720p = R$ 5,00, {cobrados}"
+    custo.to_have_text(  # R$ 1,25 cada: o saldo de R$ 2,40 paga 1 agora
+        f"Estimativa: 2 vídeos de 5 s em 480p = R$ 2,50, {cobrados}"
         " · o saldo atual paga 1 vídeo; o resto espera você adicionar saldo"
     )
     assert "falta" not in (pg.get_attribute("#custo", "class") or "")
-    pg.select_option("#duracao", "7")  # R$ 3,50: nem o 1º vídeo
+    pg.select_option("#qualidade", "alta")  # R$ 2,50: nem o 1º vídeo
     custo.to_have_text(
-        f"Estimativa: 2 vídeos de 7 s em 720p = R$ 7,00, {cobrados} · o seu saldo não paga o 1º vídeo (R$ 3,50)"
+        f"Estimativa: 2 vídeos de 5 s em 720p = R$ 5,00, {cobrados} · o seu saldo não paga o 1º vídeo (R$ 2,50)"
     )
     assert "falta" in pg.get_attribute("#custo", "class")
     pg.fill("#prompt", "a câmera se aproxima devagar do produto")
@@ -798,7 +803,7 @@ def test_prepaid_balance_price_and_top_up_by_the_owner(ambiente, navegador, tmp_
     custo.to_have_text(f"Estimativa: 2 vídeos de 4 s em 480p = R$ 2,00, {cobrados}")
     pg.click("#enviar")
     pg.wait_for_selector("#msg.ok", timeout=15000)
-    pw.expect(pg.locator("#saldo-valor")).to_have_text("R$ 3,00")
+    pw.expect(pg.locator("#saldo-valor")).to_have_text("R$ 2,40")
     cobrado = "Cobrado até agora: R$ 0,00 · R$ 1,00 por vídeo, só quando fica pronto"
     pg.wait_for_selector(f"#lotes .lote:has-text('{cobrado}')")
     pg.click("#extrato summary")
@@ -810,12 +815,12 @@ def test_prepaid_balance_price_and_top_up_by_the_owner(ambiente, navegador, tmp_
     adm = _pagina(adm_ctx, erros)
     adm.goto(f"{ambiente.url}{PAINEL}/#clientes")
     adm.wait_for_selector("#clientes-tabela table")
-    assert "R$ 3,00" in _texto(adm, "#clientes-tabela table")
+    assert "R$ 2,40" in _texto(adm, "#clientes-tabela table")
     assert "720p a R$ 0,50" in _texto(adm, "#precos-info")
     adm.click("#clientes-tabela .botao-linha")
     janela = adm.locator("dialog.conta-cliente[open]")
     pw.expect(janela.locator("h2")).to_have_text("Café da Esquina")
-    pw.expect(janela.locator(".dados-conta")).to_contain_text("R$ 3,00")
+    pw.expect(janela.locator(".dados-conta")).to_contain_text("R$ 2,40")
     adm.click("#saldo-enviar")
     pw.expect(adm.locator("#saldo-msg")).to_contain_text("Escreva o valor em reais")
     pw.expect(adm.locator("#saldo-valor")).to_be_focused()
@@ -824,14 +829,14 @@ def test_prepaid_balance_price_and_top_up_by_the_owner(ambiente, navegador, tmp_
     adm.fill("#saldo-referencia", "E2026100912345")
     adm.click("#saldo-enviar")
     adm.click("dialog.confirmacao[open] button:has-text('Lançar')")
-    pw.expect(janela.locator(".aviso.ok")).to_contain_text("R$ 23,00")
+    pw.expect(janela.locator(".aviso.ok")).to_contain_text("R$ 22,40")
     pw.expect(janela.locator(".aviso.ok")).to_be_focused()  # o leitor de tela ouve o resultado
-    pw.expect(janela.locator(".dados-conta")).to_contain_text("R$ 23,00")
-    pw.expect(adm.locator("#clientes-tabela table")).to_contain_text("R$ 23,00")
+    pw.expect(janela.locator(".dados-conta")).to_contain_text("R$ 22,40")
+    pw.expect(adm.locator("#clientes-tabela table")).to_contain_text("R$ 22,40")
     with adm.expect_download() as baixado:
         janela.locator("button:has-text('Baixar o extrato')").click()
     extrato = json.loads(Path(baixado.value.path()).read_text())
-    assert extrato["saldo"] == 2300 and extrato["movimentos"][0]["descricao"] == "Pix de 09/10"
+    assert extrato["saldo"] == 2240 and extrato["movimentos"][0]["descricao"] == "Pix de 09/10"
     # o mesmo Pix de novo: recusado
     adm.fill("#saldo-valor", "20")
     adm.fill("#saldo-descricao", "Pix de 09/10")
@@ -1225,10 +1230,16 @@ def test_small_photo_warning_order_help_and_gpu_report(ambiente, navegador, tmp_
     pg.goto(ambiente.url)
     _escolher_finalidade(pg)
     pg.wait_for_selector("#campos-lote:not([disabled])")
-    # ajuda do texto: pedidos simples e detalhados, e o texto vale para cada foto
+    # ajuda do texto: o texto vale para cada foto; exemplos concretos, um por tipo de foto (13/10/2026: nenhum
+    # exemplo vago, que vira o movimento padrão); e a dica do 720p para rótulo e texto pequeno
     assert "uma de cada vez" in pg.locator("#prompt-dica").inner_text()
     pg.click(".exemplos-pedido summary")
-    pw.expect(pg.locator(".exemplos-pedido li")).to_have_count(4)
+    pw.expect(pg.locator(".exemplos-pedido li")).to_have_count(5)
+    exemplos = pg.locator(".exemplos-pedido li").all_inner_texts()
+    assert exemplos[0] == "Comida: “a câmera se aproxima devagar do bolo e o vapor sobe da xícara”"
+    assert not any("bonito" in e or "apresentação" in e for e in exemplos)
+    assert pg.locator("#qualidade-dica").inner_text() == "Produto com rótulo ou texto pequeno: escolha Alta (720p)."
+    assert pg.get_attribute("#qualidade", "aria-describedby") == "qualidade-dica"
     # foto de 300×200 para um vídeo horizontal de 832×480 (2,8× de ampliação): aviso, sem bloquear
     pequena = _salvar(tmp_path, "vitrine.png", _png_de(300, 200))
     grande = _salvar(tmp_path, "loja.png", _png_de(1600, 900, (200, 120, 60)))

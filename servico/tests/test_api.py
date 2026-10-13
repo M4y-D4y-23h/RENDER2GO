@@ -479,8 +479,8 @@ def test_client_sees_a_time_estimate_and_open_or_download_links(api):
 
 def test_internal_plan_has_no_trial_limits_and_is_approved_automatically(api):
     tok = _cliente(api, "Dono", plano="interno")
-    # sem cobrança e sem limites de teste; vídeos de 4 a 7 s, como no plano pago
-    assert api.get("/api/receitas", headers=h(tok)).json()["plano"] == {"nome": "interno", "duracoes": [4, 5, 6, 7]}
+    # sem cobrança e sem limites de teste; vídeos de 4 e 5 s, como no plano pago (o teto de 13/10/2026)
+    assert api.get("/api/receitas", headers=h(tok)).json()["plano"] == {"nome": "interno", "duracoes": [4, 5]}
     assert api.get("/api/saldo", headers=h(tok)).json() == {"pre_pago": False, "pagamento": False}
     lotes = []
     for _ in range(3):  # 3 pedidos de 10 fotos ao mesmo tempo, 720p e 5 s
@@ -684,7 +684,7 @@ def _concluir(api, job, **corpo):
 def test_prepaid_balance_prices_charges_refunds_and_minimum_duration(api):
     cid, tok = api.banco.criar_cliente("Imobiliária", 500, "pago")
     plano = api.get("/api/receitas", headers=h(tok)).json()["plano"]
-    assert plano == {"nome": "pago", "duracoes": [4, 5, 6, 7], "precos": {"rapida": 25, "alta": 50}, "saldo": 0}
+    assert plano == {"nome": "pago", "duracoes": [4, 5], "precos": {"rapida": 25, "alta": 50}, "saldo": 0}
     receitas = api.get("/api/receitas", headers=h(tok)).json()["receitas"]
     assert all(x["duracao"] >= 4 for x in receitas)
 
@@ -707,9 +707,10 @@ def test_prepaid_balance_prices_charges_refunds_and_minimum_duration(api):
     r = api.post(f"{PAINEL}/api/clientes/{teste}/saldo", json={"valor": "10", "descricao": "Pix"}, headers=ADM)
     assert r.status_code == 422
 
-    # 3 s só no teste gratuito: no pré-pago, de 4 a 7 s
-    r = _lote(api, tok, n=1, duracao=3)
-    assert r.status_code == 422 and "4 a 7 s" in r.json()["detail"]
+    # 3 s só no teste gratuito: no pré-pago, 4 e 5 s (acima de 5 s, o modelo repete o movimento: 13/10/2026)
+    for duracao in (3, 6, 7):
+        r = _lote(api, tok, n=1, duracao=duracao)
+        assert r.status_code == 422 and "4 a 5 s" in r.json()["detail"]
 
     # 2 vídeos de 4 s em 720p: estimativa de R$ 4,00; nada é cobrado quando as fotos chegam
     r = _lote(api, tok, n=2, duracao=4, qualidade="alta")

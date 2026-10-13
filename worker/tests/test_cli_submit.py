@@ -175,7 +175,7 @@ def test_presets_compose_input_and_append_terms(
         "Golden hour sunlight, long soft shadows."
     )
     assert res["presets"] == {
-        "version": 3,
+        "version": 4,
         "camera": "parada-corpo-inteiro-costas",
         "luz": "por-do-sol",
     }

@@ -6,9 +6,22 @@ Como colocar no ar o serviço de lotes (ADR 0003, fase 3): cliente envia as foto
 
 Toda atualização é o mesmo `git pull` e `docker compose up -d --build`, sem pedido gerando (reiniciar o orquestrador desliga os pods ligados). Abaixo, o que muda em cada uma e o passo extra, quando há. Para pôr o servidor em dia, comece pela entrada mais recente: ela diz de que versão parte e quais anteriores já traz junto.
 
+### 13/10/2026: pedido vago e pessoa inventada no código, receitas v4, teto de 5 s e página do pedido
+
+**É a atualização a fazer agora.** Está na branch `claude/magical-lamport-4rrms9`, que já traz a entrada abaixo (12/10/2026 (4)): se o servidor ainda não está nela, os passos 2 a 6 dela valem aqui também, nesta mesma subida. Muda a API, as páginas e o código que vai para os pods (`render2go_worker/traducao.py`, receitas e presets v4). Sem coluna nova no banco, sem variável nova no `.env`, sem regra nova no R2, e os pods hibernados continuam valendo (a versão da hibernação não muda). O que muda e por quê: CHANGELOG, entrada 13/10/2026; `docs/06`, seção 9.4.
+
+1. **Nada gerando, backup e código novo:** os blocos 1 e 2 da entrada 11/10/2026 (2), com `git pull` da branch acima.
+2. **Subir:** `cd ~/GPU2GO/servico/implantacao && docker compose up -d --build`. API e pods sobem juntos com o mesmo código (o orquestrador empacota o worker do próprio contêiner).
+3. **Conferir:**
+   - na página do pedido: duração "Padrão do estilo", 4 s e 5 s (sem 6 e 7); o exemplo concreto de cada estilo, o botão "Usar o texto pronto do estilo" e a dica do 720p embaixo da qualidade;
+   - num pedido de teste vago ("deixe bonito"): no painel, o prompt do pedido é o movimento padrão em inglês ("The main subject stays in place as soft light slowly glides across it…", com "Slow, gentle camera push-in." no Livre); no "Baixar registro de auditoria", o evento `prompt` traz `"padrao": true`;
+   - se um prompt citar uma pessoa numa foto sem pessoas, o registro do pedido ganha o evento `prompt_pessoa_inventada` (onde, palavras, foto e o prompt de antes), e o vídeo sai com o movimento padrão.
+- **Pedidos que estavam no meio:** os já traduzidos seguem com o prompt deles, menos nas fotos sem pessoas cujo prompt cite alguém: esses vídeos saem com o movimento padrão (a regra também vale na ida de cada vídeo ao pod). Pedidos de 6 e 7 s feitos antes seguem com a duração deles.
+- **Se algo der errado:** volte para a versão da entrada abaixo como no bloco "Se algo der errado" da entrada 11/10/2026 (2). Nada fica no banco que a versão de antes não entenda (os campos novos do registro de cada pedido são só leitura).
+
 ### 12/10/2026 (4): filtro das fotos no servidor, hibernação que não perde o volume, subida mais rápida e filtro dos vídeos recalibrado
 
-**É a atualização a fazer agora.** Parte da versão da entrada abaixo (12/10/2026 (3)) e está na branch `claude/festive-mccarthy-sc784n` (a `main` recebe depois do aceite do dono). Muda a API, o analisador (que passa a rodar o filtro das fotos, com PyTorch de CPU), o orquestrador, as páginas e o código que vai para os pods; o banco ganha quatro colunas (`fotos.filtro`, `fotos.filtro_detalhe`, `fotos.tentativas_analise` e `jobs.nsfw_alto`), criadas sozinhas na partida. Sem regra nova no R2. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (10); [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md) e [ADR 0011](adr/0011-pods-hibernados.md), atualizações de 12/10; `docs/07`, seções 11 e 12.
+Parte da versão da entrada abaixo (12/10/2026 (3)) e está na branch `claude/festive-mccarthy-sc784n`, incorporada à da entrada acima (a `main` recebe depois do aceite do dono). Muda a API, o analisador (que passa a rodar o filtro das fotos, com PyTorch de CPU), o orquestrador, as páginas e o código que vai para os pods; o banco ganha quatro colunas (`fotos.filtro`, `fotos.filtro_detalhe`, `fotos.tentativas_analise` e `jobs.nsfw_alto`), criadas sozinhas na partida. Sem regra nova no R2. O que muda e por quê: CHANGELOG, entrada 12/10/2026 (10); [ADR 0005](adr/0005-filtro-de-imagem-fotos-e-quadros.md) e [ADR 0011](adr/0011-pods-hibernados.md), atualizações de 12/10; `docs/07`, seções 11 e 12.
 
 1. **Nada gerando, backup e código novo:** os blocos 1 e 2 da entrada 11/10/2026 (2), com `git pull` da branch acima.
 2. **Espaço em disco:** a imagem do serviço passa a ~2,2 GB (PyTorch de CPU e o classificador). Antes de subir, `df -h /` com pelo menos 5 GB livres; depois, `docker image prune -f` apaga a imagem antiga.

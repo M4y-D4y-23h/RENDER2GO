@@ -27,7 +27,7 @@ MODELOS = [
         "descricao": "imagem para vídeo · 14B",
         "finalidade": "imagem-video",
         "melhor_para": (
-            "produto parado com câmera suave, ambientes, comida e fachadas; vídeos de 3 a 7 s, em 480p ou 720p"
+            "produto parado com câmera suave, ambientes, comida e fachadas; vídeos de 3 a 5 s, em 480p ou 720p"
         ),
         "licenca": "Apache 2.0 (uso comercial liberado)",
         "disponivel": True,

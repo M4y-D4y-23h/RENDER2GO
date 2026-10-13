@@ -5,6 +5,10 @@ campo `system` da API do Ollama (não é preciso `ollama create`).
 
 Atenção: o modelo é abliterado. A saída `REFUSED` é tratada como bloqueio, mas o
 compilador **não** é camada de segurança (docs/03, seção 5).
+
+Pedido vago (I2V, 13/10/2026): quem decide é o código (render2go_worker.traducao.pedido_vago), que
+troca o texto pelo movimento padrão, fixo e em inglês. A partir do v7, o compilador também pode
+responder `VAGUE`; aqui, isso vira `VAGO_TEXTO` com o sufixo dos presets.
 """
 
 from __future__ import annotations
@@ -31,7 +35,10 @@ PROFILES: dict[str, dict] = {
         "options": {"temperature": 0.3, "num_ctx": 4096},
         "words": (40, 90),
         # faixa própria de cada versão do prompt (o padrão é "words")
-        "words_by_version": {5: (15, 60), 6: (15, 60)},
+        "words_by_version": {5: (15, 60), 6: (15, 60), 7: (15, 60)},
+        # 1ª versão que entende a linha "pessoas: nenhuma" (foto sem pessoas;
+        # render2go_worker.traducao)
+        "linha_pessoas": 7,
     },
     "t2v": {
         "version": 3,
@@ -90,6 +97,15 @@ def drop_contradictory_static_camera(text: str) -> str:
     return drop_static_camera(text)
 
 
+# Movimento de quem chama sem o padrão da categoria (cli_submit, jobs.py): o mesmo texto do padrão
+# "geral" das receitas v4 (render2go_worker.traducao usa o da categoria da foto)
+VAGO_TEXTO = (
+    "{assunto} stays in place as soft light slowly glides across it, "
+    "highlighting its shape and details."
+)
+ASSUNTO_PADRAO = "the main subject"
+
+
 @dataclass(frozen=True)
 class CompileResult:
     prompt: str
@@ -103,6 +119,9 @@ class CompileResult:
     word_range: tuple[int, int]
     compiled: str = ""
     attempts: int = 1
+    vague: bool = False
+    """O compilador respondeu VAGUE: `compiled` é `VAGO_TEXTO` (render2go_worker.traducao troca pelo
+    movimento padrão da categoria da foto)."""
 
     @property
     def word_count_ok(self) -> bool:
@@ -147,6 +166,18 @@ def normalize(text: str) -> str:
 
 def is_refusal(text: str) -> bool:
     return bool(re.match(r"^\W*REFUSED\b", text.strip(), flags=re.IGNORECASE))
+
+
+def is_vague(text: str) -> bool:
+    """Pedido sem movimento concreto (v7 em diante): a resposta começa com VAGUE, em maiúsculas."""
+    return bool(re.match(r"^\W*VAGUE\b", text.strip()))
+
+
+def fill_subject(text: str, subject: str = "") -> str:
+    """Põe o assunto no lugar de {assunto} (o padrão do texto fixo ou, com a legenda por foto, o da
+    foto), com maiúscula no começo de cada frase."""
+    out = text.replace("{assunto}", subject or ASSUNTO_PADRAO)
+    return re.sub(r"(^|[.!?]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), out)
 
 
 def compile_prompt(
@@ -198,6 +229,20 @@ def compile_prompt(
         raw = r.json().get("response", "")
         if is_refusal(raw):
             raise CompilerRefused("o compilador recusou o pedido (REFUSED)")
+        if profile == "i2v" and is_vague(raw):
+            vago = fill_subject(VAGO_TEXTO)
+            return CompileResult(
+                prompt=f"{vago} {suffix.strip()}".strip(),
+                profile=profile,
+                version=version,
+                model=model,
+                seconds=time.monotonic() - t0,
+                word_count=len(vago.split()),
+                word_range=word_range(profile, version),
+                compiled=vago,
+                attempts=attempt,
+                vague=True,
+            )
         compiled = normalize(raw)
         if camera_preset:  # a câmera vem do preset, palavra por palavra
             compiled = drop_static_camera(compiled)

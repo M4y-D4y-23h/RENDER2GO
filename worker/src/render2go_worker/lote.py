@@ -53,9 +53,9 @@ from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
-from render2go_worker import WORKER_DIR, cli_submit, compiler, preparo, presets
+from render2go_worker import WORKER_DIR, cli_submit, compiler, preparo, presets, traducao
 
-RECEITAS_FILE = WORKER_DIR / "presets" / "receitas.v3.json"
+RECEITAS_FILE = WORKER_DIR / "presets" / "receitas.v4.json"
 I2V_TEMPLATE = WORKER_DIR / "workflows" / "i2v_r1v2.v1.api.json"
 FOTOS = {".jpg", ".jpeg", ".png", ".webp"}
 QUALIDADES = ("rapida", "alta")
@@ -115,6 +115,10 @@ def load_receitas(path: str | Path = RECEITAS_FILE) -> dict[str, Any]:
         for q in QUALIDADES:
             if f[q]["width"] % 16 or f[q]["height"] % 16:
                 raise LoteError(f"formato {nome}/{q}: lados precisam ser múltiplos de 16")
+    if data["version"] >= 4:  # categoria, movimento padrão e textos fixos sem pessoa inventada
+        erros = traducao.validar_receitas(data, preset_data)
+        if erros:
+            raise LoteError("; ".join(erros))
     return data
 
 
@@ -345,25 +349,29 @@ def compilar(
         if t.pedido in feitos:
             prompts[t.pedido] = feitos[t.pedido]["prompt_en"]
             continue
-        composed = presets.compose("i2v", t.acao, dict(t.selections))
         _log(f"compilando o pedido: {t.acao}")
-        comp = compile_fn(
-            composed.text,
-            profile="i2v",
+        # as regras do serviço (render2go_worker.traducao): sem a análise das fotos, a regra da
+        # pessoa inventada vale sempre que o texto não cita ninguém (na dúvida, foto sem pessoas)
+        tr = traducao.traduzir(
+            t.acao,
+            t.receita,
+            receitas=load_receitas(),
+            selections=dict(t.selections),
+            compile_fn=compile_fn,
             ollama_url=a.ollama,
             model=a.model,
             keep_alive=0,  # libera a VRAM do Ollama antes dos renders
-            suffix=composed.suffix,
-            camera_preset=composed.camera,
         )
-        _log(f"  prompt ({comp.word_count} palavras): {comp.prompt}")
+        detalhe = " (movimento padrão)" if tr.padrao else ""
+        _log(f"  prompt ({tr.word_count} palavras{detalhe}): {tr.prompt}")
         feitos[t.pedido] = {
             "acao": t.acao,
-            "presets": {"version": composed.version, **dict(t.selections)},
-            "prompt_en": comp.prompt,
-            "compilador": comp.ref,
+            "presets": {"version": presets.load()["version"], **dict(t.selections)},
+            "prompt_en": tr.prompt,
+            "compilador": tr.ref,
+            "padrao": tr.padrao,
         }
-        prompts[t.pedido] = comp.prompt
+        prompts[t.pedido] = tr.prompt
     return prompts
 
 

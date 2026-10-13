@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 import pytest
 import uvicorn
 from PIL import Image, ImageDraw
-from render2go_worker import cli_submit, fila, media
+from render2go_worker import cli_submit, compiler, fila, media
 from test_api import ADM, PAINEL, TOTP
 
 from render2go_servico import contas, filtro_fotos, suporte
@@ -196,7 +196,18 @@ def _lote_aprovado(amb, fotos: dict[str, bytes]):
 
 
 def _compilar(text, **kw):
-    return SimpleNamespace(prompt="The camera slowly dollies in toward the product.", ref="i2v@5", word_count=8)
+    """Compilador falso com o mesmo resultado do de verdade (render2go_worker.traducao lê o modelo e o texto)."""
+    prompt = "The camera slowly dollies in toward the product."
+    return compiler.CompileResult(
+        prompt=prompt,
+        profile="i2v",
+        version=kw.get("version") or 5,
+        model=kw.get("model") or "falso",
+        seconds=0.0,
+        word_count=8,
+        word_range=(15, 60),
+        compiled=prompt,
+    )
 
 
 def _submit_de(trocar_por: bytes | None = None):

@@ -18,7 +18,7 @@ def test_compose_labeled_input_and_verbatim_suffix():
     assert c.suffix == (
         "Slow, smooth, continuous motion. Static camera, full body shot, rear view, from behind."
     )
-    assert c.version == 3 and c.selections["camera"] == "parada-corpo-inteiro-costas"
+    assert c.version == 4 and c.selections["camera"] == "parada-corpo-inteiro-costas"
 
 
 def test_t2v_uses_scene_label_and_no_presets_means_no_suffix():
@@ -69,7 +69,7 @@ def test_catalog_has_every_option_once_and_no_quotes_in_terms():
 def test_v3_adds_only_single_scene_continuity_to_i2v():
     # a v3 é a v2 inteira mais a categoria "continuidade", só no I2V e por último (fim do sufixo)
     v2 = p.load(p.WORKER_DIR / "presets" / "presets.v2.json")
-    v3 = p.load()
+    v3 = p.load(p.WORKER_DIR / "presets" / "presets.v3.json")
     assert v3["version"] == 3 and v3["modes"]["t2v"] == v2["modes"]["t2v"]
     assert v3["modes"]["i2v"]["categories"] == [*v2["modes"]["i2v"]["categories"], "continuidade"]
     assert {c: s for c, s in v3["categories"].items() if c != "continuidade"} == v2["categories"]
@@ -89,3 +89,30 @@ def test_v2_keeps_every_v1_term_unchanged():
     for cat, spec in v1["categories"].items():
         for opt_id, opt in spec["options"].items():
             assert v2["categories"][cat]["options"][opt_id] == opt
+
+
+def test_v4_keeps_every_v3_term_and_adds_the_default_motion_cameras():
+    # v4 (13/10/2026): a v3 inteira, sem mudar nenhum termo, mais as câmeras do movimento padrão de
+    # cada categoria de foto (receitas v4) e a continuidade com o rosto igual (foto com pessoa)
+    v3 = p.load(p.WORKER_DIR / "presets" / "presets.v3.json")
+    v4 = p.load()
+    assert v4["version"] == 4 and v4["modes"] == v3["modes"]
+    for cat, spec in v3["categories"].items():
+        for opt_id, opt in spec["options"].items():
+            assert v4["categories"][cat]["options"][opt_id] == opt
+    novas = {
+        (cat, o)
+        for cat, spec in v4["categories"].items()
+        for o in spec["options"]
+        if o not in v3["categories"][cat]["options"]
+    }
+    assert novas == {
+        ("camera", "suave"),
+        ("camera", "deslocamento-lateral"),
+        ("camera", "orbita-veiculo"),
+        ("continuidade", "cena-unica-rosto"),
+    }
+    rosto = v4["categories"]["continuidade"]["options"]["cena-unica-rosto"]["en"]
+    assert rosto[:3] == v3["categories"]["continuidade"]["options"]["cena-unica"]["en"]
+    assert p.suffix("i2v", {"camera": "suave"}) == "Slow, gentle camera push-in."
+    assert p.suffix("i2v", {}) == ""

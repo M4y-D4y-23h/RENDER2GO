@@ -23,7 +23,7 @@ from typing import Any
 
 from render2go_worker import WORKER_DIR
 
-PRESETS_FILE = Path(os.environ.get("RENDER2GO_PRESETS", WORKER_DIR / "presets" / "presets.v3.json"))
+PRESETS_FILE = Path(os.environ.get("RENDER2GO_PRESETS", WORKER_DIR / "presets" / "presets.v4.json"))
 MAX_TEXT_CHARS = 600
 
 
@@ -87,26 +87,45 @@ def compose(
         raise PresetError(f"categorias desconhecidas para {mode}: {unknown}")
 
     lines = [f"{spec['text_label']}: {text}"]
-    suffix: list[str] = []
-    for cat in spec["categories"]:
-        opt_id = selections.get(cat)
-        if opt_id is None:
-            continue
-        cat_spec = data["categories"][cat]
-        opt = cat_spec["options"].get(opt_id)
-        if opt is None:
-            raise PresetError(f"opção desconhecida: {cat}={opt_id}")
+    for cat, opt in _opcoes(spec, selections, data):
         terms = ", ".join(f'"{t}"' for t in opt["en"])
-        lines.append(f"{cat_spec.get('line', cat)}: {terms}")
-        sentence = ", ".join(opt["en"])
-        suffix.append(sentence[0].upper() + sentence[1:] + ".")
+        lines.append(f"{data['categories'][cat].get('line', cat)}: {terms}")
     return Composed(
         text="\n".join(lines),
-        suffix=" ".join(suffix),
+        suffix=suffix(mode, selections, data),
         mode=mode,
         selections=selections,
         version=int(data["version"]),
     )
+
+
+def _opcoes(spec: dict[str, Any], selections: dict[str, str], data: dict[str, Any]):
+    """(categoria, opção) escolhidas, na ordem das categorias do modo."""
+    for cat in spec["categories"]:
+        opt_id = selections.get(cat)
+        if opt_id is None:
+            continue
+        opt = data["categories"][cat]["options"].get(opt_id)
+        if opt is None:
+            raise PresetError(f"opção desconhecida: {cat}={opt_id}")
+        yield cat, opt
+
+
+def suffix(mode: str, selections: dict[str, str], data: dict[str, Any] | None = None) -> str:
+    """Só os termos em inglês dos presets, como o código os anexa ao prompt ("" se nenhum). O
+    movimento padrão (render2go_worker.traducao) usa direto, sem texto do cliente."""
+    data = data or load()
+    spec = data["modes"].get(mode)
+    if spec is None:
+        raise PresetError(f"modo desconhecido: {mode!r}")
+    unknown = sorted(set(selections) - set(spec["categories"]))
+    if unknown:
+        raise PresetError(f"categorias desconhecidas para {mode}: {unknown}")
+    frases = []
+    for _, opt in _opcoes(spec, selections, data):
+        sentence = ", ".join(opt["en"])
+        frases.append(sentence[0].upper() + sentence[1:] + ".")
+    return " ".join(frases)
 
 
 def parse_selections(items: list[str]) -> dict[str, str]:

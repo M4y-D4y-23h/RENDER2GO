@@ -70,7 +70,7 @@ Teste gratuito (docs/08): um pedido só, até 5 fotos, vídeos de 3 s em 480p; n
 teste por dispositivo (navegador). Sem teto por rede desde 11/10/2026, a pedido do dono
 (`RENDER2GO_TESTE_FOTOS_IP` > 0 liga de novo: IP, IPv6 pelo /64, somando as contas de teste).
 Plano pago (pré-pago, docs/11): saldo recarregado e preço por segundo de vídeo (`precos`); vídeos de
-4 a 7 s. O pedido é cobrado quando as fotos chegam; recusa e vídeo que não sai voltam para o saldo.
+4 e 5 s (até 13/10/2026, de 4 a 7 s). Cada vídeo é cobrado quando sai certo (ADR 0012).
 A 1ª recarga por Pix passa a conta do teste para o plano pago.
 Plano interno (o dono do serviço): sem limites de teste e com aprovação automática; o C1 continua.
 As fotos de entrada são apagadas quando o lote fecha (pronto, com falhas ou recusado); os vídeos
@@ -123,7 +123,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
-from render2go_worker import conferencia, filtro_imagem, filtros, lote, preparo, presets
+from render2go_worker import conferencia, filtro_imagem, filtros, lote, preparo, presets, traducao
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from render2go_servico import (
@@ -953,6 +953,49 @@ def _se_fechou(c: Config, lote_id: str) -> None:
         c.em_segundo_plano(_apagar_fotos, c, lote_id)
 
 
+def _analise(f: dict) -> Any:
+    try:
+        return json.loads(f.get("analise") or "null")
+    except ValueError:
+        return None  # análise ilegível: vale como indisponível (na dúvida, sem pessoas)
+
+
+def regras_traducao(c: Config, lt: dict, pedido: dict, foto: dict | None) -> dict:
+    """As regras da tradução de um pedido (render2go_worker.traducao): a categoria da foto (a do estilo) e se
+    a regra da pessoa inventada vale: o texto não cita ninguém e alguma foto que vai usar o prompt não tem
+    pessoas ou não tem a análise (na dúvida, sem pessoas). `foto`: a do texto próprio (None: o do pedido)."""
+    texto = foto["prompt"] if foto is not None and foto["prompt"] else pedido["prompt"]
+    fotos = c.banco.fotos_da_traducao(lt["id"], foto["id"] if foto is not None and foto["prompt"] else None)
+    return {
+        "sem_pessoas": traducao.regra_sem_pessoas(texto, [_analise(f) for f in fotos]),
+        "categoria": traducao.categoria_da_receita(lote.load_receitas(), pedido["receita"]),
+    }
+
+
+def sem_pessoa_inventada(c: Config, lt: dict, pedido: dict, foto: dict | None, prompt_en: str, onde: str) -> str:
+    """Nenhum vídeo sai com pessoa inventada no prompt (13/10/2026): com a regra valendo (`regras_traducao`) e o
+    prompt citando alguém, vale o movimento padrão, sem pessoa, e o pedido ganha o evento (só o painel vê).
+    `onde`: "traducao" (o prompt que o pod mandou) ou "render" (o de cada vídeo, na hora de ir para o pod: pega
+    também o que foi traduzido antes desta regra)."""
+    if onde == "render" and foto is not None:  # a foto do vídeo: a análise dela, o texto que ela usa
+        texto = foto["prompt"] or pedido["prompt"]
+        vale = traducao.regra_sem_pessoas(texto, [_analise(foto)])
+        categoria = traducao.categoria_da_receita(lote.load_receitas(), pedido["receita"])
+    else:
+        r = regras_traducao(c, lt, pedido, foto)
+        vale, categoria = r["sem_pessoas"], r["categoria"]
+    achadas = traducao.prompt_cita_pessoa(prompt_en) if vale else []
+    if not achadas:
+        return prompt_en
+    padrao = traducao.prompt_padrao(lote.load_receitas(), pedido["receita"], categoria, sem_pessoas=True)
+    c.banco.registrar_evento(
+        lt["id"],
+        "prompt_pessoa_inventada",
+        {"onde": onde, "palavras": achadas, "foto": foto["nome"] if foto else None, "prompt": prompt_en[:600]},
+    )
+    return padrao
+
+
 def _limites_teste(c: Config, cli: dict, origem: dict, n_fotos: int, exceto: str | None = None) -> None:
     """Teste gratuito: um pedido só (todas as fotos de uma vez) e até 5 fotos por dispositivo. O teto por
     rede (RENDER2GO_TESTE_FOTOS_IP) só vale se configurado: desde 11/10/2026, o padrão é sem teto."""
@@ -1053,10 +1096,11 @@ def _fotos_do_envio(cliente_id: str, fotos_in: list, textos: list[str | None], u
 
 
 def duracoes(plano: str) -> list[int]:
-    """Durações aceitas: 3 s só no teste gratuito; nos outros planos, de 4 a 7 s."""
+    """Durações aceitas nos pedidos novos: 3 s só no teste gratuito; nos outros planos, 4 e 5 s (o teto de 13/10/2026,
+    `precos.DURACAO_MAX`; os pedidos de antes seguem com a duração que tinham)."""
     if plano == "teste":
         return [TESTE["duracao"]]
-    return [d for d in lote.DURACOES if d >= precos.DURACAO_MIN]
+    return [d for d in lote.DURACOES if precos.DURACAO_MIN <= d <= precos.DURACAO_MAX]
 
 
 def sem_saldo_video(preco: int, saldo: int) -> str:
@@ -1138,6 +1182,14 @@ class PromptIn(BaseModel):
     worker: str = Field(max_length=100)
     prompt_en: str = Field(min_length=3, max_length=2000)
     compilador: str = Field(max_length=200)
+    # como a tradução saiu (render2go_worker.traducao, 13/10/2026), só para o registro do pedido
+    vago: bool = False
+    padrao: bool = False
+    tentativas: int = Field(1, ge=1, le=10)
+    pessoas_recusadas: list[str] = Field(default_factory=list, max_length=40)
+
+    def model_post_init(self, _: Any) -> None:
+        self.pessoas_recusadas = [p[:40] for p in self.pessoas_recusadas]
 
 
 class ConcluirIn(BaseModel):
@@ -2097,7 +2149,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     @app.get("/api/receitas")
     def receitas(request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
         r = lote.load_receitas()
-        minima = duracoes(cli["plano"])[0]  # o "padrão do estilo" nunca fica abaixo dela
+        minima, maxima = duracoes(cli["plano"])[0], duracoes(cli["plano"])[-1]  # o "padrão do estilo" fica entre elas
         plano: dict[str, Any] = {"nome": cli["plano"], "duracoes": duracoes(cli["plano"])}
         if cli["plano"] in precos.PLANOS_COBRADOS:
             plano.update(precos=precos.PRECOS, saldo=c.banco.saldo(cli["id"]))
@@ -2133,7 +2185,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "label": v["label"],
                     "nicho": v["nicho"],
                     "acao": v["acao"],
-                    "duracao": max(v["duracao"], minima) if cli["plano"] != "teste" else minima,
+                    "exemplo": v.get("exemplo") or v["acao"],  # o exemplo concreto que a página mostra (receitas v4)
+                    "duracao": min(max(v["duracao"], minima), maxima) if cli["plano"] != "teste" else minima,
                     "exige_consentimento": bool(v.get("exige_consentimento")),
                 }
                 for k, v in r["receitas"].items()
@@ -2188,9 +2241,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(422, "esta receita exige a autorização por escrito das pessoas das fotos")
         if body.formato not in ("auto", *rec["formatos"]) or body.qualidade not in lote.QUALIDADES:
             raise HTTPException(422, "formato ou qualidade inválidos")
-        if cli["plano"] != "teste":  # sem duração escolhida: a do estilo (nunca abaixo do mínimo)
+        if cli["plano"] != "teste":  # sem duração escolhida: a do estilo, dentro do que o plano aceita
             aceitas = duracoes(cli["plano"])
-            body.duracao = max(r["duracao"], aceitas[0]) if body.duracao is None else body.duracao
+            body.duracao = min(max(r["duracao"], aceitas[0]), aceitas[-1]) if body.duracao is None else body.duracao
             if body.duracao not in aceitas:
                 raise HTTPException(422, f"duração de {aceitas[0]} a {aceitas[-1]} s")
         try:
@@ -3761,10 +3814,14 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "aprovacao": carimbo(c.segredo_aprovacao, lt["id"], lt["aprovado_em"]),
             "aprovado_em": lt["aprovado_em"],
         }
+        if job["tipo"] == "compilar":  # categoria da foto e a regra da pessoa inventada (render2go_worker.traducao)
+            out["regras"] = regras_traducao(c, lt, pedido, foto)
         if job["tipo"] == "render":
             stem = Path(job["arquivo"]).stem
+            prompt_en = foto["prompt_en"] if foto["prompt"] else lt["prompt_en"]
             out |= {
-                "prompt_en": foto["prompt_en"] if foto["prompt"] else lt["prompt_en"],
+                # a última barreira antes do pod: nenhum vídeo sai com pessoa inventada no prompt
+                "prompt_en": sem_pessoa_inventada(c, lt, pedido, foto, prompt_en, "render"),
                 "arquivo": job["arquivo"],
                 "seed": job["seed"],
                 "foto_url": c.armazenamento.url("GET", foto["chave"], 3600),
@@ -3812,11 +3869,18 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     c.banco.recusar(job["lote_id"], "filtro-c1", motivos.recusa_traducao(d.reason))
             _se_fechou(c, job["lote_id"])
             raise HTTPException(422, d.reason)
+        lt = c.banco.lote(job["lote_id"])
+        foto = c.banco.foto(job["foto_id"]) if job["foto_id"] else None
+        prompt_en = sem_pessoa_inventada(c, lt, json.loads(lt["pedido"]), foto, body.prompt_en, "traducao")
+        detalhe = {"vago": body.vago, "padrao": body.padrao or prompt_en != body.prompt_en,
+                   "tentativas": body.tentativas, "pessoas_recusadas": body.pessoas_recusadas}  # fmt: skip
+        if prompt_en != body.prompt_en and not filtros.avaliar(prompt_en).allowed:  # o padrão é fixo, mas confere
+            raise HTTPException(500, "o movimento padrão não passou no filtro")
         if job["foto_id"]:
-            c.banco.definir_prompt_foto(job["foto_id"], body.prompt_en, body.compilador)
+            c.banco.definir_prompt_foto(job["foto_id"], prompt_en, body.compilador, detalhe)
         else:
-            c.banco.definir_prompt(job["lote_id"], body.prompt_en, body.compilador)
-        return {"ok": True}
+            c.banco.definir_prompt(job["lote_id"], prompt_en, body.compilador, detalhe)
+        return {"ok": True, "padrao": prompt_en != body.prompt_en}
 
     @app.post("/api/worker/jobs/{job_id}/concluir")
     def concluir(job_id: str, body: ConcluirIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):

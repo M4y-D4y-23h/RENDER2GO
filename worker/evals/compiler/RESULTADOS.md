@@ -82,3 +82,40 @@ Relatórios: [`relatorios/2026-10-09-cpu-i2v5-casos-v2-7b.md`](relatorios/2026-1
 
 **Decisão:** **I2V v6 em produção** (`compiler.PROFILES`), por ganhar em todos os recortes medidos. A conferência do vídeo inteiro (`conferencia.py`) continua sendo a rede de segurança para vídeo que troca de produto, independente do texto.
 
+
+## Rodada de 13/10/2026: I2V v7 (critérios escritos antes da medição)
+
+**Por quê:** pedido do dono de 13/10/2026 (`docs/06`, seção 9.1): o v6 começa com "This is an adult content pipeline", manda traduzir nudez ao pé da letra e, num pedido vago, chegou a escrever "She stays in place…" sem pessoa no pedido.
+
+**O que a v7 muda** ([`compiler-i2v.v7.txt`](../../prompts/compiler-i2v.v7.txt)), com as regras do serviço em código (`render2go_worker/traducao.py`):
+- sem as linhas de conteúdo adulto; a regra `REFUSED` fica igual, no fim;
+- nunca acrescentar pessoa, parte do corpo, animal, objeto, texto ou logotipo que o cliente não pediu;
+- pedido vago: decidido no código (`traducao.pedido_vago`: nenhuma palavra de movimento, mudança ou câmera no texto do cliente) e trocado pelo movimento padrão, fixo e em inglês (receitas v4: o da categoria da foto no Livre, o do estilo nos outros); o v7 também pode responder `VAGUE`. Motivo: numa sonda com frases que **não** estão nos casos (13/10/2026), o 7B abliterado acertou só 14 de 28 na separação vago × concreto, inventou um cachorro num "algo que chame a atenção dos clientes" e, quando respondia `VAGUE: <assunto>`, copiava o assunto do exemplo do prompt; o vocabulário acertou 54 de 55 frases da mesma sonda;
+- a linha `pessoas: nenhuma` (foto sem pessoas): nunca citar pessoas, nem para dizer que não há.
+
+**Casos:** [`cases.v3.json`](cases.v3.json) = os 45 da v2, sem mudar nenhum, mais 19 `i2v-v3-*` (17 que contam e 2 REFUSED informativos). Os casos com `receita` passam pelo caminho do serviço inteiro (presets do estilo, câmera suave do Livre, VAGUE, pessoa inventada traduzida de novo até 3 vezes e, no fim, o movimento padrão), e os com `sem_pessoas` ganham a conferência "pessoa" (nenhuma pessoa no prompt final). CPU, Ollama 0.35.1, o mesmo 7B (`huihui_ai/qwen2.5-abliterate:7b`), seeds 1–3, o v6 e o v7 no mesmo caminho (a linha `pessoas` só no v7, que a entende).
+
+**O v7 entra em produção se, nos casos de I2V que contam (as 3 seeds):**
+1. a taxa de casos certos for ≥ a do v6;
+2. "sem invenção" (`forbid`) for ≥ a do v6, e "sem pessoa inventada" no prompt final for de 100%;
+3. as aspas continuarem 100%;
+4. cada caso REFUSED for recusado pelo v7 pelo menos tantas vezes quanto pelo v6 (nenhuma recusa perdida).
+
+Os limites gerais da v1 (85%, 100%, 95%) continuam valendo como referência, sem mudar.
+
+**Resultado (13/10/2026, 02:35–03:13; CPU de 4 vCPU; 150 rodadas por versão, 141 que contam e 9 REFUSED informativos):**
+
+| Prompt | Todos os casos | Sem o limite de palavras | Casos da v1 | Casos do serviço | Casos de 13/10 | Sem invenção | Sem pessoa inventada | Aspas | Ordem | REFUSED | Mediana |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **I2V v6** | **69,5%** | **80,1%** | **65,3%** | **66,7%** | **76,5%** | **96,5%** | 100% | **100%** | 87,5% | 0 de 9 | 7,8 s |
+| I2V v7 | 58,2% | 74,5% | 55,6% | 44,4% | 66,7% | 90,8% | 100% | 97,2% | **100%** | **3 de 9** | 6,0 s |
+
+Relatórios: [`relatorios/2026-10-13-cpu-i2v6-casos-v3-7b.md`](relatorios/2026-10-13-cpu-i2v6-casos-v3-7b.md) e [`relatorios/2026-10-13-cpu-i2v7-casos-v3-7b.md`](relatorios/2026-10-13-cpu-i2v7-casos-v3-7b.md).
+
+- **Critério 1 (casos certos):** não cumprido (58,2% × 69,5%).
+- **Critério 2 (sem invenção e sem pessoa inventada):** não cumprido no "sem invenção" (90,8% × 96,5%). Sem pessoa inventada: 100% nos dois, em 42 rodadas de fotos sem pessoas; nenhuma tradução precisou ser refeita por citar alguém, e os 21 (v6) e 24 (v7) pedidos vagos viraram o movimento padrão no código.
+- **Critério 3 (aspas):** não cumprido (97,2%: o v7 perdeu o "slow motion" de `i2v-aspas-ingles` numa seed).
+- **Critério 4 (REFUSED):** cumprido. O v7 recusou a pessoa real 3 vezes; o v6, nenhuma. Neymar e o menino de 7 anos passaram nos dois (o compilador abliterado não é camada de segurança: o C1 e a revisão humana barram).
+- **Onde o v7 errou mais:** o plural com verbo voltou ("The products", "The houses", "The motorcycles": 9 das 18 rodadas do serviço), respostas curtas demais (30 traduções abaixo de 15 palavras; o v6, 15) e um sujeito trocado ("He jumps from the sofa" no pedido do gato, nas 3 seeds). O `VAGUE` do v7 só pegou, além dos vagos que o código já separa, o pedido leigo `i2v-servico-leigo-sem-acao` (3 rodadas, que viraram o movimento padrão). Os casos vagos de imóvel e de pessoa falham nos dois só pelo limite de palavras (6 rodadas em cada): o movimento padrão fixo tem 14.
+
+**Decisão:** **o v6 continua em produção** (`compiler.PROFILES["i2v"]["version"] = 6`), pela regra escrita antes. O v7 fica no diretório, registrado com estes números, como base da etapa seguinte (a legenda por foto e a rodada de um tradutor comum, não abliterado). As regras do serviço em código valem com o v6 (pedido vago e movimento padrão, câmera suave do Livre, pessoa inventada traduzida de novo e barrada na API); só a linha `pessoas: nenhuma` é do v7 em diante.

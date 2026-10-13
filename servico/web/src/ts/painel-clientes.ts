@@ -280,7 +280,7 @@ function janelaNovaConta(aoCriar: () => void): void {
   const origem = document.activeElement as HTMLElement | null;
   const email = criar("input", { id: "cliente-email", type: "email", required: true, maxLength: 254, autocomplete: "off", spellcheck: false });
   const plano = criar("select", { id: "cliente-plano" }, [
-    criar("option", { value: "pago", textContent: "Pré-pago (saldo e preço por segundo, vídeos de 4 a 7 s)" }),
+    criar("option", { value: "pago", textContent: "Pré-pago (saldo e preço por segundo, vídeos de 4 e 5 s)" }),
     criar("option", { value: "teste", textContent: "Teste gratuito (um pedido, até 5 fotos, 3 s, 480p)" }),
     criar("option", { value: "interno", textContent: "Interno (só você: sem limites e sem revisão)" }),
   ]);

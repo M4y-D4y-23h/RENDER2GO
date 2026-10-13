@@ -1,6 +1,6 @@
 """Testes de fidelidade do compilador: pedido em pt → propriedades esperadas na saída.
 
-Cada caso (worker/evals/compiler/cases.v2.json: os da v1, iguais, mais os do serviço) declara:
+Cada caso (worker/evals/compiler/cases.v3.json: os da v2, iguais, mais os de 13/10/2026) declara:
 - `must`: grupos de termos; cada grupo precisa aparecer (basta um termo do grupo);
 - `forbid`: termos que indicam invenção ou tradução errada (nenhum pode aparecer);
 - `order`: grupos que precisam aparecer nessa ordem (ordem das ações);
@@ -8,6 +8,11 @@ Cada caso (worker/evals/compiler/cases.v2.json: os da v1, iguais, mais os do ser
 - faixa de palavras do perfil;
 - `expect_refused`: casos informativos da regra REFUSED (nunca são gating: o compilador
   não é camada de segurança).
+
+Casos com `receita` (v3) passam pelo caminho do serviço (render2go_worker.traducao): presets do
+estilo, câmera suave do Livre, pedido vago (VAGUE) e, com `sem_pessoas`, a regra da pessoa inventada
+(traduz de novo e, no fim, o movimento padrão), com a conferência "pessoa" (nenhuma pessoa no prompt
+final). `categoria`: a da foto (padrão: a do estilo). Os casos só com `presets` seguem como antes.
 
 A comparação é pelo início da palavra (`walk` casa com `walks`, `walking`), sem
 diferenciar maiúsculas; um termo terminado em espaço (`"man "`) exige a palavra inteira.
@@ -25,9 +30,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from render2go_worker import WORKER_DIR, compiler, presets
+from render2go_worker import WORKER_DIR, compiler, lote, presets, traducao
 
-CASES_FILE = WORKER_DIR / "evals" / "compiler" / "cases.v2.json"
+CASES_FILE = WORKER_DIR / "evals" / "compiler" / "cases.v3.json"
 QUOTED = re.compile(r'"([^"\n]+)"')
 
 
@@ -46,10 +51,18 @@ class CaseResult:
     words: int
     checks: dict[str, bool] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
+    vago: bool = False  # o compilador respondeu VAGUE (movimento padrão)
+    padrao: bool = False  # o prompt final é o movimento padrão (vago ou pessoa inventada)
+    sem_pessoas: bool = False  # a regra da pessoa inventada valeu no caso
+    rejeitados: list[str] = field(default_factory=list)  # traduções que citaram pessoa
 
     @property
     def passed(self) -> bool:
         return not self.failures
+
+
+def _sem_pessoas(case: dict[str, Any]) -> bool:
+    return bool(case.get("sem_pessoas")) and not traducao.texto_cita_pessoa(case["text"])
 
 
 def _find(text: str, term: str) -> int:
@@ -66,8 +79,19 @@ def _fold(text: str) -> str:
     return text.lower().replace("-", " ")
 
 
-def case_input(case: dict[str, Any]) -> tuple[str, str]:
-    """(entrada do compilador, sufixo dos presets)."""
+def case_input(
+    case: dict[str, Any], version: int | None = None, receitas: dict[str, Any] | None = None
+) -> tuple[str, str]:
+    """(entrada do compilador, sufixo dos presets). Caso com `receita`: a do caminho do serviço."""
+    if case.get("receita"):
+        c = traducao.entrada(
+            receitas or lote.load_receitas(),
+            case["receita"],
+            case["text"],
+            sem_pessoas=_sem_pessoas(case),
+            versao=version or compiler.PROFILES[case["profile"]]["version"],
+        )
+        return c.text, c.suffix
     if case.get("presets") is not None:
         c = presets.compose(case["profile"], case["text"], case["presets"])
         return c.text, c.suffix
@@ -113,10 +137,15 @@ def check(
             positions.append(min(found) if found else -1)
         ok = all(p >= 0 for p in positions) and positions == sorted(positions)
         record("order", ok, f"ordem das ações trocada ou incompleta: {case['order']}")
-    quoted = QUOTED.findall(text_in)
+    # caso com receita: só as aspas do cliente (os termos dos presets vêm do código, e o movimento
+    # padrão troca os do estilo pelos da categoria)
+    quoted = QUOTED.findall(case["text"] if case.get("receita") else text_in)
     if quoted:
         missing = [q for q in quoted if q.lower() not in output.lower()]
         record("quoted", not missing, f"texto entre aspas alterado: {missing}")
+    if case.get("receita") and _sem_pessoas(case):  # foto sem pessoas e o pedido não cita ninguém
+        hits = traducao.prompt_cita_pessoa(output)
+        record("pessoa", not hits, f"pessoa inventada no prompt: {hits}")
     n = len(output.split()) if compiled_words is None else compiled_words
     low, high = words
     record("words", low <= n <= high, f"{n} palavras (faixa {low}-{high})")
@@ -133,22 +162,45 @@ def run_case(
     keep_alive: str | int = "30m",
 ) -> CaseResult:
     profile = case["profile"]
-    text_in, suffix = case_input(case)
     spec = compiler.PROFILES[profile]
     version = version or spec["version"]
+    text_in, suffix = case_input(case, version)
+    extra: dict[str, Any] = {}
     try:
-        r = compiler.compile_prompt(
-            text_in,
-            profile=profile,
-            ollama_url=ollama_url,
-            model=model,
-            keep_alive=keep_alive,
-            version=version,
-            seed=seed,
-            suffix=suffix,
-            camera_preset=bool((case.get("presets") or {}).get("camera")),
-        )
-        output, refused, seconds, n = r.prompt, False, r.seconds, r.word_count
+        if case.get("receita"):  # o caminho do serviço (render2go_worker.traducao)
+            tr = traducao.traduzir(
+                case["text"],
+                case["receita"],
+                receitas=lote.load_receitas(),
+                categoria=case.get("categoria"),
+                sem_pessoas=bool(case.get("sem_pessoas")),
+                version=version,
+                seed=seed,
+                ollama_url=ollama_url,
+                model=model,
+                keep_alive=keep_alive,
+            )
+            output, refused, seconds, n = tr.prompt, False, tr.seconds, tr.word_count
+            extra = {
+                "vago": tr.vago,
+                "padrao": tr.padrao,
+                "sem_pessoas": tr.sem_pessoas,
+                "rejeitados": list(tr.rejeitados),
+            }
+        else:
+            r = compiler.compile_prompt(
+                text_in,
+                profile=profile,
+                ollama_url=ollama_url,
+                model=model,
+                keep_alive=keep_alive,
+                version=version,
+                seed=seed,
+                suffix=suffix,
+                camera_preset=bool((case.get("presets") or {}).get("camera")),
+            )
+            output, refused, seconds, n = r.prompt, False, r.seconds, r.word_count
+            extra = {"vago": r.vague, "padrao": r.vague}
     except compiler.CompilerRefused:
         output, refused, seconds, n = "REFUSED", True, 0.0, 0
     except compiler.CompilerOutputError as e:
@@ -172,6 +224,7 @@ def run_case(
         words=n,
         checks=checks,
         failures=failures,
+        **extra,
     )
 
 
@@ -190,6 +243,10 @@ def summarize(results: list[CaseResult], thresholds: dict[str, float]) -> dict[s
         "quoted": rate.get("quoted", 1.0) >= thresholds.get("quoted", 1.0),
         "forbid": rate.get("forbid", 1.0) >= thresholds.get("forbid", 1.0),
     }
+    sem_pessoas = [r for r in gating if r.sem_pessoas]
+    por_caso: dict[str, list[bool]] = defaultdict(list)
+    for r in info:
+        por_caso[r.case_id].append(r.refused)
     return {
         "runs": len(results),
         "gating_runs": len(gating),
@@ -198,6 +255,16 @@ def summarize(results: list[CaseResult], thresholds: dict[str, float]) -> dict[s
         "refusal_info": {
             "runs": len(info),
             "refused": sum(r.refused for r in info),
+            "by_case": {k: sum(v) for k, v in sorted(por_caso.items())},
+        },
+        # caminho do serviço (casos com receita): pedido vago, movimento padrão e pessoa inventada
+        # pelo próprio tradutor (antes da regra: alguma tradução recusada por citar pessoa)
+        "service": {
+            "vague": sum(r.vago for r in gating),
+            "default_motion": sum(r.padrao for r in gating),
+            "no_people_runs": len(sem_pessoas),
+            "invented_person_raw": sum(bool(r.rejeitados) for r in sem_pessoas),
+            "invented_person_final": sum(not r.checks.get("pessoa", True) for r in sem_pessoas),
         },
         "median_seconds": round(statistics.median(secs), 2) if secs else None,
         "thresholds": thresholds,

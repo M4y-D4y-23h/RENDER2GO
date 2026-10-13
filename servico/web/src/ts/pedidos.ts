@@ -932,8 +932,9 @@ export function criarPedidos(ctx: {
   // -- estilo, sugestão e autorização ------------------------------------------------------------
   const aplicarReceita = () => {
     const r = receitas?.receitas.find((x) => x.id === selReceita.value);
-    el("sugestao").hidden = !r?.acao;
-    el("sugestao-texto").textContent = r?.acao ?? "";
+    const exemplo = r?.exemplo ?? r?.acao; // exemplo concreto do estilo (receitas v4), só para mostrar
+    el("sugestao").hidden = !exemplo;
+    el("sugestao-texto").textContent = exemplo ?? "";
     const exigida = !!r?.exige_consentimento;
     consentimento.required = exigida;
     el("caixa-consentimento").classList.toggle("exigida", exigida);
@@ -948,12 +949,15 @@ export function criarPedidos(ctx: {
     atualizarAvisoFotos(); // em 720p a mesma foto pode precisar de mais ampliação
   });
   el("usar-sugestao").addEventListener("click", () => {
-    prompt.value = el("sugestao-texto").textContent ?? "";
+    // o texto pronto do estilo, que serve para qualquer foto: o exemplo concreto cita um produto ("o bolo",
+    // "o tênis") que as fotos do cliente podem não ter, e o tradutor descreveria o que não está nelas
+    const r = receitas?.receitas.find((x) => x.id === selReceita.value);
+    prompt.value = r?.acao ?? "";
     atualizarContador();
     marcarErro(prompt, false);
     prompt.focus();
     prompt.setSelectionRange(prompt.value.length, prompt.value.length);
-    anunciar("Exemplo copiado para o pedido. Você pode editar o texto.");
+    anunciar("Texto pronto do estilo copiado para o pedido. Você pode editar o texto.");
   });
   prompt.addEventListener("input", () => marcarErro(prompt, false));
   let marcadoEm: string | null = null; // momento do clique na caixa de autorização (vai no registro)
@@ -962,7 +966,7 @@ export function criarPedidos(ctx: {
     marcarErro(consentimento, false);
   });
 
-  // durações do plano (3 s só no teste; nos outros, de 4 a 7 s); teste gratuito: só 480p, vídeos de 3 s,
+  // durações do plano (3 s só no teste; nos outros, 4 e 5 s); teste gratuito: só 480p, vídeos de 3 s,
   // um pedido com até 5 fotos (a API confere tudo de novo)
   const aplicarPlano = (plano: Plano | undefined) => {
     const avisoPlano = el("plano-aviso");

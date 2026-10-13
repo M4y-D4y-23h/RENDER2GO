@@ -15,7 +15,10 @@ import re
 from decimal import Decimal, InvalidOperation
 
 PLANOS_COBRADOS = ("pago",)
-DURACAO_MIN = 4  # pago e interno: de 4 a 7 s; 3 s só no teste gratuito
+DURACAO_MIN = 4  # pago e interno: 4 e 5 s; 3 s só no teste gratuito
+# teto dos pedidos novos (pedido do dono, 13/10/2026): acima de 5 s, o modelo repete o movimento e deforma
+# (docs/06, seção 9.1). Os pedidos de antes seguem como foram feitos: o pod continua aceitando até 7 s
+DURACAO_MAX = 5
 VALOR = re.compile(r"^-?[0-9]{1,7}([.,][0-9]{1,2})?$")
 MAX_MOVIMENTO = 100_000_00  # R$ 100 mil por recarga ou ajuste (contra erro de digitação)
 

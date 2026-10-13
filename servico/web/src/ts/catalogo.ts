@@ -3,7 +3,7 @@
 import { api, ehIcone, icone } from "./comum";
 import { interessadas } from "./conta";
 
-export type Receita = { id: string; label: string; nicho: string; acao: string; duracao?: number; exige_consentimento: boolean };
+export type Receita = { id: string; label: string; nicho: string; acao: string; exemplo?: string; duracao?: number; exige_consentimento: boolean };
 // plano do cliente: durações aceitas; no teste gratuito, os limites que a API impõe (a página só os mostra);
 // no pré-pago, o preço por segundo de cada qualidade (centavos) e o saldo
 export type Plano = {

@@ -124,6 +124,7 @@ def test_end_to_end_two_pods_compile_once_and_terminate(
 ):
     prov = Provedor()
     saida = tmp_path / "entrega"
+    fake_ollama.response = "The product stays in place as the camera slowly moves closer."
     code = ln.main(
         _argv(pasta, saida, "--pods", "2"),
         provedor=prov,

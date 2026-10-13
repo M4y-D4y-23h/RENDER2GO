@@ -68,6 +68,7 @@ from render2go_worker import (
     preparo,
     presets,
     safety,
+    traducao,
 )
 
 MAX_BYTES_FOTO = 50 * 1024**2
@@ -135,10 +136,12 @@ class ApiFila:
             raise FilaError(f"reivindicar: HTTP {r.status_code} {r.text[:200]}")
         return r.json().get("job")
 
-    def prompt(self, job_id: str, prompt_en: str, compilador: str) -> None:
+    def prompt(self, job_id: str, prompt_en: str, compilador: str, **detalhe: Any) -> None:
+        """`detalhe`: como a tradução saiu (vago, padrao, pessoas_recusadas...), para o registro do
+        pedido; a API de antes ignora."""
         r = self._post(
             f"/api/worker/jobs/{job_id}/prompt",
-            {"worker": self.worker, "prompt_en": prompt_en, "compilador": compilador},
+            {"worker": self.worker, "prompt_en": prompt_en, "compilador": compilador, **detalhe},
         )
         if r.status_code != 200:
             raise FilaError(f"prompt recusado: HTTP {r.status_code} {r.text[:200]}")
@@ -299,22 +302,27 @@ class WorkerFila:
     # -- jobs -----------------------------------------------------------------------------
 
     def compilar(self, job: dict) -> None:
+        """O pedido vira prompt com as regras do serviço (render2go_worker.traducao, 13/10/2026):
+        pedido vago e pessoa inventada viram o movimento padrão. `regras` vem da API: a categoria da
+        foto e se a regra da pessoa inventada vale (sem ela, API de antes: na dúvida, vale)."""
         pedido = job["pedido"]
         d = self.filtros.check_request(pedido["prompt"])
         if not d.allowed:
             self.api.concluir(job["job_id"], "erro", erro=f"filtro: {d.reason}")
             return
-        r = self.receitas["receitas"][pedido["receita"]]
-        composed = presets.compose("i2v", pedido["prompt"], r["presets"])
+        regras = job.get("regras") or {}
         try:
-            comp = self.compile_fn(
-                composed.text,
-                profile="i2v",
+            tr = traducao.traduzir(
+                pedido["prompt"],
+                pedido["receita"],
+                receitas=self.receitas,
+                categoria=regras.get("categoria"),
+                sem_pessoas=regras.get("sem_pessoas"),
+                assunto=regras.get("assunto") or "",
+                compile_fn=self.compile_fn,
                 ollama_url=self.cfg.ollama,
                 model=self.cfg.model,
                 keep_alive=0,  # libera a VRAM antes dos renders
-                suffix=composed.suffix,
-                camera_preset=composed.camera,
             )
         except compiler.CompilerRefused as e:
             self.api.concluir(job["job_id"], "erro", erro=f"compilador recusou: {e}")
@@ -322,13 +330,25 @@ class WorkerFila:
         except compiler.CompilerError as e:
             self.api.concluir(job["job_id"], "erro", erro=str(e)[:500], repetir=True)
             return
-        d = self.filtros.check_prompt(comp.prompt)
+        except (traducao.TraducaoError, presets.PresetError) as e:
+            self.api.concluir(job["job_id"], "erro", erro=f"pedido inválido: {e}"[:500])
+            return
+        d = self.filtros.check_prompt(tr.prompt)
         if not d.allowed:
             self.api.concluir(job["job_id"], "erro", erro=f"filtro no prompt: {d.reason}")
             return
-        self.api.prompt(job["job_id"], comp.prompt, comp.ref)  # a API passa o C1 de novo
+        self.api.prompt(  # a API passa o C1 de novo e confere a pessoa inventada
+            job["job_id"],
+            tr.prompt,
+            tr.ref,
+            vago=tr.vago,
+            padrao=tr.padrao,
+            tentativas=tr.tentativas,
+            pessoas_recusadas=list(tr.pessoas_recusadas),
+        )
         self.api.concluir(job["job_id"], "ok")
-        _log(f"lote {job['lote']}: prompt compilado ({comp.word_count} palavras)")
+        como = " (movimento padrão)" if tr.padrao else ""
+        _log(f"lote {job['lote']}: prompt compilado ({tr.word_count} palavras{como})")
 
     def _tarefa(self, job: dict, foto: Path) -> lote.Tarefa:
         p = job["pedido"]

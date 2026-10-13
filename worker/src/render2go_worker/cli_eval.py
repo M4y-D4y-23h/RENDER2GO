@@ -65,9 +65,9 @@ def render_markdown(report: dict) -> str:
         f"Casos: `{report['cases_file']}` (v{report['cases_version']}), "
         f"seeds {report['seeds']}, Ollama {report['ollama_version']}.",
         "",
-        "| Perfil | Prompt | Modelo | Casos ok | Aspas | Sem invenção | Câmera/termos | Ordem "
-        "| Palavras | REFUSED (informativo) | Mediana (s) | Limites |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Perfil | Prompt | Modelo | Casos ok | Aspas | Sem invenção | Sem pessoa inventada "
+        "| Câmera/termos | Ordem | Palavras | REFUSED (informativo) | Mediana (s) | Limites |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for g in report["groups"]:
         s = g["summary"]
@@ -79,9 +79,28 @@ def render_markdown(report: dict) -> str:
         ri = s["refusal_info"]
         lines.append(
             f"| {g['profile']} | v{g['version']} | `{g['model']}` | {s['case_pass_rate']:.0%} "
-            f"| {pct('quoted')} | {pct('forbid')} | {pct('must')} | {pct('order')} "
-            f"| {pct('words')} | {ri['refused']}/{ri['runs']} | {s['median_seconds']} "
-            f"| {'atingidos' if s['passed'] else 'não atingidos'} |"
+            f"| {pct('quoted')} | {pct('forbid')} | {pct('pessoa')} | {pct('must')} "
+            f"| {pct('order')} | {pct('words')} | {ri['refused']}/{ri['runs']} "
+            f"| {s['median_seconds']} | {'atingidos' if s['passed'] else 'não atingidos'} |"
+        )
+    lines += [
+        "",
+        "Caminho do serviço (casos com `receita`): pedido vago (VAGUE), movimento padrão no prompt "
+        "final, e pessoa inventada pelo próprio tradutor (alguma tradução recusada) e no fim.",
+        "",
+        "| Perfil | Prompt | Modelo | Vago | Movimento padrão | Rodadas sem pessoas "
+        "| Pessoa inventada (tradutor) | Pessoa inventada (final) | REFUSED por caso |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for g in report["groups"]:
+        sv = g["summary"].get("service", {})
+        por_caso = g["summary"]["refusal_info"].get("by_case", {})
+        recusas = ", ".join(f"{k} {v}" for k, v in por_caso.items()) or "—"
+        lines.append(
+            f"| {g['profile']} | v{g['version']} | `{g['model']}` | {sv.get('vague', 0)} "
+            f"| {sv.get('default_motion', 0)} | {sv.get('no_people_runs', 0)} "
+            f"| {sv.get('invented_person_raw', 0)} | {sv.get('invented_person_final', 0)} "
+            f"| {recusas} |"
         )
     lines += ["", "## Falhas", ""]
     for g in report["groups"]:
@@ -94,6 +113,14 @@ def render_markdown(report: dict) -> str:
             tag = "" if r["gating"] else " (informativo)"
             lines.append(f"- **{r['case_id']}** seed {r['seed']}{tag}: {'; '.join(r['failures'])}")
             lines.append(f"  > {r['output']}")
+        lines.append("")
+    recusadas = [(g, r) for g in report["groups"] for r in g["results"] if r.get("rejeitados")]
+    if recusadas:
+        lines += ["## Traduções recusadas por citar pessoa (o código traduziu de novo)", ""]
+        for g, r in recusadas:
+            final = "movimento padrão" if r.get("padrao") else "nova tradução"
+            lines.append(f"- **{r['case_id']}** v{g['version']} seed {r['seed']} → {final}")
+            lines += [f"  > {t}" for t in r["rejeitados"]]
         lines.append("")
     return "\n".join(lines) + "\n"
 
