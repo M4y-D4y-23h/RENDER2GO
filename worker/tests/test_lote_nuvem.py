@@ -3,6 +3,7 @@ com ComfyUI e Ollama falsos (conftest)."""
 
 import csv
 import os
+import re
 import shutil
 import sys
 import threading
@@ -703,3 +704,68 @@ def test_the_hibernation_version_changes_with_the_caption_key(monkeypatch):
     monkeypatch.setenv("RENDER2GO_LEGENDA_POR_FOTO", "1")
     com = ln.versao_hibernacao()
     assert com != sem and len(com) == 16
+
+
+def test_the_bootstrap_uses_the_image_environment_only_with_the_same_key(tmp_path):
+    """Etapa 4 (14/10/2026, experimento): a imagem `pod` traz o ambiente pronto; o bootstrap só o
+    usa com a chave gravada na imagem igual à do código enviado ao pod (requirements.lock +
+    Dockerfile) e com as peças no lugar; qualquer diferença volta à instalação de sempre."""
+    import hashlib
+    import subprocess
+
+    w = tmp_path / "w"
+    w.mkdir()
+    for nome in ("requirements.lock", "Dockerfile"):
+        (w / nome).write_bytes((WORKER / nome).read_bytes())
+    chave = hashlib.sha256((w / "requirements.lock").read_bytes() + (w / "Dockerfile").read_bytes())
+    chave = chave.hexdigest()[:16]
+    img, venv, comfy, bin_ = (
+        tmp_path / "img",
+        tmp_path / "venv",
+        tmp_path / "comfy",
+        tmp_path / "bin",
+    )
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python").write_text("#!/bin/sh\n")
+    (venv / "bin" / "python").chmod(0o755)
+    (comfy / "custom_nodes" / "ComfyUI-UMT5-Extended").mkdir(parents=True)
+    (comfy / "main.py").write_text("")
+    (comfy / "custom_nodes" / "ComfyUI-UMT5-Extended" / "__init__.py").write_text("")
+    bin_.mkdir()
+    versao = re.search(r"^ARG OLLAMA_VERSION=v(\S+)", (w / "Dockerfile").read_text(), re.M).group(1)
+    (bin_ / "ollama").write_text(f"#!/bin/sh\necho 'ollama version is {versao}'\n")
+    (bin_ / "ollama").chmod(0o755)
+    img.mkdir()
+    script = WORKER / "scripts" / "bootstrap_pod.sh"
+
+    def usa(chave_img: str | None, **extra) -> bool:
+        if chave_img is None:
+            (img / "chave").unlink(missing_ok=True)
+        else:
+            (img / "chave").write_text(chave_img + "\n")
+        env = {
+            **os.environ,
+            "BOOTSTRAP_SO_FUNCOES": "1",
+            "RENDER2GO_RAIZ": str(tmp_path / "raiz"),
+            "RENDER2GO_IMAGEM_DIR": str(img),
+            "VENV_IMG": str(venv),
+            "PATH": f"{bin_}:{os.environ['PATH']}",
+            **extra,
+        }
+        cmd = f'source "{script}" x teste; W="{w}"; COMFY_DIR="{comfy}"; CHAVE="{chave}"; '
+        r = subprocess.run(
+            ["bash", "-c", cmd + "ambiente_da_imagem"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return r.returncode == 0
+
+    assert usa(chave)
+    assert not usa("0" * 16)  # imagem de outra versão do código: instala como sempre
+    assert not usa(None)  # imagem comum (python:3.12-slim): instala como sempre
+    (comfy / "custom_nodes" / "ComfyUI-UMT5-Extended" / "__init__.py").unlink()
+    assert not usa(chave)  # falta o patch do encoder: instala
+    dockerfile = (w / "Dockerfile").read_text()
+    assert "FROM runtime AS pod" in dockerfile and "sha256sum | cut -c1-16 > chave" in dockerfile

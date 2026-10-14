@@ -287,3 +287,91 @@ def test_concurrent_notes_on_the_datacenter_memory_are_not_lost(tmp_path, monkey
         th.join()
     assert len(ln.velocidades()) == 24  # nenhuma anotação perdida, o arquivo inteiro
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def _copia_worker(tmp_path):
+    import shutil
+
+    from render2go_worker import WORKER_DIR
+
+    w = tmp_path / "worker"
+    (w / "scripts").mkdir(parents=True)
+    for nome in ("requirements.lock", "Dockerfile", "models.lock.json"):
+        shutil.copy(WORKER_DIR / nome, w / nome)
+    for nome in ("bootstrap_pod.sh", "pull_compiler_model.sh"):
+        shutil.copy(WORKER_DIR / "scripts" / nome, w / "scripts" / nome)
+    return w
+
+
+def _mudar(arq, de, para):
+    texto = arq.read_text()
+    assert de in texto, de
+    arq.write_text(texto.replace(de, para, 1))
+
+
+def test_the_candidate_manifest_covers_every_real_dependency_of_the_volume(tmp_path, monkeypatch):
+    """Etapa 4 (14/10/2026): o manifesto v2 (RENDER2GO_MANIFESTO_HIB=2) só pode deixar de fora o
+    que o disco de volume não usa. Cada ARG que o bootstrap lê (em qualquer forma: $(arg X),
+    $(arg X | sed ...)) está nele; mudar qualquer dependência real muda a versão; mudar um modelo de
+    outro conjunto ou um comentário do Dockerfile, não (o v1 mudava)."""
+    import json as js
+    import re as rx
+
+    from render2go_worker import WORKER_DIR
+
+    boot = (WORKER_DIR / "scripts" / "bootstrap_pod.sh").read_text()
+    lidos = set(rx.findall(r"\barg ([A-Z][A-Z0-9_]+)", boot))
+    assert lidos and lidos == set(ln.manifesto_hibernacao()["args"])
+    assert all(v is not None for v in ln.manifesto_hibernacao()["args"].values())
+
+    def versoes(w):
+        monkeypatch.setenv("RENDER2GO_MANIFESTO_HIB", "1")
+        v1 = ln.versao_hibernacao(w)
+        monkeypatch.setenv("RENDER2GO_MANIFESTO_HIB", "2")
+        return v1, ln.versao_hibernacao(w)
+
+    w = _copia_worker(tmp_path)
+    base = versoes(w)
+    # o que não está no volume: o v2 não muda (o v1 mudava e encerrava os hibernados à toa)
+    (w / "Dockerfile").write_text((w / "Dockerfile").read_text() + "\n# comentário novo\n")
+    lock = js.loads((w / "models.lock.json").read_text())
+    t2v = next(n for n in lock["sets"]["t2v_a14b_fp8"] if n not in lock["sets"]["i2v_r1v2"])
+    lock["models"][t2v]["sha256"] = "0" * 64
+    (w / "models.lock.json").write_text(js.dumps(lock))
+    v1, v2 = versoes(w)
+    assert v1 != base[0] and v2 == base[1]
+    # cada dependência real muda o v2
+    casos = [
+        lambda: _mudar(w / "requirements.lock", "==", "== "),
+        lambda: _mudar(w / "Dockerfile", "ARG COMFYUI_COMMIT=", "ARG COMFYUI_COMMIT=0"),
+        lambda: _mudar(w / "Dockerfile", "ARG UV_IMAGE=", "ARG UV_IMAGE=x"),
+        lambda: _mudar(w / "Dockerfile", "ARG LEGENDA_MODEL_DIGEST=", "ARG LEGENDA_MODEL_DIGEST=x"),
+        lambda: _mudar(w / "scripts" / "bootstrap_pod.sh", "LAYOUT_HIB=", "LAYOUT_HIB=9"),
+        lambda: _mudar(w / "scripts" / "pull_compiler_model.sh", "\n", "\n# x\n"),
+    ]
+    anterior = versoes(w)[1]
+    for mudar in casos:
+        mudar()
+        agora = versoes(w)[1]
+        assert agora != anterior
+        anterior = agora
+    lock = js.loads((w / "models.lock.json").read_text())
+    i2v = lock["sets"]["i2v_r1v2"][0]
+    lock["models"][i2v]["sha256"] = "1" * 64  # um modelo do conjunto do pod
+    (w / "models.lock.json").write_text(js.dumps(lock))
+    assert versoes(w)[1] != anterior
+    anterior = versoes(w)[1]
+    monkeypatch.setenv("RENDER2GO_LEGENDA_POR_FOTO", "1")
+    assert versoes(w)[1] != anterior
+
+
+def test_the_pod_image_needs_a_digest_and_enters_the_version(monkeypatch):
+    monkeypatch.delenv("RENDER2GO_POD_IMAGEM", raising=False)
+    monkeypatch.delenv("RENDER2GO_MANIFESTO_HIB", raising=False)
+    padrao = ln.versao_hibernacao()
+    assert ln.imagem_do_pod() == ln.IMAGEM_PADRAO
+    monkeypatch.setenv("RENDER2GO_POD_IMAGEM", "ghcr.io/x/render2go-pod:1")  # sem digest: recusada
+    assert ln.imagem_do_pod() == ln.IMAGEM_PADRAO and ln.versao_hibernacao() == padrao
+    img = "ghcr.io/x/render2go-pod@sha256:" + "a" * 64
+    monkeypatch.setenv("RENDER2GO_POD_IMAGEM", img)
+    assert ln.imagem_do_pod() == img and ln.versao_hibernacao() != padrao

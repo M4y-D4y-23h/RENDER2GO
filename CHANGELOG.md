@@ -2,6 +2,15 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 14/10/2026 (7): experimento da imagem dos pods preparado (não executado), manifesto candidato dos hibernados e comparação de GPUs
+
+Motivo: a revisão de 14/10/2026, Etapa 4. Branch `claude/magical-lamport-4rrms9`; **nada muda sem as variáveis novas**; nenhum pod criado. Detalhes: [`docs/15`](docs/15-ciclo-de-vida-desperdicio-e-qualidade.md), seção 4, e `worker/evals/bootstrap-imagem-2026-10-14/`.
+
+- **Imagem dos pods com o ambiente pronto** (alvo `pod` do `worker/Dockerfile`, sem pesos): só com `RENDER2GO_POD_IMAGEM=<imagem>@sha256:<digest>` (sem o digest, a de sempre); o bootstrap só usa o ambiente da imagem com a chave do código igual e as peças no lugar, senão instala como sempre; o apt só instala o que falta.
+- **Protocolo do experimento** com critérios escritos antes (4 subidas frias por variante, mesma GPU e datacenter; 1º vídeo ≥ 30 s melhor; zero falhas novas; fallback conferido), custo previsto (~US$ 1,65; teto de US$ 3) e o coletor dos tempos (`coletar.py`).
+- **Manifesto candidato dos hibernados** (`RENDER2GO_MANIFESTO_HIB=2`, desligado): só o que o disco de volume usa (cada ARG que o bootstrap lê, os modelos do conjunto do pod, o agente, o layout, a imagem); o teste falha se uma dependência real ficar de fora. O v1 (padrão) ganhou a imagem do pod quando ela não é a de sempre.
+- **GPUs** (preço consultado na API em 14/10: L40S US$ 1,09/h; RTX PRO 6000 US$ 2,49/h; RTX 6000 Ada e 4090 sem estoque): a RTX PRO 6000 é ~2× mais rápida e 16–18% mais cara por vídeo; a L40S continua a 1ª.
+
 ## 14/10/2026 (6): capacidade da fila pelo trabalho real, métricas por etapa, ociosidade explícita e simulação
 
 Motivo: a revisão de 14/10/2026, Etapa 3. Branch `claude/magical-lamport-4rrms9`; nada publicado; **o padrão de ociosidade continua 180 s**. Detalhes: [`docs/15`](docs/15-ciclo-de-vida-desperdicio-e-qualidade.md), seção 3.

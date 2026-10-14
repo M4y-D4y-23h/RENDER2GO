@@ -384,6 +384,7 @@ class RunPod:
 
     def __init__(self, datacentros: list[str] | None = None, volume: str | None = None) -> None:
         self.chave = runpod_pods._chave()
+        self.imagem = imagem_do_pod()
         self.datacentros = datacentros or []
         self.volume = volume
         # filtros de máquina rápida da 1ª tentativa (RENDER2GO_REDE_MIN_MBPS e
@@ -462,7 +463,7 @@ class RunPod:
     def _corpo(self, nome, opcao, gpus, env, volume_gb, dcs, filtro, ordenar) -> dict:
         # 120 GB também no pod que hiberna: a 1ª subida instala tudo no disco do contêiner
         # (rápido) e só depois copia para o volume (com 40 GB, em 11/10, o disco encheu)
-        corpo = runpod_pods.corpo_pod(opcao, self.IMAGEM, nome, 120, env, ["8888/http"])
+        corpo = runpod_pods.corpo_pod(opcao, self.imagem, nome, 120, env, ["8888/http"])
         corpo["gpuCount"] = gpus
         corpo["dockerStartCmd"] = ["bash", "-c", AGENTE_CMD]
         if volume_gb and not self.volume:
@@ -1674,26 +1675,83 @@ def pod_agente_path() -> Path:
     return Path(__file__).with_name("pod_agente.py")
 
 
-def versao_hibernacao() -> str:
+def versao_hibernacao(worker_dir: Path | None = None) -> str:
     """Versão do que fica no disco de volume de um pod que hiberna (ADR 0011): dependências, versões
     do ComfyUI e do Ollama, modelos, agente (vai no ambiente do pod, fixado na criação) e o layout
-    do bootstrap. Mudou: o pod hibernado está velho e é encerrado em vez de voltar."""
+    do bootstrap. Mudou: o pod hibernado está velho e é encerrado em vez de voltar.
+
+    RENDER2GO_MANIFESTO_HIB=2 (Etapa 4, 14/10/2026; experimento, desligado): o manifesto só com o
+    que o disco de volume usa de verdade (`manifesto_hibernacao`); o padrão (1) é o de sempre."""
+    w = worker_dir or WORKER_DIR
+    if os.environ.get("RENDER2GO_MANIFESTO_HIB", "1").strip() == "2":
+        m = manifesto_hibernacao(w)
+        return hashlib.sha256(json.dumps(m, sort_keys=True).encode()).hexdigest()[:16]
     h = hashlib.sha256()
-    for p in (
-        WORKER_DIR / "requirements.lock",
-        WORKER_DIR / "Dockerfile",
-        WORKER_DIR / "models.lock.json",
-        pod_agente_path(),
-    ):
+    for p in (w / "requirements.lock", w / "Dockerfile", w / "models.lock.json", pod_agente_path()):
         h.update(p.read_bytes())
-    layout = re.search(
-        r"^LAYOUT_HIB=(\S+)", (WORKER_DIR / "scripts" / "bootstrap_pod.sh").read_text(), re.M
-    )
+    layout = re.search(r"^LAYOUT_HIB=(\S+)", (w / "scripts" / "bootstrap_pod.sh").read_text(), re.M)
     h.update((layout.group(1) if layout else "?").encode())
     # legenda por foto (ADR 0014): o volume ganha o modelo de visão; sem a chave, a versão de antes
     if os.environ.get("RENDER2GO_LEGENDA_POR_FOTO", "").strip() == "1":
         h.update(b"legenda")
+    # a imagem do pod (Etapa 4): o venv do volume usa o Python dela; a de sempre não muda a versão
+    if imagem_do_pod() != IMAGEM_PADRAO:
+        h.update(imagem_do_pod().encode())
     return h.hexdigest()[:16]
+
+
+def manifesto_hibernacao(worker_dir: Path | None = None) -> dict:
+    """O que o disco de volume de um pod que hiberna depende, e só isso (Etapa 4, 14/10/2026): o
+    requirements.lock; cada ARG do Dockerfile que o bootstrap lê (achados no próprio bootstrap: um
+    ARG novo lido por ele entra sozinho); os modelos do conjunto que o pod instala (nome, bytes,
+    SHA-256 e destino); o agente; o script que baixa o modelo do compilador; o LAYOUT_HIB; a
+    legenda; e a imagem do pod. Ficam de fora os modelos de outros conjuntos (T2V, oficiais), os
+    outros alvos do Dockerfile e os comentários: mudá-los não encerra mais os hibernados."""
+    w = worker_dir or WORKER_DIR
+    boot = (w / "scripts" / "bootstrap_pod.sh").read_text()
+    dockerfile = (w / "Dockerfile").read_text()
+    args = {}
+    for nome in sorted(
+        set(re.findall(r"\barg ([A-Z][A-Z0-9_]+)", boot))
+    ):  # $(arg X), $(arg X | sed ...)
+        m = re.search(rf"^ARG {nome}=(\S+)", dockerfile, re.M)
+        args[nome] = m.group(1) if m else None
+    conjunto = re.search(r"repo\.tgz (\S+)", Remoto.instalar).group(1)
+    lock = json.loads((w / "models.lock.json").read_text())
+    nomes = sorted({n for c in conjunto.split(",") for n in lock["sets"][c]})
+    modelos = {n: {k: lock["models"][n][k] for k in ("sha256", "bytes", "dest")} for n in nomes}
+    layout = re.search(r"^LAYOUT_HIB=(\S+)", boot, re.M)
+
+    def sha(p: Path) -> str:
+        return hashlib.sha256(p.read_bytes()).hexdigest()
+
+    return {
+        "requirements": sha(w / "requirements.lock"),
+        "args": args,
+        "conjunto": conjunto,
+        "modelos": modelos,
+        "agente": sha(pod_agente_path()),
+        "compilador": sha(w / "scripts" / "pull_compiler_model.sh"),
+        "layout": layout.group(1) if layout else None,
+        "legenda": os.environ.get("RENDER2GO_LEGENDA_POR_FOTO", "").strip() == "1",
+        "imagem": imagem_do_pod(),
+    }
+
+
+IMAGEM_PADRAO = "python:3.12-slim-bookworm"
+IMAGEM_DIGEST = re.compile(r"[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}")
+
+
+def imagem_do_pod() -> str:
+    """A imagem dos pods: RENDER2GO_POD_IMAGEM (Etapa 4, experimento: o alvo `pod` do
+    worker/Dockerfile) só com o digest (imutável); sem a variável, ou sem o digest, a de sempre."""
+    v = os.environ.get("RENDER2GO_POD_IMAGEM", "").strip()
+    if not v:
+        return IMAGEM_PADRAO
+    if not IMAGEM_DIGEST.fullmatch(v):
+        _log("AVISO: RENDER2GO_POD_IMAGEM sem o digest (@sha256:...): usando a imagem de sempre")
+        return IMAGEM_PADRAO
+    return v
 
 
 def preparar_espelho() -> Espelho | None:

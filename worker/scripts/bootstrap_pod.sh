@@ -304,6 +304,22 @@ instalar_ambiente() {
   rm -f /tmp/ollama.tar.zst /tmp/umt5.zip
 }
 
+# ambiente da imagem (Etapa 4, 14/10/2026; experimento, docs/15 seção 4): a imagem do pod (alvo `pod` do
+# worker/Dockerfile, só com RENDER2GO_POD_IMAGEM) já traz venv, ComfyUI com o patch e Ollama. Só vale com a chave
+# gravada na imagem igual à deste código (requirements.lock + Dockerfile) e com as peças no lugar; qualquer diferença
+# (imagem de outra versão, imagem comum): instala como sempre
+IMG=${RENDER2GO_IMAGEM_DIR:-/opt/render2go-imagem}
+ambiente_da_imagem() {
+  [[ -f $IMG/chave && -n "$CHAVE" && "$(cat $IMG/chave)" == "$CHAVE" ]] || return 1
+  [[ -x ${VENV_IMG:-/opt/venv}/bin/python && -f $COMFY_DIR/main.py \
+     && -f $COMFY_DIR/custom_nodes/ComfyUI-UMT5-Extended/__init__.py ]] || return 1
+  ollama --version 2>&1 | grep -q "$(arg OLLAMA_VERSION | sed 's/^v//')" || return 1
+  echo "ambiente da imagem ($CHAVE)"
+}
+
+# só instala pelo apt o que a imagem não tem (a imagem `pod` já traz tudo; a python:3.12-slim, nada)
+tem() { local c; for c in "$@"; do command -v "$c" >/dev/null 2>&1 || return 1; done; }
+
 # ambiente do volume: copia, confere o SHA-256 do .sha256 (escrito por último) e extrai
 ambiente_do_volume() {
   [[ -n "$CACHE" && -f "$AMB" && -f "$AMB.sha256" ]] || return 1
@@ -320,7 +336,9 @@ ambiente_do_volume() {
 
 ambiente() {
   export VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH UV_HTTP_TIMEOUT=300
-  if ! ambiente_do_volume; then
+  if ambiente_da_imagem; then
+    marca ambiente_imagem
+  elif ! ambiente_do_volume; then
     instalar_ambiente || return 1
     marca ambiente_instalado
     if [[ $GRAVA == 1 ]]; then  # empacota agora, antes de qualquer serviço escrever no ComfyUI
@@ -414,8 +432,9 @@ principal() {
     mkdir -p $L/apt/archives/partial $L/apt/lists/partial || falha "disco de volume"
   fi
 
-  "${APT[@]}" update -qq && "${APT[@]}" install -y -qq --no-install-recommends \
-    curl ca-certificates rsync aria2 >/dev/null || falha "apt"
+  ATUALIZADO=0
+  tem curl rsync aria2c || { "${APT[@]}" update -qq && ATUALIZADO=1 && "${APT[@]}" install -y -qq \
+    --no-install-recommends curl ca-certificates rsync aria2 >/dev/null; } || falha "apt"
   marca apt_download
   if [[ "${RENDER2GO_VOLUME:-0}" == "1" && -d /workspace ]]; then
     CACHE=/workspace/render2go-cache
@@ -429,7 +448,8 @@ principal() {
 
   modelos > $R/modelos.log 2>&1 &
   MPID=$!
-  "${APT[@]}" install -y -qq --no-install-recommends git ffmpeg zstd unzip procps >/dev/null \
+  tem git ffmpeg zstd unzip ps || { { [[ $ATUALIZADO == 1 ]] || "${APT[@]}" update -qq; } \
+    && "${APT[@]}" install -y -qq --no-install-recommends git ffmpeg zstd unzip procps >/dev/null; } \
     || { kill $MPID 2>/dev/null; falha "apt"; }
   marca apt
   ambiente > $R/ambiente.log 2>&1 || { kill $MPID 2>/dev/null; falha "ambiente (ver ambiente.log)"; }

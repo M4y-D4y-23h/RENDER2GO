@@ -187,3 +187,20 @@ RUN cd "${COMFY_DIR}" \
     || (tail -50 /tmp/comfy.log; exit 1)
 
 ENV MODEL_SET=i2v_r1v2,t2v_a14b_q6k
+
+# ---------------------------------------------------------------------------------------
+# Experimento da Etapa 4 (14/10/2026, docs/15 seção 4; não promovido): a imagem dos pods do lote_nuvem e do
+# orquestrador com o ambiente pronto (venv, ComfyUI com o patch e Ollama, nas versões deste arquivo) e os
+# pacotes do bootstrap, **sem pesos**: os modelos de vídeo e o do compilador continuam vindo do espelho (R2) e da
+# origem, conferidos por bytes e SHA-256. O bootstrap usa o ambiente da imagem só se a chave gravada aqui for a
+# mesma do código enviado ao pod (requirements.lock + este Dockerfile); senão instala como sempre (fallback).
+# Usada só com RENDER2GO_POD_IMAGEM=<registro>/<imagem>@sha256:<digest> (sem o digest, o lote_nuvem recusa).
+#   docker build -f worker/Dockerfile --target pod -t <registro>/render2go-pod:<versão> worker
+FROM runtime AS pod
+RUN apt-get update && apt-get install -y --no-install-recommends aria2 rsync procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.12 /usr/local/bin/python3
+COPY requirements.lock Dockerfile /opt/render2go-imagem/
+RUN cd /opt/render2go-imagem \
+    && cat requirements.lock Dockerfile | sha256sum | cut -c1-16 > chave \
+    && rm requirements.lock Dockerfile
