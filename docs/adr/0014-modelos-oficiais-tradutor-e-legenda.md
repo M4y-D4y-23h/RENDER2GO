@@ -1,6 +1,7 @@
 # ADR 0014: modelos oficiais do Wan 2.2, tradutor comum e legenda por foto
 
 - **Status:** proposto (13/10/2026). O dono aceita de antemão **se** a rodada em GPU cumprir os critérios abaixo, escritos antes da medição (pedido de 13/10/2026). Se algum critério falhar, a produção continua com a configuração de hoje e este ADR fica proposto, com os números.
+- **Rodada em GPU (13 e 14/10/2026): os critérios não foram cumpridos** (seção "Resultado da rodada em GPU"): nem os modelos oficiais (B) nem a legenda por foto (D) entram. **Este ADR continua proposto** e a produção não muda: o Wan "R1 v2" com o NSFW-UMT5, o tradutor abliterado com o v6 e a legenda desligada (`RENDER2GO_LEGENDA_POR_FOTO=0`); a Política de Privacidade continua a v5.
 - **Já medido sem GPU (13/10/2026):** o tradutor comum e o prompt v8 **não cumpriram o critério 6** (seção "Medições sem GPU"): o tradutor continua o abliterado com o v6, e a legenda não entra no prompt do tradutor. A combinação D da rodada em GPU foi redefinida antes da rodada (seção "Critérios").
 - **Contexto:** `docs/06`, seção 9.1: vídeos fugindo do contexto da foto, pessoas e objetos que não estavam lá, vídeos barrados pelo filtro de imagem. Duas causas são de modelo, não de código: (1) o Wan em produção é um ajuste da comunidade marcado "Uncensored" (`Wan2.2_I2V_{High,Low}_R1_n54w_v2`) com o codificador de texto `nsfw_wan_umt5_xxl_v2` (767 palavras de vocabulário sexual a mais; `docs/12`, seção 1); (2) o tradutor é um Qwen "abliterado" (sem recusas) que vê só o texto, nunca a foto, e escreve o mesmo prompt para todas as fotos do pedido. A Fase 1 de 13/10 (sem GPU e sem ADR) já tirou do tradutor as linhas de conteúdo adulto (v7), decidiu o pedido vago no código e barra a pessoa inventada (`render2go_worker/traducao.py`); o que falta precisa de GPU para medir.
 
@@ -68,6 +69,22 @@ Nos 13 casos com legenda, o v8 acertou 76,9% contra 92,3% do v7. **O critério 6
 
 - As três legendas são certas e passam no `legenda.conferir`. O tempo é alto porque o Ollama 0.35.1 amplia toda imagem do Qwen2.5-VL para no mínimo 802.816 pixels (`image_min_pixels`, ~1.000 tokens de imagem), então reduzir a foto abaixo disso não ajuda.
 - **No pod**, com metade das CPUs da cota (8 de 16, a estimar), a legenda deve ficar perto da geração de um vídeo 480p de 5 s na L40S (~51 s): cabe durante o vídeo anterior, menos a do 1º vídeo de um pedido, que espera a legenda dele. A rodada em GPU mede as duas coisas (critério 5: no máximo ~30 s a mais no 1º vídeo).
+
+## Resultado da rodada em GPU (13 e 14/10/2026)
+
+`worker/evals/gpu-2026-10-13-qualidade/` (LEIAME, "Resultado"): 11 fotos SFW, um pedido concreto e um vago por foto, seeds fixas, vídeos de 5 s, três pods L40S secure (US$ 3,72 com o do SageAttention e duas tentativas que não subiram), julgamento às cegas das 76 tiras escrito antes de abrir a chave.
+
+| Combinação | Resolução | Vídeos | Aproveitáveis | Conferência | Barrados | Nota média do filtro | Pessoa inventada | Tempo mediano (s) | Pico de VRAM |
+|---|---|---|---|---|---|---|---|---|---|
+| A (produção) | 480p | 22 | **11** | **0** | 0 | **0,0128** | **0** | 52,0 | 40,4 GiB |
+| B (oficiais + LoRA) | 480p | 22 | 5 | 3 | 0 | 0,0189 | 3 | 52,2 | 40,4 GiB |
+| D (B + legenda no código) | 480p | 22 | 3 | 1 | 0 | 0,0137 | 3 | 52,1 | 40,6 GiB |
+| A (produção) | 720p | 11 | **6** | 0 | 0 | 0,0140 | 0 | 172,7 | 44,4 GiB |
+| B (oficiais + LoRA) | 720p | 11 | 3 | 0 | 0 | 0,0110 | 0 | 177,5 | 43,3 GiB |
+
+- **B falha nos critérios 1, 2, 3 (em 480p) e 4;** cumpre o 5 (+0,4% em 480p e +2,8% em 720p, sem falta de memória com a legenda e o tradutor rodando). Nas tiras, o modelo oficial com o LoRA inventa mais que o de produção: líquido despejado em 8 dos 22 vídeos 480p, pessoas na loja e no salão vazios, o tênis derretido, o rótulo embaralhado em 720p. A troca não resolve os vídeos que fogem da foto (`docs/06`, seção 9.1); naquelas fotos e seeds, piora.
+- **D falha nos critérios 1 a 5:** além do que herda de B, o movimento padrão com a categoria da legenda (comida: "o vapor sobe"; produto: "a luz passa pelo vidro") virou líquido despejado em 5 dos 10 pedidos vagos, e a legenda de uma foto nova leva 49–54 s com a GPU parada e 53–78 s com a GPU gerando (mediana de 60 s, 6 threads), o dobro do limite de ~30 s de espera no 1º vídeo. (O "6 s" medido no pod 1 com a GPU ocupada era o cache de prompts do llama-server, com as mesmas fotos já legendadas.) A legenda em si acertou as 11 fotos (uma recusada pelo formato do assunto, com acento, e a foto seguiu sem legenda) e não atrapalhou a GPU (±2%, vídeos idênticos).
+- **O que fica para depois:** o código da legenda e o conjunto `i2v_oficial` ficam no repositório, desligados (podem ser medidos de novo com outro LoRA, outra força ou outro movimento padrão, com uma rodada nova e critérios escritos antes). Os erros que sobram em A (líquido despejado nos pedidos vagos de bebida, rostos mudando na foto com pessoas, quadros trocados no salão) estão no `docs/06`, seção 9.5.
 
 ## Para pôr em produção (com o aceite)
 

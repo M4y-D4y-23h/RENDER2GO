@@ -76,8 +76,7 @@ SESSAO_ADMIN_S = 12 * 3600
 # privacidade-v3 (11/10/2026): filtro de imagem
 # privacidade-v4 (12/10/2026): o vídeo barrado pelo filtro de imagem fica 7 dias na quarentena, só para revisão
 # privacidade-v5 (12/10/2026): o filtro de imagem também nas fotos, antes da geração (render2go_servico.filtro_fotos)
-# privacidade-v6 (13/10/2026): a descrição automática de cada foto (legenda por foto, ADR 0014) fica com o pedido
-DOCUMENTOS = {"termos": "termos-v3", "privacidade": "privacidade-v6"}
+DOCUMENTOS = {"termos": "termos-v3", "privacidade": "privacidade-v5"}
 TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 # confirmação recente ("é você mesmo?") antes de ações sensíveis; a sessão aberta há menos que isso já conta
 CONFIRMACAO_S = 10 * 60
