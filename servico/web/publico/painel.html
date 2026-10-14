@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Painel · Render2Go</title>
 <meta name="robots" content="noindex, nofollow">
-<script src="/estatico/inicio.js?v=ac8a0489bb76" integrity="sha384-jcgOXWliJEmWFt5OI2ubr/+4nqocPN6RohZTaMKiUnxmU1R8syI0PpqQr/H7/g2w" data-chave="render2go-painel-conectado" data-papel="render2go-painel-papel" data-so-dono="gpus pagamentos acessos auditoria seguranca" data-secoes data-antecipar="visao-geral=api/sessao,api/resumo revisao=api/sessao,api/resumo,api/lotes historico=api/sessao,api/resumo,api/historico?grupo=todos clientes=api/sessao,api/resumo,api/clientes suporte=api/sessao,api/resumo,api/suporte interesses=api/sessao,api/resumo,api/interesses pods=api/sessao,api/resumo,api/pods gpus=api/sessao,api/resumo,api/geradores?dias=30 pagamentos=api/sessao,api/resumo,api/pagamentos acessos=api/sessao,api/resumo,api/acessos auditoria=api/sessao,api/resumo,api/auditoria seguranca=api/sessao,api/resumo,api/seguranca"></script>
+<script src="/estatico/inicio.js?v=ac8a0489bb76" integrity="sha384-jcgOXWliJEmWFt5OI2ubr/+4nqocPN6RohZTaMKiUnxmU1R8syI0PpqQr/H7/g2w" data-chave="render2go-painel-conectado" data-papel="render2go-painel-papel" data-so-dono="gpus pagamentos acessos auditoria seguranca" data-secoes data-antecipar="visao-geral=api/sessao,api/resumo revisao=api/sessao,api/resumo,api/lotes historico=api/sessao,api/resumo,api/historico?grupo=todos montagens=api/sessao,api/resumo,api/montagens clientes=api/sessao,api/resumo,api/clientes suporte=api/sessao,api/resumo,api/suporte interesses=api/sessao,api/resumo,api/interesses pods=api/sessao,api/resumo,api/pods gpus=api/sessao,api/resumo,api/geradores?dias=30 pagamentos=api/sessao,api/resumo,api/pagamentos acessos=api/sessao,api/resumo,api/acessos auditoria=api/sessao,api/resumo,api/auditoria seguranca=api/sessao,api/resumo,api/seguranca"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
@@ -12,7 +12,7 @@
 <meta name="format-detection" content="telephone=no">
 <meta name="application-name" content="Render2Go">
 <meta name="apple-mobile-web-app-title" content="Render2Go">
-<link rel="stylesheet" href="/estatico/estilo.css?v=6fb44ec87e70" integrity="sha384-wHc6kKMInC0A/pTPrPl7gRHfPCFbbps8a2BZTza4ymo2bSBANafDU8hv/GhjIwK3">
+<link rel="stylesheet" href="/estatico/estilo.css?v=17e7e76a0f37" integrity="sha384-JzCS3RcOVz+XIBv29czmukRXQEq1HSmM4vRClu0l8u47aPCTZ/VQ0YzKFo9SGLwf">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -26,7 +26,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="painel.js?v=64e358e1c530" integrity="sha384-m/cVJdcHVxwFW7bk7DZB02tj73ihPncAsN7m3E5t8NiSBvx/4igL6/ngNuf+pDbK" defer></script>
+<script src="painel.js?v=3314798fefee" integrity="sha384-T04EEO4uVQcLpfHplUixVDA4WOfNZVLQznIAyQOG1N6OMn1jP0ul7bZDEjzGJ04d" defer></script>
 </head>
 <body data-pagina="painel">
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
@@ -71,6 +71,7 @@
 <ul aria-labelledby="menu-pedidos">
 <li data-rota="GET /api/lotes"><a href="#revisao" data-secao="revisao"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z"/></svg><span>Revisão</span><span class="contagem" id="n-pendentes"></span></a></li>
 <li data-rota="GET /api/historico"><a href="#historico" data-secao="historico"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4v4.5H8M12 7.5V12l3 2"/></svg><span>Histórico</span></a></li>
+<li data-rota="GET /api/montagens"><a href="#montagens" data-secao="montagens"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17zM14.5 7.5l2 2"/></svg><span>Montagens</span></a></li>
 </ul>
 </div>
 <div class="grupo">
@@ -258,6 +259,17 @@
 </div>
 </div>
 </section>
+<section class="secao-painel" id="sec-montagens" aria-labelledby="t-montagens">
+<div class="cab-pagina">
+<h1 id="t-montagens" tabindex="-1">Montagens</h1>
+<p class="fraco">As montagens de vídeos das contas: o que foi pedido (os textos passaram pelo filtro de conteúdo), o filtro no logo, como terminou (com o erro técnico, que o cliente não vê) e o tempo do ffmpeg. Quem pode montar e o preço vêm do .env (<code>RENDER2GO_MONTAGEM</code> e <code>RENDER2GO_PRECO_MONTAGEM</code>).</p>
+</div>
+<div class="dados-vista" id="montagens-dados" aria-busy="true">
+<div id="montagens-tabela" class="tabela" role="region" aria-label="Montagens das contas" tabindex="0">
+<div class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
+</div>
+</div>
+</section>
 <section class="secao-painel" id="sec-clientes" aria-labelledby="t-clientes">
 <div class="cab-pagina">
 <h1 id="t-clientes" tabindex="-1">Contas e saldo</h1>
@@ -289,7 +301,7 @@
 <section class="secao-painel" id="sec-interesses" aria-labelledby="t-interesses">
 <div class="cab-pagina">
 <h1 id="t-interesses" tabindex="-1">Interesse nas opções em breve</h1>
-<p class="fraco">Cada clique em “Tenho interesse” (modelos de IA em breve, Mix, Projetos, indicação, telefone e nome de usuário). Cada conta conta uma vez por opção; em “Cada clique”, o e-mail da conta, para avisar quando a opção sair (licenças em docs/12).</p>
+<p class="fraco">Cada clique em “Tenho interesse” (modelos de IA em breve, Mix, Projetos, montagem, indicação, telefone e nome de usuário). Cada conta conta uma vez por opção; em “Cada clique”, o e-mail da conta, para avisar quando a opção sair (licenças em docs/12).</p>
 </div>
 <div class="abas abas-painel" id="abas-interesses" role="tablist" aria-label="Partes do interesse">
 <button type="button" role="tab" id="aba-int-resumo" aria-selected="true" aria-controls="int-resumo">Por opção</button>

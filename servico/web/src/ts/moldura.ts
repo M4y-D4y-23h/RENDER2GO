@@ -1,16 +1,17 @@
 // Moldura da área do cliente: menu lateral (computador) ou numa janela de baixo (celular), uma tela por endereço
-// (/, /modelos, /extratos, /logs, /perfil, /configuracoes, /projetos, /mix) e a troca de tela sem recarregar a
+// (/, /modelos, /montagem, /extratos, /logs, /perfil, /configuracoes, /projetos, /mix) e a troca de tela sem recarregar a
 // página. O inicio.js já marcou a tela (data-vista) antes do primeiro quadro: o CSS mostra só ela e destaca o
 // item do menu. Aqui, a troca: o endereço muda (voltar e avançar do navegador funcionam), o título da aba muda,
 // a tela nova carrega o que precisa e o foco vai para o título dela.
 import { cliqueSimples, dialogo, el } from "./comum";
 import { aoMudarConta, desenharAvatar, nomeExibido, resumoConta, resumoPlano } from "./conta";
 
-export type NomeTela = "pedidos" | "modelos" | "extratos" | "logs" | "perfil" | "configuracoes" | "projetos" | "mix";
+export type NomeTela = "pedidos" | "modelos" | "montagem" | "extratos" | "logs" | "perfil" | "configuracoes" | "projetos" | "mix";
 
 export const TELAS: Record<NomeTela, { caminho: string; titulo: string }> = {
   pedidos: { caminho: "/", titulo: "Pedidos" },
   modelos: { caminho: "/modelos", titulo: "Modelos de IA" },
+  montagem: { caminho: "/montagem", titulo: "Montagem" },
   extratos: { caminho: "/extratos", titulo: "Extratos" },
   logs: { caminho: "/logs", titulo: "Logs" },
   perfil: { caminho: "/perfil", titulo: "Perfil" },

@@ -132,6 +132,7 @@ from render2go_servico import (
     contas,
     filtro_fotos,
     modelos,
+    montagem,
     motivos,
     pagamentos,
     perfil,
@@ -140,7 +141,7 @@ from render2go_servico import (
     suporte,
 )
 from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_quarentena, chave_saida
-from render2go_servico.db import Banco, BancoError, SaldoInsuficiente, novo_id
+from render2go_servico.db import MONTAGEM_VIDEOS_DIAS, Banco, BancoError, SaldoInsuficiente, novo_id
 
 TIPOS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 MAX_FOTOS_LOTE = 1000  # por envio (pedido HTTP): o pedido maior vai em partes, sem limite no total (pago e interno)
@@ -160,9 +161,13 @@ VARREDURA_S = 60  # análise dentro da API: sem trabalho agendado, procura fotos
 AVALIAR_DIAS = 7
 TERMINADOS = ("concluido", "concluido_com_falhas")
 DIAS_EXTRATO = (7, 30, 90, 365, 0)  # períodos do extrato (0 = tudo)
+# montagem de vídeos (ADR 0015): a tela mostra as montagens dos últimos 7 dias; cada conta tem até 3 na fila
+MONTAGENS_DIAS = 7
+MAX_MONTAGENS_ABERTAS = 3
 MAX_LINHAS_CSV = 5000
 RESOLUCAO_EXTRATO = {"rapida": "480p", "alta": "720p"}
 DESCRICAO_PEDIDO = re.compile(r"^(?P<videos>\d+) vídeo\(s\) de (?P<duracao>\d+) s em (?P<resolucao>\w+)")
+DESCRICAO_MONTAGEM = re.compile(r"^montagem de (?P<videos>\d+) vídeo\(s\)")  # db.concluir_montagem
 MAX_BYTES_FOTO = 50 * 1024**2
 URL_ENVIO_S = 3600
 URL_DOWNLOAD_S = 24 * 3600
@@ -209,7 +214,7 @@ PAGINAS = {"/": "index.html", "/suporte": "suporte.html", "/termos": "termos.htm
            "/cookies": "cookies.html", "/verificacao": "verificacao.html"}  # fmt: skip
 # telas da área do cliente (menu lateral): a mesma página da raiz, que mostra a tela pelo endereço (ts/inicio.ts e
 # ts/moldura.ts). São da conta de quem entrou: noindex e fora do sitemap.xml
-TELAS_CONTA = ("/modelos", "/extratos", "/logs", "/perfil", "/configuracoes", "/projetos", "/mix")
+TELAS_CONTA = ("/modelos", "/montagem", "/extratos", "/logs", "/perfil", "/configuracoes", "/projetos", "/mix")
 PAGINAS.update(dict.fromkeys(TELAS_CONTA, "index.html"))
 # /verificacao: a página isolada do "não sou um robô" (Turnstile), aberta num quadro das páginas de entrada e
 # de suporte. Só ela carrega o script da Cloudflare, com uma política própria (sem Trusted Types, que o
@@ -278,6 +283,7 @@ PERMISSOES_PAINEL: dict[tuple[str, str], frozenset[str]] = {
     ("POST", "/api/fotos/{foto_id}/liberar"): _DONO,
     ("GET", "/api/lotes/{lote_id}/auditoria"): _TODOS,
     ("GET", "/api/historico"): _TODOS,
+    ("GET", "/api/montagens"): _TODOS,  # montagem de vídeos (ADR 0015): a lista, sem os vídeos
     ("GET", "/api/suporte"): _TODOS,
     ("GET", "/api/interesses"): _TODOS,
     ("GET", "/api/pods"): _TODOS,
@@ -408,6 +414,13 @@ class AnaliseFotos:
         except Exception as e:  # noqa: BLE001 (o thread não pode morrer)
             print(f"[analise] AVISO: {e}", flush=True)
 
+    def _logos(self) -> None:
+        """O logo das montagens (ADR 0015), no thread (é aqui que o classificador carrega)."""
+        try:
+            analisar_logos(self.banco, self.armazenamento, self._com_filtro())
+        except Exception as e:  # noqa: BLE001 (o thread não pode morrer)
+            print(f"[analise] AVISO: logos: {e}", flush=True)
+
     def agendar(self, lote_id: str) -> None:
         with self.lock:
             if lote_id in self.agendados:
@@ -428,6 +441,7 @@ class AnaliseFotos:
                 lote_id = self.fila.get(timeout=VARREDURA_S)
             except queue.Empty:
                 self._varrer()
+                self._logos()
                 continue
             try:
                 analisar_lote(self.banco, self.armazenamento, self.analisar, lote_id, self._com_filtro())
@@ -531,6 +545,59 @@ def analisar_lote(
     return n
 
 
+def analisar_logos(banco: Banco, armazenamento: Any, filtro: Any, limite: int = 20) -> int:
+    """O logo de cada montagem que espera o analisador (ADR 0015): aberto por `pessoas.abrir_foto`, avaliado pelo
+    filtro das fotos (a mesma regra, `filtro_imagem.barrado`) e, liberado, regravado em PNG (`montagem.logo_png`) no
+    armazenamento, para o montador nunca abrir o arquivo como foi enviado. Recusado ou inválido: a montagem fecha
+    em erro, sem custo, e o logo sai do armazenamento. Sem o classificador (`filtro` None), nada é avaliado e as
+    montagens com logo esperam (fail-closed). Devolve quantos logos terminou."""
+    if filtro is None:
+        return 0
+    n = 0
+    for m in banco.montagens_para_analisar(limite):
+        ext = json.loads(m["pedido"]).get("logo_ext") or "png"
+        original = montagem.chave_logo(m["cliente_id"], m["id"], f"logo-original.{ext}")
+        try:
+            dados = armazenamento.ler(original, montagem.LOGO_BYTES)
+        except Exception as e:  # noqa: BLE001
+            if not _ausente(armazenamento, original):
+                print(f"[analise] AVISO: {original}: {e} (tenta de novo na próxima volta)", flush=True)
+                continue
+            banco.salvar_logo(m["id"], "invalida", {"versao": filtro_fotos.VERSAO, "erro": "logo ausente"})
+            n += 1
+            continue
+        if (vez := banco.tentar_logo(m["id"])) > filtro_fotos.TENTATIVAS:  # derrubou o analisador várias vezes
+            erro = f"a análise do logo não terminou em {vez - 1} tentativas"
+            banco.salvar_logo(m["id"], "invalida", {"versao": filtro_fotos.VERSAO, "erro": erro})
+            montagem.apagar_logo(armazenamento, m)
+            n += 1
+            continue
+        try:
+            r = filtro.avaliar(dados, {"formato": "auto", "qualidade": "rapida"})
+        except Exception as e:  # noqa: BLE001 (o classificador não respondeu: o logo fica para a próxima volta)
+            print(f"[filtro] AVISO: {original}: {e}", flush=True)
+            continue
+        detalhe = {**r.detalhe, "sha256": hashlib.sha256(dados).hexdigest()}
+        resultado = r.filtro
+        if resultado == "ok":
+            try:
+                png = montagem.logo_png(dados)
+            except filtro_fotos.FOTO_RUIM as e:
+                resultado, detalhe = "invalida", {**detalhe, "erro": (str(e) or e.__class__.__name__)[:200]}
+            else:
+                try:
+                    armazenamento.gravar(montagem.chave_logo(m["cliente_id"], m["id"], "logo.png"), png, "image/png")
+                except Exception as e:  # noqa: BLE001 (rede: tenta de novo na próxima volta)
+                    print(f"[analise] AVISO: logo da montagem {m['id']}: {e}", flush=True)
+                    continue
+        banco.salvar_logo(m["id"], resultado, detalhe)
+        if resultado != "ok":
+            print(f"[filtro] logo da montagem {m['id']}: {resultado} {detalhe}", flush=True)
+            montagem.apagar_logo(armazenamento, m)
+        n += 1
+    return n
+
+
 def estado_filtro(filtro: Any) -> str:
     """O estado do filtro das fotos para o painel (tabela estado, chave filtro_fotos), em JSON."""
     if filtro is None:
@@ -570,6 +637,8 @@ def analisar_continuamente(banco: Banco, armazenamento: Any, analisar: Callable[
                     print(f"[analise] lote {lid}: {n} foto(s) analisada(s)", flush=True)
                 feitas += n
                 sinal_de_vida()
+            if not parar.is_set():  # o logo das montagens (ADR 0015), com o mesmo filtro
+                feitas += analisar_logos(banco, armazenamento, com_filtro)
         except Exception as e:  # noqa: BLE001 (o laço não pode morrer; tenta de novo no próximo intervalo)
             print(f"[analise] AVISO: {e}", flush=True)
         if not feitas:
@@ -606,6 +675,10 @@ class Config:
     # legenda por foto (ADR 0014, proposto; RENDER2GO_LEGENDA_POR_FOTO=1): o pedido aprovado ganha uma tradução por
     # foto, com a legenda dela; os pedidos aprovados antes continuam como foram
     legenda_por_foto: bool = False
+    # montagem de vídeos (ADR 0015): RENDER2GO_MONTAGEM (desligada, interno ou todos) e o preço por montagem pronta
+    # (RENDER2GO_PRECO_MONTAGEM, centavos; None: o plano pago não monta)
+    montagem: str = "interno"
+    preco_montagem: int | None = None
     retrato_s: float = RETRATO_S  # validade do retrato da fila e dos pods (0: sempre lê do banco)
     # foto do perfil: quem baixa do Gravatar (os testes trocam; nenhum teste fala com o Gravatar de verdade)
     baixar_gravatar: Callable[[str], Any] = perfil.baixar_gravatar
@@ -712,6 +785,10 @@ class Config:
         legenda = os.environ.get("RENDER2GO_LEGENDA_POR_FOTO", "0").strip() or "0"
         if legenda not in ("0", "1"):
             raise SystemExit("RENDER2GO_LEGENDA_POR_FOTO: 0 (desligada) ou 1 (ligada)")
+        try:
+            modo_montagem, preco_montagem = precos.montagem_do_ambiente()
+        except ValueError as e:
+            raise SystemExit(str(e)) from e
         banco = Banco(os.environ["RENDER2GO_DB_URL"])
         banco.criar_esquema()
         return cls(
@@ -733,6 +810,8 @@ class Config:
             mp=pagamentos.ConfigMP.do_ambiente(),
             analise=analise,
             legenda_por_foto=legenda == "1",
+            montagem=modo_montagem,
+            preco_montagem=preco_montagem,
         )
 
     def limitar(self, chave: str) -> None:
@@ -1192,6 +1271,36 @@ class SuporteIn(BaseModel):
 
 class AvaliacaoIn(BaseModel):
     nota: int = Field(ge=1, le=5)  # 1 muito pouco, 2 pouco, 3 neutro, 4 satisfeito, 5 muito satisfeito
+
+
+class TextosMontagemIn(BaseModel):
+    """Os textos por cima da montagem (ADR 0015): cada um opcional; o tamanho de cada um é conferido depois de
+    limpar os espaços (render2go_servico.montagem.TEXTOS), com a mensagem certa."""
+
+    titulo: str | None = Field(None, max_length=200)
+    preco: str | None = Field(None, max_length=200)
+    chamada: str | None = Field(None, max_length=200)
+
+
+class LogoIn(BaseModel):
+    tipo: str = Field(max_length=40)
+    bytes: int = Field(gt=0)
+
+
+class MontagemIn(BaseModel):
+    videos: list[str] = Field(min_length=1, max_length=20)  # ids dos vídeos prontos, na ordem (2 a 10)
+    formato: str = Field(max_length=10)
+    transicao: str = Field("corte", max_length=10)
+    textos: TextosMontagemIn = Field(default_factory=TextosMontagemIn)
+    trilha: str | None = Field(None, max_length=60)
+    logo: LogoIn | None = None
+
+    @field_validator("videos")
+    @classmethod
+    def _ids_curtos(cls, v: list[str]) -> list[str]:
+        if any(not 1 <= len(x) <= 80 for x in v):
+            raise ValueError("id de vídeo inválido")
+        return v
 
 
 class FotosIn(BaseModel):
@@ -2671,10 +2780,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
 
     def _rodada(r: dict) -> dict:
         """Uma rodada do extrato: o pedido, o tipo e o modelo de geração, os vídeos e quanto custou."""
-        lt = r["lote"]
+        lt, mt = r["lote"], r.get("montagem")
         info = modelos.info(r["modelo"] or (lt or {}).get("modelo"))
         videos = duracao = resolucao = None
-        if lt:
+        montada = r["modelo"] == modelos.MONTAGEM or mt is not None  # montagem de vídeos (ADR 0015)
+        if montada:
+            p = json.loads(mt["pedido"]) if mt else {}
+            videos = len(p.get("videos") or []) or None
+            duracao, resolucao = (round(mt["duracao"]) if mt and mt["duracao"] else None), "720p"
+            if videos is None and (d := DESCRICAO_MONTAGEM.match(r["descricao"] or "")):  # saiu do histórico
+                videos = int(d["videos"])
+        elif lt:
             p = json.loads(lt["pedido"])
             videos = int(lt["n_fotos"]) * int(p.get("variacoes") or 1)
             duracao, resolucao = p.get("duracao"), RESOLUCAO_EXTRATO.get(p.get("qualidade"), p.get("qualidade"))
@@ -2697,7 +2813,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "cobrado": cobrado,
             "devolvido": devolvido,
             "liquido": cobrado - devolvido,
-            "status": lt["status"] if lt else None,
+            "status": lt["status"] if lt else (mt["status"] if mt else None),
+            "montagem": montada,
         }
 
     def _itens_extrato(
@@ -2761,7 +2878,15 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         ]
         for x in itens:
             quando = time.strftime("%d/%m/%Y %H:%M", time.gmtime(x["quando"] + fuso_min * 60))
-            if x["tipo"] == "rodada":
+            if x["tipo"] == "rodada" and x.get("montagem"):  # montagem de vídeos (ADR 0015)
+                desc = f"montagem de {x['videos']} vídeo(s)" if x["videos"] else "montagem"
+                if x["duracao"]:
+                    desc += f", {x['duracao']} s em {x['resolucao']}"
+                campos = [
+                    quando, "Montagem", x["lote"], x["tipo_modelo"] or "", x["modelo"], str(x["videos"] or ""),
+                    reais_csv(x["cobrado"]), reais_csv(x["devolvido"]), reais_csv(x["liquido"]), "", desc,
+                ]  # fmt: skip
+            elif x["tipo"] == "rodada":
                 desc = f"{x['videos']} vídeo(s) de {x['duracao']} s em {x['resolucao']}" if x["videos"] else ""
                 campos = [
                     quando, "Pedido", x["lote"], x["tipo_modelo"] or "", x["modelo"], str(x["videos"] or ""),
@@ -2826,6 +2951,168 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         c.banco.registrar_acesso(
             cli["id"], "video_excluido", origem_de(request), {"lote": j["lote_id"], "arquivo": j["arquivo"]}
         )
+        return {"ok": True}
+
+    # -- montagem de vídeos (ADR 0015) -------------------------------------------------------------------------
+
+    def _montagem_cliente(c: Config, cli: dict, m: dict) -> dict:
+        """Uma montagem para a tela do cliente: o que foi pedido, como está e, pronta, os links assinados por 24 h.
+        Nunca o texto técnico do erro nem as notas do filtro do logo (painel)."""
+        p = json.loads(m["pedido"])
+        item = {
+            "id": m["id"],
+            "status": m["status"],
+            "criado": m["criado"],
+            "concluido_em": m["concluido_em"],
+            "formato": p.get("formato"),
+            "transicao": p.get("transicao"),
+            "videos": len(p.get("videos") or []),
+            "textos": p.get("textos") or {},
+            "logo": bool(p.get("logo")),
+            "trilha": p.get("trilha"),
+            "duracao": m["duracao"],
+            "preco": m["preco"],
+            "excluido": bool(m["excluido_em"]),
+        }
+        if m["status"] in ("erro", "cancelado"):
+            item["motivo"] = m["motivo"] or "a montagem não pôde ser feita"
+        if m["status"] == "ok" and not m["excluido_em"] and m["arquivo"]:
+            chave = chave_saida(cli["id"], m["id"], m["arquivo"])
+            item["arquivo"] = m["arquivo"]
+            item["url"] = c.armazenamento.url("GET", chave, URL_DOWNLOAD_S)
+            item["baixar"] = c.armazenamento.url(
+                "GET", chave, URL_DOWNLOAD_S,
+                extra={"response-content-disposition": f'attachment; filename="{m["arquivo"]}"'},
+            )  # fmt: skip
+        return item
+
+    @app.get("/api/montagens")
+    def minhas_montagens(cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """A tela Montagem: se a conta pode montar (e quanto custa cada montagem pronta), as opções e as montagens
+        dos últimos MONTAGENS_DIAS dias. Os vídeos para escolher vêm de /api/geracoes (os mesmos 7 dias)."""
+        pode, preco = precos.acesso_montagem(c.montagem, c.preco_montagem, cli["plano"])
+        desde = time.time() - MONTAGENS_DIAS * 86400
+        return {
+            "disponivel": pode,
+            "preco": preco,
+            "plano": cli["plano"],
+            "interesse": "recurso:montagem" in c.banco.interesses_do_cliente(cli["id"]),
+            "formatos": [
+                {"id": k, "nome": montagem.NOMES_FORMATO[k], "largura": w, "altura": h}
+                for k, (w, h) in montagem.FORMATOS.items()
+            ],
+            "transicoes": list(montagem.TRANSICOES),
+            "limites": {
+                "videos": [montagem.MIN_VIDEOS, montagem.MAX_VIDEOS],
+                "textos": montagem.TEXTOS,
+                "logo_bytes": montagem.LOGO_BYTES,
+                "logo_tipos": list(montagem.LOGO_TIPOS),
+                "dias": MONTAGEM_VIDEOS_DIAS,
+                "abertas": MAX_MONTAGENS_ABERTAS,
+            },
+            "trilhas": [
+                {"id": k, "titulo": t["titulo"], "autor": t["autor"], "licenca": t["licenca"]}
+                for k, t in montagem.TRILHAS.items()
+            ],
+            "itens": [_montagem_cliente(c, cli, m) for m in c.banco.montagens(cli["id"], desde)],
+        }
+
+    @app.post("/api/montagens")
+    def criar_montagem(body: MontagemIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """Uma montagem nova: 2 a 10 vídeos prontos da conta, o formato, a transição, os textos (cada um pelo C1, com
+        o tamanho e os caracteres que a fonte escreve), a trilha da biblioteca e o logo (a URL de envio dele, que só
+        aceita os bytes declarados). O preço fica reservado no saldo livre e é cobrado só quando ela fica pronta."""
+        _exigir_aceite(cli)
+        pode, preco = precos.acesso_montagem(c.montagem, c.preco_montagem, cli["plano"])
+        if not pode:
+            raise HTTPException(403, "a montagem ainda não está disponível no seu plano")
+        origem = origem_de(request)
+        if not montagem.MIN_VIDEOS <= len(body.videos) <= montagem.MAX_VIDEOS:
+            raise HTTPException(422, f"escolha de {montagem.MIN_VIDEOS} a {montagem.MAX_VIDEOS} vídeos")
+        if len(set(body.videos)) != len(body.videos):
+            raise HTTPException(422, "o mesmo vídeo aparece duas vezes na montagem")
+        if body.formato not in montagem.FORMATOS or body.transicao not in montagem.TRANSICOES:
+            raise HTTPException(422, "formato ou transição inválidos")
+        if body.trilha is not None and body.trilha not in montagem.TRILHAS:
+            raise HTTPException(422, "trilha desconhecida")
+        textos: dict[str, str] = {}
+        for campo in montagem.TEXTOS:
+            t = montagem.limpar_texto(getattr(body.textos, campo))
+            if not t:
+                continue
+            if problema := montagem.problema_texto(campo, t):
+                raise HTTPException(422, problema[0].upper() + problema[1:])
+            d = filtros.avaliar(t)
+            if not d.allowed:  # C1 em cada texto, como no pedido (ADR 0004): a regra, nunca a palavra que barrou
+                c.banco.registrar_acesso(
+                    cli["id"], "montagem_recusada_filtro", origem, {"motivo": d.reason, "campo": campo, "texto": t}
+                )
+                nome = montagem.NOMES_TEXTO[campo].split(" ", 1)[1].capitalize()  # "Título", "Preço", "Chamada"
+                raise HTTPException(422, f"{nome}: {motivos.recusa_texto(d.reason)}")
+            textos[campo] = t
+        logo = None
+        if body.logo is not None:
+            if body.logo.tipo not in montagem.LOGO_TIPOS:
+                raise HTTPException(422, "logo: use JPG, PNG ou WebP")
+            if body.logo.bytes > montagem.LOGO_BYTES:
+                raise HTTPException(422, f"logo: até {montagem.LOGO_BYTES // 1024**2} MB")
+            logo = {"tipo": body.logo.tipo, "bytes": body.logo.bytes, "ext": montagem.LOGO_TIPOS[body.logo.tipo]}
+        if c.banco.montagens_abertas(cli["id"]) >= MAX_MONTAGENS_ABERTAS:
+            raise HTTPException(429, f"você já tem {MAX_MONTAGENS_ABERTAS} montagens na fila; espere uma terminar")
+        pedido = {"versao": montagem.VERSAO, "formato": body.formato, "transicao": body.transicao, "textos": textos,
+                  "trilha": body.trilha}  # fmt: skip
+        try:
+            m = c.banco.criar_montagem(cli["id"], body.videos, pedido, preco, logo, origem.get("ip"))
+        except SaldoInsuficiente as e:
+            raise HTTPException(
+                402,
+                f"saldo insuficiente: a montagem custa {precos.reais(e.custo)} e o seu saldo livre é "
+                f"{precos.reais(max(0, e.saldo))}. Adicione saldo por Pix no seu painel",
+            ) from e
+        except BancoError as e:
+            raise HTTPException(422, str(e)) from e
+        c.banco.registrar_acesso(
+            cli["id"], "montagem", origem, {"montagem": m["id"], "videos": len(body.videos), "logo": bool(logo)}
+        )
+        envio = None
+        if logo:
+            chave = montagem.chave_logo(cli["id"], m["id"], f"logo-original.{logo['ext']}")
+            url = c.armazenamento.url(
+                "PUT", chave, URL_ENVIO_S, content_type=logo["tipo"], content_length=logo["bytes"]
+            )
+            envio = {"url": url, "tipo": logo["tipo"]}
+        return {"montagem": m["id"], "status": m["status"], "preco": preco, "envio": envio, "expira_s": URL_ENVIO_S}
+
+    @app.post("/api/montagens/{mid}/enviado")
+    def montagem_enviada(mid: str, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """O logo terminou de subir: o tamanho no armazenamento confere com o declarado, e a montagem espera o
+        analisador (filtro das fotos e a regravação em PNG)."""
+        m = c.banco.montagem(mid[:80], cli["id"])
+        if m is None:
+            raise HTTPException(404, "montagem não encontrada")
+        p = json.loads(m["pedido"])
+        chave = montagem.chave_logo(cli["id"], m["id"], f"logo-original.{p.get('logo_ext') or 'png'}")
+        try:
+            tamanho = c.armazenamento.tamanho(chave)
+        except Exception as e:  # noqa: BLE001 (rede: a página tenta de novo)
+            raise HTTPException(503, "o armazenamento não respondeu; tente de novo em instantes") from e
+        try:
+            c.banco.confirmar_logo(m["id"], cli["id"], tamanho)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        if c.analises is not None:  # análise dentro da API (desenvolvimento): a varredura acha o logo
+            c.analises.iniciar()
+        return {"montagem": m["id"], "status": "aguardando_logo"}
+
+    @app.post("/api/montagens/{mid}/excluir")
+    def excluir_montagem(mid: str, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """O cliente exclui uma montagem pronta: o arquivo sai do armazenamento; o extrato fica."""
+        m = c.banco.excluir_montagem(mid[:80], cli["id"])
+        if m is None:
+            raise HTTPException(404, "montagem não encontrada")
+        with contextlib.suppress(Exception):  # o armazenamento fora do ar não desfaz a exclusão (30 dias no bucket)
+            c.armazenamento.apagar(chave_saida(cli["id"], m["id"], m["arquivo"]))
+        c.banco.registrar_acesso(cli["id"], "montagem_excluida", origem_de(request), {"montagem": m["id"]})
         return {"ok": True}
 
     @app.get("/api/lotes/{lote_id}")
@@ -3658,6 +3945,33 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         _auditar(c, request, quem, "mfa_desligado", cliente_id, {"antes": {"mfa": True}, "depois": {"mfa": False}})
         _avisar(c, cli.get("email"), "mfa_suporte")
         return {"cliente": cliente_id, "mfa": False}
+
+    @rotas.get("/api/montagens")
+    def montagens_painel(_: str = Depends(admin), c: Config = Depends(config)):
+        """As montagens de vídeos (ADR 0015) de todas as contas: o que foi pedido (com os textos, que passaram pelo
+        C1), o resultado do filtro no logo, como terminou (com o erro técnico) e o tempo do ffmpeg. Sem os vídeos."""
+        itens = []
+        for m in c.banco.montagens_painel(100):
+            p = json.loads(m["pedido"])
+            detalhe = json.loads(m["logo_detalhe"]) if m["logo_detalhe"] else None
+            itens.append({
+                "id": m["id"], "cliente": m["cliente_id"], "cliente_nome": m["cliente_email"] or m["cliente_nome"],
+                "plano": m["plano"], "status": m["status"], "criado": m["criado"], "concluido_em": m["concluido_em"],
+                "formato": p.get("formato"), "transicao": p.get("transicao"), "videos": len(p.get("videos") or []),
+                "textos": p.get("textos") or {}, "trilha": p.get("trilha"), "logo": bool(p.get("logo")),
+                "logo_filtro": m["logo_filtro"],
+                "logo_nota": (detalhe or {}).get("nota"), "logo_nota_alta": (detalhe or {}).get("nota_alta"),
+                "duracao": m["duracao"], "segundos": m["segundos"], "bytes": m["bytes_video"], "preco": m["preco"],
+                "tentativas": m["tentativas"], "erro": m["erro"], "motivo": m["motivo"],
+                "excluido": bool(m["excluido_em"]),
+            })  # fmt: skip
+        vivo = c.banco.ler_estado("montador_vivo")
+        return {
+            "itens": itens,
+            "modo": c.montagem,
+            "preco": c.preco_montagem,
+            "montador_visto_s": round(time.time() - float(vivo["atualizado"]), 1) if vivo else None,
+        }
 
     @rotas.get("/api/historico")
     def historico(grupo: str = "todos", _: str = Depends(admin), c: Config = Depends(config)):

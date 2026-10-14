@@ -10,7 +10,7 @@
 <meta property="og:url" content="{{ORIGEM}}/">
 <!-- a mesma página serve as telas da área da conta (/modelos, /extratos...): o inicio.js marca a tela pelo endereço
      e pede de antemão só o que ela mostra ("tela=caminho,caminho") -->
-<script src="/estatico/inicio.js" data-chave="render2go-conectado" data-antecipar="pedidos=/api/receitas,/api/lotes,/api/conta modelos=/api/receitas,/api/conta extratos=/api/conta,/api/extrato?dias=30 logs=/api/conta,/api/geracoes?horas=24 perfil=/api/conta configuracoes=/api/conta,/api/conta/sessoes projetos=/api/conta mix=/api/conta"></script>
+<script src="/estatico/inicio.js" data-chave="render2go-conectado" data-antecipar="pedidos=/api/receitas,/api/lotes,/api/conta modelos=/api/receitas,/api/conta montagem=/api/conta,/api/montagens extratos=/api/conta,/api/extrato?dias=30 logs=/api/conta,/api/geracoes?horas=24 perfil=/api/conta configuracoes=/api/conta,/api/conta/sessoes projetos=/api/conta mix=/api/conta"></script>
 <!--@cabeca-->
 <script src="/estatico/cliente.js" defer></script>
 <script type="application/ld+json">
@@ -38,6 +38,7 @@
       <ul aria-labelledby="menu-criar">
         <li><a href="/" data-vista="pedidos"><!--@icone video--><span>Pedidos</span></a></li>
         <li><a href="/modelos" data-vista="modelos"><!--@icone cubo--><span>Modelos de IA</span></a></li>
+        <li><a href="/montagem" data-vista="montagem"><!--@icone editar--><span>Montagem</span></a></li>
         <li><a href="/mix" data-vista="mix"><!--@icone camadas--><span>Mix</span><span class="selo">Em breve</span></a></li>
         <li><a href="/projetos" data-vista="projetos"><!--@icone pasta--><span>Projetos</span><span class="selo">Em breve</span></a></li>
       </ul>
@@ -363,6 +364,23 @@
           <div class="esqueleto-cartoes" aria-hidden="true">
             <div class="esqueleto"><span></span><span></span><span></span></div>
             <div class="esqueleto"><span></span><span></span><span></span></div>
+            <div class="esqueleto"><span></span><span></span><span></span></div>
+            <div class="esqueleto"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Montagem (/montagem, ADR 0015): vídeos prontos num vídeo só, com textos, logo e trilha. Quem ainda não pode
+           usar (RENDER2GO_MONTAGEM) vê o que ela faz e o "Tenho interesse"; os dados chegam de uma vez, no lugar do
+           esqueleto -->
+      <section class="vista" id="vista-montagem" aria-labelledby="titulo-montagem">
+        <div class="cab-pagina">
+          <h1 id="titulo-montagem" tabindex="-1">Montagem</h1>
+          <p class="fraco">Junte de 2 a 10 vídeos prontos num vídeo só, na ordem que quiser, com título, preço e chamada por cima, o seu logo e uma trilha. Sai em 720p, no formato da rede social.</p>
+        </div>
+        <p id="montagem-msg" class="aviso erro" hidden></p>
+        <div class="dados-vista" id="montagem-dados" aria-busy="true">
+          <div class="esqueleto-cartoes" aria-hidden="true">
             <div class="esqueleto"><span></span><span></span><span></span></div>
             <div class="esqueleto"><span></span><span></span><span></span></div>
           </div>

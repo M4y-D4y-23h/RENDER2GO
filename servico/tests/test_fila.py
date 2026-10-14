@@ -87,6 +87,9 @@ class Armazem:
     def ler(self, chave, limite):
         return self.objetos[chave]
 
+    def gravar(self, chave, dados, tipo="application/octet-stream"):  # o logo regravado (montagem, ADR 0015)
+        self.objetos[chave] = bytes(dados)
+
     def apagar(self, chave):
         self.objetos.pop(chave, None)
 

@@ -3,6 +3,7 @@
     render2go-servico api [--porta 8000] [--workers N]   API e páginas (uvicorn; N processos)
     render2go-servico orquestrar                  sobe e encerra pods conforme a fila
     render2go-servico analisar                    filtro das fotos e aviso de pessoas (RENDER2GO_ANALISE=separada)
+    render2go-servico montar                      montagem de vídeos (ADR 0015): ffmpeg em CPU, fora da API
     render2go-servico limpar                      encerra pods registrados pelo orquestrador
     render2go-servico totp-novo                   segredo do autenticador da chave do painel (RENDER2GO_ADMIN_TOTP)
     render2go-servico admin-convite --usuario NOME [--papel dono|operador]
@@ -206,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         help="processos da API (cada um com o seu pool de conexões; padrão RENDER2GO_API_WORKERS ou 1)",
     )
     sub.add_parser("analisar", help="filtro das fotos e aviso de pessoas, fora da API")
+    sub.add_parser("montar", help="montagem de vídeos (ADR 0015): ffmpeg em CPU, fora da API")
     sub.add_parser("totp-novo", help="gera o segredo do aplicativo autenticador da chave do painel")
     s_conv = sub.add_parser("admin-convite", help="convite de uso único para um acesso ao painel (ADR 0009)")
     s_conv.add_argument("--usuario", required=True, help="nome de acesso (3 a 32 letras minúsculas, números, . _ -)")
@@ -271,6 +273,28 @@ def main(argv: list[str] | None = None) -> int:
         # o classificador carrega na 1ª volta (10–20 s); sem ele, nenhuma foto é liberada (o painel mostra o motivo)
         filtro = filtro_fotos.FiltroFotos()
         analisar_continuamente(_banco(), arm, pessoas.analisador(), parar, vivo=vivo, filtro=filtro)
+        return 0
+    if a.cmd == "montar":
+        import tempfile
+        import threading
+        from pathlib import Path
+
+        from render2go_servico import montagem
+        from render2go_servico.armazenamento import Armazenamento
+
+        arm = Armazenamento.do_ambiente()
+        if arm is None:
+            raise SystemExit("faltam RENDER2GO_R2_ENDPOINT, _BUCKET, _ACCESS_KEY_ID ou _SECRET_ACCESS_KEY")
+        try:  # a fonte dos textos (o build da imagem já conferiu): sem ela, a montagem com texto falha, sem custo
+            montagem.conferido(montagem.pasta_padrao(), "fonte.ttf")
+        except montagem.ArquivoIndisponivel as e:
+            print(f"[montagem] AVISO: {e}", flush=True)
+        parar = threading.Event()
+        signal.signal(signal.SIGTERM, lambda *_: parar.set())
+        signal.signal(signal.SIGINT, lambda *_: parar.set())
+        print("[montagem] rodando (ffmpeg em CPU)", flush=True)
+        vivo = Path(tempfile.gettempdir()) / "render2go-montador-vivo"  # healthcheck do contêiner (compose)
+        montagem.montar_continuamente(_banco(), arm, parar, vivo=vivo)
         return 0
     if a.cmd == "email":
         from render2go_servico.contas import EmailRecusado, normalizar

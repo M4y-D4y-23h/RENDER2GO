@@ -294,6 +294,7 @@ SECOES_PAINEL = [
     "visao-geral",
     "revisao",
     "historico",
+    "montagens",
     "clientes",
     "suporte",
     "interesses",

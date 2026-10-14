@@ -1036,6 +1036,7 @@ a.bloco:active {
 html:not([data-vista]) #vista-pedidos,
 html[data-vista="pedidos"] #vista-pedidos,
 html[data-vista="modelos"] #vista-modelos,
+html[data-vista="montagem"] #vista-montagem,
 html[data-vista="extratos"] #vista-extratos,
 html[data-vista="logs"] #vista-logs,
 html[data-vista="perfil"] #vista-perfil,
@@ -1182,6 +1183,7 @@ body[data-pagina="cliente"] .navegacao .so-fora-da-conta {
 html:not([data-vista]) .menu-conta a[data-vista="pedidos"],
 html[data-vista="pedidos"] .menu-conta a[data-vista="pedidos"],
 html[data-vista="modelos"] .menu-conta a[data-vista="modelos"],
+html[data-vista="montagem"] .menu-conta a[data-vista="montagem"],
 html[data-vista="extratos"] .menu-conta a[data-vista="extratos"],
 html[data-vista="logs"] .menu-conta a[data-vista="logs"],
 html[data-vista="perfil"] .menu-conta a[data-vista="perfil"],
@@ -1195,6 +1197,7 @@ html[data-vista="mix"] .menu-conta a[data-vista="mix"] {
 html:not([data-vista]) .menu-conta a[data-vista="pedidos"] .icone,
 html[data-vista="pedidos"] .menu-conta a[data-vista="pedidos"] .icone,
 html[data-vista="modelos"] .menu-conta a[data-vista="modelos"] .icone,
+html[data-vista="montagem"] .menu-conta a[data-vista="montagem"] .icone,
 html[data-vista="extratos"] .menu-conta a[data-vista="extratos"] .icone,
 html[data-vista="logs"] .menu-conta a[data-vista="logs"] .icone,
 html[data-vista="perfil"] .menu-conta a[data-vista="perfil"] .icone,
@@ -1542,6 +1545,111 @@ html[data-vista="mix"] .menu-conta a[data-vista="mix"] .icone {
   list-style: none;
 }
 
+/* -- área do cliente: montagem de vídeos (ADR 0015) ------------------------------------------------------- */
+
+#form-montagem {
+  max-width: 46rem;
+}
+
+.videos-montagem,
+.opcoes-montagem,
+.textos-montagem {
+  display: grid;
+  gap: var(--esp-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.textos-montagem {
+  gap: var(--esp-4);
+}
+
+.videos-montagem > legend,
+.opcoes-montagem > legend,
+.textos-montagem > legend {
+  margin-bottom: var(--esp-2);
+  padding: 0;
+  font-weight: 650;
+}
+
+/* os vídeos para escolher: rolagem própria (a lista de 7 dias pode ser longa), alvos de toque de 44 px */
+.escolha-videos {
+  display: grid;
+  gap: var(--esp-1);
+  max-height: 22rem;
+  margin: 0;
+  padding: var(--esp-2);
+  overflow-y: auto;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  list-style: none;
+}
+
+.escolha-videos li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--esp-3);
+  min-height: 2.75rem;
+  padding: var(--esp-1) var(--esp-2);
+}
+
+.escolha-videos label {
+  display: grid;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.escolha-videos .nome,
+.ordem-montagem .nome {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.escolha-videos .fraco {
+  font-size: var(--texto-sm);
+}
+
+.ordem-montagem {
+  display: grid;
+  gap: var(--esp-2);
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.ordem-montagem li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-2);
+}
+
+.acoes-ordem {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--esp-1);
+}
+
+.opcoes-montagem .opcao {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-2);
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+
+.custo-montagem {
+  font-weight: 600;
+}
+
+.motivo-montagem {
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+}
+
 /* -- área do cliente: perfil, configurações, projetos e mix ------------------------------------------------ */
 
 .grade-cartoes {
@@ -1698,6 +1806,7 @@ html:not([data-secao]) #sec-visao-geral,
 html[data-secao="visao-geral"] #sec-visao-geral,
 html[data-secao="revisao"] #sec-revisao,
 html[data-secao="historico"] #sec-historico,
+html[data-secao="montagens"] #sec-montagens,
 html[data-secao="clientes"] #sec-clientes,
 html[data-secao="suporte"] #sec-suporte,
 html[data-secao="interesses"] #sec-interesses,
@@ -1714,6 +1823,7 @@ html:not([data-secao]) .menu-painel a[data-secao="visao-geral"],
 html[data-secao="visao-geral"] .menu-painel a[data-secao="visao-geral"],
 html[data-secao="revisao"] .menu-painel a[data-secao="revisao"],
 html[data-secao="historico"] .menu-painel a[data-secao="historico"],
+html[data-secao="montagens"] .menu-painel a[data-secao="montagens"],
 html[data-secao="clientes"] .menu-painel a[data-secao="clientes"],
 html[data-secao="suporte"] .menu-painel a[data-secao="suporte"],
 html[data-secao="interesses"] .menu-painel a[data-secao="interesses"],
@@ -1731,6 +1841,7 @@ html:not([data-secao]) .menu-painel a[data-secao="visao-geral"] .icone,
 html[data-secao="visao-geral"] .menu-painel a[data-secao="visao-geral"] .icone,
 html[data-secao="revisao"] .menu-painel a[data-secao="revisao"] .icone,
 html[data-secao="historico"] .menu-painel a[data-secao="historico"] .icone,
+html[data-secao="montagens"] .menu-painel a[data-secao="montagens"] .icone,
 html[data-secao="clientes"] .menu-painel a[data-secao="clientes"] .icone,
 html[data-secao="suporte"] .menu-painel a[data-secao="suporte"] .icone,
 html[data-secao="interesses"] .menu-painel a[data-secao="interesses"] .icone,

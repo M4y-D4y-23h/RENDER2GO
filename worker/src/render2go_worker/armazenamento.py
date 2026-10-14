@@ -149,12 +149,16 @@ class Armazenamento:
         query: dict[str, str],
         corpo: bytes = b"",
         timeout: float = 60,
+        tipo: str | None = None,
     ) -> bytes:
-        """Chamada assinada no cabeçalho (só quem tem as chaves)."""
+        """Chamada assinada no cabeçalho (só quem tem as chaves). `tipo`: o Content-Type, assinado
+        junto."""
         esquema, host, caminho = self._caminho(chave)
         data = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
         sha = hashlib.sha256(corpo).hexdigest()
         cabecalhos = {"host": host, "x-amz-content-sha256": sha, "x-amz-date": data}
+        if tipo:
+            cabecalhos["content-type"] = tipo
         assinados = ";".join(sorted(cabecalhos))
         qs = "&".join(f"{_q(k)}={_q(v)}" for k, v in sorted(query.items()))
         canonico = "\n".join(
@@ -214,6 +218,12 @@ class Armazenamento:
         if len(dados) > limite:
             raise ArmazenamentoError(f"GET {chave}: acima de {limite} bytes")
         return dados
+
+    def gravar(self, chave: str, dados: bytes, tipo: str = "application/octet-stream") -> None:
+        """Grava o objeto inteiro (PUT assinado no cabeçalho, com o SHA-256 do conteúdo e o tipo
+        assinados): para quem tem as chaves e gera o arquivo no próprio servidor (a montagem de
+        vídeos, ADR 0015)."""
+        self._chamar("PUT", chave, {}, dados, timeout=300, tipo=tipo)
 
     def apagar(self, chave: str) -> None:
         req = urllib.request.Request(self.url("DELETE", chave, 60), method="DELETE")

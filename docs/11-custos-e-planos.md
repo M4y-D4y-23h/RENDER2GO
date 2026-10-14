@@ -138,3 +138,13 @@ GPU em reais a ~R$ 5,70 por dólar. "Sobra" é o preço menos imposto e taxa de 
 1. **Pagamento automático:** Pix e cartão por um intermediador brasileiro (ex.: Mercado Pago, Asaas ou Pagar.me), com um aviso (webhook) que lança a recarga. O identificador do pagamento já impede que o mesmo pagamento entre duas vezes.
 2. **Termos de uso e política de privacidade (LGPD):** incluir as regras do saldo (validade, devolução de saldo não usado) e confirmar com um advogado e com o contador.
 3. **Marca d'água nos vídeos do teste gratuito** (logo e nome no fim): sugerida em 09/10/2026, ainda não feita.
+
+### 4.6 Montagem de vídeos (proposta, [ADR 0015](adr/0015-montagem-de-videos.md))
+
+Desde 14/10/2026, a montagem (2 a 10 vídeos prontos num vídeo só, com título, preço, chamada, logo e, quando houver faixas, trilha) roda no próprio servidor, em CPU, no contêiner `montador`. Está **ligada só no plano interno**, sem custo; para os clientes, depende do preço e dos termos novos (ADR 0015, "Antes de ligar para os clientes").
+
+- **Custo:** nenhum custo variável que pese. O servidor já está pago (seção 1); a montagem usa até 1 vCPU por ~25 s no pior caso (10 vídeos de 5 s em 720p) e ~5 MB no R2 por 30 dias (~US$ 0,0001). O que conta é o imposto e a taxa do pagamento (10–20% do preço).
+- **Proposta: R$ 1,00 por montagem pronta**, com qualquer número de vídeos (2 a 10), formato e transição. É o preço de um vídeo de 4 s em 480p: barato perto do que ela poupa (juntar, legendar e pôr o logo num editor), e ainda sobra ~R$ 0,80–0,90 por montagem. Como os vídeos de uma montagem já foram pagos, ela também puxa a venda de vídeos.
+- **Alternativas para o dono:** grátis (incluída, para estimular os pedidos), ou R$ 2,00 (o preço de um vídeo de 4 s em 720p). A cobrança é a do vídeo: reservada no pedido, cobrada só quando fica pronta; a que não sai não custa nada.
+- **Para ligar:** `RENDER2GO_PRECO_MONTAGEM=1,00` e `RENDER2GO_MONTAGEM=todos` no `.env`, depois dos termos e da privacidade novos (ADR 0015, "Antes de ligar para os clientes"; `docs/09`, entrada 14/10/2026 (2)). O teste gratuito nunca monta.
+

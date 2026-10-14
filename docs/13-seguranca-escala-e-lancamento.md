@@ -83,7 +83,7 @@ Conferido de fora em https://app.render2go.com, em 09/10/2026, e no código.
 
 **Como:** `servico/tests/teste_invasao.py` sobe a API de verdade num Postgres de teste, atrás do `Caddyfile` de produção (com TLS local), e ataca de fora, como um invasor faria. Cada grupo de ataques sai de um IP próprio (127.0.0.x), como redes diferentes. Ele recusa rodar num banco cujo nome não tenha "teste", "invasao" ou "pentest", porque apaga o banco a cada rodada.
 
-**Resultado em 09/10/2026: 73 de 73 verificações OK**, depois das correções abaixo. **Em 11/10/2026: 88 de 88**, com 15 verificações novas (acessos do painel por pessoa e configurações da conta, as duas últimas linhas da tabela), sem achados. **De novo em 12/10/2026**, com o filtro de imagem, a hibernação, o teste gratuito sem teto por IP e as fotos conferidas antes de abrir: 88 de 88, sem achados.
+**Resultado em 09/10/2026: 73 de 73 verificações OK**, depois das correções abaixo. **Em 11/10/2026: 88 de 88**, com 15 verificações novas (acessos do painel por pessoa e configurações da conta, as duas últimas linhas da tabela), sem achados. **De novo em 12/10/2026**, com o filtro de imagem, a hibernação, o teste gratuito sem teto por IP e as fotos conferidas antes de abrir: 88 de 88, sem achados. **Em 14/10/2026: 113 de 113**, com 25 verificações novas da montagem de vídeos (seção 3.3), sem achados.
 
 | Grupo | O que foi tentado | Resultado |
 |---|---|---|
@@ -149,6 +149,14 @@ O dono pediu para ver os vídeos que o filtro de imagem barra (ADR 0005, atualiz
 - **Quem abre:** só o papel dono (`GET <painel>/api/jobs/{job}/quarentena`, no `PERMISSOES_PAINEL`; o operador recebe 403, e `test_every_panel_route_with_a_session_is_in_the_permission_map` cobre a rota). Links de 10 min; cada abertura grava `ver_quarentena` na auditoria do painel, com o pedido e o arquivo. Na página, o vídeo e a folha ficam desfocados até o dono pedir.
 - **Por quanto tempo:** 7 dias. Depois disso, a rota recusa e a regra `quarentena-7-dias` do bucket apaga (`docs/09`, seção 3). A Política de Privacidade v4 diz isso.
 - **Criança ou adolescente:** se aparecer, não baixar nem compartilhar; denunciar (SaferNet, polícia) e procurar orientação jurídica. A guarda só se justifica para a revisão e para a denúncia (ECA, art. 241-B, § 2º); o aviso fica junto do vídeo, no painel.
+
+### 3.3 Montagem de vídeos (14/10/2026, [ADR 0015](adr/0015-montagem-de-videos.md))
+
+A montagem traz um programa novo ao servidor, o ffmpeg, que lê vídeos e imagens. As proteções:
+- **O ffmpeg só lê arquivos do próprio serviço:** os vídeos que os pods geraram, a imagem com os textos e o logo desenhada pelo Pillow no montador e a faixa da biblioteca (conferida pelo SHA-256). **O texto do cliente nunca chega ao ffmpeg** (nem na linha de filtros, nem num arquivo de texto do `drawtext`) e passa antes pelo C1 e por uma lista de caracteres permitidos (sem `[`, `]`, `=`, `\`, `{`, `<`, emoji ou caracteres invisíveis). **O logo do cliente nunca chega ao montador como foi enviado:** o `analisador` o abre como as fotos (seção 3.1), passa pelo filtro das fotos e o regrava em PNG; só esse PNG segue.
+- **Como o ffmpeg roda:** o formato de cada entrada explícito (nenhum leitor é escolhido pelo conteúdo do arquivo), só o protocolo `file`, o demuxer concat no modo seguro com nomes que o montador escreveu, um thread de decodificação por entrada, sem stdin, o ambiente vazio (sem o endereço do banco nem as chaves do R2 que o montador tem), tempo de CPU, tamanho de arquivo e tempo de relógio limitados; a saída é conferida pelo ffprobe antes de subir.
+- **Onde roda:** no contêiner `montador`, como o `analisador`: sem privilégios, disco só de leitura, `/tmp` em memória, sem os segredos da API, com 768 MB e 1 CPU. Uma montagem que estoure os limites derruba só ele (que volta sozinho), nunca a API ou o Postgres; a montagem fica em erro, sem custo. O ffmpeg é o do Debian da imagem fixada pelo digest, com as correções de segurança dela a cada build.
+- **Teste de invasão:** 25 verificações novas (113 ao todo, todas OK em 14/10/2026; seção 3): o teste gratuito não monta; CSRF; o vídeo e a montagem de outra conta (IDOR); textos com a sintaxe de filtros do ffmpeg, expansão `%{...}`, `\`, NUL, HTML e o tamanho; logo de outro tipo e de tamanho absurdo; a chave do logo só na pasta da montagem; ids maliciosos; o painel das montagens sem a sessão do painel.
 
 ## 4. Escala: o que o servidor aguenta
 

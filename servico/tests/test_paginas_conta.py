@@ -38,6 +38,7 @@ from render2go_servico import contas  # noqa: E402
 TELAS = {
     "pedidos": "/",
     "modelos": "/modelos",
+    "montagem": "/montagem",
     "extratos": "/extratos",
     "logs": "/logs",
     "perfil": "/perfil",
@@ -49,6 +50,7 @@ TELAS = {
 PRONTA = {
     "pedidos": "#blocos [data-foco='finalidade:imagem-video']",
     "modelos": "#modelos-lista .cartao.modelo",
+    "montagem": "#interesse-montagem button, #interesse-montagem .interesse-ok, #form-montagem",
     "extratos": "#extratos-dados .numeros",
     "logs": "#logs-lista[aria-busy=false]",
     "perfil": "#interesse-indicacao button, #interesse-indicacao .interesse-ok",
@@ -274,6 +276,93 @@ def test_generation_logs_watch_download_and_delete_with_confirmation(ambiente, n
     pg.click(".menu-conta a[data-vista=pedidos]")
     pw.expect(pg.locator("#lotes .lote")).to_contain_text("1 vídeo excluído por você.")
     pw.expect(pg.locator("#lotes .videos button.assistir")).to_have_count(1)
+    ctx.close()
+    assert erros == [], erros
+
+
+# -- montagem (ADR 0015) ---------------------------------------------------------------------------------------
+
+
+def test_montage_screen_picks_orders_uploads_the_logo_and_follows_the_montage(ambiente, navegador, tmp_path):  # noqa: F811
+    from render2go_servico.api import analisar_logos
+
+    erros: list[str] = []
+    ambiente.cfg.montagem, ambiente.cfg.preco_montagem = "todos", 150  # o plano pago com o preço definido
+    cid, tok = _conta(ambiente)
+    _lote(ambiente, tok, {"bolo.png": _png((40, 90, 160), "circulo"), "loja.png": _png((200, 120, 60), "barras")},
+          pronto=True)  # fmt: skip
+    ctx = _contexto(navegador, ambiente, tok, viewport={"width": 1280, "height": 900})
+    pg = _pagina(ctx, erros)
+    pg.goto(f"{ambiente.url}/montagem")
+    pg.wait_for_selector("#form-montagem")
+    pw.expect(pg.locator("#montagem-custo")).to_contain_text("R$ 1,50")
+    violacoes = _axe(pg)
+    assert not violacoes, [(v["id"], v["nodes"][0]["target"]) for v in violacoes]
+    # sem vídeo marcado, a página explica (nada vai para a API)
+    pg.click("#montagem-enviar")
+    pw.expect(pg.locator("#montagem-form-msg")).to_contain_text("de 2 a 10 vídeos")
+    nomes = pg.locator(".escolha-videos .nome").all_inner_texts()
+    assert len(nomes) == 2
+    for caixa in pg.locator(".escolha-videos input[type=checkbox]").all():
+        caixa.check()
+    pw.expect(pg.locator("#montagem-ordem .nome")).to_have_text(nomes)
+    pg.get_by_role("button", name=f"Descer {nomes[0]}").click()  # a ordem muda e o foco fica no item
+    pw.expect(pg.locator("#montagem-ordem .nome")).to_have_text([nomes[1], nomes[0]])
+    pg.fill("#montagem-titulo", "Promoção: 50% off")
+    pw.expect(pg.locator("#form-montagem .contador").first).to_have_text("17/40")
+    pg.check("#montagem-formato-1x1")
+    pg.check("#montagem-transicao-corte")
+    logo = tmp_path / "logo.png"
+    logo.write_bytes(_png((67, 56, 202), "circulo"))
+    pg.set_input_files("#montagem-logo", str(logo))
+    pg.click("#montagem-enviar")
+    pw.expect(pg.locator("#montagem-form-msg")).to_contain_text("Montagem na fila")
+    item = pg.locator("#montagens .montagem")
+    pw.expect(item).to_have_count(1)
+    pw.expect(item).to_contain_text("Conferindo o logo")
+    pw.expect(pg.locator(".escolha-videos input:checked")).to_have_count(0)  # o formulário volta ao começo
+    with ambiente.banco.tx() as c:
+        (m,) = c.all("SELECT * FROM montagens WHERE cliente_id = ?", (cid,))
+    pedido = json.loads(m["pedido"])
+    assert [v["arquivo"] for v in pedido["videos"]] == [nomes[1], nomes[0]]
+    assert (pedido["formato"], pedido["transicao"], pedido["textos"]) == (
+        "1:1",
+        "corte",
+        {"titulo": "Promoção: 50% off"},
+    )
+    assert ambiente.objetos[f"entrada/{cid}/{m['id']}/logo-original.png"] == logo.read_bytes()
+    # o analisador libera o logo (regravado em PNG), o montador faz a montagem: a lista se atualiza sozinha
+    assert ambiente.cfg.filtro.disponivel()
+    assert analisar_logos(ambiente.banco, ambiente.armazem, ambiente.cfg.filtro) == 1
+    assert f"entrada/{cid}/{m['id']}/logo.png" in ambiente.objetos
+    x = ambiente.banco.reivindicar_montagem("montador", 60)
+    ambiente.objetos[f"saida/{cid}/{m['id']}/montagem-teste.mp4"] = b"mp4"
+    ambiente.banco.concluir_montagem(x["id"], "montador", "ok", arquivo="montagem-teste.mp4", duracao=10.0)
+    pw.expect(item).to_contain_text("Pronta", timeout=15000)
+    pw.expect(item).to_contain_text("2 vídeos · quadrado (feed) · Corte seco · 10 s")
+    assert "/saida/" in item.locator("a.baixar").get_attribute("href")
+    item.get_by_role("button", name="Excluir montagem-teste.mp4").click()
+    pg.click("dialog.confirmacao[open] button:has-text('Excluir a montagem')")
+    pw.expect(item.locator(".selo")).to_have_text("Excluída por você", timeout=15000)  # sem o "Pronta" nem os links
+    pw.expect(item.locator("a.baixar, button.assistir")).to_have_count(0)
+    assert f"saida/{cid}/{m['id']}/montagem-teste.mp4" not in ambiente.objetos
+    assert ambiente.banco.saldo(cid) == 10000 - 2 * 125 - 150  # os 2 vídeos de 5 s em 480p e a montagem pronta
+    ctx.close()
+    assert erros == [], erros
+
+
+def test_montage_screen_without_access_shows_what_it_does_and_the_interest_button(ambiente, navegador):  # noqa: F811
+    erros: list[str] = []
+    _, tok = _conta(ambiente)  # o plano pago, com a montagem só no interno (o padrão)
+    ctx = _contexto(navegador, ambiente, tok)
+    pg = _pagina(ctx, erros)
+    pg.goto(f"{ambiente.url}/montagem")
+    pw.expect(pg.locator("#t-montagem-breve")).to_have_text("Em breve no seu plano")
+    assert pg.locator("#form-montagem").count() == 0
+    pg.click("#interesse-montagem button")
+    pw.expect(pg.locator("#interesse-montagem .interesse-ok")).to_be_focused()
+    with ambiente.banco.tx() as c:
+        assert c.one("SELECT finalidade FROM interesses")["finalidade"] == "recurso:montagem"
     ctx.close()
     assert erros == [], erros
 
@@ -888,7 +977,7 @@ def test_client_area_screens_fit_small_phones_with_large_touch_targets(ambiente,
     # o menu: o mesmo da lateral, numa janela de baixo; escolher uma tela fecha a janela e abre a tela
     pg.click("#abrir-menu")
     menu = pg.locator("dialog.menu-celular[open]")
-    pw.expect(menu.locator(".menu-conta a")).to_have_count(8)
+    pw.expect(menu.locator(".menu-conta a")).to_have_count(9)
     menu.locator("a[data-vista=logs]").click()
     pw.expect(menu).to_have_count(0)
     pg.wait_for_url(f"{ambiente.url}/logs")

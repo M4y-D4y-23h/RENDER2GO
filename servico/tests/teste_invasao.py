@@ -67,6 +67,7 @@ TABELAS = [
     "codigos",
     "sessoes",
     "avaliacoes",
+    "montagens",
     "interesses",
     "movimentos",
     "geradores",
@@ -576,6 +577,68 @@ def injecao(a, adm):
     conferir(r.status_code == 413, "corpo de 2 MB barrado no Caddy (413)", str(r.status_code))
 
 
+def montagem(cfg, a, b, anon):
+    """Montagem de vídeos (ADR 0015): o plano decide quem monta; IDOR nas montagens e nos vídeos de outra conta;
+    CSRF; textos que quebrariam uma linha de filtros do ffmpeg ou o HTML; logo de outro tipo ou tamanho; ids
+    maliciosos; o painel das montagens só com a sessão do painel."""
+    from test_montagem import _videos_prontos
+
+    banco = cfg.banco
+    ida = banco.conta_por_email(contas.normalizar("cliente.a@gmail.com")[1])["id"]
+    idb = banco.conta_por_email(contas.normalizar("cliente.b@gmail.com")[1])["id"]
+    banco.mudar_plano(ida, "interno")  # o padrão: só o plano interno monta (B segue no teste gratuito)
+    _, de_a = _videos_prontos(banco, ida, 2)
+    _, de_b = _videos_prontos(banco, idb, 1)
+    corpo = {"videos": de_a, "formato": "9:16", "transicao": "fade"}
+    r = b.post(f"{BASE}/api/montagens", json={**corpo, "videos": de_b * 2}, headers=PAGINA)
+    conferir(r.status_code == 403, "montagem: o teste gratuito não monta (403)", str(r.status_code))
+    r = a.post(f"{BASE}/api/montagens", json=corpo, headers={"Sec-Fetch-Site": "same-origin"})
+    conferir(r.status_code == 403, "montagem: CSRF sem o cabeçalho da página (403)", str(r.status_code))
+    r = a.post(f"{BASE}/api/montagens", json={**corpo, "videos": [de_a[0], de_b[0]]}, headers=PAGINA)
+    conferir(r.status_code == 422, "montagem com o vídeo de outra conta: 422 (IDOR)", str(r.status_code))
+    for texto in (
+        "[0:v]drawtext=text='x':fontfile=/etc/passwd",
+        "%{pts:hms}",
+        "x\\:y;[a]",
+        "a\x00b",
+        "{{7*7}}",
+        "<script>alert(1)</script>",
+        "x" * 41,
+        ["lista"],
+    ):
+        r = a.post(f"{BASE}/api/montagens", json={**corpo, "textos": {"titulo": texto}}, headers=PAGINA)
+        conferir(r.status_code == 422, f"montagem: texto que quebraria o ffmpeg ou o HTML ({str(texto)[:16]!r}): 422",
+                 f"{r.status_code} {r.text[:60]}")  # fmt: skip
+    for logo in (
+        {"tipo": "image/svg+xml", "bytes": 100},
+        {"tipo": "text/html", "bytes": 100},
+        {"tipo": "image/png", "bytes": 10**9},
+        {"tipo": "image/png", "bytes": -1},
+    ):
+        r = a.post(f"{BASE}/api/montagens", json={**corpo, "logo": logo}, headers=PAGINA)
+        conferir(r.status_code == 422, f"montagem: logo recusado ({logo['tipo']}, {logo['bytes']} bytes): 422",
+                 str(r.status_code))  # fmt: skip
+    r = a.post(f"{BASE}/api/montagens", json={**corpo, "logo": {"tipo": "image/png", "bytes": 1234}}, headers=PAGINA)
+    mid = r.json().get("montagem", "") if r.status_code == 200 else ""
+    envio = (r.json().get("envio") or {}).get("url", "") if r.status_code == 200 else ""
+    chave = envio.split("armazem.teste/")[-1].split("?")[0]
+    conferir(chave == f"entrada/{ida}/{mid}/logo-original.png", "montagem: o logo só sobe para a pasta da montagem",
+             chave)  # fmt: skip
+    r = b.post(f"{BASE}/api/montagens/{mid}/enviado", headers=PAGINA)
+    conferir(r.status_code == 404, "outra conta não confirma o logo da montagem alheia (IDOR)", str(r.status_code))
+    r = b.post(f"{BASE}/api/montagens/{mid}/excluir", headers=PAGINA)
+    conferir(r.status_code == 404, "outra conta não exclui a montagem alheia (IDOR)", str(r.status_code))
+    lista = b.get(f"{BASE}/api/montagens").json().get("itens", [])
+    conferir(all(x.get("id") != mid for x in lista), "a lista de montagens é só da própria conta")
+    for ruim in ("' OR 1=1--", "mon_%", "..%2f..%2f", "mon_" + "x" * 3000):
+        r = a.post(f"{BASE}/api/montagens/{ruim}/excluir", headers=PAGINA)
+        conferir(r.status_code in (404, 405, 414), f"id malicioso em /api/montagens/{ruim[:16]}: recusado",
+                 str(r.status_code))  # fmt: skip
+    for quem, nav in (("anônimo", anon), ("sessão de cliente", a)):
+        r = nav.get(f"{BASE}{PAINEL}/api/montagens")
+        conferir(r.status_code in (401, 403), f"painel das montagens com {quem}: recusado", str(r.status_code))
+
+
 def webhook(anon, mp, pid_mp):
     url = f"{BASE}/api/pagamentos/mercadopago?data.id={pid_mp}&type=payment"
     r = anon.post(url, json={"type": "payment", "data": {"id": pid_mp}})
@@ -860,6 +923,7 @@ def main() -> int:
         webhook(anon, mp, pid_mp)
         acessos_painel(adm)
         configuracoes(cfg, enviados, a, b)
+        montagem(cfg, a, b, anon)
         sessoes(enviados)
         limites(enviados)
     finally:

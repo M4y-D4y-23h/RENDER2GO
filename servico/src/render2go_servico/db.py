@@ -195,6 +195,18 @@ ESQUEMA = [
     """CREATE TABLE IF NOT EXISTS avaliacoes (
         lote_id TEXT PRIMARY KEY REFERENCES lotes(id), cliente_id TEXT NOT NULL REFERENCES clientes(id),
         nota INTEGER NOT NULL, quando DOUBLE PRECISION NOT NULL)""",
+    # montagem de vídeos (ADR 0015, 13/10/2026): 2 a 10 vídeos prontos da conta num MP4 só, feito pelo contêiner
+    # montador (ffmpeg em CPU). `pedido` (JSON): os vídeos (id, pedido, arquivo e duração de cada), o formato, a
+    # transição, os textos, a trilha e se há logo. O preço fica reservado no saldo livre desde a criação e é cobrado
+    # na conclusão "ok" (referência montagem:<id>). Sem chave estrangeira para jobs: o extrato fica depois da limpeza
+    """CREATE TABLE IF NOT EXISTS montagens (
+        id TEXT PRIMARY KEY, cliente_id TEXT NOT NULL REFERENCES clientes(id), status TEXT NOT NULL,
+        pedido TEXT NOT NULL, criado DOUBLE PRECISION NOT NULL, atualizado DOUBLE PRECISION NOT NULL, preco BIGINT,
+        logo_tipo TEXT, logo_bytes INTEGER, logo_filtro TEXT, logo_detalhe TEXT,
+        logo_tentativas INTEGER NOT NULL DEFAULT 0, tentativas INTEGER NOT NULL DEFAULT 0, worker TEXT,
+        lease_ate DOUBLE PRECISION, arquivo TEXT, bytes_video BIGINT, duracao DOUBLE PRECISION,
+        segundos DOUBLE PRECISION, erro TEXT, motivo TEXT, concluido_em DOUBLE PRECISION,
+        excluido_em DOUBLE PRECISION, ip TEXT)""",
 ]
 # índices: depois das colunas novas (um banco antigo ganha a coluna antes do índice que a usa)
 INDICES = [
@@ -232,6 +244,8 @@ INDICES = [
     "CREATE INDEX IF NOT EXISTS sessoes_admin ON sessoes (admin)",
     "CREATE INDEX IF NOT EXISTS avaliacoes_quando ON avaliacoes (quando)",
     "CREATE INDEX IF NOT EXISTS avaliacoes_cliente ON avaliacoes (cliente_id)",
+    "CREATE INDEX IF NOT EXISTS montagens_cliente ON montagens (cliente_id, criado)",
+    "CREATE INDEX IF NOT EXISTS montagens_status ON montagens (status, criado)",
 ]
 # vídeos já iniciados (ou prontos) de cada cliente nos pedidos em andamento: a vez na fila é por cliente
 INICIADOS_POR_CLIENTE = (
@@ -287,6 +301,7 @@ HISTORICO = (
     "fotos",
     "eventos",
     "avaliacoes",
+    "montagens",
     "lotes",
     "suporte",
     "geradores",
@@ -379,9 +394,17 @@ MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
 SESSAO_TIPOS = ("cliente", "admin", "mfa")
 COMANDOS = ("desligar_pod", "emergencia", "retomar")
-TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno", "video")
-# o que conta como gasto de um pedido: "pedido" (cobrado inteiro no envio) e "video" (ADR 0012)
-GASTO = "tipo IN ('pedido', 'video')"
+TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno", "video", "montagem")
+# o que conta como gasto de uma rodada: "pedido" (cobrado inteiro no envio), "video" (ADR 0012) e "montagem" (ADR 0015)
+GASTO = "tipo IN ('pedido', 'video', 'montagem')"
+# montagem de vídeos (ADR 0015): as que ainda não terminaram (o preço delas fica reservado no saldo livre)
+MONTAGEM_ABERTAS = ("aguardando_envio", "aguardando_logo", "pendente", "em_andamento")
+MONTAGEM_FINAIS = ("ok", "erro", "cancelado")
+MONTAGEM_TENTATIVAS = 3  # o montador caiu no meio: volta para a fila até aqui
+MONTAGEM_ENVIO_S = 3600  # o logo declarado tem 1 h para chegar
+MONTAGEM_LOGO_S = 24 * 3600  # e o analisador, 1 dia para avaliá-lo (fora do ar: a montagem fecha, sem custo)
+MONTAGEM_VIDEOS_DIAS = 7  # só vídeos prontos nos últimos 7 dias (a página mostra os mesmos)
+MOTIVO_LOGO = "o logo não pôde ser usado"
 RESOLUCAO = {"rapida": "480p", "alta": "720p"}  # qualidade do pedido → resolução (descrição no extrato)
 # lote que já passou do envio e não foi recusado: conta nos limites do teste gratuito
 ATIVO = "status NOT IN ('aguardando_envio', 'recusado')"
@@ -718,6 +741,12 @@ class Banco:
                     " WHERE l.cliente_id = ? AND f.prompt IS NOT NULL ORDER BY f.lote_id, f.nome",
                     (cliente_id,),
                 ),
+                # montagem de vídeos (ADR 0015): o que foi pedido (vídeos, textos, formato) e como terminou
+                "montagens": c.all(
+                    "SELECT id, status, pedido, criado, concluido_em, arquivo, duracao, preco, motivo, excluido_em, ip"
+                    " FROM montagens WHERE cliente_id = ? ORDER BY criado",
+                    (cliente_id,),
+                ),
                 "movimentos": c.all(
                     "SELECT quando, tipo, valor, lote_id, descricao FROM movimentos WHERE cliente_id = ?"
                     " ORDER BY quando",
@@ -754,6 +783,13 @@ class Banco:
             )
             if int(em_curso["n"]):
                 raise BancoError("há pedidos em andamento: espere terminar para excluir a conta")
+            montando = c.one(
+                f"SELECT COUNT(*) AS n FROM montagens WHERE cliente_id = ? AND status IN"
+                f" ({', '.join('?' * len(MONTAGEM_ABERTAS))})",
+                (cliente_id, *MONTAGEM_ABERTAS),
+            )
+            if int(montando["n"]):
+                raise BancoError("há montagens em andamento: espere terminar para excluir a conta")
             n = c.run(
                 "UPDATE clientes SET ativo = 0, excluido_em = ?, email = NULL, email_norm = NULL, nome = ?,"
                 " token_sha = ?, email_resumo = ?, primeiro_nome = NULL, ultimo_nome = NULL, gravatar = NULL,"
@@ -2003,14 +2039,19 @@ class Banco:
         return int(r["s"])
 
     def _reservado(self, c, cliente_id: str) -> int:
-        """Centavos dos vídeos cobrados por vídeo (ADR 0012) que estão num pod agora: saem do saldo livre até
-        a entrega (cobrados) ou a falha (liberados)."""
+        """Centavos dos vídeos cobrados por vídeo (ADR 0012) que estão num pod agora e das montagens que ainda não
+        terminaram (ADR 0015): saem do saldo livre até a entrega (cobrados) ou a falha (liberados)."""
         r = c.one(
             "SELECT COALESCE(SUM(l.preco_video), 0) AS r FROM jobs j JOIN lotes l ON l.id = j.lote_id"
             " WHERE l.cliente_id = ? AND l.cobranca = 'video' AND j.tipo = 'render' AND j.status = 'em_andamento'",
             (cliente_id,),
         )
-        return int(r["r"])
+        m = c.one(
+            "SELECT COALESCE(SUM(preco), 0) AS r FROM montagens WHERE cliente_id = ? AND preco IS NOT NULL"
+            f" AND status IN ({', '.join('?' * len(MONTAGEM_ABERTAS))})",
+            (cliente_id, *MONTAGEM_ABERTAS),
+        )
+        return int(r["r"]) + int(m["r"])
 
     def saldo_livre(self, cliente_id: str) -> int:
         """Saldo menos os vídeos em andamento dos pedidos cobrados por vídeo: o que paga o próximo vídeo."""
@@ -2073,11 +2114,13 @@ class Banco:
             )
 
     # extrato por rodada (cada pedido é uma rodada: cobrado, devolvido e o líquido), créditos e resumo
+    # (a montagem de vídeos, ADR 0015, é uma rodada própria: lote_id = o id da montagem, modelo "montagem")
     RODADAS = (
         "SELECT m.lote_id, MIN(m.quando) AS quando,"
-        " COALESCE(SUM(CASE WHEN m.tipo IN ('pedido', 'video') THEN -m.valor ELSE 0 END), 0) AS cobrado,"
+        " COALESCE(SUM(CASE WHEN m.tipo IN ('pedido', 'video', 'montagem') THEN -m.valor ELSE 0 END), 0) AS cobrado,"
         " COALESCE(SUM(CASE WHEN m.tipo = 'estorno' THEN m.valor ELSE 0 END), 0) AS devolvido,"
-        " MAX(m.modelo) AS modelo, MAX(CASE WHEN m.tipo IN ('pedido', 'video') THEN m.descricao END) AS descricao,"
+        " MAX(m.modelo) AS modelo,"
+        " MAX(CASE WHEN m.tipo IN ('pedido', 'video', 'montagem') THEN m.descricao END) AS descricao,"
         " SUM(CASE WHEN m.tipo = 'video' THEN 1 ELSE 0 END) AS videos_cobrados"
         # estornos chegam dias depois da cobrança, nunca 30: a janela de volta limita a leitura sem
         # perder a rodada que começou dentro do período
@@ -2095,7 +2138,7 @@ class Banco:
                 (cliente_id, desde - self.VOLTA_S, desde, antes, limite),
             )
             ids = [r["lote_id"] for r in linhas]
-            lotes = {}
+            lotes, montagens = {}, {}
             if ids:
                 lotes = {
                     lt["id"]: lt
@@ -2105,8 +2148,16 @@ class Banco:
                         tuple(ids),
                     )
                 }
+                montagens = {
+                    m["id"]: m
+                    for m in c.all(
+                        f"SELECT id, status, pedido, duracao FROM montagens WHERE id IN ({', '.join('?' * len(ids))})",
+                        tuple(ids),
+                    )
+                }
         for r in linhas:
             r["lote"] = lotes.get(r["lote_id"])
+            r["montagem"] = montagens.get(r["lote_id"])
         return linhas
 
     def extrato_resumo(self, cliente_id: str, desde: float) -> dict[str, Any]:
@@ -3413,6 +3464,256 @@ class Banco:
                 (final, agora, lote_id),
             )
             self.evento(c, lote_id, final, {"ok": int(r["ok"]), "total": int(r["total"])})
+
+    # -- montagem de vídeos (ADR 0015) ----------------------------------------------------------------------
+
+    def _videos_da_conta(self, c, cliente_id: str, ids: list[str], desde: float) -> dict[str, dict]:
+        """Os vídeos prontos (e não excluídos) da conta entre `ids`, prontos desde `desde`: id → pedido e arquivo."""
+        if not ids:
+            return {}
+        linhas = c.all(
+            "SELECT j.id, j.arquivo, j.lote_id, l.pedido FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+            f" WHERE j.id IN ({', '.join('?' * len(ids))}) AND l.cliente_id = ? AND j.tipo = 'render'"
+            " AND j.status = 'ok' AND j.excluido_em IS NULL AND j.atualizado >= ?",
+            (*ids, cliente_id, desde),
+        )
+        return {r["id"]: r for r in linhas}
+
+    def criar_montagem(
+        self,
+        cliente_id: str,
+        videos: list[str],
+        pedido: dict,
+        preco: int | None,
+        logo: dict | None = None,
+        ip: str | None = None,
+    ) -> dict:
+        """A montagem nova, conferida na mesma transação em que o preço fica reservado (a linha do cliente travada,
+        como na cobrança por vídeo, ADR 0012): os vídeos são desta conta, prontos, não excluídos e dos últimos
+        MONTAGEM_VIDEOS_DIAS dias, na ordem pedida. `logo` ({"tipo", "bytes", "ext"}): a montagem espera o envio
+        dele (aguardando_envio) e a análise (aguardando_logo); sem logo, vai direto para a fila (pendente).
+        SaldoInsuficiente se o saldo livre não paga o preço; BancoError se um vídeo não serve."""
+        agora = time.time()
+        with self.tx() as c:
+            self._travar_cliente(c, cliente_id)
+            achados = self._videos_da_conta(c, cliente_id, videos, agora - MONTAGEM_VIDEOS_DIAS * 86400)
+            if faltam := [v for v in videos if v not in achados]:
+                lista = ", ".join(faltam[:3])
+                raise BancoError(f"vídeo não encontrado, excluído ou com mais de {MONTAGEM_VIDEOS_DIAS} dias: {lista}")
+            itens = []
+            for v in videos:
+                d = achados[v]
+                duracao = int(json.loads(d["pedido"]).get("duracao") or 0)
+                itens.append({"job": v, "lote_id": d["lote_id"], "arquivo": d["arquivo"], "duracao": duracao})
+            if preco:
+                livre = self._saldo(c, cliente_id) - self._reservado(c, cliente_id)
+                if livre < preco:
+                    raise SaldoInsuficiente(preco, livre)
+            mid = novo_id("mon")
+            completo = {**pedido, "videos": itens, "logo": bool(logo)}
+            if logo:
+                completo["logo_ext"] = logo["ext"]
+            status = "aguardando_envio" if logo else "pendente"
+            c.run(
+                "INSERT INTO montagens (id, cliente_id, status, pedido, criado, atualizado, preco, logo_tipo,"
+                " logo_bytes, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (mid, cliente_id, status, json.dumps(completo, ensure_ascii=False), agora, agora, preco,
+                 (logo or {}).get("tipo"), (logo or {}).get("bytes"), ip),
+            )  # fmt: skip
+            return {"id": mid, "status": status, "pedido": completo, "criado": agora}
+
+    def montagem(self, mid: str, cliente_id: str | None = None) -> dict | None:
+        with self.tx() as c:
+            if cliente_id is None:
+                return c.one("SELECT * FROM montagens WHERE id = ?", (mid,))
+            return c.one("SELECT * FROM montagens WHERE id = ? AND cliente_id = ?", (mid, cliente_id))
+
+    def montagens(self, cliente_id: str, desde: float, limite: int = 50) -> list[dict]:
+        """As montagens da conta criadas desde `desde`, da mais recente para a mais antiga."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT * FROM montagens WHERE cliente_id = ? AND criado >= ? ORDER BY criado DESC, id LIMIT ?",
+                (cliente_id, desde, limite),
+            )
+
+    def montagens_abertas(self, cliente_id: str) -> int:
+        with self.tx() as c:
+            r = c.one(
+                f"SELECT COUNT(*) AS n FROM montagens WHERE cliente_id = ? AND status IN"
+                f" ({', '.join('?' * len(MONTAGEM_ABERTAS))})",
+                (cliente_id, *MONTAGEM_ABERTAS),
+            )
+        return int(r["n"])
+
+    def montagens_painel(self, limite: int = 100) -> list[dict]:
+        """As montagens mais recentes de todas as contas (painel, seção Montagens)."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT m.*, k.nome AS cliente_nome, k.email AS cliente_email, k.plano FROM montagens m"
+                " JOIN clientes k ON k.id = m.cliente_id ORDER BY m.criado DESC, m.id LIMIT ?",
+                (limite,),
+            )
+
+    def confirmar_logo(self, mid: str, cliente_id: str, tamanho: int | None) -> dict:
+        """O cliente terminou de enviar o logo: confere o tamanho no armazenamento (o mesmo declarado) e a montagem
+        passa a esperar o analisador. BancoError se não é dela, não espera o logo ou o arquivo não chegou inteiro."""
+        with self.tx() as c:
+            m = c.one(
+                "SELECT * FROM montagens WHERE id = ? AND cliente_id = ?" + (" FOR UPDATE" if self.pg else ""),
+                (mid, cliente_id),
+            )
+            if m is None:
+                raise BancoError("montagem não encontrada")
+            if m["status"] != "aguardando_envio":
+                raise BancoError("esta montagem não espera o envio do logo")
+            if tamanho != m["logo_bytes"]:
+                raise BancoError("o logo não chegou inteiro; envie de novo")
+            c.run("UPDATE montagens SET status = 'aguardando_logo', atualizado = ? WHERE id = ?", (time.time(), mid))
+            return {**m, "status": "aguardando_logo"}
+
+    def montagens_para_analisar(self, limite: int = 20) -> list[dict]:
+        """Logos que chegaram e esperam o analisador (filtro das fotos e regravação em PNG), o mais antigo primeiro."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT * FROM montagens WHERE status = 'aguardando_logo' AND logo_filtro IS NULL"
+                " ORDER BY criado, id LIMIT ?",
+                (limite,),
+            )
+
+    def tentar_logo(self, mid: str) -> int:
+        """Conta uma análise começada (antes de decodificar o logo): o logo que derruba o analisador não o trava."""
+        with self.tx() as c:
+            c.run("UPDATE montagens SET logo_tentativas = logo_tentativas + 1 WHERE id = ?", (mid,))
+            r = c.one("SELECT logo_tentativas FROM montagens WHERE id = ?", (mid,))
+        return int(r["logo_tentativas"]) if r else 0
+
+    def salvar_logo(self, mid: str, filtro: str, detalhe: dict) -> dict | None:
+        """O resultado do analisador: "ok" (o PNG regravado já está no armazenamento) põe a montagem na fila; "recusada"
+        ou "invalida" a fecham em erro, sem custo (o cliente vê só que o logo não pôde ser usado)."""
+        if filtro not in FILTROS_FOTO:
+            raise BancoError(f"resultado do filtro inválido: {filtro}")
+        agora = time.time()
+        with self.tx() as c:
+            m = c.one("SELECT * FROM montagens WHERE id = ? AND status = 'aguardando_logo'", (mid,))
+            if m is None:
+                return None
+            if filtro == "ok":
+                status, erro, motivo, fim = "pendente", None, None, None
+            else:
+                status, erro, motivo, fim = "erro", erro_da_foto(filtro, detalhe), MOTIVO_LOGO, agora
+            c.run(
+                "UPDATE montagens SET logo_filtro = ?, logo_detalhe = ?, status = ?, erro = ?, motivo = ?,"
+                " concluido_em = ?, atualizado = ? WHERE id = ?",
+                (filtro, json.dumps(detalhe, ensure_ascii=False), status, erro, motivo, fim, agora, mid),
+            )
+            return {**m, "status": status}
+
+    def _fim_montagem(self, c, mid: str, status: str, erro: str | None, motivo: str | None, agora: float) -> None:
+        c.run(
+            "UPDATE montagens SET status = ?, erro = ?, motivo = ?, worker = NULL, lease_ate = NULL, concluido_em = ?,"
+            " atualizado = ? WHERE id = ?",
+            (status, erro, motivo, agora, agora, mid),
+        )
+
+    def _vencer_montagens(self, c, agora: float) -> list[dict]:
+        """O que ficou parado: o montador que caiu (o prazo venceu) devolve a montagem à fila, até
+        MONTAGEM_TENTATIVAS; o logo que não chegou em 1 h cancela a montagem; o que o analisador não avaliou em 1 dia
+        a fecha em erro. Nada disso é cobrado. Devolve as montagens que fecharam (o logo delas sai do armazenamento)."""
+        fechadas = []
+        for m in c.all(
+            "SELECT * FROM montagens WHERE (status = 'em_andamento' AND lease_ate < ?)"
+            " OR (status = 'aguardando_envio' AND criado < ?) OR (status = 'aguardando_logo' AND atualizado < ?)",
+            (agora, agora - MONTAGEM_ENVIO_S, agora - MONTAGEM_LOGO_S),
+        ):
+            if m["status"] == "em_andamento" and m["tentativas"] < MONTAGEM_TENTATIVAS:
+                c.run(
+                    "UPDATE montagens SET status = 'pendente', worker = NULL, lease_ate = NULL, atualizado = ?"
+                    " WHERE id = ?",
+                    (agora, m["id"]),
+                )
+                continue
+            if m["status"] == "em_andamento":
+                erro, motivo, status = f"a montagem não terminou em {m['tentativas']} tentativas", None, "erro"
+            elif m["status"] == "aguardando_envio":
+                erro, motivo, status = "o logo não chegou em 1 h", "o logo não chegou", "cancelado"
+            else:
+                erro, motivo, status = "o analisador não avaliou o logo em 1 dia", None, "erro"
+            self._fim_montagem(c, m["id"], status, erro, motivo, agora)
+            fechadas.append({**m, "status": status})
+        return fechadas
+
+    def vencer_montagens(self) -> list[dict]:
+        with self.tx() as c:
+            return self._vencer_montagens(c, time.time())
+
+    def reivindicar_montagem(self, worker: str, lease_s: float) -> dict | None:
+        """A próxima montagem da fila (a mais antiga), com os vídeos dela conferidos de novo (a conta pode ter
+        excluído um enquanto ela esperava: fecha em erro, sem custo, e vai a próxima). O preço já está reservado."""
+        agora = time.time()
+        trava = " FOR UPDATE SKIP LOCKED" if self.pg else ""
+        with self.tx() as c:
+            self._vencer_montagens(c, agora)
+            while True:
+                m = c.one("SELECT * FROM montagens WHERE status = 'pendente' ORDER BY criado, id LIMIT 1" + trava)
+                if m is None:
+                    return None
+                pedido = json.loads(m["pedido"])
+                ids = [v["job"] for v in pedido["videos"]]
+                if len(self._videos_da_conta(c, m["cliente_id"], ids, 0)) != len(set(ids)):
+                    self._fim_montagem(
+                        c, m["id"], "erro", "um dos vídeos foi excluído antes da montagem",
+                        "um dos vídeos escolhidos foi excluído", agora,
+                    )  # fmt: skip
+                    continue
+                c.run(
+                    "UPDATE montagens SET status = 'em_andamento', worker = ?, lease_ate = ?,"
+                    " tentativas = tentativas + 1, atualizado = ? WHERE id = ?",
+                    (worker, agora + lease_s, agora, m["id"]),
+                )
+                return {**m, "status": "em_andamento", "worker": worker, "tentativas": m["tentativas"] + 1,
+                        "videos": pedido["videos"]}  # fmt: skip
+
+    def concluir_montagem(self, mid: str, worker: str, status: str, **campos: Any) -> dict:
+        """O montador terminou: "ok" (a saída já está no armazenamento) cobra o preço reservado, uma vez só
+        (referência montagem:<id>); "erro" libera a reserva, sem custo. `motivo`: o que o cliente vê."""
+        if status not in ("ok", "erro"):
+            raise BancoError(f"status inválido: {status}")
+        agora = time.time()
+        with self.tx() as c:
+            m = c.one("SELECT * FROM montagens WHERE id = ?" + (" FOR UPDATE" if self.pg else ""), (mid,))
+            if m is None or m["worker"] != worker or m["status"] != "em_andamento":
+                raise BancoError("montagem não está com este montador")
+            c.run(
+                "UPDATE montagens SET status = ?, arquivo = ?, bytes_video = ?, duracao = ?, segundos = ?, erro = ?,"
+                " motivo = ?, lease_ate = NULL, concluido_em = ?, atualizado = ? WHERE id = ?",
+                (status, campos.get("arquivo"), campos.get("bytes_video"), campos.get("duracao"),
+                 campos.get("segundos"), campos.get("erro"),
+                 None if status == "ok" else (campos.get("motivo") or "a montagem não pôde ser feita"), agora, agora,
+                 mid),
+            )  # fmt: skip
+            if status == "ok" and m["preco"]:
+                pedido = json.loads(m["pedido"])
+                self._travar_cliente(c, m["cliente_id"])
+                self._movimento(
+                    c, m["cliente_id"], "montagem", -int(m["preco"]), f"montagem:{mid}", lote_id=mid,
+                    descricao=f"montagem de {len(pedido['videos'])} vídeo(s) em {pedido['formato']}"
+                    f" ({campos.get('arquivo')})",
+                    modelo="montagem",
+                )  # fmt: skip
+            return {**m, "status": status}
+
+    def excluir_montagem(self, mid: str, cliente_id: str) -> dict | None:
+        """O cliente exclui uma montagem pronta (o arquivo sai do armazenamento na API); None se não é dela, não está
+        pronta ou já foi excluída."""
+        with self.tx() as c:
+            m = c.one(
+                "SELECT * FROM montagens WHERE id = ? AND cliente_id = ? AND status = 'ok' AND excluido_em IS NULL",
+                (mid, cliente_id),
+            )
+            if m is None:
+                return None
+            c.run("UPDATE montagens SET excluido_em = ? WHERE id = ?", (time.time(), mid))
+            return m
 
     # -- limpeza do histórico ---------------------------------------------------------------
 

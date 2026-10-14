@@ -19,6 +19,11 @@ from __future__ import annotations
 
 PADRAO = "wan2.2-i2v"
 FINALIDADE_PADRAO = "imagem-video"
+# montagem de vídeos (ADR 0015): não é um modelo de IA (ffmpeg em CPU, no servidor), mas tem a própria rodada no
+# extrato (movimentos.modelo = "montagem")
+MONTAGEM = "montagem"
+INFO_MONTAGEM = {"id": MONTAGEM, "nome": "Montagem", "finalidade": MONTAGEM, "titulo": "Montagem de vídeos",
+                 "tipo": "Edição de vídeo (sem IA)"}  # fmt: skip
 
 MODELOS = [
     {
@@ -210,6 +215,8 @@ RECURSOS = {
     "recurso:indicacao": {"titulo": "Ganhos por indicação", "tipo": "Perfil"},
     "recurso:nome-usuario": {"titulo": "Nome de usuário", "tipo": "Perfil"},
     "recurso:telefone": {"titulo": "Telefone na conta", "tipo": "Configurações"},
+    # montagem de vídeos (ADR 0015): "Tenho interesse" de quem ainda não pode usar (RENDER2GO_MONTAGEM)
+    "recurso:montagem": {"titulo": "Montagem de vídeos", "tipo": "Área do cliente"},
 }
 
 
@@ -234,6 +241,8 @@ def info(modelo_id: str | None) -> dict:
     """Nome do modelo e o tipo de geração dele (extrato e logs): {id, nome, finalidade, titulo, tipo}.
     Modelo que saiu do catálogo aparece pelo id, sem tipo."""
     mid = modelo_id or PADRAO
+    if mid == MONTAGEM:
+        return dict(INFO_MONTAGEM)
     m = next((m for m in MODELOS if m["id"] == mid), None)
     f = next((f for f in FINALIDADES if m and f["id"] == m["finalidade"]), None)
     return {

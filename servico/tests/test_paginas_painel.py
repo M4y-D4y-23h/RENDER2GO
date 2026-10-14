@@ -36,6 +36,7 @@ DADOS = {
     "visao-geral": "resumo",
     "revisao": "lotes",
     "historico": "historico?grupo=todos",
+    "montagens": "montagens",
     "clientes": "clientes",
     "suporte": "suporte",
     "interesses": "interesses",
@@ -210,7 +211,7 @@ def test_the_operator_sees_only_what_the_role_opens(ambiente, navegador):  # noq
     pw.expect(pg.locator("#quem-nome")).to_have_text("maria.revisora")
     pw.expect(pg.locator("#quem-papel")).to_have_text("Operador")
     visiveis = pg.locator("#menu-painel a[data-secao]:visible").evaluate_all("(a) => a.map((x) => x.dataset.secao)")
-    assert visiveis == ["visao-geral", "revisao", "historico", "clientes", "suporte", "interesses", "pods"]
+    assert visiveis == ["visao-geral", "revisao", "historico", "montagens", "clientes", "suporte", "interesses", "pods"]
     assert pg.locator("#menu-painel .grupo:visible").count() == 4  # o grupo "Segurança" inteiro sai
     # visão geral: sem dinheiro e sem os Pix pendentes
     pw.expect(pg.locator("#resumo-hoje")).not_to_contain_text("Cobrado")

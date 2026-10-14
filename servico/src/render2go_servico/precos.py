@@ -57,3 +57,33 @@ PRECOS = {
 
 def preco_video(qualidade: str, duracao: int) -> int:
     return PRECOS[qualidade] * duracao
+
+
+# montagem de vídeos (ADR 0015, 13/10/2026): quem usa e quanto custa, pelo .env
+#   RENDER2GO_MONTAGEM        desligada | interno (padrão: só o plano interno, sem custo) | todos (também o pago)
+#   RENDER2GO_PRECO_MONTAGEM  reais por montagem pronta (docs/11); sem ele, o plano pago não usa nem com "todos"
+MODOS_MONTAGEM = ("desligada", "interno", "todos")
+
+
+def montagem_do_ambiente() -> tuple[str, int | None]:
+    """(modo, preço em centavos ou None). ValueError fora do formato (a API não sobe com o .env errado)."""
+    modo = os.environ.get("RENDER2GO_MONTAGEM", "").strip().lower() or "interno"
+    if modo not in MODOS_MONTAGEM:
+        raise ValueError(f"RENDER2GO_MONTAGEM: {', '.join(MODOS_MONTAGEM)}")
+    bruto = os.environ.get("RENDER2GO_PRECO_MONTAGEM", "").strip()
+    preco = centavos(bruto) if bruto else None
+    if preco is not None and preco <= 0:
+        raise ValueError("RENDER2GO_PRECO_MONTAGEM precisa ser maior que zero")
+    return modo, preco
+
+
+def acesso_montagem(modo: str, preco: int | None, plano: str) -> tuple[bool, int | None]:
+    """(a conta pode montar, o preço que paga por montagem pronta; None = sem custo). O plano interno monta sem
+    custo (com o modo "interno" ou "todos"); o pago, só com "todos" e o preço definido; o teste gratuito, nunca."""
+    if modo == "desligada":
+        return False, None
+    if plano == "interno":
+        return True, None
+    if plano in PLANOS_COBRADOS and modo == "todos" and preco:
+        return True, preco
+    return False, None

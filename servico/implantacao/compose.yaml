@@ -1,5 +1,5 @@
 # Serviço Render2Go num servidor só (docs/09-implantacao.md):
-#   API + páginas, análise das fotos, orquestrador de pods, Postgres e Caddy (HTTPS automático).
+#   API + páginas, análise das fotos, montagem de vídeos, orquestrador de pods, Postgres e Caddy (HTTPS automático).
 # Uso: cp exemplo.env .env; edite; docker compose up -d --build
 # Endurecimento (docs/13): cada contêiner só com os segredos que usa, sem privilégios extras,
 # sistema de arquivos só de leitura (escrita só em /tmp e nos volumes) e logs com tamanho limitado.
@@ -64,6 +64,29 @@ services:
         - python
         - -c
         - "import os,sys,time; sys.exit(time.time() - os.path.getmtime('/tmp/render2go-analisador-vivo') > 600)"
+      interval: 60s
+      timeout: 5s
+      start_period: 60s
+
+  montador:
+    <<: *processo
+    command: ["render2go-servico", "montar"]
+    # montagem de vídeos (ADR 0015): o ffmpeg em CPU, fora da API, uma montagem por vez. Com memória e CPU
+    # limitadas, uma montagem pesada derruba só ele (que volta sozinho) e nunca tira a CPU da API (o servidor tem
+    # 2 vCPU e 4 GB). O /tmp guarda os vídeos de entrada e a saída de uma montagem (até ~100 MB) e conta na memória
+    mem_limit: 768m
+    cpus: 1.0
+    tmpfs: ["/tmp:size=384m,mode=1777"]
+    environment:
+      <<: [*banco, *sem-segredos-da-api]
+      RUNPOD_API_KEY: ""
+      RENDER2GO_SEGREDO_APROVACAO: ""
+    healthcheck: # sem porta HTTP: saudável = o laço deu uma volta nos últimos 20 min (uma montagem leva até 15)
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,sys,time; sys.exit(time.time() - os.path.getmtime('/tmp/render2go-montador-vivo') > 1200)"
       interval: 60s
       timeout: 5s
       start_period: 60s

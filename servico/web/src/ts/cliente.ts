@@ -1,6 +1,6 @@
 // Página do cliente: a apresentação com a entrada (quem não entrou) e a área da conta (quem entrou), com o menu
-// lateral e uma tela por endereço: Pedidos (/), Modelos de IA, Extratos, Logs, Perfil, Configurações, Projetos e
-// Mix (em breve). A mesma página serve todos esses endereços (a API, com noindex): o inicio.js marca a tela antes
+// lateral e uma tela por endereço: Pedidos (/), Modelos de IA, Montagem, Extratos, Logs, Perfil, Configurações,
+// Projetos e Mix (em breve). A mesma página serve todos esses endereços (a API, com noindex): o inicio.js marca a tela antes
 // do primeiro quadro, e cada tela pede à API só o que mostra, quando abre.
 import { CHAVE_CONECTADO, ErroApi, aviso, avisoComRecarga, el, marcarConectado, textoErro } from "./comum";
 import { pedirAceite } from "./confirmacao";
@@ -13,6 +13,7 @@ import { criarExtratos } from "./extratos";
 import { criarLogs } from "./logs";
 import { criarModelosIA } from "./modelosia";
 import { type NomeTela, iniciarMoldura } from "./moldura";
+import { criarMontagem } from "./montagem";
 import { criarPedidos } from "./pedidos";
 import { criarPerfil } from "./perfil";
 import { abrirPix } from "./pix";
@@ -62,6 +63,7 @@ function iniciarCliente(): void {
       void pedidos.usarFinalidade(id);
     },
   });
+  const montagem = criarMontagem({ erro });
   const extratos = criarExtratos({ pix, erro });
   const logs = criarLogs({ erro });
   const perfil = criarPerfil();
@@ -71,6 +73,7 @@ function iniciarCliente(): void {
   const telas: Record<NomeTela, () => unknown> = {
     pedidos: () => pedidos.abrir(),
     modelos: () => modelos.abrir(),
+    montagem: () => montagem.abrir(),
     extratos: () => extratos.abrir(),
     logs: () => logs.abrir(),
     perfil: () => perfil.abrir(),

@@ -1,6 +1,6 @@
 // Painel: revisão dos pedidos (nada vai para a GPU sem aprovação; ADR 0004) e o histórico, com o uso por IP e
 // por dispositivo. No pedido em sequência, cada foto com texto próprio mostra esse texto embaixo da miniatura.
-import { ESTADOS, NOTAS_SATISFACAO, anunciar, api, aviso, baixarJson, confirmar, criar, curto, dialogo, el, icone, marcarErro, ocupado, plural, quando, reconciliar, rotular, tempo, textoErro, urlSegura, vazio } from "./comum";
+import { ESTADOS, NOTAS_SATISFACAO, anunciar, api, aviso, baixarJson, confirmar, criar, curto, dialogo, el, icone, marcarErro, ocupado, plural, quando, reais, reconciliar, rotular, tempo, textoErro, urlSegura, vazio } from "./comum";
 import { type Controle, controle, erroDeAcao, erroDeCarga, iniciarAbas, pode, semLinhas, tabela, tempoCurto, trocar } from "./painel-base";
 
 // análise automática de cada foto (render2go_servico/pessoas.py); null = ainda analisando
@@ -648,4 +648,96 @@ export function criarHistorico(): Controle {
       .finally(() => lista.setAttribute("aria-busy", "false"));
   });
   return c;
+}
+
+// -- montagens (ADR 0015) ----------------------------------------------------------------------------------------
+
+type MontagemPainel = {
+  id: string;
+  cliente: string;
+  cliente_nome: string;
+  plano: string;
+  status: string;
+  criado: number;
+  concluido_em: number | null;
+  formato: string;
+  transicao: string;
+  videos: number;
+  textos: Record<string, string>;
+  trilha: string | null;
+  logo: boolean;
+  logo_filtro: string | null;
+  logo_nota: number | null;
+  logo_nota_alta: number | null;
+  duracao: number | null;
+  segundos: number | null;
+  bytes: number | null;
+  preco: number | null;
+  tentativas: number;
+  erro: string | null;
+  motivo: string | null;
+  excluido: boolean;
+};
+
+const ESTADOS_MONTAGEM: Record<string, string> = {
+  aguardando_envio: "Esperando o logo",
+  aguardando_logo: "Logo no analisador",
+  pendente: "Na fila",
+  em_andamento: "Montando",
+  ok: "Pronta",
+  erro: "Não saiu",
+  cancelado: "Cancelada",
+};
+const MODOS_MONTAGEM: Record<string, string> = {
+  desligada: "ninguém (desligada)",
+  interno: "só o plano interno",
+  todos: "plano interno e plano pago",
+};
+
+/** Montagens de todas as contas: o que foi pedido e como terminou (o operador também vê; nenhum vídeo aqui). */
+export function criarMontagens(): Controle {
+  const carregar = async () => {
+    const r = await api<{ itens: MontagemPainel[]; modo: string; preco: number | null; montador_visto_s: number | null }>("api/montagens");
+    const montador = r.montador_visto_s == null ? "sem sinal ainda" : `último sinal há ${Math.round(r.montador_visto_s)} s`;
+    const estado = criar("p", {
+      className: "fraco nota-tabela",
+      textContent: `Quem monta: ${MODOS_MONTAGEM[r.modo] ?? r.modo}. Preço por montagem pronta: ${r.preco == null ? "não definido" : reais(r.preco)}. Montador: ${montador}.`,
+    });
+    const linhas = r.itens.map((m) => {
+      const textos = ["titulo", "preco", "chamada"].map((k) => m.textos[k]).filter(Boolean).join(" · ");
+      const logo = !m.logo ? "—" : m.logo_filtro ? `${m.logo_filtro}${m.logo_nota != null ? ` (${m.logo_nota.toFixed(2)})` : ""}` : "esperando";
+      const fim = m.status === "ok" ? (m.excluido ? "excluída pelo cliente" : "—") : [m.motivo, m.erro].filter(Boolean).join(" · ") || "—";
+      return {
+        celulas: [
+          tempoCurto(m.criado),
+          `${m.cliente_nome} (${m.plano})`,
+          ESTADOS_MONTAGEM[m.status] ?? m.status,
+          m.videos,
+          `${m.formato} · ${m.transicao}`,
+          textos || "—",
+          logo,
+          m.duracao == null ? null : `${Math.round(m.duracao)} s`,
+          m.segundos == null ? null : `${m.segundos.toFixed(1)} s`,
+          m.preco == null ? "sem custo" : reais(m.preco),
+          fim,
+        ],
+        classe: m.status === "erro" ? "sinal" : "",
+      };
+    });
+    trocar(
+      el("montagens-tabela"),
+      [
+        estado,
+        linhas.length
+          ? tabela(
+              [["Pedida", false], ["Conta", false], ["Situação", false], ["Vídeos", true], ["Formato", false], ["Textos", false], ["Logo (filtro)", false], ["Duração", true], ["ffmpeg", true], ["Preço", true], ["Motivo ou erro", false]],
+              linhas,
+              "Montagens",
+            )
+          : semLinhas("Nenhuma montagem ainda."),
+      ],
+      JSON.stringify(r),
+    );
+  };
+  return controle({ regiao: el("montagens-tabela"), ocupado: el("montagens-dados"), carregar });
 }
