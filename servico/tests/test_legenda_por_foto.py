@@ -132,8 +132,11 @@ def test_the_pod_count_never_counts_a_photo_translation_as_one_more_video(banco)
     _aprovar(banco, com)
     _, sem = _criar(banco, n=3)
     _aprovar(banco, sem, legenda_ligada=False)
-    pendentes = {t["lote_id"]: int(t["pendentes"]) for t in banco.trabalho()}
-    assert pendentes == {com: 4, sem: 4}  # a tradução do pedido e os 3 vídeos, nos dois
+    trabalho = banco.trabalho()
+    pendentes = {t["lote_id"]: int(t["pendentes"]) for t in trabalho}
+    traducoes = {t["lote_id"]: int(t["traducoes"]) for t in trabalho}
+    # os 3 vídeos e, à parte (14/10/2026: render2go_servico.capacidade), só a tradução do pedido, nos dois
+    assert pendentes == {com: 3, sem: 3} and traducoes == {com: 1, sem: 1}
 
 
 def test_the_photo_translation_waits_for_the_photo_filter_and_a_refused_photo_cancels_it(banco):

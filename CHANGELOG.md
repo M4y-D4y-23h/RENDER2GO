@@ -2,6 +2,17 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 14/10/2026 (6): capacidade da fila pelo trabalho real, métricas por etapa, ociosidade explícita e simulação
+
+Motivo: a revisão de 14/10/2026, Etapa 3. Branch `claude/magical-lamport-4rrms9`; nada publicado; **o padrão de ociosidade continua 180 s**. Detalhes: [`docs/15`](docs/15-ciclo-de-vida-desperdicio-e-qualidade.md), seção 3.
+
+- **Capacidade** (`render2go_servico.capacidade`): a tradução conta 60 s, não um vídeo (o `Banco.trabalho` a somava nos pendentes); o vídeo em andamento conta o que falta (`jobs.gpu_em`), com piso; o tempo por vídeo vem do histórico por GPU, qualidade e duração (≥ 5 amostras, dentro de 0,5–2× a tabela); os pods ligados contam pela velocidade da GPU. Ordem da fila, justiça, saldo, filtro e aprovação não mudam.
+- **Métricas:** `jobs.etapas` (segundos por etapa, só números), tipo de subida, resposta do agente e versão por pod; rota `GET <painel>/api/metricas` (só o dono; p50 e, com n ≥ 20, p95; nada do cliente).
+- **Memória dos datacenters:** gravação com trava e atômica; uma medida ruim tira o datacenter por 6 h (eram 7 dias); duas na semana, por 7 dias; uma boa devolve.
+- **Ociosidade:** `PoliticaOciosidade` explícita (fixa 180 s por padrão); histerese opcional e desligada (`RENDER2GO_POD_OCIOSO_LONGO_MIN`).
+- **Simulação** (`python -m render2go_servico.simulacao`; **não é medição**; `worker/evals/simulacao-2026-10-14/`): 60 s custa 7–17% menos que 180 s nas premissas, com pedidos espaçados piorando o pedido inteiro em ~10%; a entrega nova zera o render refeito com envio instável; a capacidade nova é mais barata, mas mais lenta num caso (720p chegando junto). Decisão sobre 60 s fica para depois da medição real.
+- **Testes:** `servico/tests/test_capacidade.py` (SQLite e Postgres) e a memória dos datacenters em `worker/tests/test_ciclo_de_vida.py`.
+
 ## 14/10/2026 (5): o mesmo vídeo aprovado até a confirmação, tentativa de cada job e prazo único (ADR 0017, proposto)
 
 Motivo: a revisão de 14/10/2026, Etapa 2 (evitar geração desperdiçada). Branch `claude/magical-lamport-4rrms9`; nada publicado. Detalhes: [`docs/15`](docs/15-ciclo-de-vida-desperdicio-e-qualidade.md), seção 2, e [ADR 0017](docs/adr/0017-tentativa-e-entrega-sem-desperdicio.md).

@@ -412,6 +412,15 @@ COLUNAS_NOVAS = [
     ("jobs", "conclusao_status", "TEXT"),
     ("jobs", "sha256_video", "TEXT"),
     ("jobs", "falhas_envio", "INTEGER"),  # tentativas devolvidas por falha de envio (o vídeo estava certo)
+    ("jobs", "gpu_em", "DOUBLE PRECISION"),  # o vídeo pego adiantado foi para a GPU (`iniciar`): capacidade da fila
+    # durações de cada etapa no pod (JSON, só números: preparo, espera_gpu, gpu, render, conferencia, filtro, envio,
+    # total), para as métricas por GPU, resolução e duração (docs/15, seção 3); nada do pedido nem da foto
+    ("jobs", "etapas", "TEXT"),
+    # a subida do pod (14/10/2026): "fria" (criado do zero) ou "retomada" (hibernado, ADR 0011), quando o agente
+    # respondeu e a versão do ambiente e dos modelos (lote_nuvem.versao_hibernacao): as métricas separam por elas
+    ("geradores", "subida_tipo", "TEXT"),
+    ("geradores", "agente_em", "DOUBLE PRECISION"),
+    ("geradores", "versao", "TEXT"),
 ]
 MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
@@ -2847,6 +2856,109 @@ class Banco:
             },
         }
 
+    def gerador_subida(
+        self, gid: str, tipo: str | None = None, agente: bool = False, versao: str | None = None
+    ) -> None:
+        """Como o pod subiu (métricas, 14/10/2026): o tipo (fria ou retomada), quando o agente respondeu, a versão."""
+        with self.tx() as c:
+            if tipo:
+                c.run("UPDATE geradores SET subida_tipo = ?, versao = ? WHERE id = ?", (tipo, versao, gid))
+            if agente:
+                c.run("UPDATE geradores SET agente_em = ? WHERE id = ? AND agente_em IS NULL", (time.time(), gid))
+
+    def tempos_por_video(self, desde: float, limite: int = 5000) -> dict[tuple[str, str, int], list[float]]:
+        """Segundos de pod por vídeo entregue (jobs.segundos), por GPU, qualidade e duração, desde `desde`: o
+        histórico que a capacidade da fila usa (render2go_servico.capacidade.Tempos), os mais recentes primeiro."""
+        with self.tx() as c:
+            linhas = c.all(
+                "SELECT j.id, j.segundos, l.pedido, (SELECT g.gpu FROM geradores g WHERE g.worker = j.worker"
+                " ORDER BY g.criado DESC LIMIT 1) AS gpu FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                " WHERE j.tipo = 'render' AND j.status = 'ok' AND j.segundos IS NOT NULL AND j.atualizado >= ?"
+                " ORDER BY j.atualizado DESC LIMIT ?",
+                (desde, limite),
+            )
+        out: dict[tuple[str, str, int], list[float]] = {}
+        for r in linhas:
+            if not r["gpu"]:
+                continue
+            p = json.loads(r["pedido"])
+            if not p.get("duracao"):
+                continue
+            chave = (r["gpu"], p.get("qualidade") or "rapida", int(p["duracao"]))
+            out.setdefault(chave, []).append(float(r["segundos"]))
+        return out
+
+    def metricas(self, desde: float) -> dict[str, Any]:
+        """Métricas do painel (14/10/2026; docs/15, seção 3), sem nada do pedido, da foto ou do cliente:
+        - por GPU, datacenter e tipo de subida: subidas (da criação do pod ao 1º vídeo; até o agente), n, p50, p95;
+        - por GPU, resolução e duração: as etapas de cada vídeo entregue (fila, render, conferência, filtro,
+          envio, total), n, p50, p95; as tentativas a mais e as falhas de envio (vídeo certo que voltou);
+        - custo por vídeo entregue (relatório de GPUs).
+        Com poucas amostras, o p95 não diz muito: `n` vai junto e o p95 só aparece com n ≥ 20."""
+
+        def resumo(v: list[float]) -> dict[str, Any]:
+            v = sorted(x for x in v if x is not None)
+            if not v:
+                return {"n": 0}
+            r = {"n": len(v), "p50": round(statistics.median(v), 1)}
+            if len(v) >= 20:
+                r["p95"] = round(v[min(len(v) - 1, int(0.95 * len(v)))], 1)
+            return r
+
+        with self.tx() as c:
+            pods = c.all(
+                "SELECT gpu, datacentro, subida_tipo, versao, pod_criado_em, agente_em, primeiro_video_em"
+                " FROM geradores WHERE criado >= ? AND pod_criado_em IS NOT NULL",
+                (desde,),
+            )
+            jobs = c.all(
+                "SELECT j.etapas, j.tentativas, j.falhas_envio, j.tentativa_em, j.criado, l.pedido,"
+                " (SELECT g.gpu FROM geradores g WHERE g.worker = j.worker ORDER BY g.criado DESC LIMIT 1) AS gpu"
+                " FROM jobs j JOIN lotes l ON l.id = j.lote_id WHERE j.tipo = 'render' AND j.status = 'ok'"
+                " AND j.atualizado >= ?",
+                (desde,),
+            )
+        subidas: dict[str, dict[str, list[float]]] = {}
+        for g in pods:
+            k = f"{g['gpu'] or '?'} | {g['datacentro'] or '?'} | {g['subida_tipo'] or '?'}"
+            d = subidas.setdefault(k, {"primeiro_video_s": [], "agente_s": []})
+            if g["primeiro_video_em"]:
+                d["primeiro_video_s"].append(float(g["primeiro_video_em"]) - float(g["pod_criado_em"]))
+            if g["agente_em"]:
+                d["agente_s"].append(float(g["agente_em"]) - float(g["pod_criado_em"]))
+        videos: dict[str, dict[str, Any]] = {}
+        for j in jobs:
+            p = json.loads(j["pedido"])
+            k = f"{j['gpu'] or '?'} | {RESOLUCAO.get(p.get('qualidade'), p.get('qualidade'))} | {p.get('duracao')} s"
+            d = videos.setdefault(k, {"etapas": {}, "tentativas_a_mais": 0, "falhas_envio": 0, "n": 0})
+            d["n"] += 1
+            d["tentativas_a_mais"] += max(0, int(j["tentativas"] or 1) - 1)
+            d["falhas_envio"] += int(j["falhas_envio"] or 0)
+            if j["tentativa_em"]:
+                d["etapas"].setdefault("fila", []).append(float(j["tentativa_em"]) - float(j["criado"]))
+            try:
+                etapas = json.loads(j["etapas"]) if j["etapas"] else {}
+            except ValueError:
+                etapas = {}
+            for nome, v in etapas.items():
+                if isinstance(v, int | float):
+                    d["etapas"].setdefault(nome, []).append(float(v))
+        rel = self.relatorio_geradores(desde)["totais"]
+        return {
+            "desde": desde,
+            "subidas": {k: {n: resumo(v) for n, v in d.items()} for k, d in sorted(subidas.items())},
+            "videos": {
+                k: {
+                    **{x: d[x] for x in ("n", "tentativas_a_mais", "falhas_envio")},
+                    "etapas": {n: resumo(v) for n, v in sorted(d["etapas"].items())},
+                }
+                for k, d in sorted(videos.items())
+            },  # fmt: skip
+            "custo_por_video_usd": rel["custo_por_video_usd"],
+            "custo_usd": rel["custo_usd"],
+            "videos_ok": rel["videos_ok"],
+        }
+
     def gerador_pronto(self, gid: str, worker: str, gpu: str | None, usd_h: float | None) -> None:
         with self.tx() as c:
             c.run(
@@ -3277,7 +3389,7 @@ class Banco:
             c.run(
                 "UPDATE jobs SET status = 'em_andamento', worker = ?, lease_ate = ?, tentativas = tentativas + 1,"
                 " atualizado = ?, tentativa_id = ?, tentativa_em = ?, prazo_tentativa = ?, progresso = NULL,"
-                " progresso_em = ? WHERE id = ?",
+                " progresso_em = ?, gpu_em = NULL WHERE id = ?",
                 (worker, min(agora + lease_s, prazo), agora, tentativa, agora, prazo, agora, job["id"]),
             )
             if job["tipo"] == "render":  # fim da subida deste pod (previsão para o cliente)
@@ -3344,7 +3456,8 @@ class Banco:
                 "UPDATE jobs SET status = ?, segundos = ?, aviso = ?, erro = ?, similaridade = ?, bytes_video = ?,"
                 " deriva_cor = ?, salto_cor = ?, seed = ?, atualizado = ?, lease_ate = NULL, nsfw = ?, nsfw_alto = ?,"
                 " barrado_em = ?, quarentena_em = ?, conclusao_tentativa = ?, conclusao_status = ?,"
-                " sha256_video = COALESCE(?, sha256_video), falhas_envio = COALESCE(falhas_envio, 0) + ? WHERE id = ?",
+                " sha256_video = COALESCE(?, sha256_video), falhas_envio = COALESCE(falhas_envio, 0) + ?,"
+                " etapas = COALESCE(?, etapas) WHERE id = ?",
                 (
                     novo,
                     campos.get("segundos"),
@@ -3364,6 +3477,7 @@ class Banco:
                     novo,
                     campos.get("sha256") if novo == "ok" else None,
                     1 if transporte and repetir else 0,
+                    json.dumps(campos["etapas"]) if campos.get("etapas") else None,
                     job_id,
                 ),
             )
@@ -3427,8 +3541,8 @@ class Banco:
                 prazo = agora + PRAZO_TENTATIVA_S
                 c.run(
                     "UPDATE jobs SET lease_ate = ?, atualizado = ?, prazo_tentativa = ?, progresso = 'gpu:0',"
-                    " progresso_em = ? WHERE id = ?",
-                    (min(agora + lease_s, prazo), agora, prazo, agora, job_id),
+                    " progresso_em = ?, gpu_em = ? WHERE id = ?",
+                    (min(agora + lease_s, prazo), agora, prazo, agora, agora, job_id),
                 )
                 return True
             c.run(
@@ -3951,17 +4065,25 @@ class Banco:
         pedido duas vezes e subiria pods à toa)."""
         # COALESCE: com legenda NULL (o pedido de antes), "NOT (... = 1)" daria NULL e zeraria a contagem
         por_foto = "(j.tipo = 'compilar' AND j.foto_id IS NOT NULL AND COALESCE(l.legenda, 0) = 1)"
+        # 14/10/2026 (render2go_servico.capacidade): os vídeos e as traduções separados (a tradução contava como um
+        # vídeo inteiro) e o tempo já gasto nos vídeos em andamento (contavam como um vídeo inteiro cada)
+        agora = time.time()
         with self.tx() as c:
             linhas = c.all(
                 "SELECT l.id AS lote_id, l.pedido, l.prioridade, l.modelo, MIN(j.criado) AS mais_antigo,"
-                f" SUM(CASE WHEN j.status = 'pendente' AND {self._liberado()} AND NOT {por_foto} THEN 1 ELSE 0 END)"
+                f" SUM(CASE WHEN j.status = 'pendente' AND j.tipo = 'render' AND {self._liberado()} THEN 1 ELSE 0 END)"
                 " AS pendentes,"
-                f" SUM(CASE WHEN j.status = 'em_andamento' AND NOT {por_foto} THEN 1 ELSE 0 END) AS em_andamento,"
+                " SUM(CASE WHEN j.status = 'em_andamento' AND j.tipo = 'render' THEN 1 ELSE 0 END) AS em_andamento,"
+                f" SUM(CASE WHEN j.tipo = 'compilar' AND NOT {por_foto} AND (j.status = 'em_andamento' OR"
+                f" {self._liberado()}) THEN 1 ELSE 0 END) AS traducoes,"
+                " SUM(CASE WHEN j.status = 'em_andamento' AND j.tipo = 'render'"
+                " THEN ? - COALESCE(j.gpu_em, j.tentativa_em, j.atualizado) ELSE 0 END) AS andamento_s,"
                 " l.cliente_id, l.preco_video, l.cobranca, l.criado"
                 " FROM jobs j JOIN lotes l ON l.id = j.lote_id LEFT JOIN fotos f ON f.id = j.foto_id"
                 " WHERE l.status IN ('aprovado', 'processando') AND j.status IN ('pendente', 'em_andamento')"
                 " GROUP BY l.id, l.pedido, l.prioridade, l.modelo, l.cliente_id, l.preco_video, l.cobranca, l.criado"
-                " ORDER BY l.prioridade, MIN(j.criado)"
+                " ORDER BY l.prioridade, MIN(j.criado)",
+                (agora,),
             )
             livre = {
                 cid: self._saldo(c, cid) - self._reservado(c, cid)
@@ -3975,7 +4097,7 @@ class Banco:
         return [
             {k: v for k, v in r.items() if k not in ("cliente_id", "preco_video", "cobranca", "criado")}
             for r in linhas
-            if int(r["pendentes"] or 0) or int(r["em_andamento"] or 0)
+            if int(r["pendentes"] or 0) or int(r["em_andamento"] or 0) or int(r["traducoes"] or 0)
         ]
 
     def _liberado(self) -> str:

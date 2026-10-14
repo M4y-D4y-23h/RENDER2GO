@@ -279,28 +279,55 @@ def _memoria() -> dict:
     return dados if isinstance(dados, dict) else {}
 
 
+_MEMORIA_TRAVA = threading.Lock()  # pods subindo ao mesmo tempo (threads) anotam o mesmo arquivo
+EXCLUSAO_CURTA_S = 6 * 3600  # uma medida ruim só tira o datacenter por isto (14/10/2026)
+RUINS_PARA_SEMANA = 2  # duas medidas ruins na semana (sem uma boa depois) tiram por MEMORIA_DIAS
+
+
 def lembrar_datacentro(dc: str | None, mbs: float | None, motivo: str = "") -> None:
     """Anota a rede de um datacenter (aqui, na máquina de quem roda o comando): a última medida,
-    a média das recentes (metade de cada, para um host ruim não condenar o datacenter de vez) e o
-    motivo, se ele foi descartado (lento ou com instalação que não terminou)."""
+    a média das recentes (metade de cada, para um host ruim não condenar o datacenter de vez), o
+    motivo, se ele foi descartado (lento ou com instalação que não terminou), e as medidas ruins da
+    semana. Gravação com trava (threads e outros processos, `flock`) e atômica (tmp + rename): até
+    14/10/2026, duas subidas ao mesmo tempo podiam perder uma anotação ou cortar o arquivo."""
     if not dc:
         return
-    dados = _memoria()
-    antes = dados.get(dc) or {}
-    media = antes.get("media")
-    if mbs is not None:
-        recente = time.time() - float(antes.get("quando") or 0) < MEMORIA_DIAS * 86400
-        media = round(0.5 * float(media) + 0.5 * mbs, 1) if recente and media is not None else mbs
-    dados[dc] = {
-        "mbs": mbs,
-        "media": media,
-        "n": int(antes.get("n") or 0) + (mbs is not None),
-        "quando": time.time(),
-        "motivo": motivo,
-    }
     path = _memoria_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(dados, indent=1, ensure_ascii=False))
+    with _MEMORIA_TRAVA, open(path.with_name(path.name + ".trava"), "a") as trava:
+        try:
+            import fcntl
+
+            fcntl.flock(trava, fcntl.LOCK_EX)
+        except (ImportError, OSError):  # sem flock (outro sistema): fica a trava das threads
+            pass
+        dados = _memoria()
+        antes = dados.get(dc) or {}
+        agora = time.time()
+        media = antes.get("media")
+        if mbs is not None:
+            recente = agora - float(antes.get("quando") or 0) < MEMORIA_DIAS * 86400
+            media = (
+                round(0.5 * float(media) + 0.5 * mbs, 1) if recente and media is not None else mbs
+            )
+        ruins = [
+            float(t) for t in antes.get("ruins") or [] if agora - float(t) < MEMORIA_DIAS * 86400
+        ]
+        if motivo:
+            ruins.append(agora)
+        dados[dc] = {
+            "mbs": mbs,
+            "media": media,
+            "n": int(antes.get("n") or 0) + (mbs is not None),
+            "quando": agora,
+            "motivo": motivo,
+            "ruins": ruins[-10:],
+            # uma medida boa depois das ruins devolve o datacenter (recuperação)
+            "bom_em": agora if (mbs is not None and not motivo) else antes.get("bom_em"),
+        }
+        tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(dados, indent=1, ensure_ascii=False))
+        tmp.replace(path)
 
 
 def velocidades() -> dict[str, float]:
@@ -314,9 +341,26 @@ def velocidades() -> dict[str, float]:
     return out
 
 
+def _lento(d: dict, agora: float) -> bool:
+    """Um datacenter fica de fora depois de uma medida ruim só por EXCLUSAO_CURTA_S (um host ruim
+    não condena o datacenter: antes de 14/10/2026, uma amostra o tirava por 7 dias) e, com
+    RUINS_PARA_SEMANA medidas ruins na semana, por MEMORIA_DIAS; uma medida boa depois devolve."""
+    if not d.get("motivo"):
+        return False
+    ultima = float(d.get("quando") or 0)  # a anotação mais recente é a ruim
+    if d.get("bom_em") and float(d["bom_em"]) > ultima:
+        return False
+    if agora - ultima < EXCLUSAO_CURTA_S:
+        return True
+    ruins = [
+        float(t) for t in d.get("ruins") or [ultima] if agora - float(t) < MEMORIA_DIAS * 86400
+    ]
+    return len(ruins) >= RUINS_PARA_SEMANA and agora - ultima < MEMORIA_DIAS * 86400
+
+
 def datacentros_lentos() -> set[str]:
-    limite = time.time() - MEMORIA_DIAS * 86400
-    return {dc for dc, d in _memoria().items() if d.get("quando", 0) > limite and d.get("motivo")}
+    agora = time.time()
+    return {dc for dc, d in _memoria().items() if isinstance(d, dict) and _lento(d, agora)}
 
 
 # Sem medida, a ordem dos datacenters é esta (o resto vem por último): a API fica na Alemanha, e os

@@ -58,3 +58,59 @@ Constantes (no código): `ENC_BACKOFF_S` (5, 15, 30, 60, 120, 300 s), `ENC_REENV
 ### 2.3 Configurações e rollback
 
 Sem variável nova. Constantes: `fila.ENTREGA_MAX_S` (600 s), `ENTREGA_ALEM_ATE_S` (300 s), `ENTREGAS_MAX` (8), `ENTREGAS_MAX_BYTES` (2 GB), `BATIMENTO_S` (60 s); `db.LEASE_S` (900 s, como antes), `PRAZO_TENTATIVA_S` (3600 s), `SEM_PROGRESSO_S` (600 s). Banco: nove colunas novas em `jobs`, criadas na partida. Rollback: voltar o commit (ADR 0017, Consequências).
+
+## 3. Métricas, capacidade e ociosidade (Etapa 3)
+
+### 3.1 Métricas (o que faltava; o que já existia continua)
+
+Já existiam: no pod, as etapas de cada vídeo no log do worker (`fila.Preparado.etapas`) e os tempos da instalação no log do orquestrador; no banco, os horários de cada pod (`geradores`: criação, PRONTO, 1º vídeo, fim da fila, desligamento, GPU, datacenter, preço) e o tempo de pod de cada vídeo (`jobs.segundos`). Entraram:
+
+- **por vídeo** (`jobs.etapas`, JSON só com números: preparo, espera da GPU, GPU, render do ComfyUI, conferência, filtro), a fila (`tentativa_em − criado`), a tentativa, o SHA-256, as tentativas a mais e as falhas de envio (Etapa 2);
+- **por pod** (`geradores`): o tipo de subida (`fria` ou `retomada`), quando o agente respondeu, a versão do ambiente e dos modelos (`versao_hibernacao`), o fechamento pedido e o observado (Etapa 1);
+- **no painel** (rota `GET <painel>/api/metricas?dias=14`, só o dono; sem tela nova): subidas por GPU, datacenter e tipo; etapas de cada vídeo por GPU, resolução e duração, com p50 e, com n ≥ 20, p95; tentativas a mais, falhas de envio e custo por vídeo entregue. Nada do pedido, da foto, do cliente ou de URLs.
+
+### 3.2 Capacidade da fila (`render2go_servico.capacidade`)
+
+| Antes (revalidado no código) | Depois |
+|---|---|
+| `Banco.trabalho` somava a tradução do pedido nos vídeos pendentes | vídeos (`pendentes`, `em_andamento`) e traduções (`traducoes`) separados; a tradução conta 60 s; um pedido que só espera a tradução ainda pede um pod |
+| cada vídeo em andamento contava como um vídeo inteiro | conta o que falta (`andamento_s`, desde que foi para a GPU: `jobs.gpu_em`), com piso de 25% |
+| o tempo por vídeo era sempre o da 1ª GPU da tabela | o histórico de cada GPU, qualidade e duração (mediana com ≥ 5 amostras, dos últimos 14 dias), só dentro de 0,5–2× a tabela; sem amostras, a tabela ou o pior caso |
+| cada pod ligado contava 1, qualquer GPU | pela velocidade da GPU dele (uma RTX PRO 6000 vale ~2 L40S); nunca mais que `RENDER2GO_MAX_PODS` pods |
+
+A ordem da fila, a justiça entre clientes, o saldo, o filtro das fotos e a aprovação não mudam: só o número de pods pedidos.
+
+### 3.3 Memória dos datacenters
+
+- **Gravação com trava** (threads e `flock` entre processos) **e atômica** (tmp + rename): antes, duas subidas ao mesmo tempo podiam perder uma anotação ou deixar o arquivo cortado (teste com 24 threads).
+- **Recuperação controlada:** uma medida ruim tira o datacenter só por 6 h (antes: 7 dias); duas ruins na semana, sem uma boa depois, por 7 dias; uma medida boa depois devolve.
+
+### 3.4 Ociosidade e drenagem (`capacidade.PoliticaOciosidade`)
+
+- **Padrão preservado:** fixa em 180 s (`RENDER2GO_POD_OCIOSO_MIN`, mínimo de 60 s pelo ambiente, como antes).
+- **Histerese opcional, desligada:** `RENDER2GO_POD_OCIOSO_LONGO_MIN` (ex.: com `RENDER2GO_POD_OCIOSO_MIN=1` e `..._LONGO_MIN=3`): se a demanda volta até 10 min depois de um pod sair por falta de pedido, os próximos 3 episódios de demanda usam o tempo longo.
+- **Drenagem:** o pod só fecha depois de o worker terminar as entregas pendentes (Etapa 2) e, se for o gravador, o cache com o orçamento (Etapa 1). A hibernação mantém o disco cobrado e não reserva GPU: o padrão continua 0 hibernados.
+
+### 3.5 Simulação (não é medição)
+
+`render2go_servico.simulacao`, 30 sementes por cenário; parâmetros e tabela completa em `worker/evals/simulacao-2026-10-14/`. O p95 só com n ≥ 20.
+
+| Cenário | Comparação | 1º vídeo p50 / p95 (s) | Pedido p50 / p95 (s) | GPU ociosa | Custo | Pods subidos |
+|---|---|---|---|---|---|---|
+| chegada intermitente (24 pedidos de 3 a 10, ~15 min; n = 720) | 180 s → 60 s | 276 / 480 → 285 / 492 | 585 / 1187 → 641 / 1287 | −28% | **−9,3%** | +13% |
+| idem | 180 s → histerese 60/180 | 276 / 480 → 281 / 470 | 585 / 1187 → 644 / 1121 | −4% | −1,3% | +4% |
+| rajada (10 × 20 vídeos em 2 min; n = 300) | 180 s → 60 s | igual (671 / 1427) | igual (1066 / 1561) | −33% | −6,7% | igual |
+| fila pequena (1 × 5; n = 30) | 180 s → 60 s | igual (299 / 320) | igual (517 / 544) | −33% | −17% | igual |
+| envio instável (20% de falha; n = 120) | entrega antiga → nova (180 s) | 449 / 623 → 406 / 544 | 814 / 990 → 661 / 793 | −3% | **−13%**; render desperdiçado 16.753 s → 0 | igual |
+| tradução pendente (4 × 4 em 720p; n = 120) | capacidade antiga → nova | 411 / 444 → 414 / 456 | 770 / 812 → 804 / 956 | −18% | −7,8% | −17% |
+| cancelamento durante a subida (n = 30) | — | os 2 pods do pedido cancelado sobem do mesmo jeito e ficam ociosos até sair | | | | |
+
+**Leitura:**
+- **60 × 180 s:** nas premissas, 60 s custa de 7 a 17% menos em todos os cenários; com pedidos espaçados (~15 min), o 1º vídeo piora pouco no p50 (+3%) e o pedido inteiro piora ~10%, com 13% mais subidas. A histerese fica perto dos 180 s em custo e tem o melhor p95 do 1º vídeo nesse cenário. **O padrão continua 180 s:** a decisão depende do intervalo real entre pedidos e do peso que o dono dá à espera do cliente; medir com o `/api/metricas` (subida, fila e ociosidade reais) antes de mudar.
+- **Entrega nova:** com 20% de envios falhando, nenhum render é refeito (antes, 16.753 s de GPU em 30 sementes), o pedido termina ~19% antes no p50 e custa 13% menos. A taxa real de falha de envio em produção não foi medida; com envio estável, a diferença é zero.
+- **Capacidade nova:** mais barata (menos pods para traduções), mas no cenário de 4 pedidos de 720p chegando juntos o pedido termina ~4% depois no p50 (18% no p95): a regra antiga pedia um pod a mais por contar cada tradução como um vídeo de 720p. É uma troca, não um ganho puro; o prazo (`RENDER2GO_PRAZO_MIN`) continua sendo o jeito de pedir mais pods.
+- **Cancelamento durante a subida:** o orquestrador não cancela subidas quando a demanda some antes de o pod ficar pronto; os pods sobem e saem pela ociosidade. Ideia (não implementada): encerrar a subida que ainda não pegou trabalho quando a fila zera.
+
+### 3.6 Testes
+
+`servico/tests/test_capacidade.py` (SQLite e Postgres onde há banco): a tradução conta o tempo dela, o vídeo em andamento conta o que falta (com piso), o histórico só dentro dos limites, a GPU mais rápida vale mais, o formato de antes ainda funciona, o `Banco.trabalho` separado, a política fixa por padrão e a histerese só pelo ambiente, as métricas sem dados do cliente, e a simulação (determinística, regras de saldo e foto bloqueada, entrega nova sem render desperdiçado, pedido cancelado que não gera, 60 s nunca mais caro numa rajada). `worker/tests/test_ciclo_de_vida.py`: a memória dos datacenters (recuperação e 24 threads).

@@ -794,6 +794,8 @@ class WorkerFila:
             "nsfw_alto": filtro.nota_alta,
             "nsfw_quadros": filtro.quadros,
             **cont,
+            # segundos de cada etapa até aqui (métricas do painel por GPU, resolução e duração)
+            "etapas": {k: round(v, 2) for k, v in p.etapas.items()},
         }
         e = self._reter(p, campos)
         status = self._entregar(e, bat)

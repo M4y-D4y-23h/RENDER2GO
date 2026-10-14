@@ -1,0 +1,819 @@
+{
+ "sementes": 30,
+ "linhas": [
+  {
+   "cenario": "fila pequena (1 pedido de 5 vídeos)",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 30,
+    "p50": 298.6,
+    "p95": 319.6
+   },
+   "lote_s": {
+    "n": 30,
+    "p50": 517.0,
+    "p95": 544.5
+   },
+   "videos": 150,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 10899,
+   "render_desperdicado_s": 0,
+   "custo_usd": 6.357,
+   "custo_por_video_usd": 0.0424,
+   "pods": 30
+  },
+  {
+   "cenario": "fila pequena (1 pedido de 5 vídeos)",
+   "politica": "fixa 180 s (padrão); capacidade antiga",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 30,
+    "p50": 298.6,
+    "p95": 319.6
+   },
+   "lote_s": {
+    "n": 30,
+    "p50": 517.0,
+    "p95": 544.5
+   },
+   "videos": 150,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 10899,
+   "render_desperdicado_s": 0,
+   "custo_usd": 6.357,
+   "custo_por_video_usd": 0.0424,
+   "pods": 30
+  },
+  {
+   "cenario": "fila pequena (1 pedido de 5 vídeos)",
+   "politica": "fixa 60 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 30,
+    "p50": 298.6,
+    "p95": 319.6
+   },
+   "lote_s": {
+    "n": 30,
+    "p50": 517.0,
+    "p95": 544.5
+   },
+   "videos": 150,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 7299,
+   "render_desperdicado_s": 0,
+   "custo_usd": 5.267,
+   "custo_por_video_usd": 0.0351,
+   "pods": 30
+  },
+  {
+   "cenario": "fila pequena (1 pedido de 5 vídeos)",
+   "politica": "histerese 60/180 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 30,
+    "p50": 298.6,
+    "p95": 319.6
+   },
+   "lote_s": {
+    "n": 30,
+    "p50": 517.0,
+    "p95": 544.5
+   },
+   "videos": 150,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 7299,
+   "render_desperdicado_s": 0,
+   "custo_usd": 5.267,
+   "custo_por_video_usd": 0.0351,
+   "pods": 30
+  },
+  {
+   "cenario": "rajada (10 pedidos de 20 em 2 min)",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 300,
+    "p50": 671.4,
+    "p95": 1426.6
+   },
+   "lote_s": {
+    "n": 300,
+    "p50": 1066.5,
+    "p95": 1561.4
+   },
+   "videos": 6000,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 87442,
+   "render_desperdicado_s": 0,
+   "custo_usd": 130.723,
+   "custo_por_video_usd": 0.0218,
+   "pods": 240
+  },
+  {
+   "cenario": "rajada (10 pedidos de 20 em 2 min)",
+   "politica": "fixa 180 s (padrão); capacidade antiga",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 300,
+    "p50": 671.4,
+    "p95": 1426.6
+   },
+   "lote_s": {
+    "n": 300,
+    "p50": 1066.5,
+    "p95": 1561.4
+   },
+   "videos": 6000,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 87442,
+   "render_desperdicado_s": 0,
+   "custo_usd": 130.723,
+   "custo_por_video_usd": 0.0218,
+   "pods": 240
+  },
+  {
+   "cenario": "rajada (10 pedidos de 20 em 2 min)",
+   "politica": "fixa 60 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 300,
+    "p50": 671.4,
+    "p95": 1426.6
+   },
+   "lote_s": {
+    "n": 300,
+    "p50": 1066.5,
+    "p95": 1561.4
+   },
+   "videos": 6000,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 58658,
+   "render_desperdicado_s": 0,
+   "custo_usd": 122.008,
+   "custo_por_video_usd": 0.0203,
+   "pods": 240
+  },
+  {
+   "cenario": "rajada (10 pedidos de 20 em 2 min)",
+   "politica": "histerese 60/180 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 300,
+    "p50": 671.4,
+    "p95": 1426.6
+   },
+   "lote_s": {
+    "n": 300,
+    "p50": 1066.5,
+    "p95": 1561.4
+   },
+   "videos": 6000,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 58658,
+   "render_desperdicado_s": 0,
+   "custo_usd": 122.008,
+   "custo_por_video_usd": 0.0203,
+   "pods": 240
+  },
+  {
+   "cenario": "chegada intermitente (24 pedidos de 3 a 10, ~15 min)",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 720,
+    "p50": 276.0,
+    "p95": 480.3
+   },
+   "lote_s": {
+    "n": 720,
+    "p50": 585.0,
+    "p95": 1186.8
+   },
+   "videos": 4470,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 148360,
+   "render_desperdicado_s": 0,
+   "custo_usd": 127.181,
+   "custo_por_video_usd": 0.0285,
+   "pods": 387
+  },
+  {
+   "cenario": "chegada intermitente (24 pedidos de 3 a 10, ~15 min)",
+   "politica": "fixa 60 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 720,
+    "p50": 285.2,
+    "p95": 491.6
+   },
+   "lote_s": {
+    "n": 720,
+    "p50": 641.1,
+    "p95": 1287.4
+   },
+   "videos": 4470,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 106761,
+   "render_desperdicado_s": 0,
+   "custo_usd": 115.382,
+   "custo_por_video_usd": 0.0258,
+   "pods": 438
+  },
+  {
+   "cenario": "chegada intermitente (24 pedidos de 3 a 10, ~15 min)",
+   "politica": "histerese 60/180 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 720,
+    "p50": 280.6,
+    "p95": 470.4
+   },
+   "lote_s": {
+    "n": 720,
+    "p50": 644.2,
+    "p95": 1121.2
+   },
+   "videos": 4470,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 141853,
+   "render_desperdicado_s": 0,
+   "custo_usd": 125.49,
+   "custo_por_video_usd": 0.0281,
+   "pods": 401
+  },
+  {
+   "cenario": "GPUs heterogêneas (L40S ou RTX PRO 6000)",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 300,
+    "p50": 548.4,
+    "p95": 1019.4
+   },
+   "lote_s": {
+    "n": 300,
+    "p50": 846.4,
+    "p95": 1204.8
+   },
+   "videos": 6000,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 87468,
+   "render_desperdicado_s": 0,
+   "custo_usd": 158.896,
+   "custo_por_video_usd": 0.0265,
+   "pods": 240
+  },
+  {
+   "cenario": "GPUs heterogêneas (L40S ou RTX PRO 6000)",
+   "politica": "fixa 180 s (padrão); capacidade antiga",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 300,
+    "p50": 548.4,
+    "p95": 1019.4
+   },
+   "lote_s": {
+    "n": 300,
+    "p50": 846.4,
+    "p95": 1204.8
+   },
+   "videos": 6000,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 87468,
+   "render_desperdicado_s": 0,
+   "custo_usd": 158.896,
+   "custo_por_video_usd": 0.0265,
+   "pods": 240
+  },
+  {
+   "cenario": "GPUs heterogêneas (L40S ou RTX PRO 6000)",
+   "politica": "fixa 60 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 300,
+    "p50": 548.4,
+    "p95": 1019.4
+   },
+   "lote_s": {
+    "n": 300,
+    "p50": 846.4,
+    "p95": 1204.8
+   },
+   "videos": 6000,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 58668,
+   "render_desperdicado_s": 0,
+   "custo_usd": 144.996,
+   "custo_por_video_usd": 0.0242,
+   "pods": 240
+  },
+  {
+   "cenario": "GPUs heterogêneas (L40S ou RTX PRO 6000)",
+   "politica": "histerese 60/180 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 300,
+    "p50": 548.4,
+    "p95": 1019.4
+   },
+   "lote_s": {
+    "n": 300,
+    "p50": 846.4,
+    "p95": 1204.8
+   },
+   "videos": 6000,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 58668,
+   "render_desperdicado_s": 0,
+   "custo_usd": 144.996,
+   "custo_por_video_usd": 0.0242,
+   "pods": 240
+  },
+  {
+   "cenario": "foto bloqueada (metade recusada)",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 60,
+    "p50": 307.8,
+    "p95": 344.0
+   },
+   "lote_s": {
+    "n": 60,
+    "p50": 775.5,
+    "p95": 842.7
+   },
+   "videos": 330,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 10832,
+   "render_desperdicado_s": 0,
+   "custo_usd": 9.373,
+   "custo_por_video_usd": 0.0284,
+   "pods": 30
+  },
+  {
+   "cenario": "foto bloqueada (metade recusada)",
+   "politica": "fixa 60 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 60,
+    "p50": 307.8,
+    "p95": 344.0
+   },
+   "lote_s": {
+    "n": 60,
+    "p50": 775.5,
+    "p95": 842.7
+   },
+   "videos": 330,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 7207,
+   "render_desperdicado_s": 0,
+   "custo_usd": 8.276,
+   "custo_por_video_usd": 0.0251,
+   "pods": 30
+  },
+  {
+   "cenario": "foto bloqueada (metade recusada)",
+   "politica": "histerese 60/180 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 60,
+    "p50": 307.8,
+    "p95": 344.0
+   },
+   "lote_s": {
+    "n": 60,
+    "p50": 775.5,
+    "p95": 842.7
+   },
+   "videos": 330,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 7207,
+   "render_desperdicado_s": 0,
+   "custo_usd": 8.276,
+   "custo_por_video_usd": 0.0251,
+   "pods": 30
+  },
+  {
+   "cenario": "tradução pendente (720p, 4 pedidos ao mesmo tempo)",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 120,
+    "p50": 414.0,
+    "p95": 455.9
+   },
+   "lote_s": {
+    "n": 120,
+    "p50": 804.4,
+    "p95": 955.9
+   },
+   "videos": 480,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 55817,
+   "render_desperdicado_s": 0,
+   "custo_usd": 45.412,
+   "custo_por_video_usd": 0.0946,
+   "pods": 150
+  },
+  {
+   "cenario": "tradução pendente (720p, 4 pedidos ao mesmo tempo)",
+   "politica": "fixa 180 s (padrão); capacidade antiga",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 120,
+    "p50": 410.6,
+    "p95": 443.7
+   },
+   "lote_s": {
+    "n": 120,
+    "p50": 769.5,
+    "p95": 812.5
+   },
+   "videos": 480,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 68324,
+   "render_desperdicado_s": 0,
+   "custo_usd": 49.254,
+   "custo_por_video_usd": 0.1026,
+   "pods": 180
+  },
+  {
+   "cenario": "tradução pendente (720p, 4 pedidos ao mesmo tempo)",
+   "politica": "fixa 60 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 120,
+    "p50": 414.0,
+    "p95": 455.9
+   },
+   "lote_s": {
+    "n": 120,
+    "p50": 804.4,
+    "p95": 955.9
+   },
+   "videos": 480,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 37811,
+   "render_desperdicado_s": 0,
+   "custo_usd": 39.961,
+   "custo_por_video_usd": 0.0833,
+   "pods": 150
+  },
+  {
+   "cenario": "tradução pendente (720p, 4 pedidos ao mesmo tempo)",
+   "politica": "histerese 60/180 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 120,
+    "p50": 414.0,
+    "p95": 455.9
+   },
+   "lote_s": {
+    "n": 120,
+    "p50": 804.4,
+    "p95": 955.9
+   },
+   "videos": 480,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 37811,
+   "render_desperdicado_s": 0,
+   "custo_usd": 39.961,
+   "custo_por_video_usd": 0.0833,
+   "pods": 150
+  },
+  {
+   "cenario": "saldo insuficiente (paga 3 de 12)",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 60,
+    "p50": 294.5,
+    "p95": 319.6
+   },
+   "lote_s": {
+    "n": 60,
+    "p50": 542.5,
+    "p95": 592.0
+   },
+   "videos": 210,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 10776,
+   "render_desperdicado_s": 0,
+   "custo_usd": 7.354,
+   "custo_por_video_usd": 0.035,
+   "pods": 30
+  },
+  {
+   "cenario": "saldo insuficiente (paga 3 de 12)",
+   "politica": "fixa 60 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 60,
+    "p50": 294.5,
+    "p95": 319.6
+   },
+   "lote_s": {
+    "n": 60,
+    "p50": 542.5,
+    "p95": 592.0
+   },
+   "videos": 210,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 7176,
+   "render_desperdicado_s": 0,
+   "custo_usd": 6.264,
+   "custo_por_video_usd": 0.0298,
+   "pods": 30
+  },
+  {
+   "cenario": "saldo insuficiente (paga 3 de 12)",
+   "politica": "histerese 60/180 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 60,
+    "p50": 294.5,
+    "p95": 319.6
+   },
+   "lote_s": {
+    "n": 60,
+    "p50": 542.5,
+    "p95": 592.0
+   },
+   "videos": 210,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 7176,
+   "render_desperdicado_s": 0,
+   "custo_usd": 6.264,
+   "custo_por_video_usd": 0.0298,
+   "pods": 30
+  },
+  {
+   "cenario": "cancelamento durante a subida",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 30,
+    "p50": 162.0,
+    "p95": 231.9
+   },
+   "lote_s": {
+    "n": 30,
+    "p50": 217.8,
+    "p95": 286.1
+   },
+   "videos": 90,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 23958,
+   "render_desperdicado_s": 0,
+   "custo_usd": 9.332,
+   "custo_por_video_usd": 0.1037,
+   "pods": 60
+  },
+  {
+   "cenario": "cancelamento durante a subida",
+   "politica": "fixa 60 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 30,
+    "p50": 162.0,
+    "p95": 231.9
+   },
+   "lote_s": {
+    "n": 30,
+    "p50": 217.8,
+    "p95": 286.1
+   },
+   "videos": 90,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 16733,
+   "render_desperdicado_s": 0,
+   "custo_usd": 7.144,
+   "custo_por_video_usd": 0.0794,
+   "pods": 60
+  },
+  {
+   "cenario": "cancelamento durante a subida",
+   "politica": "histerese 60/180 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 30,
+    "p50": 162.0,
+    "p95": 231.9
+   },
+   "lote_s": {
+    "n": 30,
+    "p50": 217.8,
+    "p95": 286.1
+   },
+   "videos": 90,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 16733,
+   "render_desperdicado_s": 0,
+   "custo_usd": 7.144,
+   "custo_por_video_usd": 0.0794,
+   "pods": 60
+  },
+  {
+   "cenario": "envio instável (20% de falha)",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 120,
+    "p50": 405.5,
+    "p95": 543.6
+   },
+   "lote_s": {
+    "n": 120,
+    "p50": 660.7,
+    "p95": 793.0
+   },
+   "videos": 1200,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 45403,
+   "render_desperdicado_s": 0,
+   "custo_usd": 35.275,
+   "custo_por_video_usd": 0.0294,
+   "pods": 120
+  },
+  {
+   "cenario": "envio instável (20% de falha)",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "antiga (refaz na GPU)",
+   "primeiro_video_s": {
+    "n": 120,
+    "p50": 449.1,
+    "p95": 622.7
+   },
+   "lote_s": {
+    "n": 120,
+    "p50": 814.1,
+    "p95": 990.4
+   },
+   "videos": 1200,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 46571,
+   "render_desperdicado_s": 16753,
+   "custo_usd": 40.692,
+   "custo_por_video_usd": 0.0339,
+   "pods": 120
+  },
+  {
+   "cenario": "envio instável (20% de falha)",
+   "politica": "fixa 60 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 120,
+    "p50": 405.5,
+    "p95": 543.6
+   },
+   "lote_s": {
+    "n": 120,
+    "p50": 660.7,
+    "p95": 793.0
+   },
+   "videos": 1200,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 30966,
+   "render_desperdicado_s": 0,
+   "custo_usd": 30.904,
+   "custo_por_video_usd": 0.0258,
+   "pods": 120
+  },
+  {
+   "cenario": "envio instável (20% de falha)",
+   "politica": "fixa 60 s",
+   "entrega": "antiga (refaz na GPU)",
+   "primeiro_video_s": {
+    "n": 120,
+    "p50": 449.1,
+    "p95": 622.7
+   },
+   "lote_s": {
+    "n": 120,
+    "p50": 814.1,
+    "p95": 990.4
+   },
+   "videos": 1200,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 31664,
+   "render_desperdicado_s": 16644,
+   "custo_usd": 36.143,
+   "custo_por_video_usd": 0.0301,
+   "pods": 120
+  },
+  {
+   "cenario": "envio instável (20% de falha)",
+   "politica": "histerese 60/180 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 120,
+    "p50": 405.5,
+    "p95": 543.6
+   },
+   "lote_s": {
+    "n": 120,
+    "p50": 660.7,
+    "p95": 793.0
+   },
+   "videos": 1200,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 30966,
+   "render_desperdicado_s": 0,
+   "custo_usd": 30.904,
+   "custo_por_video_usd": 0.0258,
+   "pods": 120
+  },
+  {
+   "cenario": "envio instável (20% de falha)",
+   "politica": "histerese 60/180 s",
+   "entrega": "antiga (refaz na GPU)",
+   "primeiro_video_s": {
+    "n": 120,
+    "p50": 449.1,
+    "p95": 622.7
+   },
+   "lote_s": {
+    "n": 120,
+    "p50": 814.1,
+    "p95": 990.4
+   },
+   "videos": 1200,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 31664,
+   "render_desperdicado_s": 16644,
+   "custo_usd": 36.143,
+   "custo_por_video_usd": 0.0301,
+   "pods": 120
+  },
+  {
+   "cenario": "cache lento (o 1º pod grava 15 min)",
+   "politica": "fixa 180 s (padrão)",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 30,
+    "p50": 298.6,
+    "p95": 319.6
+   },
+   "lote_s": {
+    "n": 30,
+    "p50": 681.0,
+    "p95": 714.2
+   },
+   "videos": 240,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 37910,
+   "render_desperdicado_s": 0,
+   "custo_usd": 16.037,
+   "custo_por_video_usd": 0.0668,
+   "pods": 30
+  },
+  {
+   "cenario": "cache lento (o 1º pod grava 15 min)",
+   "politica": "fixa 60 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 30,
+    "p50": 298.6,
+    "p95": 319.6
+   },
+   "lote_s": {
+    "n": 30,
+    "p50": 681.0,
+    "p95": 714.2
+   },
+   "videos": 240,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 34310,
+   "render_desperdicado_s": 0,
+   "custo_usd": 14.947,
+   "custo_por_video_usd": 0.0623,
+   "pods": 30
+  },
+  {
+   "cenario": "cache lento (o 1º pod grava 15 min)",
+   "politica": "histerese 60/180 s",
+   "entrega": "nova (repete o mesmo vídeo)",
+   "primeiro_video_s": {
+    "n": 30,
+    "p50": 298.6,
+    "p95": 319.6
+   },
+   "lote_s": {
+    "n": 30,
+    "p50": 681.0,
+    "p95": 714.2
+   },
+   "videos": 240,
+   "nao_entregues": 0,
+   "gpu_ociosa_s": 34310,
+   "render_desperdicado_s": 0,
+   "custo_usd": 14.947,
+   "custo_por_video_usd": 0.0623,
+   "pods": 30
+  }
+ ]
+}

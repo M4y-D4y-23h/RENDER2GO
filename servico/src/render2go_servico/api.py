@@ -57,6 +57,7 @@ caminho do painel (12 h); RENDER2GO_ADMIN_IPS limita de onde. Sem o caminho, nã
     GET  <painel>/api/lotes/{id}/auditoria  registro completo de um lote (origem, autorização, fotos, eventos)
     GET  <painel>/api/suporte          últimas mensagens de suporte
     GET  <painel>/api/geradores?dias=30  relatório das GPUs (pods): id, GPU, horários, vídeos e custo estimado
+    GET  <painel>/api/metricas?dias=14   tempos de subida e de cada etapa por GPU, resolução e duração (p50/p95)
     GET  <painel>/api/pods             pods ligados agora, pausa e sinal de vida do orquestrador
     POST <painel>/api/pods/{gerador}/desligar | /api/pods/emergencia | /api/pods/retomar
     GET  <painel>/api/interesses       "Tenho interesse": total por opção e cada clique (conta, e-mail, quando)
@@ -307,6 +308,7 @@ PERMISSOES_PAINEL: dict[tuple[str, str], frozenset[str]] = {
     ("POST", "/api/clientes/{cliente_id}/reativar"): _DONO,
     ("POST", "/api/clientes/{cliente_id}/mfa/desligar"): _DONO,
     ("GET", "/api/geradores"): _DONO,
+    ("GET", "/api/metricas"): _DONO,  # tempos por GPU, subida e etapa (docs/15, seção 3); nada do cliente
     ("POST", "/api/pods/{gerador}/desligar"): _DONO,
     ("POST", "/api/pods/emergencia"): _DONO,
     ("POST", "/api/pods/retomar"): _DONO,
@@ -1359,6 +1361,8 @@ class PromptIn(BaseModel):
 
 
 TENTATIVA = r"^[0-9a-f]{16}$"  # o identificador da tentativa (db.reivindicar): vai no nome do objeto
+# etapas que o pod mede em cada vídeo (render2go_worker.fila, Preparado.etapas): as métricas do painel
+ETAPAS_POD = ("preparo", "espera_gpu", "gpu_parada", "gpu", "render", "conferencia", "filtro", "envio", "total")
 VIDEO_MAX_BYTES = 150 * 1024 * 1024  # publicação sem cópia no servidor (lê e grava): o teto de um vídeo
 
 
@@ -1370,6 +1374,16 @@ class ConcluirIn(BaseModel):
     tentativa: str | None = Field(None, pattern=TENTATIVA)
     transporte: bool = False  # o vídeo estava certo e só o envio falhou: volta com a mesma seed
     sha256: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")  # do vídeo enviado (auditoria)
+    # segundos de cada etapa no pod (métricas, 14/10/2026): só nomes conhecidos e números
+    etapas: dict[str, float] | None = None
+
+    @field_validator("etapas")
+    @classmethod
+    def _etapas_conhecidas(cls, v: dict[str, float] | None) -> dict[str, float] | None:
+        if v is None:
+            return None
+        return {k: round(float(x), 2) for k, x in v.items() if k in ETAPAS_POD and 0 <= float(x) <= 86400}
+
     segundos: float | None = Field(None, ge=0, le=86400)
     aviso: str | None = Field(None, max_length=1000)
     erro: str | None = Field(None, max_length=1000)
@@ -4065,6 +4079,14 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(422, "dias: de 1 a 366")
         return c.banco.relatorio_geradores(time.time() - dias * 86400)
 
+    @rotas.get("/api/metricas")
+    def metricas(dias: int = 14, _: str = Depends(admin), c: Config = Depends(config)):
+        """Subidas por GPU, datacenter e tipo (fria/retomada); etapas de cada vídeo por GPU, resolução e duração
+        (p50 e p95 com o tamanho da amostra); tentativas a mais, falhas de envio e custo por vídeo entregue."""
+        if not 1 <= dias <= 366:
+            raise HTTPException(422, "dias: de 1 a 366")
+        return c.banco.metricas(time.time() - dias * 86400)
+
     @rotas.get("/api/pods")
     def pods(_: str = Depends(admin), c: Config = Depends(config)):
         """Pods ligados agora, a pausa e o sinal de vida do orquestrador (quem executa os comandos)."""
@@ -4414,6 +4436,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 repetir=repetir,
                 transporte=body.transporte and not barrado,
                 sha256=body.sha256,
+                etapas=body.etapas,
                 similaridade=body.similaridade,
                 bytes_video=body.bytes_video,
                 deriva_cor=body.deriva_cor,

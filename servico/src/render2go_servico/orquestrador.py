@@ -71,9 +71,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from render2go_worker import filtro_imagem, lote, runpod_pods
+from render2go_worker import filtro_imagem, runpod_pods
 from render2go_worker import lote_nuvem as ln
 
+from render2go_servico import capacidade as cap
 from render2go_servico.db import Banco, BancoError
 
 FILA_CMD = (
@@ -87,6 +88,7 @@ VIVO = "vivo"  # tocado a cada ciclo bem-sucedido (healthcheck do contêiner)
 TRAVA_ORQUESTRADOR = 20261009  # trava do Postgres: um orquestrador por vez manda nos pods
 PREFIXO_PODS = "render2go-"  # nome dos pods que o orquestrador cria (a parada de emergência procura por ele)
 LIMPEZA_S = 3600  # a cada hora: registros de acesso vencidos, códigos e limites antigos (Banco.purgar)
+TEMPOS_S = 600  # a cada 10 min: o histórico de tempo por vídeo (render2go_servico.capacidade)
 SALDO_S = 300  # a cada 5 min: saldo do RunPod para o painel (estado "runpod")
 HIBERNADOS = "hibernados.json"  # pods parados com ambiente e modelos (ADR 0011); tem os tokens dos agentes
 DEMANDA = "demanda.json"  # episódio de demanda atual (a regra das falhas de retomada é por episódio)
@@ -139,6 +141,9 @@ class ConfigOrq:
     agrupar_teste_s: float = 10 * 60
     agrupar_teste_videos: int = 20
     ocioso_s: float = 180  # pod quente: sem jobs por esse tempo, o worker sai e o pod é encerrado
+    # histerese da ociosidade (capacidade.PoliticaOciosidade; None = desligada, o padrão): depois de a demanda voltar
+    # logo depois de um pod sair por falta de pedidos, os próximos pods esperam isto
+    ocioso_longo_s: float | None = None
     hibernados: int = 0  # pods parados com tudo instalado, prontos para voltar em ~1 min (ADR 0011)
     volume_gb: int = 70  # disco de volume de cada pod que pode hibernar (cobrado parado: US$ 0,20/GB/mês)
     # legenda por foto (ADR 0014, RENDER2GO_LEGENDA_POR_FOTO=1): o pod baixa o modelo de visão e sobe o Ollama de CPU
@@ -167,6 +172,11 @@ class ConfigOrq:
             agrupar_teste_s=float(os.environ.get("RENDER2GO_AGRUPAR_TESTE_MIN", 10)) * 60,
             agrupar_teste_videos=int(os.environ.get("RENDER2GO_AGRUPAR_TESTE_VIDEOS", 20)),
             ocioso_s=max(60.0, float(os.environ.get("RENDER2GO_POD_OCIOSO_MIN", 3)) * 60),
+            ocioso_longo_s=(
+                max(60.0, float(os.environ["RENDER2GO_POD_OCIOSO_LONGO_MIN"]) * 60)
+                if os.environ.get("RENDER2GO_POD_OCIOSO_LONGO_MIN", "").strip()
+                else None
+            ),
             hibernados=max(0, int(os.environ.get("RENDER2GO_PODS_HIBERNADOS", 0))),
             volume_gb=max(40, int(os.environ.get("RENDER2GO_POD_VOLUME_GB", 70))),
             legenda=os.environ.get("RENDER2GO_LEGENDA_POR_FOTO", "").strip() == "1",
@@ -244,6 +254,11 @@ class Orquestrador:
         # subidas pedidas e ainda sem pod no RunPod: o US$/h e o pior caso reservados no teto e no saldo, até o pod
         # existir (aí conta o pod; nunca os dois). n da subida → {"usd_h", "usd", "pod"}
         self.reservas: dict[int, dict] = {}
+        # política de ociosidade explícita (14/10/2026): fixa em `ocioso_s` (o padrão de sempre) ou com histerese
+        self.politica = cap.PoliticaOciosidade(curto_s=cfg.ocioso_s, longo_s=cfg.ocioso_longo_s)
+        # tempo por vídeo: o histórico por GPU, qualidade e duração (relido a cada TEMPOS_S), com a tabela de reserva
+        self.tempos = cap.Tempos()
+        self._tempos_em = 0.0
         # nome dos pods deste serviço: o hash da API separa ambientes que usem a mesma conta do RunPod
         self.prefixo = "render2go-fila-" + hashlib.sha256(cfg.api_url.encode()).hexdigest()[:6]
 
@@ -267,22 +282,29 @@ class Orquestrador:
         return True
 
     def desejados(self, trabalho: list[dict]) -> int:
-        """Pods que a fila pede agora (0 sem trabalho)."""
-        gpu = self.cfg.gpus[0]
-        receitas = lote.load_receitas()
-        segundos, videos = 0.0, 0
-        for t in trabalho:
-            p = json.loads(t["pedido"]) if isinstance(t["pedido"], str) else t["pedido"]
-            n = int(t["pendentes"] or 0) + int(t["em_andamento"] or 0)
-            dur = p.get("duracao") or receitas["receitas"][p.get("receita", "produto-close")]["duracao"]
-            segundos += n * ln.segundos_por_video(gpu, p.get("qualidade", "rapida"), dur)
-            videos += n
-        if not videos:
-            return 0
-        s_medio = segundos / videos
-        # o teto é RENDER2GO_MAX_PODS (antes de 12/10/2026, a regra do lote_nuvem parava em 8 pods)
-        pods, _ = ln.escolher_pods(videos, videos, 1, s_medio, self.cfg.prazo_min, max_pods=self.cfg.max_pods)
-        return min(pods, self.cfg.max_pods)
+        """Pods que a fila pede agora (0 sem trabalho), em pods da 1ª GPU da lista (render2go_servico.capacidade: a
+        tradução conta o tempo dela, não um vídeo; o vídeo em andamento conta o que falta; o tempo por vídeo vem do
+        histórico quando há amostras). O teto é RENDER2GO_MAX_PODS (antes de 12/10/2026, parava em 8)."""
+        self._atualizar_tempos()
+        t = cap.trabalho(trabalho, self.cfg.gpus[0], self.tempos)
+        return cap.pods_desejados(t, self.cfg.prazo_min, self.cfg.max_pods)
+
+    def _atualizar_tempos(self) -> None:
+        """Relê o histórico de tempo por vídeo (no máximo a cada TEMPOS_S); sem o banco, fica a tabela medida."""
+        if time.time() - self._tempos_em < TEMPOS_S:
+            return
+        self._tempos_em = time.time()
+        try:
+            self.tempos = cap.Tempos(self.banco.tempos_por_video(time.time() - 14 * 86400))
+        except Exception as e:  # noqa: BLE001 (só a estimativa depende disso; a tabela medida vale)
+            _log(f"AVISO: histórico de tempo por vídeo: {e}")
+
+    def capacidade_ligada(self) -> float:
+        """Os pods que pegam vídeos, em pods da 1ª GPU (uma GPU mais rápida vale mais de um)."""
+        with self.lock:
+            gpus = [pf.pod.info.gpu for pf in self.ativos.values()]
+            subindo = self.subindo
+        return cap.equivalentes(gpus, subindo, self.cfg.gpus[0], self.tempos)
 
     def _preco(self) -> float:
         """US$/h para o teto por hora e o desligamento automático: a opção mais cara com preço
@@ -377,7 +399,7 @@ class Orquestrador:
             worker=worker,
             gpus=pod.info.gpus,
             ate=int(ate),
-            ocioso=int(self.cfg.ocioso_s),
+            ocioso=int(self.politica.ocioso_s()),
             # o mesmo prazo da instalação inteira, contado da criação do pod
             modelos_ate=int(time.time() + ln.ESPERA_INSTALACAO_S - vivo_s),
         )
@@ -392,14 +414,19 @@ class Orquestrador:
                 self.n += 1
                 i = self.n
 
-            def criado(info: ln.PodInfo) -> None:  # o pod passa a custar: id, GPU e preço no relatório
+            def criado(info: ln.PodInfo, tipo: str = "fria") -> None:  # o pod passa a custar: id, GPU e preço
                 with self.lock:  # a reserva vira o pod (no teto conta um ou outro, nunca os dois)
                     if reserva in self.reservas:
                         self.reservas[reserva]["pod"] = info.id
                 self._registrar("gerador_criado", gerador, f"pod-{info.id}", info.gpu, info.usd_h, info.datacentro)
+                self._registrar("gerador_subida", gerador, tipo, versao=ln.versao_hibernacao())
+
+            def agente(pod: ln.Pod) -> None:  # o agente respondeu (métricas) e o prazo com o preço real
+                self._registrar("gerador_subida", gerador, agente=True)
+                self._ajustar_deadman(pod)
 
             # 1º os pods hibernados (~1 min, nada a baixar); sem nenhum que volte, um pod novo (a criação fria)
-            pod = self._retomar_algum(criado)
+            pod = self._retomar_algum(lambda info: criado(info, "retomada"), agente)
             if pod is None:
                 # serviços já durante o download dos modelos: o pedido é traduzido enquanto ele termina
                 pod = self.pods_ln.subir_pod(
@@ -407,7 +434,7 @@ class Orquestrador:
                     deadman_s,
                     cedo=True,
                     ao_criar=criado,
-                    ao_agente=self._ajustar_deadman,
+                    ao_agente=agente,
                     volume_gb=self.cfg.volume_gb if self.cfg.hibernados else 0,
                     prefixo=self.prefixo,
                 )
@@ -467,6 +494,7 @@ class Orquestrador:
     def nova_demanda(self) -> int:
         """Começa um episódio de demanda: a fila passou a pedir pods sem nenhum ligado nem subindo. Uma volta de
         hibernado sem GPU livre conta uma falha por episódio (ADR 0011, "pedidos seguidos"). Gravado em disco."""
+        self.politica.nova_demanda(time.time())
         with self.lock:
             self.episodio += 1
             self._com_demanda = True
@@ -531,7 +559,7 @@ class Orquestrador:
             self._salvar_hibernados()
             return h["falhas"] >= FALHAS_RETOMADA
 
-    def _retomar_algum(self, ao_criar) -> ln.Pod | None:
+    def _retomar_algum(self, ao_criar, ao_agente=None) -> ln.Pod | None:
         """Liga o primeiro pod hibernado que conseguir (GPU na ordem de RENDER2GO_GPUS, menos falhas
         antes); None se não há nenhum ou todos estão sem GPU livre no host agora.
 
@@ -571,7 +599,9 @@ class Orquestrador:
                 int(h.get("gpus", 1)), h.get("gpu", ""), h.get("datacentro"),
             )  # fmt: skip
             try:
-                pod = self.pods_ln.retomar_pod(info, cedo=True, ao_agente=self._ajustar_deadman, ao_criar=ao_criar)
+                pod = self.pods_ln.retomar_pod(
+                    info, cedo=True, ao_agente=ao_agente or self._ajustar_deadman, ao_criar=ao_criar
+                )
             except runpod_pods.SemVaga as e:  # o host está sem GPU livre: o pod continua parado, com o disco
                 _log(f"pod hibernado {info.id}: {e}")
                 if self._falhou_retomada(h, "sem GPU livre no host"):
@@ -723,6 +753,8 @@ class Orquestrador:
         """Hiberna (ADR 0011) se pode e se o disco de volume está completo; senão encerra. Com o conjunto
         cheio, o pod que acabou de rodar entra no lugar do hibernado que ficou sem GPU livre no host."""
         pod = pf.pod
+        if motivo == "ocioso":  # a política de ociosidade vê quando a demanda volta depois disto
+            self.politica.desligou_ocioso(time.time())
         pode = self._pode_hibernar(pod, motivo)
         # o pod que o desligamento automático já parou (vivo=False em _revisar) só fica se o disco de volume
         # foi conferido enquanto ele estava no ar (_terminou); senão, a volta seria uma subida do zero
@@ -967,7 +999,9 @@ class Orquestrador:
             self.nova_demanda()  # a fila voltou a pedir pods com nenhum ligado: outro episódio
         elif not querem and not existentes:
             self._com_demanda = False
-        faltam = max(0, querem - existentes)
+        # pods de GPUs mais rápidas valem mais de um (14/10/2026); nunca mais pods que RENDER2GO_MAX_PODS
+        ligada = self.capacidade_ligada() if existentes else 0.0
+        faltam = max(0, min(querem - int(ligada + 0.5), self.cfg.max_pods - existentes))
         subiu = 0
         if not faltam:  # fila vazia ou já atendida: sem consulta de preço a cada 30 s
             return {"desejados": querem, "ativos": len(self.ativos), "subindo": self.subindo}

@@ -254,3 +254,36 @@ def test_a_stop_is_confirmed_by_exited_and_a_stopped_pod_can_still_be_terminated
     assert orq.hibernar(pod, "fila vazia") and pod.estado == "parado" and not pod.faturavel
     assert orq.encerrar_por_id("p1", "descartado")  # o disco de volume sai junto
     assert prov.chamadas == ["parar:p1", "p1"] and pod.estado == "encerrado"
+
+
+def test_one_bad_sample_excludes_a_datacenter_only_for_a_while(tmp_path, monkeypatch):
+    """14/10/2026: uma medida ruim tirava o datacenter por 7 dias (um host ruim condenava todos);
+    agora só por EXCLUSAO_CURTA_S; duas ruins na semana, por 7 dias; uma boa depois devolve."""
+    monkeypatch.setattr(ln, "CACHE", tmp_path)
+    t = [1_000_000.0]
+    monkeypatch.setattr(ln.time, "time", lambda: t[0])
+    ln.lembrar_datacentro("US-KS-2", 12.0, "rede lenta")
+    assert ln.datacentros_lentos() == {"US-KS-2"}
+    t[0] += ln.EXCLUSAO_CURTA_S + 1
+    assert ln.datacentros_lentos() == set()  # recuperação controlada: volta a ser tentado
+    ln.lembrar_datacentro("US-KS-2", 15.0, "rede lenta")  # a 2ª ruim na semana
+    t[0] += ln.EXCLUSAO_CURTA_S + 1
+    assert ln.datacentros_lentos() == {"US-KS-2"}
+    ln.lembrar_datacentro("US-KS-2", 420.0, "")  # uma boa depois devolve
+    assert ln.datacentros_lentos() == set() and ln.velocidades()["US-KS-2"] > 15
+
+
+def test_concurrent_notes_on_the_datacenter_memory_are_not_lost(tmp_path, monkeypatch):
+    import threading
+
+    monkeypatch.setattr(ln, "CACHE", tmp_path)
+    ts = [
+        threading.Thread(target=ln.lembrar_datacentro, args=(f"DC-{i}", float(100 + i), ""))
+        for i in range(24)
+    ]
+    for th in ts:
+        th.start()
+    for th in ts:
+        th.join()
+    assert len(ln.velocidades()) == 24  # nenhuma anotação perdida, o arquivo inteiro
+    assert not list(tmp_path.glob("*.tmp"))
