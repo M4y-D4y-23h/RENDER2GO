@@ -1,0 +1,16 @@
+{
+ "encerrar": {
+  "chamadas_ao_provedor": 1,
+  "vivo": false,
+  "pods_json": []
+ },
+ "retomar": {
+  "falhas_apos_cada_chamada": [
+   1,
+   2,
+   "descartado"
+  ],
+  "chamadas_retomar": 3,
+  "encerrado_com_o_disco": true
+ }
+}

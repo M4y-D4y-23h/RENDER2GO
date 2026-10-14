@@ -389,6 +389,12 @@ COLUNAS_NOVAS = [
     # modelo, versao) e a categoria dela: só o painel e a auditoria veem, nunca o cliente; saem com o histórico
     ("fotos", "legenda", "TEXT"),
     ("fotos", "categoria", "TEXT"),
+    # ciclo de vida do pod (14/10/2026): o fechamento pedido ao RunPod ("pedido", "falhou", "aceito" ou "confirmado")
+    # e o que confirmou o fim ("404", "TERMINATED", "EXITED" ou "aceite"). `desligado_em` passa a ser o fim observado;
+    # com o fechamento pendente, o relatório conta o custo até agora (pode estar cobrando)
+    ("geradores", "fechamento", "TEXT"),
+    ("geradores", "fechamento_em", "DOUBLE PRECISION"),
+    ("geradores", "confirmacao", "TEXT"),
 ]
 MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
@@ -2661,12 +2667,37 @@ class Banco:
             )
 
     def gerador_desligado(self, gid: str) -> None:
-        """O pod foi encerrado no RunPod (fim da cobrança)."""
+        """O pod foi encerrado no RunPod (fim da cobrança). Com o fechamento registrado pelo ciclo de vida
+        (`gerador_fechamento`), quem decide o fim é a observação dele: esta chamada não muda nada."""
         with self.tx() as c:
             c.run(
-                "UPDATE geradores SET desligado_em = ? WHERE id = ? AND desligado_em IS NULL",
+                "UPDATE geradores SET desligado_em = ? WHERE id = ? AND desligado_em IS NULL AND fechamento IS NULL",
                 (time.time(), gid),
             )
+
+    def gerador_fechamento(self, worker: str, estado: str, confirmacao: str | None = None) -> None:
+        """O fechamento do pod `worker` (pod-<id>) no RunPod (14/10/2026): "pedido", "falhou" ou "aceito" (o fim
+        ainda não foi observado: pode estar cobrando) e "confirmado" (o fim observado: `desligado_em`, o fim da
+        cobrança no relatório). Vale para o registro mais recente desse pod."""
+        if estado not in ("pedido", "falhou", "aceito", "confirmado"):
+            raise BancoError(f"fechamento inválido: {estado}")
+        agora = time.time()
+        with self.tx() as c:
+            g = c.one("SELECT id FROM geradores WHERE worker = ? ORDER BY criado DESC LIMIT 1", (worker,))
+            if g is None:
+                return
+            if estado == "confirmado":
+                c.run(
+                    "UPDATE geradores SET fechamento = ?, confirmacao = ?, fechamento_em = COALESCE(fechamento_em, ?),"
+                    " desligado_em = COALESCE(desligado_em, ?) WHERE id = ?",
+                    (estado, confirmacao, agora, agora, g["id"]),
+                )
+            else:
+                c.run(
+                    "UPDATE geradores SET fechamento = ?, fechamento_em = COALESCE(fechamento_em, ?),"
+                    " desligado_em = NULL WHERE id = ?",
+                    (estado, agora, g["id"]),
+                )
 
     # -- interesse nas finalidades em breve ---------------------------------------------------
 
@@ -2741,9 +2772,11 @@ class Banco:
         geradores = []
         for g in linhas:
             inicio = float(g["pod_criado_em"] or g["criado"])
-            ativo = g["estado"] in ("subindo", "pronto")
+            # o fechamento não observado (14/10/2026) conta como ligado: o RunPod pode estar cobrando
+            ativo = g["estado"] in ("subindo", "pronto") or g.get("fechamento") in ("pedido", "falhou", "aceito")
             fim = g["desligado_em"] or g["encerrado_em"]
-            estimado = not ativo and g["desligado_em"] is None
+            fechando = g.get("fechamento") in ("pedido", "falhou", "aceito")
+            estimado = (not ativo and g["desligado_em"] is None) or fechando
             segundos = max(0.0, (agora if ativo or fim is None else float(fim)) - inicio)
             sem_pod = g["pod_criado_em"] is None and g["pronto_em"] is None  # o RunPod nem criou o pod
             custo = None if g["usd_h"] is None else round(float(g["usd_h"]) * segundos / 3600, 4)
@@ -2762,6 +2795,8 @@ class Banco:
                     "primeiro_video_em": g["primeiro_video_em"],
                     "fim_fila": g["encerrado_em"],
                     "desligado_em": g["desligado_em"],
+                    "fechamento": g.get("fechamento"),
+                    "confirmacao": g.get("confirmacao"),
                     "ligado_s": 0.0 if sem_pod else round(segundos, 1),
                     "ligado_estimado": estimado,
                     "subida_s": subida,
@@ -2784,6 +2819,8 @@ class Banco:
                 "pods": sum(1 for x in geradores if x["pod"]),
                 "falharam": sum(1 for x in geradores if x["estado"] == "falhou"),
                 "ligados_agora": sum(1 for x in geradores if x["estado"] in ("subindo", "pronto")),
+                # fechamento pedido e ainda não observado: pode estar cobrando (a reconciliação insiste)
+                "fechando": sum(1 for x in geradores if x["fechamento"] in ("pedido", "falhou", "aceito")),
                 "horas": round(sum(x["ligado_s"] for x in geradores) / 3600, 3),
                 "custo_usd": custo,
                 "sem_preco": len(geradores) - len(custos),

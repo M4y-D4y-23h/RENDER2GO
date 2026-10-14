@@ -2,6 +2,18 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 14/10/2026 (4): ciclo de vida dos pods confiável e teto com tudo o que cobra (ADR 0016, proposto)
+
+Motivo: a revisão de 14/10/2026 (pedido do dono: velocidade, subida e encerramento dos pods e qualidade, sem trocar o modelo), Etapa 1. Branch `claude/magical-lamport-4rrms9`; nada publicado. Detalhes: [`docs/15`](docs/15-ciclo-de-vida-desperdicio-e-qualidade.md), seção 1, e [ADR 0016](docs/adr/0016-ciclo-de-vida-dos-pods.md).
+
+- **Reproduzido no `0a8149b`** (`worker/evals/ciclo-de-vida-2026-10-14/`, provedores falsos): o `DELETE` que falhava tirava o pod do `pods.json` sem nova tentativa (1 chamada ao provedor, lista vazia); o teto por hora ignorava o gravador terminando o cache e o fechamento que falhou; o mesmo pedido descartava um hibernado (falhas 1, 2 e o disco encerrado).
+- **Fechamento observado:** estados `ativo`, `drenando`, `encerrando`/`parando` e `encerrado`/`parado`; o pod só sai do `pods.json` com o 404 ou o estado final observado no RunPod (que não informa o instante do fim da cobrança: o custo é estimado do aceite à observação). Reconciliação a cada ciclo, com intervalos de 5 a 300 s, e depois de um reinício; `--limpar` devolve 5 se algo ficou pendente.
+- **Teto por hora** (`RENDER2GO_MAX_USD_H`) com os pods ligados, drenando ou com o fechamento não observado e as subidas reservadas sem pod (sem contar duas vezes); a capacidade continua sendo só quem pega vídeos.
+- **Hibernados:** uma falha de volta por episódio de demanda e 180 s antes de tentar o mesmo pod (em disco, vale depois de um reinício); disco que não serve sai na hora; a subida do zero continua como reserva.
+- **Cache opcional com orçamento:** `RENDER2GO_CACHE_MAX_USD` (padrão US$ 0,30; na L40S, os 15 min de sempre).
+- **Relatório de GPUs:** `geradores.fechamento`, `fechamento_em` e `confirmacao` (colunas novas, criadas na partida); `desligado_em` é o fim observado.
+- **Testes:** `worker/tests/test_ciclo_de_vida.py` e `servico/tests/test_orquestrador_ciclo.py` (SQLite e Postgres).
+
 ## 14/10/2026 (3): montagem de vídeos (ADR 0015), ligada só no plano interno
 
 Motivo: a Fase 5 do pedido do dono de 13/10 ("uma primeira forma de edição"): juntar os vídeos prontos num anúncio, com os textos, o logo e a trilha, sem sair do Render2Go; "desligada para os clientes até o preço ser definido; ligada no plano interno" ([ADR 0015](docs/adr/0015-montagem-de-videos.md), aceito no plano interno). Branch `claude/magical-lamport-4rrms9`. Publicação: `docs/09`, entrada 14/10/2026 (2).

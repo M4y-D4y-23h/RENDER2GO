@@ -13,7 +13,7 @@
 
 | Onde | O que fazia | Agora |
 |---|---|---|
-| Volta sem GPU no host (`_retomar_algum`) | 3 tentativas no mesmo pedido e o pod era encerrado | **uma tentativa por pedido**; só sai do conjunto depois de 3 pedidos seguidos sem GPU livre (`FALHAS_RETOMADA`), com o motivo e a hora no painel ("Última volta que não deu certo"). No lugar, sobe um pod do zero, como antes |
+| Volta sem GPU no host (`_retomar_algum`) | 3 tentativas no mesmo pedido e o pod era encerrado | **uma tentativa por pedido**; só sai do conjunto depois de 3 pedidos seguidos sem GPU livre (`FALHAS_RETOMADA`), com o motivo e a hora no painel ("Última volta que não deu certo"). No lugar, sobe um pod do zero, como antes. **14/10/2026 (ADR 0016):** o código contava por chamada, e os ciclos seguintes do mesmo pedido chamavam de novo; agora conta por episódio de demanda (`demanda.json`), com 180 s antes de tentar o mesmo pod (`nao_antes`, que sobrevive ao reinício) |
 | Conjunto cheio | o pod que acabou de rodar era encerrado, e o hibernado cujo host estava cheio ficava | o pod que acabou de rodar (com o volume conferido) **toma a vaga** de um hibernado que já falhou na volta (o que mais falhou); os que nunca falharam ficam |
 | Erro depois da volta (apt, links) | o pod era encerrado, mesmo com o volume bom | só sai se o erro mostra o volume estragado ("disco de volume", "não existe mais", GPU com defeito, driver antigo); senão, é parado de novo e conta uma falha |
 | Prazo do agente (`pod_agente.desligar`, modo parar) | `podStop` e, 60 s depois, `podTerminate` se a API ainda não mostrasse o pod parado | até 10 `podStop` (2 min entre as tentativas); `podTerminate` só no fim, como último recurso |

@@ -111,6 +111,21 @@ RESERVA_SALDO_USD = 1.0  # nunca gastar o saldo da conta até o fim
 MIN_POD_S = 15 * 60  # se o saldo/orçamento não pagam nem isso, não sobe
 ESPERA_SERVICOS_S = 600
 ESPERA_GUARDAR_S = 15 * 60  # pod gravador: prazo para terminar o cache no volume
+# o cache (volume/espelho) é opcional: a espera também não passa do que este valor paga na GPU do
+# pod (14/10/2026; com a L40S a US$ 1,09/h, os 15 min de sempre). RENDER2GO_CACHE_MAX_USD muda
+CACHE_MAX_USD = float(os.environ.get("RENDER2GO_CACHE_MAX_USD", 0.30))
+# Encerramento (14/10/2026): o pod só sai do controle quando o fim é observado no provedor. A API do
+# RunPod (GET /pods/{id}) dá o desiredStatus (RUNNING/EXITED/TERMINATED: o estado esperado, não um
+# instante de cobrança) e 404 quando o pod não existe; não há campo com o fim da cobrança. Por isso,
+# o custo de um pod que está fechando é contado até a observação (o aceite do DELETE é o limite de
+# baixo)
+ENC_PEDIDO = "pedido"  # o pedido está no ar (DELETE ou stop enviado, sem resposta ainda)
+ENC_FALHOU = "falhou"  # o pedido falhou (rede, 5xx, timeout): vai de novo, com intervalo crescente
+ENC_ACEITO = "aceito"  # o provedor aceitou; o fim ainda não foi observado (pode estar cobrando)
+ENC_CONFIRMADO = "confirmado"  # 404 ou o estado final observado (TERMINATED; EXITED na parada)
+ENC_BACKOFF_S = (5, 15, 30, 60, 120, 300)  # intervalo entre tentativas (o último se repete)
+ENC_REENVIO_S = 120  # aceito, mas ainda RUNNING depois disso: o pedido (idempotente) vai de novo
+ENC_FIM_LOTE_S = 120  # fim do lote_nuvem: quanto tempo ele insiste antes de deixar para o --limpar
 # intervalo das consultas ao agente durante a subida (era 10 s: perdia ~5 s em média por etapa)
 CONSULTA_S = 3
 FOTOS_POR_GPU = 2
@@ -718,9 +733,9 @@ def estimar(n_videos: int, pods: int, gpus_por_pod: int, s_video: float, usd_h: 
 class Pod:
     info: PodInfo
     agente: Agente
-    criado: float = field(default_factory=time.monotonic)
-    vivo: bool = True
-    fim: float | None = None
+    criado: float = field(default_factory=lambda: time.monotonic())
+    vivo: bool = True  # aceita trabalho; False: drenando, fechando ou fechado (ver `encerramento`)
+    fim: float | None = None  # quando deixou de ser usado (não é o fim da cobrança)
     vazao: list[float] = field(default_factory=list)
     grava_volume: bool = False
     espelhando: bool = False
@@ -730,10 +745,49 @@ class Pod:
     # o disco de volume foi conferido nesta subida (GUARDADO e o marcador desta versão): só assim o
     # pod que o desligamento automático parou pode ficar no conjunto de hibernados
     volume_ok: bool = False
+    # fechamento (14/10/2026): "encerrar" (DELETE) ou "parar" (hibernação), o estado (ENC_*), as
+    # tentativas e os instantes (monotonic) do 1º pedido, do aceite e da observação do fim
+    acao: str | None = None
+    encerramento: str | None = None
+    enc_tentativas: int = 0
+    enc_proxima: float = 0.0
+    enc_pedido_em: float | None = None
+    enc_aceito_em: float | None = None
+    enc_confirmado_em: float | None = None
+    enc_erro: str = ""
+    # o que confirmou o fim: "404", "TERMINATED", "EXITED" ou "aceite" (provedor sem consulta)
+    confirmacao: str = ""
+    drenando_em: float | None = None  # o worker saiu: não pega trabalho, termina entregas e cache
+    criado_em: float = field(default_factory=lambda: time.time())  # epoch (sobrevive ao reinício)
 
     @property
     def nome(self) -> str:
         return f"{self.info.id} ({self.info.descricao})"
+
+    @property
+    def faturavel(self) -> bool:
+        """Pode estar cobrando a GPU: ligado, drenando ou com o fechamento ainda não observado."""
+        return self.encerramento != ENC_CONFIRMADO
+
+    @property
+    def estado(self) -> str:
+        """ativo (pega trabalho), drenando (terminando entregas ou o cache), encerrando/parando
+        (pedido enviado, falhou ou aceito sem o fim observado) ou encerrado/parado (fim
+        observado)."""
+        if self.encerramento is None:
+            return "ativo" if self.vivo and self.drenando_em is None else "drenando"
+        if self.encerramento == ENC_CONFIRMADO:
+            return "parado" if self.acao == "parar" else "encerrado"
+        return "parando" if self.acao == "parar" else "encerrando"
+
+    def fim_cobranca(self, agora: float, minimo: bool = False) -> float:
+        """Até quando o custo da GPU conta (monotonic): a observação do fim (ou agora, sem ela); com
+        `minimo`, o aceite do pedido (o limite de baixo, para o relatório)."""
+        if minimo and self.enc_aceito_em is not None:
+            return self.enc_aceito_em
+        if self.encerramento == ENC_CONFIRMADO:
+            return self.enc_confirmado_em or self.enc_aceito_em or self.fim or agora
+        return agora
 
 
 COLUNAS = [*lote.COLUNAS_RELATORIO, "pod"]
@@ -757,26 +811,206 @@ class Orquestrador:
         self.contador = 0
         self.gravador: Pod | None = None  # com --volume, só um pod por vez grava o cache
         self.gravador_pendente = False
+        # chamado a cada mudança do fechamento de um pod (o orquestrador da fila registra no
+        # relatório de GPUs); nunca derruba o fechamento
+        self.ao_fechamento: Callable[[Pod], None] | None = None
 
-    # estado em disco, para --limpar depois de uma interrupção
+    # estado em disco, para --limpar e para a reconciliação depois de uma interrupção
     def _salvar_estado(self) -> None:
+        """Chamar com self.lock. Grava cada pod que pode estar cobrando (ligado, drenando ou com o
+        fechamento não observado), com o estado do fechamento; gravação atômica (tmp + rename)."""
         est = self.a.saida / ESTADO / "pods.json"
         est.parent.mkdir(parents=True, exist_ok=True)
-        dados = [{"id": p.info.id, "descricao": p.info.descricao} for p in self.pods if p.vivo]
-        est.write_text(json.dumps(dados, indent=1))
+        dados = [
+            {
+                "id": p.info.id,
+                "descricao": p.info.descricao,
+                "usd_h": p.info.usd_h,
+                "criado_em": round(p.criado_em, 3),
+                "vivo": p.vivo,
+                "estado": p.estado,
+                "acao": p.acao,
+                "encerramento": p.encerramento,
+                "tentativas": p.enc_tentativas,
+                "erro": p.enc_erro[:200],
+            }
+            for p in self.pods
+            if p.faturavel
+        ]
+        tmp = est.with_name(est.name + ".tmp")
+        tmp.write_text(json.dumps(dados, indent=1))
+        tmp.replace(est)
 
-    def _encerrar(self, pod: Pod, motivo: str) -> None:
+    def _fechar(self, pod: Pod, acao: str, motivo: str, forcar: bool = True) -> bool:
+        """Pede ao provedor o fechamento (`acao` "encerrar" ou "parar") e guarda o estado antes e
+        depois. Idempotente: com o pedido no ar (outro caminho) ou já aceito, não manda outro; com
+        uma falha anterior, manda de novo (`forcar`) ou só depois do intervalo. Nunca tira o pod do
+        inventário sem a observação do fim (`reconciliar`). Devolve se o provedor aceitou."""
+        agora = time.monotonic()
         with self.lock:
-            if not pod.vivo:
-                return
-            pod.vivo, pod.fim = False, time.monotonic()
+            if pod.encerramento == ENC_PEDIDO:
+                return False
+            # o pod parado (hibernado) ainda pode ser encerrado de vez; o resto já fechado fica
+            de_parado = pod.acao == "parar" and acao == "encerrar"
+            if pod.encerramento == ENC_CONFIRMADO and not de_parado:
+                return True
+            if pod.encerramento == ENC_ACEITO and pod.acao == acao:
+                return True
+            if de_parado and pod.encerramento in (ENC_ACEITO, ENC_CONFIRMADO):
+                pod.enc_tentativas, pod.enc_aceito_em, pod.enc_confirmado_em = 0, None, None
+            if pod.encerramento == ENC_FALHOU and not forcar and agora < pod.enc_proxima:
+                return False
+            pod.vivo, pod.fim = False, pod.fim or agora
+            pod.acao, pod.encerramento = acao, ENC_PEDIDO
+            pod.enc_tentativas += 1
+            pod.enc_pedido_em = pod.enc_pedido_em or agora
+            self._salvar_estado()  # antes da chamada: se o processo cair no meio, o registro fica
         try:
-            self.provedor.encerrar(pod.info.id)
-            _log(f"pod {pod.nome} encerrado ({motivo})")
-        except Exception as e:  # noqa: BLE001 (o desligamento automático cobre)
-            _log(f"AVISO: falha ao encerrar {pod.nome}: {e}; o desligamento automático cobre")
+            if acao == "parar":
+                self.provedor.parar(pod.info.id)
+            else:
+                self.provedor.encerrar(pod.info.id)
+        except Exception as e:  # noqa: BLE001 (registrado e tentado de novo; o deadman cobre)
+            espera = ENC_BACKOFF_S[min(pod.enc_tentativas, len(ENC_BACKOFF_S)) - 1]
+            with self.lock:
+                pod.encerramento, pod.enc_erro = ENC_FALHOU, str(e)[:300]
+                pod.enc_proxima = time.monotonic() + espera
+                self._salvar_estado()
+            _log(
+                f"AVISO: {acao} {pod.nome} falhou ({e}); nova tentativa em {espera} s "
+                "(o desligamento automático cobre)"
+            )
+            self._avisar(pod)
+            return False
         with self.lock:
+            pod.encerramento, pod.enc_erro = ENC_ACEITO, ""
+            pod.enc_aceito_em = time.monotonic()
+            pod.enc_proxima = pod.enc_aceito_em + ENC_BACKOFF_S[0]  # a consulta logo abaixo é a 1ª
             self._salvar_estado()
+        _log(f"pod {pod.nome}: {'parada' if acao == 'parar' else 'encerramento'} aceito ({motivo})")
+        self._observar(pod)
+        if pod.encerramento != ENC_CONFIRMADO:  # o confirmado já avisou
+            self._avisar(pod)
+        return True
+
+    def _avisar(self, pod: Pod) -> None:
+        if self.ao_fechamento is None:
+            return
+        try:
+            self.ao_fechamento(pod)
+        except Exception as e:  # noqa: BLE001 (só o relatório depende disso)
+            _log(f"AVISO: registro do fechamento de {pod.nome}: {e}")
+
+    def _encerrar(self, pod: Pod, motivo: str) -> bool:
+        return self._fechar(pod, "encerrar", motivo)
+
+    def _observar(self, pod: Pod) -> None:
+        """Uma consulta ao provedor: o fim observado confirma o fechamento. Sem `situacao` no
+        provedor, o aceite é o que se pode saber (confirmação "aceite"); resposta inconclusiva
+        (erro, timeout) não muda nada."""
+        situacao = getattr(self.provedor, "situacao", None)
+        if situacao is None:
+            visto: str | None = "aceite"
+        else:
+            try:
+                s = situacao(pod.info.id)
+            except Exception as e:  # noqa: BLE001 (inconclusivo: a próxima reconciliação pergunta)
+                with self.lock:
+                    pod.enc_erro = f"consulta: {e}"[:300]
+                return
+            finais = ("TERMINATED",) if pod.acao == "encerrar" else ("EXITED", "TERMINATED")
+            visto = "404" if s is None else (s if s in finais else None)
+        if visto is None:
+            return
+        with self.lock:
+            pod.encerramento, pod.confirmacao = ENC_CONFIRMADO, visto
+            pod.enc_confirmado_em = time.monotonic()
+            self._salvar_estado()
+        self._avisar(pod)
+
+    def reconciliar(self, forcar: bool = False) -> list[Pod]:
+        """Leva cada fechamento pendente adiante: repete o pedido que falhou (com intervalo
+        crescente), consulta o que foi aceito e repete o pedido aceito que continua RUNNING depois
+        de ENC_REENVIO_S. Só os pods deste inventário (os que este processo criou ou leu do
+        pods.json). `forcar`: ignora os intervalos (fim do lote, --limpar). Devolve os que seguem
+        pendentes."""
+        with self.lock:
+            pendentes = [p for p in self.pods if p.encerramento in (ENC_FALHOU, ENC_ACEITO)]
+        for pod in pendentes:
+            agora = time.monotonic()
+            if not forcar and agora < pod.enc_proxima:
+                continue
+            if pod.encerramento == ENC_FALHOU:
+                self._fechar(pod, pod.acao or "encerrar", "reconciliação")
+                continue
+            self._observar(pod)
+            if pod.encerramento == ENC_ACEITO:
+                passou = time.monotonic() - (pod.enc_aceito_em or agora)
+                if passou >= ENC_REENVIO_S:  # aceito e nada mudou: o pedido vai de novo
+                    with self.lock:
+                        pod.encerramento = ENC_FALHOU
+                    self._fechar(pod, pod.acao or "encerrar", "reenvio")
+                else:
+                    espera = ENC_BACKOFF_S[min(pod.enc_tentativas, len(ENC_BACKOFF_S)) - 1]
+                    with self.lock:
+                        pod.enc_proxima = time.monotonic() + espera
+        with self.lock:
+            return [p for p in self.pods if p.encerramento in (ENC_FALHOU, ENC_ACEITO, ENC_PEDIDO)]
+
+    def carregar_pendentes(self) -> list[Pod]:
+        """Depois de um reinício: o pods.json de antes vira inventário. O que estava ligado (o
+        processo caiu sem fechar) e o que tinha o fechamento pendente vão para a reconciliação, com
+        a mesma ação (a parada de um pod que hiberna continua parada; o resto é encerrado)."""
+        est = self.a.saida / ESTADO / "pods.json"
+        try:
+            dados = json.loads(est.read_text()) if est.is_file() else []
+        except (OSError, ValueError):
+            dados = []
+        novos = []
+        with self.lock:
+            conhecidos = {p.info.id for p in self.pods}
+            for d in dados if isinstance(dados, list) else []:
+                if not isinstance(d, dict) or not d.get("id") or d["id"] in conhecidos:
+                    continue
+                info = PodInfo(
+                    str(d["id"]), "", "", float(d.get("usd_h") or 0), str(d.get("descricao", "")), 1
+                )
+                pod = Pod(info, Agente("", ""), vivo=False, acao=d.get("acao") or "encerrar")
+                pod.encerramento, pod.fim = ENC_FALHOU, time.monotonic()
+                pod.enc_tentativas = int(d.get("tentativas") or 0)
+                pod.criado_em = float(d.get("criado_em") or time.time())
+                # o custo conta desde a criação de verdade (o relógio monotonic não sobrevive)
+                pod.criado = time.monotonic() - max(0.0, time.time() - pod.criado_em)
+                self.pods.append(pod)
+                novos.append(pod)
+            self._salvar_estado()
+        return novos
+
+    def fechar_por_id(self, info: PodInfo | str, acao: str, motivo: str) -> bool:
+        """Fecha (`acao` "encerrar" ou "parar") um pod que não está ligado neste inventário (ex.: o
+        hibernado, ou o que voltou e não ficou pronto): ele entra no inventário, para a tentativa
+        não se perder se o provedor falhar. Com só o id (pod parado), a GPU não conta no teto por
+        hora."""
+        pod_id = info if isinstance(info, str) else info.id
+        with self.lock:
+            pod = next((p for p in reversed(self.pods) if p.info.id == pod_id), None)
+            if pod is None or (pod.encerramento == ENC_CONFIRMADO and pod.acao != "parar"):
+                if isinstance(info, str):
+                    info = PodInfo(pod_id, "", "", 0.0, "", 1)
+                pod = Pod(info, Agente(info.url, info.token), vivo=False)
+                self.pods.append(pod)
+        return self._fechar(pod, acao, motivo)
+
+    def encerrar_por_id(self, pod_id: str, motivo: str) -> bool:
+        return self.fechar_por_id(pod_id, "encerrar", motivo)
+
+    def prazo_cache(self, pod: Pod) -> float:
+        """Quanto o pod pode esperar o cache (volume/espelho) depois do trabalho: ESPERA_GUARDAR_S
+        ou o que CACHE_MAX_USD paga na GPU dele, o menor (o prazo do desligamento automático vale à
+        parte). O cache é opcional: o que não terminou não é usado (marcadores GUARDADO e da versão;
+        o espelho só registra o que conferiu)."""
+        usd_h = pod.info.usd_h or PRECO_RESERVA_USD_H
+        return min(float(ESPERA_GUARDAR_S), CACHE_MAX_USD / usd_h * 3600)
 
     def _subir_pod(
         self,
@@ -919,19 +1153,15 @@ class Orquestrador:
 
     def hibernar(self, pod: Pod, motivo: str) -> bool:
         """Para o pod (a GPU para de cobrar; o disco de volume fica no host). Se o RunPod recusar,
-        encerra. Devolve True se o pod ficou parado."""
+        encerra. Devolve True se a parada foi aceita (a observação do EXITED vem na
+        reconciliação)."""
         with self.lock:
             if not pod.vivo:
                 return False
-        try:
-            self.provedor.parar(pod.info.id)
-        except Exception as e:  # noqa: BLE001 (sem a parada, o pod não pode ficar ligado)
-            _log(f"AVISO: o pod {pod.nome} não hibernou ({e}); encerrando")
+        if not self._fechar(pod, "parar", motivo):
+            _log(f"AVISO: o pod {pod.nome} não hibernou ({pod.enc_erro}); encerrando")
             self._encerrar(pod, f"{motivo}; não hibernou")
             return False
-        with self.lock:
-            pod.vivo, pod.fim = False, time.monotonic()
-            self._salvar_estado()
         _log(f"pod {pod.nome} hibernado ({motivo})")
         return True
 
@@ -1227,9 +1457,15 @@ class Orquestrador:
         final = self.a.saida / "final" / video.name
         self.acab_futuros.append(self.acab.submit(acabamento.acabar, [video], final, o))
 
-    def gasto(self) -> float:
+    def gasto(self, minimo: bool = False) -> float:
+        """US$ dos pods deste processo: do nascimento até o fim observado (ou agora, sem ele). Com
+        `minimo`, até o aceite do fechamento (o limite de baixo: o provedor não informa o
+        instante)."""
         agora = time.monotonic()
-        return sum(p.info.usd_h * ((p.fim or agora) - p.criado) / 3600 for p in self.pods)
+        return sum(
+            p.info.usd_h * max(0.0, p.fim_cobranca(agora, minimo) - p.criado) / 3600
+            for p in self.pods
+        )
 
     def _trabalhar(self, i: int, deadman_s: int) -> None:
         """Um "posto" do lote: sobe um pod; se ele falhar ou for lento, troca por outro."""
@@ -1292,9 +1528,11 @@ class Orquestrador:
             self._encerrar(pod, "fim do trabalho")
 
     def _esperar_guardar(self, pod: Pod) -> None:
-        """O pod gravador só sai depois de terminar o cache no volume e o envio ao espelho."""
+        """O pod gravador só sai depois de terminar o cache no volume e o envio ao espelho, com
+        prazo: o do cache (`prazo_cache`, que inclui o orçamento CACHE_MAX_USD) e o do desligamento
+        automático."""
         limite = min(
-            time.monotonic() + ESPERA_GUARDAR_S,
+            time.monotonic() + self.prazo_cache(pod),
             pod.criado + (pod.deadman_s or getattr(self, "deadman_s", 0)) - 60,
         )
         r = self.remoto.raiz
@@ -1353,7 +1591,15 @@ class Orquestrador:
                 t.join()
         finally:
             for p in list(self.pods):
-                self._encerrar(p, "fim do lote")
+                if p.vivo:
+                    self._encerrar(p, "fim do lote")
+            # o que falhou ou não foi observado: insiste um pouco; o resto fica no pods.json
+            # (--limpar)
+            limite = time.monotonic() + ENC_FIM_LOTE_S
+            while self.reconciliar() and time.monotonic() < limite:
+                time.sleep(ENC_BACKOFF_S[0])
+            for p in self.reconciliar(forcar=True):
+                _log(f"AVISO: o fim do pod {p.nome} não foi confirmado: rode --limpar mais tarde")
             for fut in self.acab_futuros:
                 try:
                     fut.result()
@@ -1533,18 +1779,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def limpar(saida: Path, provedor: Provedor) -> int:
-    est = saida / ESTADO / "pods.json"
-    if not est.is_file():
+    """Encerra os pods do pods.json de uma execução interrompida (ligados ou com o fechamento
+    pendente). O que não foi aceito ou observado fica registrado: EXIT_PENDENTE, rode de novo."""
+    if not (saida / ESTADO / "pods.json").is_file():
         _log("nenhum pod registrado")
         return EXIT_OK
-    for p in json.loads(est.read_text()):
-        try:
-            provedor.encerrar(p["id"])
-            _log(f"encerrado {p['id']}")
-        except Exception as e:  # noqa: BLE001
-            _log(f"falha ao encerrar {p['id']}: {e}")
-    est.write_text("[]")
-    return EXIT_OK
+    orq = Orquestrador(Namespace(saida=saida, acabamento=None), [], provedor, Remoto())
+    try:
+        orq.carregar_pendentes()
+        pendentes = orq.reconciliar(forcar=True)
+    finally:
+        orq.acab.shutdown()
+    for p in pendentes:
+        _log(f"pendente: {p.info.id} ({p.encerramento}: {p.enc_erro or 'fim não observado'})")
+    return EXIT_PENDENTE if pendentes else EXIT_OK
 
 
 def main(
