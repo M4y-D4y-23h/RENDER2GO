@@ -27,9 +27,10 @@ MAX_FRAMES = 12
 
 
 class MediaError(Exception):
-    def __init__(self, message: str, retryable: bool = False):
+    def __init__(self, message: str, retryable: bool = False, status: int | None = None):
         super().__init__(message)
         self.retryable = retryable
+        self.status = status  # o HTTP da última resposta (envio: 403 = URL vencida ou recusada)
 
 
 class UnsafeUrl(MediaError):
@@ -108,7 +109,7 @@ def upload(
     url: str, path: Path, content_type: str, attempts: int = 3, timeout: float = 120
 ) -> None:
     check_url(url)
-    last = ""
+    last, status = "", None
     for i in range(attempts):
         try:
             with open(path, "rb") as f:
@@ -117,13 +118,16 @@ def upload(
                 )
             if r.status_code < 300:
                 return
-            last = f"{r.status_code} {r.text[:200]}"
-            if r.status_code < 500:
-                raise MediaError(f"upload recusado: {last}")
+            last, status = f"{r.status_code} {r.text[:200]}", r.status_code
+            if r.status_code < 500 and r.status_code not in (408, 429):
+                raise MediaError(f"upload recusado: {last}", status=r.status_code)
         except requests.RequestException as e:
-            last = str(e)
-        time.sleep(2**i)
-    raise MediaError(f"upload falhou depois de {attempts} tentativas: {last}", retryable=True)
+            last, status = str(e), None
+        if i + 1 < attempts:
+            time.sleep(2**i)
+    raise MediaError(
+        f"upload falhou depois de {attempts} tentativas: {last}", retryable=True, status=status
+    )
 
 
 def sample_frames(mp4: Path, n: int, out_dir: Path) -> list[Path]:

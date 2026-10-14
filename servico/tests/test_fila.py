@@ -526,10 +526,10 @@ def test_the_gpu_does_not_wait_for_the_upload_or_the_next_photo(ambiente, monkey
 
     enviar, esperou = media.upload, []
 
-    def upload(url, path, tipo):
+    def upload(url, path, tipo, **kw):
         if tipo == "video/mp4" and not esperou:  # o 1º vídeo: o 2º já está na GPU?
             esperou.append(segundo.wait(10 if adiantar else 1))
-        return enviar(url, path, tipo)
+        return enviar(url, path, tipo, **kw)
 
     monkeypatch.setattr(media, "upload", upload)
     pastas = tmp_path / "tmp"

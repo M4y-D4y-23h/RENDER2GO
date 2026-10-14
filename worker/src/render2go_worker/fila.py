@@ -41,9 +41,11 @@ Token em RENDER2GO_WORKER_TOKEN. Filtros: RENDER2GO_SAFETY=c1-revisao-humana (AD
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import hashlib
 import hmac
+import json
 import os
 import shutil
 import sys
@@ -60,6 +62,7 @@ from PIL import Image
 
 from render2go_worker import (
     cli_submit,
+    comfy_client,
     compiler,
     conferencia,
     filtro_imagem,
@@ -96,10 +99,26 @@ MOTIVOS = {
 }
 TIPOS = {"jpg": ".jpg", "png": ".png", "webp": ".webp"}
 OLLAMA_CPU = legenda.OLLAMA_CPU  # o 2º Ollama do pod, só em CPU (legenda por foto, ADR 0014)
+# Entrega (14/10/2026): o vídeo aprovado (conferência e filtro) fica no disco do pod, com o SHA-256,
+# até a API confirmar; a falha de envio ou de confirmação repete o MESMO vídeo, sem voltar à GPU.
+# Só depois de ENTREGA_MAX_S (e nunca depois do limite do pod) ele volta para a fila, com a mesma
+# seed (falha de transporte). Some com o disco do pod: não há recuperação depois que o pod acaba.
+ENTREGA_MAX_S = 600
+ENTREGA_ALEM_ATE_S = 300  # a entrega pode passar do --ate (que fica 10 min antes do desligamento)
+ENTREGAS_MAX = 8  # vídeos esperando confirmação no disco, no máximo (o resto segue sem retenção)
+ENTREGAS_MAX_BYTES = 2 * 1024**3
+ENTREGA_VELHA_S = 3 * 3600  # na partida, manifestos mais velhos que o pod (2 h) saem sem envio
+MANIFESTO = "entrega.json"
+BATIMENTO_S = 60  # renovação do prazo do job durante o vídeo, com o progresso observado
 
 
 class FilaError(Exception):
     pass
+
+
+class Perdida(FilaError):
+    """O job não está mais com esta tentativa (prazo vencido, pedido parado, outro pod): o que o
+    pod tem dele não é enviado nem confirmado."""
 
 
 def _log(msg: str) -> None:
@@ -115,6 +134,11 @@ class ApiFila:
         self.url, self.worker, self.timeout = url.rstrip("/"), worker, timeout
         self.s = requests.Session()
         self.s.headers["Authorization"] = f"Bearer {token}"
+
+    @staticmethod
+    def _com(corpo: dict, tentativa: str | None) -> dict:
+        """A tentativa vai junto (14/10/2026) só quando a API a deu (a de antes não a conhece)."""
+        return {**corpo, "tentativa": tentativa} if tentativa else corpo
 
     def _post(self, rota: str, corpo: dict, tentativas: int = 5) -> requests.Response:
         erro = ""
@@ -139,43 +163,93 @@ class ApiFila:
             raise FilaError(f"reivindicar: HTTP {r.status_code} {r.text[:200]}")
         return r.json().get("job")
 
-    def prompt(self, job_id: str, prompt_en: str, compilador: str, **detalhe: Any) -> None:
+    def prompt(
+        self, job_id: str, prompt_en: str, compilador: str, tentativa: str | None = None, **detalhe
+    ) -> None:
         """`detalhe`: como a tradução saiu (vago, padrao, pessoas_recusadas...), para o registro do
         pedido; a API de antes ignora."""
         r = self._post(
             f"/api/worker/jobs/{job_id}/prompt",
-            {"worker": self.worker, "prompt_en": prompt_en, "compilador": compilador, **detalhe},
+            self._com(
+                {
+                    "worker": self.worker,
+                    "prompt_en": prompt_en,
+                    "compilador": compilador,
+                    **detalhe,
+                },
+                tentativa,
+            ),
         )
         if r.status_code != 200:
             raise FilaError(f"prompt recusado: HTTP {r.status_code} {r.text[:200]}")
 
-    def concluir(self, job_id: str, status: str, **campos: Any) -> str:
-        corpo = {"worker": self.worker, "status": status, **campos}
+    def concluir(self, job_id: str, status: str, tentativa: str | None = None, **campos) -> str:
+        """Conclui a tentativa. A mesma tentativa repetindo (a resposta se perdeu) recebe a mesma
+        resposta da API, sem cobrar de novo; 409 (o job é de outra tentativa) levanta Perdida; 503
+        (a publicação falhou) e a API fora do ar levantam FilaError (repetir mais tarde)."""
+        corpo = self._com({"worker": self.worker, "status": status, **campos}, tentativa)
         r = self._post(f"/api/worker/jobs/{job_id}/concluir", corpo)
+        if r.status_code == 409:
+            raise Perdida(f"concluir: {r.text[:200]}")
         if r.status_code != 200:
             raise FilaError(f"concluir: HTTP {r.status_code} {r.text[:200]}")
         return r.json()["status"]
 
-    def iniciar(self, job_id: str) -> bool:
+    def iniciar(self, job_id: str, tentativa: str | None = None) -> float | bool:
         """O vídeo pego adiantado pode ir para a GPU? False: o pedido foi parado (a API cancelou o
-        vídeo, sem custo) ou o job não está mais com este pod."""
-        r = self._post(f"/api/worker/jobs/{job_id}/iniciar", {"worker": self.worker})
+        vídeo, sem custo) ou o job não está mais com este pod. Com a API de 14/10/2026, devolve o
+        prazo absoluto da tentativa (s a partir de agora), que recomeça aqui."""
+        r = self._post(
+            f"/api/worker/jobs/{job_id}/iniciar", self._com({"worker": self.worker}, tentativa)
+        )
         if r.status_code == 404:  # API de antes desta rota: segue, como antes
             return True
         if r.status_code == 409:
             return False
         if r.status_code != 200:
             raise FilaError(f"iniciar: HTTP {r.status_code} {r.text[:200]}")
-        return bool(r.json().get("seguir"))
+        d = r.json()
+        if not d.get("seguir"):
+            return False
+        return float(d["prazo_s"]) if d.get("prazo_s") else True
 
-    def devolver(self, job_id: str) -> None:
+    def devolver(self, job_id: str, tentativa: str | None = None) -> None:
         """Vídeo pego adiantado que este pod não vai gerar: volta para a fila sem contar
         tentativa."""
-        r = self._post(f"/api/worker/jobs/{job_id}/devolver", {"worker": self.worker})
+        r = self._post(
+            f"/api/worker/jobs/{job_id}/devolver", self._com({"worker": self.worker}, tentativa)
+        )
         if r.status_code == 404:  # API de antes desta rota: volta como um erro que se refaz
             self.concluir(job_id, "erro", erro="devolvido sem ir para a GPU", repetir=True)
         elif r.status_code not in (200, 409):
             raise FilaError(f"devolver: HTTP {r.status_code} {r.text[:200]}")
+
+    def renovar(self, job_id: str, tentativa: str, etapa: str, progresso: int) -> bool:
+        """Renova o prazo do job com o progresso observado (14/10/2026). False: a API de antes não
+        tem a rota (nada a fazer). Perdida: o job não está mais com esta tentativa, o prazo absoluto
+        venceu ou não houve progresso (a API recusa o batimento sozinho)."""
+        corpo = self._com(
+            {"worker": self.worker, "etapa": etapa, "progresso": int(progresso)}, tentativa
+        )
+        r = self._post(f"/api/worker/jobs/{job_id}/renovar", corpo, tentativas=2)
+        if r.status_code == 404:
+            return False
+        if r.status_code == 409:
+            raise Perdida(f"renovar: {r.text[:200]}")
+        if r.status_code != 200:
+            raise FilaError(f"renovar: HTTP {r.status_code} {r.text[:200]}")
+        return True
+
+    def urls(self, job_id: str, tentativa: str | None) -> dict:
+        """URLs de envio novas para a mesma tentativa (a de antes venceu: 1 h)."""
+        r = self._post(
+            f"/api/worker/jobs/{job_id}/urls", self._com({"worker": self.worker}, tentativa)
+        )
+        if r.status_code == 409:
+            raise Perdida(f"urls: {r.text[:200]}")
+        if r.status_code != 200:
+            raise FilaError(f"urls: HTTP {r.status_code} {r.text[:200]}")
+        return r.json()
 
 
 def semente_do_pedido(lote_id: str) -> int:
@@ -214,6 +288,10 @@ class Config:
     aquecer: bool = False  # sem pedido depois do PRONTO: um vídeo descartado carrega os modelos
     legenda: bool = False  # legenda por foto (ADR 0014): o modelo de visão no Ollama de CPU
     ollama_cpu: str = OLLAMA_CPU
+    # vídeos aprovados esperando a confirmação da API (14/10/2026): no disco do pod, um por pasta
+    entregas: Path = dataclasses.field(
+        default_factory=lambda: Path(tempfile.gettempdir()) / "render2go-entregas"
+    )
 
 
 @dataclasses.dataclass
@@ -228,6 +306,105 @@ class Preparado:
     etapas: dict[str, float]  # segundos por etapa: preparo, espera_gpu, gpu, render, envio...
     adiantado: bool = False  # pego enquanto a GPU gerava o anterior: passa pela API antes de ir
     ciclo_s: float | None = None  # tempo de GPU do vídeo, com a espera dela (None: do pego ao fim)
+    prazo: float | None = None  # prazo absoluto da tentativa (monotonic); None: API de antes
+    batimento: Batimento | None = None  # renova o prazo do job com o progresso (14/10/2026)
+
+
+class Batimento:
+    """Renova o prazo (lease) do job a cada BATIMENTO_S com a etapa e um contador de progresso de
+    verdade (passos do ComfyUI, tentativas de envio): a API recusa a renovação sem progresso e
+    depois do prazo absoluto da tentativa. Se a API recusar (Perdida), `perdida` fica marcada e
+    `ao_perder` é chamado (ex.: interromper o ComfyUI): o vídeo dessa tentativa não é enviado. Só
+    com a API de 14/10/2026 (o job traz a `tentativa`); com a de antes, não faz nada."""
+
+    def __init__(self, api: ApiFila, job: dict, ao_perder: Callable[[], None] | None = None):
+        self.api, self.job, self.ao_perder = api, job, ao_perder
+        self.etapa, self.progresso = "gpu", 0
+        self.perdida = threading.Event()
+        self._fim = threading.Event()
+        self._t: threading.Thread | None = None
+        if job.get("tentativa"):
+            self._t = threading.Thread(target=self._rodar, daemon=True, name="batimento")
+            self._t.start()
+
+    def marcar(self, etapa: str | None = None, mais: int = 1) -> None:
+        if etapa:
+            self.etapa = etapa
+        self.progresso += mais
+
+    def renovar(self) -> None:
+        """Uma renovação agora (também chamada pela entrega entre duas tentativas de envio)."""
+        if not self.job.get("tentativa") or self.perdida.is_set():
+            return
+        try:
+            if not self.api.renovar(
+                self.job["job_id"], self.job["tentativa"], self.etapa, self.progresso
+            ):
+                self._fim.set()  # API sem a rota
+        except Perdida as e:
+            _log(f"{self.job.get('arquivo') or self.job['job_id']}: {e}")
+            self.perdida.set()
+            if self.ao_perder:
+                self.ao_perder()
+        except FilaError as e:  # API fora do ar: o prazo atual vale; a conclusão confere depois
+            _log(f"AVISO: renovação do prazo: {e}")
+
+    def _rodar(self) -> None:
+        while not self._fim.wait(BATIMENTO_S):
+            self.renovar()
+            if self.perdida.is_set():
+                return
+
+    def parar(self) -> None:
+        self._fim.set()
+
+
+@dataclasses.dataclass
+class Entrega:
+    """Um vídeo aprovado esperando a confirmação: a pasta (vídeo e folha) no disco do pod, o SHA-256
+    e o que vai na conclusão. O manifesto (sem as URLs assinadas) deixa um worker que reiniciou no
+    mesmo pod continuar a entrega, se a tentativa ainda for dele."""
+
+    pasta: Path
+    job: dict
+    sha256: str
+    bytes: int
+    campos: dict
+    enviado: bool = False
+
+    @property
+    def video(self) -> Path:
+        return self.pasta / "video.mp4"
+
+    @property
+    def folha(self) -> Path:
+        return self.pasta / "folha.jpg"
+
+    def integra(self) -> bool:
+        try:
+            return self.video.stat().st_size == self.bytes and _sha256(self.video) == self.sha256
+        except OSError:
+            return False
+
+    def gravar(self) -> None:
+        dados = {
+            "job": {k: self.job.get(k) for k in ("job_id", "tentativa", "lote", "arquivo")},
+            "sha256": self.sha256,
+            "bytes": self.bytes,
+            "campos": self.campos,
+            "criada_em": time.time(),
+        }
+        tmp = self.pasta / (MANIFESTO + ".tmp")
+        tmp.write_text(json.dumps(dados))
+        tmp.replace(self.pasta / MANIFESTO)
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for bloco in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(bloco)
+    return h.hexdigest()
 
 
 FEITO = "feito"  # o job terminou antes da GPU (erro já informado à API)
@@ -323,7 +500,7 @@ class WorkerFila:
         pedido = job["pedido"]
         d = self.filtros.check_request(pedido["prompt"])
         if not d.allowed:
-            self.api.concluir(job["job_id"], "erro", erro=f"filtro: {d.reason}")
+            self._concluir(job, "erro", erro=f"filtro: {d.reason}")
             return
         regras = job.get("regras") or {}
         # tradução por foto (legenda por foto, ADR 0014): a legenda feita durante o vídeo anterior
@@ -348,31 +525,38 @@ class WorkerFila:
                 keep_alive=0,  # libera a VRAM antes dos renders
             )
         except compiler.CompilerRefused as e:
-            self.api.concluir(job["job_id"], "erro", erro=f"compilador recusou: {e}")
+            self._concluir(job, "erro", erro=f"compilador recusou: {e}")
             return
         except compiler.CompilerError as e:
-            self.api.concluir(job["job_id"], "erro", erro=str(e)[:500], repetir=True)
+            self._concluir(job, "erro", erro=str(e)[:500], repetir=True)
             return
         except (traducao.TraducaoError, presets.PresetError) as e:
-            self.api.concluir(job["job_id"], "erro", erro=f"pedido inválido: {e}"[:500])
+            self._concluir(job, "erro", erro=f"pedido inválido: {e}"[:500])
             return
         d = self.filtros.check_prompt(tr.prompt)
         if not d.allowed:
-            self.api.concluir(job["job_id"], "erro", erro=f"filtro no prompt: {d.reason}")
+            self._concluir(job, "erro", erro=f"filtro no prompt: {d.reason}")
             return
         self.api.prompt(  # a API passa o C1 de novo e confere a pessoa inventada
             job["job_id"],
             tr.prompt,
             tr.ref,
+            tentativa=job.get("tentativa"),
             vago=tr.vago,
             padrao=tr.padrao,
             tentativas=tr.tentativas,
             pessoas_recusadas=list(tr.pessoas_recusadas),
             legenda=leg.como_dict() if leg is not None else None,
         )
-        self.api.concluir(job["job_id"], "ok")
+        self._concluir(job, "ok")
         como = " (movimento padrão)" if tr.padrao else ""
         _log(f"lote {job['lote']}: prompt compilado ({tr.word_count} palavras{como})")
+
+    def _concluir(self, job: dict, status: str, **campos: Any) -> str:
+        """Conclui com a tentativa do job (API de 14/10/2026); sem ela, como antes."""
+        if job.get("tentativa"):
+            campos["tentativa"] = job["tentativa"]
+        return self.api.concluir(job["job_id"], status, **campos)
 
     def _compilar_em_cache(self, texto: str, **kw: Any) -> compiler.CompileResult:
         """O compilador, com o resultado guardado pela entrada inteira (o texto composto, que traz o
@@ -482,35 +666,48 @@ class WorkerFila:
         ) as e:
             shutil.rmtree(pasta, ignore_errors=True)
             repetir = isinstance(e, media.MediaError) and getattr(e, "retryable", False)
-            self.api.concluir(job["job_id"], "erro", erro=str(e)[:500], repetir=repetir)
+            self._concluir(job, "erro", erro=str(e)[:500], repetir=repetir)
             return None
         except BaseException:
             shutil.rmtree(pasta, ignore_errors=True)
             raise
-        return Preparado(job, pasta, t, prep, t0, {"preparo": time.monotonic() - t0})
+        prazo = t0 + float(job["prazo_s"]) if job.get("prazo_s") else None  # API de 14/10/2026
+        return Preparado(job, pasta, t, prep, t0, {"preparo": time.monotonic() - t0}, prazo=prazo)
 
     def _gerar(self, p: Preparado, comfy: str) -> str:
         """O vídeo na GPU (ComfyUI). "ok"; "erro" (o job terminou, com o erro na API); "gpu" (a
         GPU ficou inacessível: o job volta para a fila e o laço para)."""
         video = p.pasta / "video.mp4"
         args = lote._args(p.tarefa, p.job["prompt_en"], video, comfy, self.cfg, p.prep.path)
+        if p.prazo is not None:  # um prazo só: o do ComfyUI nunca passa o da tentativa (com folga)
+            args.timeout = max(60.0, min(args.timeout, p.prazo - time.monotonic() - 60))
+        if p.batimento is None:
+            p.batimento = Batimento(
+                self.api, p.job, ao_perder=lambda: comfy_client.ComfyClient(comfy).interrupt()
+            )
+        args.on_progress = lambda msg: p.batimento.marcar("gpu")  # passos de verdade do ComfyUI
         t = time.monotonic()
         code, res = self.submit(args)
         p.etapas["gpu"] = time.monotonic() - t
+        if p.batimento.perdida.is_set():  # a API tirou o job desta tentativa: o vídeo não vai
+            _log(f"{p.job['arquivo']}: a tentativa perdeu o job durante a geração; descartado")
+            p.batimento.parar()
+            shutil.rmtree(p.pasta, ignore_errors=True)
+            return "perdida"
         if code == cli_submit.EXIT_OK and video.is_file():
             render = (res.get("timings") or {}).get("render_s")
             if render is not None:  # só o ComfyUI, sem o envio da foto e a cópia do vídeo
                 p.etapas["render"] = float(render)
             return "ok"
-        jid = p.job["job_id"]
+        p.batimento.parar()
         try:
             if code == cli_submit.EXIT_UNREACHABLE:
                 erro = f"GPU inacessível: {res.get('error')}"
-                self.api.concluir(jid, "erro", erro=erro, repetir=True)
+                self._concluir(p.job, "erro", erro=erro, repetir=True)
                 return "gpu"
             repetir = code in (cli_submit.EXIT_COMFY,)
             erro = str(res.get("error", code))[:500]
-            self.api.concluir(jid, "erro", erro=erro, repetir=repetir)
+            self._concluir(p.job, "erro", erro=erro, repetir=repetir)
             return "erro"
         finally:
             shutil.rmtree(p.pasta, ignore_errors=True)
@@ -522,35 +719,42 @@ class WorkerFila:
             return self._conferir_e_enviar(p)
         finally:
             shutil.rmtree(p.pasta, ignore_errors=True)
+            if p.batimento is not None:
+                p.batimento.parar()
 
     def _conferir_e_enviar(self, p: Preparado) -> bool:
-        job, jid, pasta, t, prep = p.job, p.job["job_id"], p.pasta, p.tarefa, p.prep
+        job, pasta, t, prep = p.job, p.pasta, p.tarefa, p.prep
         video = pasta / "video.mp4"
+        bat = p.batimento
+        if bat is not None:
+            bat.marcar("conferencia")
         etapa = time.monotonic()
         try:  # o vídeo é dessa foto e continua nela até o fim? só envia se for
             sim = conferencia.confere(prep.path, video)
             cont = conferencia.continuidade(video)
         except conferencia.ConferenciaError as e:
-            self.api.concluir(jid, "erro", erro=str(e)[:500], repetir=True)
+            self._concluir(p.job, "erro", erro=str(e)[:500], repetir=True)
             return True
         p.etapas["conferencia"] = time.monotonic() - etapa
         problema = conferencia.problema_continuidade(**cont)
         if problema:  # refeito com outra seed (a API troca a seed ao devolver o job)
-            self.api.concluir(jid, "erro", erro=problema, repetir=True, **cont)
+            self._concluir(p.job, "erro", erro=problema, repetir=True, **cont)
             _log(f"{job['arquivo']} (lote {job['lote']}): {problema}; refazendo")
             return True
+        if bat is not None:
+            bat.marcar("filtro")
         etapa = time.monotonic()
         try:  # 2ª porta (ADR 0005): nudez em algum quadro = o vídeo não sai do pod
             filtro = filtro_imagem.avaliar(video, self.classificador)
         except filtro_imagem.FiltroError as e:
-            self.api.concluir(jid, "erro", erro=f"filtro de imagem: {e}"[:500], repetir=True)
+            self._concluir(p.job, "erro", erro=f"filtro de imagem: {e}"[:500], repetir=True)
             _log(f"{job['arquivo']}: filtro de imagem indisponível ({e}); o worker para")
             self.filtro_falhou = True
             return False
         p.etapas["filtro"] = time.monotonic() - etapa
         if filtro.barrado:  # não vai ao cliente nem é refeito; vai à quarentena (ADR 0005)
-            self.api.concluir(
-                jid,
+            self._concluir(
+                job,
                 "erro",
                 erro=f"barrado pelo filtro de imagem (nota {filtro.nota:.2f}, "
                 f"explícita {filtro.nota_alta:.2f})",
@@ -569,44 +773,162 @@ class WorkerFila:
                 f"pior quadro {filtro.pior_quadro})"
             )
             return True
+        if bat is not None and bat.perdida.is_set():
+            _log(f"{job['arquivo']}: a tentativa perdeu o job; o vídeo não é enviado")
+            return True
         etapa = time.monotonic()
         aviso = prep.aviso
         try:
-            folha = preparo.folha(prep.path, video, pasta / "folha.jpg", 16 * t.duracao + 1)
-            media.upload(job["folha_url"], folha, "image/jpeg")
+            preparo.folha(prep.path, video, pasta / "folha.jpg", 16 * t.duracao + 1)
         except Exception as e:  # noqa: BLE001 (a folha é ajuda ao revisor, não bloqueia)
             aviso = f"{aviso}; sem folha de conferência ({e})".strip("; ")
-        try:
-            media.upload(job["video_url"], video, "video/mp4")
-        except (media.MediaError, media.UnsafeUrl) as e:
-            self.api.concluir(jid, "erro", erro=str(e)[:500], repetir=True)
-            return True
         # tempo de pod do vídeo (previsão para o cliente e relatório de GPUs): com `adiantar`, o
         # da GPU com a espera dela; sem, do pego ao enviado (o preparo e o envio também param a GPU)
         total = time.monotonic() - p.t0
-        status = self.api.concluir(
-            jid,
-            "ok",
-            segundos=round(p.ciclo_s if p.ciclo_s is not None else total, 1),
-            similaridade=round(sim, 4),
-            bytes_video=video.stat().st_size,
-            aviso=aviso or None,
-            nsfw=filtro.nota,
-            nsfw_alto=filtro.nota_alta,
-            nsfw_quadros=filtro.quadros,
+        campos = {
+            "segundos": round(p.ciclo_s if p.ciclo_s is not None else total, 1),
+            "similaridade": round(sim, 4),
+            "bytes_video": video.stat().st_size,
+            "aviso": aviso or None,
+            "nsfw": filtro.nota,
+            "nsfw_alto": filtro.nota_alta,
+            "nsfw_quadros": filtro.quadros,
             **cont,
-        )
+        }
+        e = self._reter(p, campos)
+        status = self._entregar(e, bat)
         p.etapas["envio"] = time.monotonic() - etapa
         p.etapas["total"] = time.monotonic() - p.t0
         with self.lock:
             self.feitos += status == "ok"
             self.falhas += status != "ok"
-            self.medidas.append({"job": jid, "arquivo": job["arquivo"], **p.etapas})
+            self.medidas.append({"job": job["job_id"], "arquivo": job["arquivo"], **p.etapas})
         _log(
             f"{job['arquivo']} (lote {job['lote']}): {status}, similaridade {sim:.3f}; "
             + ", ".join(f"{k} {v:.1f} s" for k, v in p.etapas.items())
         )
         return True
+
+    # -- entrega (14/10/2026): o mesmo vídeo aprovado até a confirmação ------------------------
+
+    def _reter(self, p: Preparado, campos: dict) -> Entrega:
+        """O vídeo aprovado passa para a pasta de entregas (um rename, no mesmo disco), com o
+        SHA-256 e o manifesto. Acima do limite de entregas, ou com o disco cheio, fica na pasta do
+        job e segue sem o manifesto (sem retomada depois de um reinício)."""
+        video = p.pasta / "video.mp4"
+        sha, n = _sha256(video), video.stat().st_size
+        destino = self.cfg.entregas / f"{p.job['job_id']}-{p.job.get('tentativa') or 'sem'}"
+        try:
+            self.cfg.entregas.mkdir(parents=True, exist_ok=True)
+            atuais = [d for d in self.cfg.entregas.iterdir() if (d / MANIFESTO).is_file()]
+            ocupado = sum(
+                (d / "video.mp4").stat().st_size for d in atuais if (d / "video.mp4").is_file()
+            )
+            if len(atuais) >= ENTREGAS_MAX or ocupado + n > ENTREGAS_MAX_BYTES:
+                raise OSError("limite de entregas no disco")
+            for nome in ("preparada.png",):  # o que a entrega não usa sai antes
+                (p.pasta / nome).unlink(missing_ok=True)
+            p.pasta.rename(destino)
+            e = Entrega(destino, p.job, sha, n, campos)
+            e.gravar()
+            return e
+        except OSError as erro:
+            _log(f"AVISO: {p.job['arquivo']}: entrega sem retenção no disco ({erro})")
+            pasta = destino if destino.is_dir() else p.pasta
+            return Entrega(pasta, p.job, sha, n, campos)
+
+    def _entregar(self, e: Entrega, bat: Batimento | None = None) -> str:
+        """Envia o vídeo e confirma na API, repetindo o MESMO vídeo (conferido pelo SHA-256 antes de
+        cada envio) quando o envio ou a confirmação falham: URL vencida pede URLs novas; API fora do
+        ar repete a confirmação (a API responde de novo a mesma coisa à mesma tentativa, sem cobrar
+        duas vezes). Fim: "ok"/"erro" da API, "perdida" (o job não é mais desta tentativa: nada sai)
+        ou "falhou" (o prazo da entrega acabou: o job volta para a fila com a mesma seed). A pasta
+        da entrega sai em qualquer fim."""
+        job = e.job
+        prazo = time.monotonic() + ENTREGA_MAX_S
+        if self.cfg.ate:  # nunca depois do limite do pod (o desligamento automático vem depois)
+            prazo = min(prazo, time.monotonic() + self.cfg.ate + ENTREGA_ALEM_ATE_S - time.time())
+        urls = {k: job[k] for k in ("video_url", "folha_url") if job.get(k)}
+        falhas, ultimo = 0, ""
+        try:
+            while True:
+                if bat is not None and bat.perdida.is_set():
+                    return "perdida"
+                try:
+                    if not e.enviado:
+                        if not e.integra():  # o arquivo no disco mudou: não é mais o vídeo aprovado
+                            return self._concluir(
+                                job, "erro", erro="vídeo no pod corrompido", repetir=True
+                            )
+                        if not urls.get("video_url"):
+                            urls = self.api.urls(job["job_id"], job.get("tentativa"))
+                        media.upload(urls["video_url"], e.video, "video/mp4", attempts=2)
+                        e.enviado = True
+                        if urls.get("folha_url") and e.folha.is_file():
+                            try:  # a folha ajuda o revisor; não segura a entrega
+                                media.upload(urls["folha_url"], e.folha, "image/jpeg", attempts=1)
+                            except (media.MediaError, OSError) as erro:
+                                _log(f"{job['arquivo']}: folha de conferência não foi ({erro})")
+                    if bat is not None:
+                        bat.marcar("confirmacao")
+                    return self._concluir(job, "ok", sha256=e.sha256, **e.campos)
+                except Perdida as erro:
+                    _log(f"{job['arquivo']}: {erro}; o vídeo desta tentativa não sai")
+                    return "perdida"
+                except media.UnsafeUrl as erro:  # host fora da lista: nunca vai dar certo
+                    ultimo = str(erro)
+                    break
+                except (media.MediaError, FilaError, OSError) as erro:
+                    falhas += 1
+                    ultimo = str(erro)[:300]
+                    if isinstance(erro, media.MediaError) and erro.status in (400, 401, 403):
+                        urls = {}  # URL vencida ou recusada: URLs novas, a mesma tentativa
+                    _log(f"AVISO: {job['arquivo']}: envio/confirmação falhou ({falhas}): {ultimo}")
+                resta = prazo - time.monotonic()
+                if resta <= 0:
+                    break
+                if bat is not None:  # o prazo do job acompanha as tentativas (progresso: cada uma)
+                    bat.marcar("envio")
+                    bat.renovar()
+                time.sleep(min(resta, 2 ** min(falhas, 5)))
+            # o prazo acabou: o vídeo estava certo; volta para a fila com a mesma seed (transporte)
+            try:
+                return self._concluir(
+                    job,
+                    "erro",
+                    erro=f"envio do vídeo falhou: {ultimo}"[:500],
+                    repetir=True,
+                    transporte=True,
+                )
+            except FilaError as erro:  # API fora: o prazo do job o devolve à fila
+                _log(f"AVISO: {job['arquivo']}: {erro}")
+            return "falhou"
+        finally:
+            shutil.rmtree(e.pasta, ignore_errors=True)
+
+    def retomar_entregas(self) -> int:
+        """Na partida: os vídeos aprovados que um worker anterior deste pod não conseguiu confirmar
+        (o processo caiu) vão de novo, se a tentativa ainda for deste worker (a API decide); os
+        velhos demais saem sem envio. Devolve quantos foram retomados."""
+        n = 0
+        if not self.cfg.entregas.is_dir():
+            return 0
+        for d in sorted(self.cfg.entregas.iterdir()):
+            try:
+                m = json.loads((d / MANIFESTO).read_text())
+            except (OSError, ValueError):
+                shutil.rmtree(d, ignore_errors=True)  # sem manifesto: não há como entregar
+                continue
+            if time.time() - float(m.get("criada_em") or 0) > ENTREGA_VELHA_S:
+                shutil.rmtree(d, ignore_errors=True)
+                continue
+            e = Entrega(d, dict(m["job"]), m["sha256"], int(m["bytes"]), dict(m["campos"]))
+            _log(f"{e.job.get('arquivo')}: retomando a entrega de antes do reinício")
+            status = self._entregar(e, Batimento(self.api, e.job))
+            with self.lock:
+                self.feitos += status == "ok"
+            n += 1
+        return n
 
     def _quarentena(self, job: dict, foto: Path, video: Path, pasta: Path, t: lote.Tarefa) -> bool:
         """Vídeo barrado e a folha dele para a quarentena (ADR 0005, 12/10/2026): só o dono vê,
@@ -630,12 +952,12 @@ class WorkerFila:
     def _aceito(self, job: dict) -> bool:
         """Carimbo de aprovação e modelo: o job que não passa termina aqui (erro, sem repetir)."""
         if not carimbo_ok(self.cfg.segredo, job):
-            self.api.concluir(job["job_id"], "erro", erro="carimbo de aprovação inválido")
+            self._concluir(job, "erro", erro="carimbo de aprovação inválido")
             return False
         modelo = (job.get("pedido") or {}).get("modelo") or "wan2.2-i2v"
         if modelo not in MODELOS:
             erro = f"modelo {modelo} não disponível neste gerador"
-            self.api.concluir(job["job_id"], "erro", erro=erro)
+            self._concluir(job, "erro", erro=erro)
             return False
         return True
 
@@ -738,10 +1060,12 @@ class WorkerFila:
         conferido e enviado em segundo plano. False: a GPU ficou inacessível."""
         if p.adiantado:  # pego durante o vídeo anterior: o pedido pode ter sido parado
             try:
-                seguir = self.api.iniciar(p.job["job_id"])
+                seguir = self.api.iniciar(p.job["job_id"], p.job.get("tentativa"))
             except FilaError as e:  # API fora: o prazo do pod devolve o job à fila
                 _log(f"AVISO: {e}")
                 seguir = False
+            if seguir is not True and seguir:  # o prazo da tentativa recomeça quando a GPU começa
+                p.prazo = time.monotonic() + float(seguir)
             if not seguir:
                 shutil.rmtree(p.pasta, ignore_errors=True)
                 _log(f"{p.job['arquivo']} (lote {p.job['lote']}): não vai para a GPU (parado)")
@@ -814,6 +1138,8 @@ class WorkerFila:
             fut.result()  # False (o filtro falhou) fica em self.filtro_falhou
         except FilaError as e:  # a API caiu no meio: o prazo do job o devolve à fila
             _log(f"AVISO: {e}")
+        except Exception as e:  # noqa: BLE001 (um erro no envio não derruba o laço da GPU; o prazo devolve o job)
+            _log(f"AVISO: envio do vídeo anterior: {type(e).__name__}: {e}")
         self._marcar_atividade()
 
     def _largar_adiantado(self, lc: _Laco) -> None:
@@ -828,7 +1154,7 @@ class WorkerFila:
                 shutil.rmtree(item.pasta, ignore_errors=True)
                 item = item.job
             if isinstance(item, dict):
-                self.api.devolver(item["job_id"])
+                self.api.devolver(item["job_id"], item.get("tentativa"))
                 _log(f"job {item['job_id']} devolvido à fila (não foi para a GPU)")
         except Exception as e:  # noqa: BLE001 (limpeza na saída do laço: o resto ainda precisa rodar)
             _log(f"AVISO: o job adiantado não foi devolvido ({e}); o prazo do pod o devolve")
@@ -845,11 +1171,17 @@ class WorkerFila:
         )
         if self.modelos_ok:  # sem o estado da instalação: os modelos já estão no disco
             self._precarregar_filtro()
+        # vídeos aprovados de um worker anterior deste pod (o processo caiu antes da confirmação)
+        retomada = threading.Thread(target=self.retomar_entregas, daemon=True, name="entregas")
+        retomada.start()
         ts = [threading.Thread(target=self._laco, args=(c,), daemon=True) for c in self.cfg.comfy]
         for t in ts:
             t.start()
         for t in ts:
             t.join()
+        retomada.join(ENTREGA_MAX_S + 60)  # a drenagem espera as entregas, com prazo
+        with contextlib.suppress(OSError):  # nada pendente: a pasta das entregas sai (só se vazia)
+            self.cfg.entregas.rmdir()
         _log(f"fim: {self.feitos} vídeo(s) ok, {self.falhas} com falha; {MOTIVOS[self.motivo()]}")
         if self.cfg.motivo_em:
             try:

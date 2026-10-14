@@ -49,6 +49,11 @@ class Armazem:
         self.apagados.append(chave)
         self.objetos.pop(chave, None)
 
+    def copiar(self, origem, destino):  # a publicação do vídeo da tentativa (cópia no servidor, 14/10/2026)
+        if origem not in self.objetos:
+            raise OSError(f"{origem}: não existe")
+        self.objetos[destino] = self.objetos[origem]
+
 
 def config_teste(banco, armazem=None, **kw) -> Config:
     """Configuração dos testes: painel no endereço de teste, com autenticador; sem o Turnstile."""
@@ -186,7 +191,11 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
 
     render = _job(api)
     chave_video = render["video_url"].split("armazem.teste/")[1].split("?")[0]
-    assert chave_video.startswith("saida/") and chave_video.endswith(f"/{lid}/{render['arquivo']}")
+    # o pod envia para o objeto da tentativa (14/10/2026); a API publica no endereço do cliente na conclusão
+    assert render["tentativa"] and render["prazo_s"] > 0
+    assert chave_video.startswith("saida/") and chave_video.endswith(
+        f"/{lid}/tentativas/{render['job_id']}-{render['tentativa']}.mp4"
+    )
     assert render["foto_url"].endswith("?GET") and "PUT" in render["video_url"]
     # outro worker não conclui o job
     r = api.post(
@@ -206,6 +215,7 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
     assert r.json()["status"] == "pendente" and chave_video in api.armazem.apagados
     # similaridade baixa (vídeo de outra foto): também recusado
     render = _job(api)
+    chave_video = render["video_url"].split("armazem.teste/")[1].split("?")[0]  # outra tentativa, outro objeto
     api.armazem.objetos[chave_video] = 5000
     r = api.post(
         f"/api/worker/jobs/{render['job_id']}/concluir",
@@ -232,6 +242,8 @@ def test_full_flow_with_isolation_and_first_frame_check(api):
             },
         )
         assert r.json()["status"] == "ok"
+        final = chave.split("/tentativas/")[0] + f"/{render['arquivo']}"
+        assert api.armazem.objetos[final] == 7000 and chave not in api.armazem.objetos  # publicado
     lote = api.get(f"/api/lotes/{lid}", headers=h(tok_a)).json()
     assert lote["status"] == "concluido" and lote["prontos"] == 2
     assert all("/saida/" in v["url"] and f"/{lid}/" in v["url"] for v in lote["videos"])

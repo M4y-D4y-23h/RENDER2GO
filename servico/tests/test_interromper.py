@@ -100,7 +100,8 @@ def test_a_video_picked_ahead_is_cancelled_if_the_order_stops_before_it_reaches_
     atual, adiantado = _job(api), _job(api)
     assert _worker(api, adiantado, "iniciar", worker="pod-2").status_code == 409  # de outro pod
     r = _worker(api, adiantado, "iniciar")
-    assert r.status_code == 200 and r.json() == {"seguir": True}
+    # o prazo absoluto da tentativa recomeça quando o vídeo vai para a GPU (14/10/2026, ADR 0017)
+    assert r.status_code == 200 and r.json()["seguir"] is True and 3500 < r.json()["prazo_s"] <= 3600
     with api.banco.tx() as c:  # o prazo do pod recomeça na GPU
         assert c.one("SELECT lease_ate FROM jobs WHERE id = ?", (adiantado["job_id"],))["lease_ate"] > time.time() + 800
     _concluir(api, adiantado, status="erro", erro="x", repetir=True)  # volta para a fila; o pod pega de novo

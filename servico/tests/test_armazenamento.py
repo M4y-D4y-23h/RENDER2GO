@@ -85,3 +85,39 @@ def test_listing_follows_pages_and_only_whole_folders():
     for ruim in ("saida", "", "../x/", "a b/"):  # só "pastas" inteiras e chaves válidas
         with pytest.raises(ArmazenamentoError):
             s3.listar(ruim)
+
+
+def test_copy_sends_a_signed_copy_source_and_detects_an_error_in_the_body():
+    """A publicação do vídeo da tentativa (14/10/2026): CopyObject com x-amz-copy-source assinado."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    pedidos, respostas = [], [b"<CopyObjectResult><ETag>x</ETag></CopyObjectResult>", b"<Error><Code>X</Code></Error>"]
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_PUT(self):
+            pedidos.append((self.path, {k.lower(): v for k, v in self.headers.items()}))
+            corpo = respostas.pop(0)
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(corpo)))
+            self.end_headers()
+            self.wfile.write(corpo)
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        s3 = Armazenamento(f"http://127.0.0.1:{srv.server_address[1]}", "render2go", "k", "s")
+        s3.copiar("saida/c/l/tentativas/j-0123456789abcdef.mp4", "saida/c/l/v.mp4")
+        caminho, cab = pedidos[0]
+        assert caminho == "/render2go/saida/c/l/v.mp4"
+        assert cab["x-amz-copy-source"] == "/render2go/saida/c/l/tentativas/j-0123456789abcdef.mp4"
+        assert "x-amz-copy-source" in cab["authorization"]  # assinado junto
+        with pytest.raises(ArmazenamentoError):  # o S3 pode responder 200 com o erro no corpo
+            s3.copiar("saida/c/l/a.mp4", "saida/c/l/b.mp4")
+        with pytest.raises(ArmazenamentoError):
+            s3.copiar("../fora", "saida/c/l/b.mp4")
+    finally:
+        srv.shutdown()

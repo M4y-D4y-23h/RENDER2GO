@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from render2go_worker.armazenamento import Armazenamento, ArmazenamentoError
 
-__all__ = ["Armazenamento", "ArmazenamentoError", "chave_entrada", "chave_saida"]
+__all__ = ["Armazenamento", "ArmazenamentoError", "chave_entrada", "chave_saida", "chave_tentativa"]
 
 
 def chave_entrada(cliente: str, lote: str, nome: str) -> str:
@@ -21,6 +21,14 @@ def chave_entrada(cliente: str, lote: str, nome: str) -> str:
 
 def chave_saida(cliente: str, lote: str, nome: str) -> str:
     return f"saida/{cliente}/{lote}/{nome}"
+
+
+def chave_tentativa(cliente: str, lote: str, job: str, tentativa: str, extensao: str) -> str:
+    """Onde o pod envia o vídeo (e a folha) de uma tentativa (14/10/2026): um objeto por tentativa, que só a API
+    publica no endereço do cliente (`chave_saida`) depois de conferir a conclusão. Um pod antigo, com o prazo vencido,
+    envia para o objeto da tentativa dele, que nunca é publicado: o vídeo entregue não é sobrescrito. Fica sob
+    `saida/` (a mesma regra de 30 dias do bucket); a publicação apaga o objeto da tentativa."""
+    return f"saida/{cliente}/{lote}/tentativas/{job}-{tentativa}{extensao}"
 
 
 def chave_quarentena(cliente: str, lote: str, nome: str) -> str:

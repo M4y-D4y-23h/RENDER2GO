@@ -23,6 +23,7 @@ import sys
 import tempfile
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 from render2go_worker import compiler, presets, video
@@ -94,7 +95,12 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def run(a: argparse.Namespace) -> tuple[int, dict]:
+def run(
+    a: argparse.Namespace, on_progress: Callable[[dict], None] | None = None
+) -> tuple[int, dict]:
+    """`on_progress`: cada mensagem de progresso do ComfyUI também vai para quem chamou (o worker da
+    fila renova o prazo do job só com progresso de verdade, 14/10/2026)."""
+    on_progress = on_progress or getattr(a, "on_progress", None)
     timings: dict[str, float] = {}
     result: dict = {"status": "error", "timings": timings}
     t_start = time.monotonic()
@@ -197,8 +203,14 @@ def run(a: argparse.Namespace) -> tuple[int, dict]:
         prompt_id = comfy.queue_prompt(workflow, client_id)
         result["prompt_id"] = prompt_id
         _log(f"enfileirado: {prompt_id}")
+
+        def progresso(msg: dict) -> None:
+            _progress(msg)
+            if on_progress is not None:
+                on_progress(msg)
+
         entry = comfy.wait(
-            prompt_id, client_id, timeout=a.timeout, use_ws=not a.no_ws, on_progress=_progress
+            prompt_id, client_id, timeout=a.timeout, use_ws=not a.no_ws, on_progress=progresso
         )
         timings["render_s"] = round(time.monotonic() - t0, 2)
 

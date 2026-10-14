@@ -6,6 +6,7 @@ WS /ws?clientId=..., GET /history/{prompt_id}, GET /view.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from collections.abc import Callable
@@ -116,6 +117,12 @@ class ComfyClient:
         data = self._get(f"/history/{prompt_id}").json()
         return data.get(prompt_id)
 
+    def interrupt(self) -> None:
+        """Interrompe o que está rodando (POST /interrupt): a GPU para de gerar um vídeo que não vai
+        mais ser entregue (o prazo do job venceu). Sem garantia: erro de rede é ignorado."""
+        with contextlib.suppress(requests.RequestException):
+            self.session.post(f"{self.base_url}/interrupt", timeout=min(self.timeout, 10))
+
     def wait(
         self,
         prompt_id: str,
@@ -125,30 +132,43 @@ class ComfyClient:
         on_progress: ProgressFn | None = None,
         poll_interval: float = 1.0,
     ) -> dict[str, Any]:
-        """Espera o prompt terminar e devolve a entrada do /history."""
+        """Espera o prompt terminar e devolve a entrada do /history.
+
+        Um prazo só (monotonic) para o WebSocket, o polling e cada chamada HTTP (14/10/2026): até
+        então, o WebSocket que caía perto do fim recomeçava o polling com o `timeout` inteiro, e a
+        espera podia chegar a quase o dobro do pedido."""
+        prazo = time.monotonic() + timeout
         if use_ws:
             try:
-                self._wait_ws(prompt_id, client_id, timeout, on_progress)
+                self._wait_ws(prompt_id, client_id, prazo, on_progress)
             except ComfyExecutionError:
                 raise
-            except Exception as e:  # WebSocket caiu: segue por polling
+            except Exception as e:  # WebSocket caiu: segue por polling, no mesmo prazo
                 if on_progress:
                     on_progress({"type": "ws_fallback", "data": {"error": str(e)}})
-        return self._wait_history(prompt_id, timeout, poll_interval)
+        return self._wait_history(prompt_id, prazo, poll_interval, timeout)
+
+    def _restante(self, prazo: float, total: float, prompt_id: str) -> float:
+        resta = prazo - time.monotonic()
+        if resta <= 0:
+            raise ComfyExecutionError(f"prompt {prompt_id} não terminou em {total:.0f} s")
+        return resta
 
     def _wait_ws(
-        self, prompt_id: str, client_id: str, timeout: float, on_progress: ProgressFn | None
+        self, prompt_id: str, client_id: str, prazo: float, on_progress: ProgressFn | None
     ) -> None:
         import websocket  # websocket-client
 
         u = urlparse(self.base_url)
         scheme = "wss" if u.scheme == "https" else "ws"
+        total = max(0.0, prazo - time.monotonic())
         ws = websocket.create_connection(
-            f"{scheme}://{u.netloc}{u.path}/ws?clientId={client_id}", timeout=timeout
+            f"{scheme}://{u.netloc}{u.path}/ws?clientId={client_id}",
+            timeout=self._restante(prazo, total, prompt_id),
         )
         try:
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
+            while time.monotonic() < prazo:
+                ws.settimeout(max(0.1, prazo - time.monotonic()))  # recv não passa do prazo
                 raw = ws.recv()
                 if not isinstance(raw, str):
                     continue  # quadros binários de prévia
@@ -167,14 +187,25 @@ class ComfyClient:
                     return
                 if kind == "executing" and data.get("node") is None and data.get("prompt_id"):
                     return
-            raise ComfyExecutionError(f"prompt {prompt_id} não terminou em {timeout:.0f} s")
+            raise ComfyExecutionError(f"prompt {prompt_id} não terminou em {total:.0f} s")
         finally:
             ws.close()
 
-    def _wait_history(self, prompt_id: str, timeout: float, interval: float) -> dict[str, Any]:
-        deadline = time.monotonic() + timeout
+    def _wait_history(
+        self, prompt_id: str, prazo: float, interval: float, total: float
+    ) -> dict[str, Any]:
         while True:
-            entry = self.get_history(prompt_id)
+            # a chamada também não passa do prazo (com 1 s para a última olhada, que vem antes do
+            # erro: o vídeo pode ter terminado no limite)
+            resta = max(1.0, prazo - time.monotonic())
+            try:
+                r = self.session.get(
+                    f"{self.base_url}/history/{prompt_id}", timeout=min(self.timeout, resta)
+                )
+            except requests.RequestException as e:
+                raise ComfyConnectionError(f"ComfyUI inacessível em {self.base_url}: {e}") from e
+            r.raise_for_status()
+            entry = r.json().get(prompt_id)
             if entry is not None:
                 status = entry.get("status", {})
                 if status.get("status_str") == "error":
@@ -186,9 +217,8 @@ class ComfyClient:
                     raise ComfyExecutionError(message or "erro de execução", details)
                 if status.get("completed", True) and entry.get("outputs") is not None:
                     return entry
-            if time.monotonic() > deadline:
-                raise ComfyExecutionError(f"prompt {prompt_id} não terminou em {timeout:.0f} s")
-            time.sleep(interval)
+            self._restante(prazo, total, prompt_id)
+            time.sleep(min(interval, max(0.0, prazo - time.monotonic())))
 
     # --- Saídas ------------------------------------------------------------
     @staticmethod

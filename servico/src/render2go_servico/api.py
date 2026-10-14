@@ -88,6 +88,10 @@ encerrado; o nome do worker vem do token), sem porta de entrada nos pods (eles p
                                        o pedido parado, cancela sem custo (a GPU não espera)
     POST /api/worker/jobs/{id}/devolver  vídeo pego adiantado que o pod não vai gerar: volta para
                                        a fila sem contar tentativa
+    POST /api/worker/jobs/{id}/renovar   renova o prazo da tentativa, só com progresso (14/10/2026)
+    POST /api/worker/jobs/{id}/urls      URLs de envio novas da tentativa (o mesmo vídeo, sem refazer)
+    (cada rota de job recebe a `tentativa` da reivindicação: só ela conclui; a conclusão repetida
+    recebe a mesma resposta, e o vídeo vai para o objeto da tentativa, publicado pela API)
 
 Páginas: / (cliente), /suporte, /termos, /privacidade e /cookies, e o painel no caminho secreto,
 compiladas em servico/web/publico (docs/10). Os arquivos de /estatico/ levam ?v=<hash> e ficam um ano
@@ -140,7 +144,13 @@ from render2go_servico import (
     precos,
     suporte,
 )
-from render2go_servico.armazenamento import Armazenamento, chave_entrada, chave_quarentena, chave_saida
+from render2go_servico.armazenamento import (
+    Armazenamento,
+    chave_entrada,
+    chave_quarentena,
+    chave_saida,
+    chave_tentativa,
+)
 from render2go_servico.db import MONTAGEM_VIDEOS_DIAS, Banco, BancoError, SaldoInsuficiente, novo_id
 
 TIPOS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
@@ -1325,6 +1335,7 @@ class LoteIn(BaseModel):
 
 class PromptIn(BaseModel):
     worker: str = Field(max_length=100)
+    tentativa: str | None = Field(None, pattern=r"^[0-9a-f]{16}$")
     prompt_en: str = Field(min_length=3, max_length=2000)
     compilador: str = Field(max_length=200)
     # como a tradução saiu (render2go_worker.traducao, 13/10/2026), só para o registro do pedido
@@ -1347,9 +1358,18 @@ class PromptIn(BaseModel):
         return v
 
 
+TENTATIVA = r"^[0-9a-f]{16}$"  # o identificador da tentativa (db.reivindicar): vai no nome do objeto
+VIDEO_MAX_BYTES = 150 * 1024 * 1024  # publicação sem cópia no servidor (lê e grava): o teto de um vídeo
+
+
 class ConcluirIn(BaseModel):
     worker: str = Field(max_length=100)
     status: str = Field(max_length=20)
+    # a tentativa que conclui (14/10/2026; db.concluir): a mesma repetindo recebe a mesma resposta; outra é recusada.
+    # Sem ela (pod de antes), só o worker é conferido
+    tentativa: str | None = Field(None, pattern=TENTATIVA)
+    transporte: bool = False  # o vídeo estava certo e só o envio falhou: volta com a mesma seed
+    sha256: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")  # do vídeo enviado (auditoria)
     segundos: float | None = Field(None, ge=0, le=86400)
     aviso: str | None = Field(None, max_length=1000)
     erro: str | None = Field(None, max_length=1000)
@@ -1377,6 +1397,13 @@ class RecusaIn(BaseModel):
 
 class WorkerIn(BaseModel):
     worker: str = Field(min_length=3, max_length=100)
+    tentativa: str | None = Field(None, pattern=TENTATIVA)
+
+
+class RenovarIn(WorkerIn):
+    # o progresso observado no pod (db.renovar): a etapa e um contador que só cresce com progresso de verdade
+    etapa: Literal["fila", "gpu", "conferencia", "filtro", "envio", "confirmacao"]
+    progresso: int = Field(0, ge=0, le=10**9)
 
 
 class ReivindicarIn(BaseModel):
@@ -4189,6 +4216,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "job_id": job["id"],
             "tipo": job["tipo"],
             "lote": lt["id"],
+            # a tentativa (14/10/2026): só ela conclui, renova o prazo e pede URLs novas; o prazo absoluto, em s
+            "tentativa": job.get("tentativa_id"),
+            "prazo_s": round(float(job.get("prazo_tentativa") or 0) - time.time(), 1)
+            if job.get("prazo_tentativa")
+            else None,
             "pedido": pedido,
             "aprovacao": carimbo(c.segredo_aprovacao, lt["id"], lt["aprovado_em"]),
             "aprovado_em": lt["aprovado_em"],
@@ -4203,7 +4235,6 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                     "foto_ext": TIPOS[foto["tipo"]],
                 }
         if job["tipo"] == "render":
-            stem = Path(job["arquivo"]).stem
             # o do texto próprio da foto ou, com a legenda por foto (ADR 0014), o da própria foto; senão, o do pedido
             prompt_en = foto["prompt_en"] if foto["prompt"] or _por_foto(lt, foto) else lt["prompt_en"]
             out |= {
@@ -4213,39 +4244,66 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 "seed": job["seed"],
                 "foto_url": c.armazenamento.url("GET", foto["chave"], 3600),
                 "foto_ext": TIPOS[foto["tipo"]],
-                "video_url": c.armazenamento.url(
-                    "PUT",
-                    chave_saida(lt["cliente_id"], lt["id"], job["arquivo"]),
-                    3600,
-                    content_type="video/mp4",
-                ),
-                "folha_url": c.armazenamento.url(
-                    "PUT",
-                    chave_saida(lt["cliente_id"], lt["id"], f"conferencia/{stem}.jpg"),
-                    3600,
-                    content_type="image/jpeg",
-                ),
-                # vídeo barrado pelo filtro de imagem (ADR 0005): fica na quarentena, que só o dono vê
-                "quarentena_video_url": c.armazenamento.url(
-                    "PUT", chave_quarentena(lt["cliente_id"], lt["id"], job["arquivo"]), 3600, content_type="video/mp4"
-                ),
-                "quarentena_folha_url": c.armazenamento.url(
-                    "PUT", chave_quarentena(lt["cliente_id"], lt["id"], f"{stem}.jpg"), 3600, content_type="image/jpeg"
-                ),
+                **_urls_de_envio(c, lt, job),
             }
         return {"job": out}
 
-    def _do_worker(job_id: str, worker: str, c: Config) -> dict:
+    def _envio(lt: dict, job: dict, tentativa: str | None) -> tuple[str, str]:
+        """Onde o pod envia o vídeo e a folha: o objeto da tentativa (14/10/2026; a API publica no endereço do cliente
+        na conclusão) ou, num job sem tentativa (de antes), o endereço final, como antes."""
+        if tentativa:
+            return (
+                chave_tentativa(lt["cliente_id"], lt["id"], job["id"], tentativa, ".mp4"),
+                chave_tentativa(lt["cliente_id"], lt["id"], job["id"], tentativa, ".jpg"),
+            )
+        stem = Path(job["arquivo"]).stem
+        return (
+            chave_saida(lt["cliente_id"], lt["id"], job["arquivo"]),
+            chave_saida(lt["cliente_id"], lt["id"], f"conferencia/{stem}.jpg"),
+        )
+
+    def _urls_de_envio(c: Config, lt: dict, job: dict) -> dict[str, str]:
+        """URLs assinadas (PUT, 1 h) do vídeo, da folha e da quarentena desta tentativa."""
+        stem = Path(job["arquivo"]).stem
+        video, folha = _envio(lt, job, job.get("tentativa_id"))
+        return {
+            "video_url": c.armazenamento.url("PUT", video, 3600, content_type="video/mp4"),
+            "folha_url": c.armazenamento.url("PUT", folha, 3600, content_type="image/jpeg"),
+            # vídeo barrado pelo filtro de imagem (ADR 0005): fica na quarentena, que só o dono vê
+            "quarentena_video_url": c.armazenamento.url(
+                "PUT", chave_quarentena(lt["cliente_id"], lt["id"], job["arquivo"]), 3600, content_type="video/mp4"
+            ),
+            "quarentena_folha_url": c.armazenamento.url(
+                "PUT", chave_quarentena(lt["cliente_id"], lt["id"], f"{stem}.jpg"), 3600, content_type="image/jpeg"
+            ),
+        }
+
+    def _publicar(c: Config, origem: str, destino: str, tamanho: int | None, tipo: str = "video/mp4") -> None:
+        """Copia o objeto da tentativa para o endereço do cliente (no armazenamento, sem passar o vídeo pela API quando
+        ele sabe copiar) e confere o tamanho. Falha aqui não refaz o vídeo: a conclusão volta 503 e o pod repete."""
+        if origem == destino:
+            return
+        copiar = getattr(c.armazenamento, "copiar", None)
+        if copiar is not None:
+            copiar(origem, destino)
+        else:  # armazenamento sem cópia no servidor (testes): lê e grava
+            c.armazenamento.gravar(destino, c.armazenamento.ler(origem, VIDEO_MAX_BYTES), tipo)
+        if tamanho is not None and c.armazenamento.tamanho(destino) != tamanho:
+            raise RuntimeError(f"publicação incompleta de {destino}")
+
+    def _do_worker(job_id: str, worker: str, c: Config, tentativa: str | None = None) -> dict:
         with c.banco.tx() as cur:
             job = cur.one("SELECT * FROM jobs WHERE id = ?", (job_id,))
         if job is None or job["worker"] != worker or job["status"] != "em_andamento":
             raise HTTPException(409, "job não está com este worker")
+        if tentativa is not None and job.get("tentativa_id") and tentativa != job["tentativa_id"]:
+            raise HTTPException(409, "job não está com esta tentativa")
         return job
 
     @app.post("/api/worker/jobs/{job_id}/prompt")
     def prompt(job_id: str, body: PromptIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
         _mesmo_worker(dono, body.worker)
-        job = _do_worker(job_id, body.worker, c)
+        job = _do_worker(job_id, body.worker, c, body.tentativa)
         d = filtros.avaliar(body.prompt_en)
         if not d.allowed:  # C1 também no prompt compilado
             c.banco.concluir(job_id, body.worker, "erro", erro=d.reason)
@@ -4280,9 +4338,21 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
     @app.post("/api/worker/jobs/{job_id}/concluir")
     def concluir(job_id: str, body: ConcluirIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
         _mesmo_worker(dono, body.worker)
-        job = _do_worker(job_id, body.worker, c)
+        if body.tentativa is not None:  # a mesma tentativa repetindo (a resposta se perdeu): a mesma resposta
+            r = c.banco.conclusao_registrada(job_id, body.tentativa)
+            if r is not None:
+                return {"status": r, "repetida": True}
+        job = _do_worker(job_id, body.worker, c, body.tentativa)
         status, erro, repetir = body.status, body.erro, body.repetir
+        tentativa = body.tentativa or job.get("tentativa_id")
         quarentena = False
+        publicar = None
+        lt = c.banco.lote(job["lote_id"])
+        if job["tipo"] == "render":
+            stem = Path(job["arquivo"]).stem
+            final = chave_saida(lt["cliente_id"], lt["id"], job["arquivo"])
+            folha_final = chave_saida(lt["cliente_id"], lt["id"], f"conferencia/{stem}.jpg")
+            enviado, folha_enviada = _envio(lt, job, tentativa)
         # a mesma regra do pod (render2go_worker.filtro_imagem.barrado), com as notas que ele mandou
         barrado = job["tipo"] == "render" and (
             body.barrado
@@ -4295,10 +4365,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if barrado:
             # nudez em algum quadro (ADR 0005): nada chega ao cliente, nem a folha de conferência; o vídeo
             # não é refeito e volta para o saldo como os outros que falham. O registro fica (evento e nota)
-            lt = c.banco.lote(job["lote_id"])
-            for nome in (job["arquivo"], f"conferencia/{Path(job['arquivo']).stem}.jpg"):
+            for nome in {final, folha_final, enviado, folha_enviada}:
                 with contextlib.suppress(Exception):
-                    c.armazenamento.apagar(chave_saida(lt["cliente_id"], lt["id"], nome))
+                    c.armazenamento.apagar(nome)
             status, repetir = "erro", False
             erro = f"barrado pelo filtro de imagem (nota {body.nsfw or 0:.2f}, explícita {body.nsfw_alto or 0:.2f})"
             if body.quarentena:  # o pod diz que enviou: vale só se o vídeo está mesmo lá
@@ -4310,9 +4379,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             # fail-closed: o vídeo precisa estar no armazenamento, com o tamanho informado, a
             # conferência do 1º quadro precisa dizer que ele é dessa foto e a da continuidade, que
             # ele não troca de produto no meio
-            lt = c.banco.lote(job["lote_id"])
-            chave = chave_saida(lt["cliente_id"], lt["id"], job["arquivo"])
-            tamanho = c.armazenamento.tamanho(chave)
+            tamanho = c.armazenamento.tamanho(enviado)
             problema = None
             if body.similaridade is None or body.similaridade < conferencia.LIMIAR:
                 problema = f"conferência do 1º quadro reprovada ({body.similaridade})"
@@ -4324,17 +4391,29 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             elif not body.bytes_video or tamanho != body.bytes_video:
                 problema = f"vídeo ausente ou incompleto ({tamanho} de {body.bytes_video} bytes)"
             if problema:
-                c.armazenamento.apagar(chave)  # nada que não passou chega ao cliente
+                c.armazenamento.apagar(enviado)  # nada que não passou chega ao cliente
                 status, erro, repetir = "erro", problema, True
+            else:
+
+                def publicar() -> None:  # dentro da conclusão, com a tentativa conferida e o job travado
+                    _publicar(c, enviado, final, body.bytes_video)
+                    if folha_enviada != folha_final and c.armazenamento.tamanho(folha_enviada):
+                        with contextlib.suppress(Exception):  # a folha ajuda o revisor; não segura a entrega
+                            _publicar(c, folha_enviada, folha_final, None, "image/jpeg")
+
         try:
             r = c.banco.concluir(
                 job_id,
                 body.worker,
                 status,
+                tentativa=body.tentativa,
+                publicar=publicar,
                 segundos=body.segundos,
                 aviso=body.aviso,
                 erro=erro,
                 repetir=repetir,
+                transporte=body.transporte and not barrado,
+                sha256=body.sha256,
                 similaridade=body.similaridade,
                 bytes_video=body.bytes_video,
                 deriva_cor=body.deriva_cor,
@@ -4344,34 +4423,65 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 nsfw_quadros=body.nsfw_quadros,
                 barrado=barrado,
                 quarentena=quarentena,
-                # vídeo refeito sai de outra seed: a mesma seed repetiria o mesmo defeito
+                # vídeo refeito sai de outra seed: a mesma seed repetiria o mesmo defeito (menos na falha de envio)
                 seed=lote.seed_de(job["seed"], job["id"], job["tentativas"]) if job["tipo"] == "render" else None,
             )
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
+        except Exception as e:  # noqa: BLE001 (a publicação falhou: o pod repete a conclusão, sem refazer o vídeo)
+            raise HTTPException(503, "publicação do vídeo falhou; tente de novo") from e
+        if publicar is not None and enviado != final:  # publicado: o objeto da tentativa sai
+            for nome in (enviado, folha_enviada):
+                with contextlib.suppress(Exception):
+                    c.armazenamento.apagar(nome)
         _se_fechou(c, job["lote_id"])
         return {"status": r["status"]}
+
+    @app.post("/api/worker/jobs/{job_id}/renovar")
+    def renovar(job_id: str, body: RenovarIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
+        """Renova o prazo da tentativa com o progresso observado (14/10/2026; db.renovar): sem progresso novo por
+        10 min, ou passado o prazo absoluto da tentativa, é recusado (409) e o pod para de trabalhar nele."""
+        _mesmo_worker(dono, body.worker)
+        try:
+            ate = c.banco.renovar(job_id, body.worker, body.tentativa, body.etapa, body.progresso)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        return {"lease_ate": ate}
+
+    @app.post("/api/worker/jobs/{job_id}/urls")
+    def urls_novas(job_id: str, body: WorkerIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
+        """URLs de envio novas para a tentativa (14/10/2026): o envio que demorou mais que a validade (1 h) repete o
+        mesmo vídeo, sem refazer. Só a tentativa atual; os endereços são os mesmos (o objeto da tentativa)."""
+        _mesmo_worker(dono, body.worker)
+        job = _do_worker(job_id, body.worker, c, body.tentativa)
+        if job["tipo"] != "render":
+            raise HTTPException(409, "só vídeos têm envio")
+        return _urls_de_envio(c, c.banco.lote(job["lote_id"]), job)
 
     @app.post("/api/worker/jobs/{job_id}/iniciar")
     def iniciar(job_id: str, body: WorkerIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
         """Vídeo pego adiantado indo para a GPU: renova o prazo; com o pedido parado, cancela (seguir: false)."""
         _mesmo_worker(dono, body.worker)
-        job = _do_worker(job_id, body.worker, c)
+        job = _do_worker(job_id, body.worker, c, body.tentativa)
         try:
-            seguir = c.banco.iniciar(job_id, body.worker)
+            seguir = c.banco.iniciar(job_id, body.worker, tentativa=body.tentativa)
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
         if not seguir:
             _se_fechou(c, job["lote_id"])
-        return {"seguir": seguir}
+            return {"seguir": False}
+        with c.banco.tx() as cur:  # o prazo absoluto da tentativa recomeçou com a GPU (db.iniciar)
+            j = cur.one("SELECT prazo_tentativa FROM jobs WHERE id = ?", (job_id,))
+        prazo = j and j["prazo_tentativa"]
+        return {"seguir": True, "prazo_s": round(float(prazo) - time.time(), 1) if prazo else None}
 
     @app.post("/api/worker/jobs/{job_id}/devolver")
     def devolver(job_id: str, body: WorkerIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):
         """Vídeo pego adiantado que o pod não vai gerar: volta para a fila sem contar tentativa."""
         _mesmo_worker(dono, body.worker)
-        _do_worker(job_id, body.worker, c)
+        _do_worker(job_id, body.worker, c, body.tentativa)
         try:
-            c.banco.devolver(job_id, body.worker)
+            c.banco.devolver(job_id, body.worker, body.tentativa)
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
         return {"ok": True}

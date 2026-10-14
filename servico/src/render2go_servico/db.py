@@ -68,6 +68,11 @@ from typing import Any
 
 MAX_TENTATIVAS = 3
 FINAIS = ("ok", "erro", "cancelado")
+# tentativa de um job (14/10/2026): cada reivindicação ganha um identificador; só ela conclui, renova o prazo ou pede
+# URLs novas. O prazo (lease) é renovado só com progresso, e nunca passa do prazo absoluto da tentativa
+LEASE_S = 900
+PRAZO_TENTATIVA_S = 3600  # absoluto, contado da reivindicação: menor que as 2 h do pod (desligamento automático)
+SEM_PROGRESSO_S = 600  # a renovação sem progresso novo (etapa ou contador) por mais que isto é recusada
 # plano do cliente → prioridade dos lotes (menor sai antes). "interno": acesso do dono do serviço,
 # sem limites de teste e com aprovação automática (ADR 0004); o C1 continua valendo.
 PLANOS = {"interno": 0, "pago": 0, "teste": 1}
@@ -395,6 +400,18 @@ COLUNAS_NOVAS = [
     ("geradores", "fechamento", "TEXT"),
     ("geradores", "fechamento_em", "DOUBLE PRECISION"),
     ("geradores", "confirmacao", "TEXT"),
+    # tentativa do job (14/10/2026): o identificador da reivindicação atual, quando começou, o prazo absoluto, o último
+    # progresso informado na renovação, e a conclusão já registrada (a repetição da mesma tentativa recebe a mesma
+    # resposta, sem cobrar nem renderizar de novo). O SHA-256 do vídeo entregue fica para a auditoria
+    ("jobs", "tentativa_id", "TEXT"),
+    ("jobs", "tentativa_em", "DOUBLE PRECISION"),
+    ("jobs", "prazo_tentativa", "DOUBLE PRECISION"),
+    ("jobs", "progresso", "TEXT"),
+    ("jobs", "progresso_em", "DOUBLE PRECISION"),
+    ("jobs", "conclusao_tentativa", "TEXT"),
+    ("jobs", "conclusao_status", "TEXT"),
+    ("jobs", "sha256_video", "TEXT"),
+    ("jobs", "falhas_envio", "INTEGER"),  # tentativas devolvidas por falha de envio (o vídeo estava certo)
 ]
 MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
@@ -3170,7 +3187,7 @@ class Banco:
     # -- fila -----------------------------------------------------------------------------
 
     def reivindicar(
-        self, worker: str, lease_s: float = 900, tipos: list[str] | None = None, modelos: list[str] | None = None
+        self, worker: str, lease_s: float = LEASE_S, tipos: list[str] | None = None, modelos: list[str] | None = None
     ) -> dict | None:
         """Próximo job (compilar antes de render; render só com o prompt pronto: o do lote ou, na foto com
         texto próprio, o dela).
@@ -3255,36 +3272,79 @@ class Banco:
                 break
             else:
                 return None
+            tentativa = secrets.token_hex(8)  # só esta reivindicação conclui o job (14/10/2026)
+            prazo = agora + PRAZO_TENTATIVA_S
             c.run(
                 "UPDATE jobs SET status = 'em_andamento', worker = ?, lease_ate = ?, tentativas = tentativas + 1,"
-                " atualizado = ? WHERE id = ?",
-                (worker, agora + lease_s, agora, job["id"]),
+                " atualizado = ?, tentativa_id = ?, tentativa_em = ?, prazo_tentativa = ?, progresso = NULL,"
+                " progresso_em = ? WHERE id = ?",
+                (worker, min(agora + lease_s, prazo), agora, tentativa, agora, prazo, agora, job["id"]),
             )
             if job["tipo"] == "render":  # fim da subida deste pod (previsão para o cliente)
                 c.run(
                     "UPDATE geradores SET primeiro_video_em = ? WHERE worker = ? AND primeiro_video_em IS NULL",
                     (agora, worker),
                 )
-            job.update(status="em_andamento", worker=worker, tentativas=job["tentativas"] + 1)
+            job.update(
+                status="em_andamento", worker=worker, tentativas=job["tentativas"] + 1, tentativa_id=tentativa,
+                tentativa_em=agora, prazo_tentativa=prazo,
+            )  # fmt: skip
             return job
 
-    def concluir(self, job_id: str, worker: str, status: str, **campos: Any) -> dict:
+    def _da_tentativa(self, c, job_id: str, worker: str, tentativa: str | None) -> dict:
+        """O job, travado (Postgres), se está com este worker e com esta tentativa; senão BancoError. Sem
+        `tentativa` (um pod com o código de antes de 14/10/2026), só o worker é conferido, como antes."""
+        job = c.one("SELECT * FROM jobs WHERE id = ?" + (" FOR UPDATE" if self.pg else ""), (job_id,))
+        if job is None or job["worker"] != worker or job["status"] != "em_andamento":
+            raise BancoError("job não está com este worker")
+        if tentativa is not None and job.get("tentativa_id") and tentativa != job["tentativa_id"]:
+            raise BancoError("job não está com esta tentativa")
+        return job
+
+    def conclusao_registrada(self, job_id: str, tentativa: str) -> str | None:
+        """O status já respondido à conclusão desta tentativa (a resposta se perdeu e o pod repete), ou None."""
+        with self.tx() as c:
+            j = c.one("SELECT conclusao_tentativa, conclusao_status FROM jobs WHERE id = ?", (job_id,))
+        return j["conclusao_status"] if j and j["conclusao_tentativa"] == tentativa else None
+
+    def concluir(
+        self,
+        job_id: str,
+        worker: str,
+        status: str,
+        tentativa: str | None = None,
+        publicar: Any = None,
+        **campos: Any,
+    ) -> dict:
+        """Conclui a tentativa. Idempotente (14/10/2026): a mesma tentativa repetindo a conclusão (a resposta se
+        perdeu no caminho) recebe a resposta já registrada, sem cobrar nem devolver à fila de novo (`repetida`).
+        Outra tentativa (ou um worker antigo depois do prazo vencido) é recusada. `transporte`: o vídeo estava certo
+        e só o envio falhou; volta para a fila com a mesma seed (a nova seed é para falha de conteúdo). `publicar`:
+        chamado com a tentativa conferida e o job travado, antes de gravar "ok" (a API copia o vídeo da tentativa para
+        o endereço do cliente); se falhar, nada muda e o erro sobe (o pod repete a conclusão)."""
         if status not in FINAIS:
             raise BancoError(f"status inválido: {status}")
         agora = time.time()
         with self.tx() as c:
-            job = c.one("SELECT * FROM jobs WHERE id = ?", (job_id,))
-            if job is None or job["worker"] != worker or job["status"] != "em_andamento":
-                raise BancoError("job não está com este worker")
+            atual = c.one("SELECT * FROM jobs WHERE id = ?" + (" FOR UPDATE" if self.pg else ""), (job_id,))
+            if atual is not None and tentativa is not None and atual.get("conclusao_tentativa") == tentativa:
+                # só a resposta já dada volta (nada muda); o token da tentativa só foi para o pod que a pegou
+                return {**atual, "status": atual["conclusao_status"], "repetida": True}
+            job = self._da_tentativa(c, job_id, worker, tentativa)
+            transporte = bool(campos.pop("transporte", False))
             repetir = status == "erro" and campos.pop("repetir", False) and job["tentativas"] < MAX_TENTATIVAS
             novo = "pendente" if repetir else status
-            # job devolvido à fila com `seed`: a próxima tentativa sai de outra seed
-            seed = campos.get("seed") if repetir and campos.get("seed") is not None else job["seed"]
+            # job devolvido à fila com `seed`: a próxima tentativa sai de outra seed (menos na falha de envio)
+            novo_seed = repetir and campos.get("seed") is not None and not transporte
+            seed = campos.get("seed") if novo_seed else job["seed"]
             barrado = bool(campos.get("barrado"))
+            if novo == "ok" and publicar is not None:
+                publicar()
             c.run(
                 "UPDATE jobs SET status = ?, segundos = ?, aviso = ?, erro = ?, similaridade = ?, bytes_video = ?,"
                 " deriva_cor = ?, salto_cor = ?, seed = ?, atualizado = ?, lease_ate = NULL, nsfw = ?, nsfw_alto = ?,"
-                " barrado_em = ?, quarentena_em = ? WHERE id = ?",
+                " barrado_em = ?, quarentena_em = ?, conclusao_tentativa = ?, conclusao_status = ?,"
+                " sha256_video = COALESCE(?, sha256_video), falhas_envio = COALESCE(falhas_envio, 0) + ? WHERE id = ?",
                 (
                     novo,
                     campos.get("segundos"),
@@ -3300,6 +3360,10 @@ class Banco:
                     campos.get("nsfw_alto"),
                     agora if barrado else None,
                     agora if barrado and campos.get("quarentena") else None,
+                    tentativa,
+                    novo,
+                    campos.get("sha256") if novo == "ok" else None,
+                    1 if transporte and repetir else 0,
                     job_id,
                 ),
             )
@@ -3314,7 +3378,33 @@ class Banco:
             self._fechar_lote(c, job["lote_id"])
             return {**job, "status": novo}
 
-    def iniciar(self, job_id: str, worker: str, lease_s: float = 900) -> bool:
+    def renovar(
+        self, job_id: str, worker: str, tentativa: str | None, etapa: str, progresso: int, lease_s: float = LEASE_S
+    ) -> float:
+        """Renova o prazo (lease) da tentativa (14/10/2026), com o progresso observado no pod: `etapa` (gpu,
+        conferencia, envio...) e um contador que cresce com o progresso de verdade (os passos do ComfyUI, as
+        tentativas de envio). O batimento sozinho não segura um job travado: sem etapa ou contador novos por mais de
+        SEM_PROGRESSO_S, a renovação é recusada, e o prazo nunca passa do prazo absoluto da tentativa
+        (PRAZO_TENTATIVA_S, menor que o desligamento automático do pod). Devolve o novo prazo (epoch)."""
+        agora = time.time()
+        marca = f"{etapa[:20]}:{int(progresso)}"
+        with self.tx() as c:
+            job = self._da_tentativa(c, job_id, worker, tentativa)
+            prazo = job.get("prazo_tentativa") or (agora + PRAZO_TENTATIVA_S)
+            if agora >= prazo:
+                raise BancoError("prazo da tentativa vencido")
+            mudou = marca != job.get("progresso")
+            desde = job.get("progresso_em") or job.get("tentativa_em") or agora
+            if not mudou and agora - float(desde) > SEM_PROGRESSO_S:
+                raise BancoError("sem progresso: o prazo não é renovado")
+            novo = min(agora + lease_s, float(prazo))
+            c.run(
+                "UPDATE jobs SET lease_ate = ?, atualizado = ?, progresso = ?, progresso_em = ? WHERE id = ?",
+                (novo, agora, marca, agora if mudou else desde, job_id),
+            )
+            return novo
+
+    def iniciar(self, job_id: str, worker: str, lease_s: float = LEASE_S, tentativa: str | None = None) -> bool:
         """O pod vai pôr na GPU um vídeo que pegou adiantado (render2go_worker.fila, 12/10/2026: a GPU não espera,
         o próximo vídeo é pego e preparado enquanto ela gera o atual). O prazo do pod recomeça aqui. Se o pedido foi
         parado enquanto o vídeo esperava no pod, ele é cancelado, sem custo, como os outros que ainda não tinham
@@ -3322,14 +3412,24 @@ class Banco:
         agora = time.time()
         with self.tx() as c:
             job = c.one(
-                "SELECT j.id, j.lote_id, j.worker, j.status, l.interrompido_em, l.interrompido_por FROM jobs j"
-                " JOIN lotes l ON l.id = j.lote_id WHERE j.id = ?" + (" FOR UPDATE OF j" if self.pg else ""),
+                "SELECT j.id, j.lote_id, j.worker, j.status, j.tentativa_id, j.prazo_tentativa, l.interrompido_em,"
+                " l.interrompido_por FROM jobs j JOIN lotes l ON l.id = j.lote_id WHERE j.id = ?"
+                + (" FOR UPDATE OF j" if self.pg else ""),
                 (job_id,),
             )
             if job is None or job["worker"] != worker or job["status"] != "em_andamento":
                 raise BancoError("job não está com este worker")
+            if tentativa is not None and job["tentativa_id"] and tentativa != job["tentativa_id"]:
+                raise BancoError("job não está com esta tentativa")
             if job["interrompido_em"] is None:
-                c.run("UPDATE jobs SET lease_ate = ?, atualizado = ? WHERE id = ?", (agora + lease_s, agora, job_id))
+                # a GPU começa agora: a tentativa ganha um prazo absoluto novo, contado daqui (o vídeo pego adiantado
+                # esperou o anterior), e o progresso recomeça
+                prazo = agora + PRAZO_TENTATIVA_S
+                c.run(
+                    "UPDATE jobs SET lease_ate = ?, atualizado = ?, prazo_tentativa = ?, progresso = 'gpu:0',"
+                    " progresso_em = ? WHERE id = ?",
+                    (min(agora + lease_s, prazo), agora, prazo, agora, job_id),
+                )
                 return True
             c.run(
                 "UPDATE jobs SET status = 'cancelado', erro = ?, worker = NULL, lease_ate = NULL, atualizado = ?"
@@ -3340,18 +3440,16 @@ class Banco:
             self._fechar_lote(c, job["lote_id"])
             return False
 
-    def devolver(self, job_id: str, worker: str) -> None:
+    def devolver(self, job_id: str, worker: str, tentativa: str | None = None) -> None:
         """Vídeo pego adiantado que o pod não vai gerar (o laço dele parou: limite de tempo, GPU ou filtro): volta
         para a fila sem contar tentativa, porque nunca foi para a GPU."""
         with self.tx() as c:
-            n = c.run(
+            self._da_tentativa(c, job_id, worker, tentativa)
+            c.run(
                 "UPDATE jobs SET status = 'pendente', worker = NULL, lease_ate = NULL, atualizado = ?,"
-                " tentativas = CASE WHEN tentativas > 0 THEN tentativas - 1 ELSE 0 END"
-                " WHERE id = ? AND worker = ? AND status = 'em_andamento'",
-                (time.time(), job_id, worker),
+                " tentativas = CASE WHEN tentativas > 0 THEN tentativas - 1 ELSE 0 END WHERE id = ?",
+                (time.time(), job_id),
             )
-            if not n:
-                raise BancoError("job não está com este worker")
 
     def vencer_pedidos(self) -> int:
         """Para o orquestrador, a cada ciclo: ver `_vencer_pedidos`."""

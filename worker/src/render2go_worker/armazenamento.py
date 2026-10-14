@@ -150,15 +150,20 @@ class Armazenamento:
         corpo: bytes = b"",
         timeout: float = 60,
         tipo: str | None = None,
+        extra: dict[str, str] | None = None,
     ) -> bytes:
         """Chamada assinada no cabeçalho (só quem tem as chaves). `tipo`: o Content-Type, assinado
-        junto."""
+        junto. `extra`: outros cabeçalhos x-amz-*, também assinados (ex.: a origem de uma cópia)."""
         esquema, host, caminho = self._caminho(chave)
         data = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
         sha = hashlib.sha256(corpo).hexdigest()
         cabecalhos = {"host": host, "x-amz-content-sha256": sha, "x-amz-date": data}
         if tipo:
             cabecalhos["content-type"] = tipo
+        for k, v in (extra or {}).items():
+            if not k.lower().startswith("x-amz-"):
+                raise ArmazenamentoError(f"cabeçalho não permitido: {k}")
+            cabecalhos[k.lower()] = v
         assinados = ";".join(sorted(cabecalhos))
         qs = "&".join(f"{_q(k)}={_q(v)}" for k, v in sorted(query.items()))
         canonico = "\n".join(
@@ -224,6 +229,16 @@ class Armazenamento:
         assinados): para quem tem as chaves e gera o arquivo no próprio servidor (a montagem de
         vídeos, ADR 0015)."""
         self._chamar("PUT", chave, {}, dados, timeout=300, tipo=tipo)
+
+    def copiar(self, origem: str, destino: str) -> None:
+        """Copia um objeto dentro do bucket (CopyObject, sem o conteúdo passar por aqui): a API
+        publica o vídeo de uma tentativa no endereço do cliente (14/10/2026)."""
+        _, _, caminho = self._caminho(origem)  # valida a chave e já vem com o bucket
+        r = self._chamar(
+            "PUT", destino, {}, timeout=120, extra={"x-amz-copy-source": caminho}
+        )  # o S3 pode responder 200 com um erro no corpo
+        if b"<Error>" in r[:2000]:
+            raise ArmazenamentoError(f"cópia {origem} → {destino}: {r[:200]!r}")
 
     def apagar(self, chave: str) -> None:
         req = urllib.request.Request(self.url("DELETE", chave, 60), method="DELETE")

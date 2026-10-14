@@ -2,6 +2,19 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 14/10/2026 (5): o mesmo vídeo aprovado até a confirmação, tentativa de cada job e prazo único (ADR 0017, proposto)
+
+Motivo: a revisão de 14/10/2026, Etapa 2 (evitar geração desperdiçada). Branch `claude/magical-lamport-4rrms9`; nada publicado. Detalhes: [`docs/15`](docs/15-ciclo-de-vida-desperdicio-e-qualidade.md), seção 2, e [ADR 0017](docs/adr/0017-tentativa-e-entrega-sem-desperdicio.md).
+
+- **Antes** (revalidado no `0a8149b`): a falha final do envio (3 tentativas em ~3 s) devolvia o vídeo já aprovado para a GPU, com outra seed; a resposta perdida da conclusão virava 409; o dono do job era só o nome do worker, e o vídeo ia sempre para o mesmo objeto; o `ComfyClient.wait` recomeçava a espera inteira quando o WebSocket caía.
+- **Tentativa:** cada reivindicação ganha um identificador e um prazo absoluto (1 h, recomeça quando o vídeo vai para a GPU); concluir, renovar, iniciar, devolver, traduzir e pedir URLs conferem a tentativa (sem ela, o pod de antes, como antes).
+- **Conclusão idempotente:** a mesma tentativa repetindo recebe a mesma resposta, sem cobrar de novo (a cobrança continua com a referência única `video:<job>`).
+- **Objeto por tentativa** (`saida/<cliente>/<lote>/tentativas/<job>-<tentativa>.mp4`): a API publica no endereço do cliente (`CopyObject`) dentro da conclusão; um pod atrasado não sobrescreve o vídeo entregue; a publicação que falha volta 503 e o pod repete, sem refazer.
+- **Entrega no worker:** o vídeo aprovado fica no disco do pod com o SHA-256 (até 8 ou 2 GB), é enviado de novo com URLs novas quando a assinatura vence e a confirmação repete quando a API cai, por até 10 min (nunca depois do limite do pod); só então volta como falha de transporte, **com a mesma seed**. O worker que reinicia no mesmo pod retoma a entrega. Não há recuperação depois que o pod acaba.
+- **Prazo renovado só com progresso** (`/renovar`, a cada 60 s: etapa e passos do ComfyUI ou tentativas de envio): sem progresso por 10 min, ou depois do prazo absoluto, é recusado e o pod interrompe o ComfyUI. Um prazo só no `ComfyClient.wait` (WebSocket, polling e cada chamada).
+- **Rotas novas:** `POST /api/worker/jobs/{id}/renovar` e `/urls`; `iniciar` devolve o prazo. Banco: nove colunas novas em `jobs` (criadas na partida).
+- **Testes:** `servico/tests/test_entrega.py` (API em SQLite e Postgres; worker com API falsa; e de ponta a ponta com o worker e a API de verdade nos dois bancos: duas falhas de envio e a resposta perdida → uma geração, uma cobrança), `worker/tests/test_comfy_prazo.py` (relógio simulado) e o `CopyObject` em `test_armazenamento.py`.
+
 ## 14/10/2026 (4): ciclo de vida dos pods confiável e teto com tudo o que cobra (ADR 0016, proposto)
 
 Motivo: a revisão de 14/10/2026 (pedido do dono: velocidade, subida e encerramento dos pods e qualidade, sem trocar o modelo), Etapa 1. Branch `claude/magical-lamport-4rrms9`; nada publicado. Detalhes: [`docs/15`](docs/15-ciclo-de-vida-desperdicio-e-qualidade.md), seção 1, e [ADR 0016](docs/adr/0016-ciclo-de-vida-dos-pods.md).
