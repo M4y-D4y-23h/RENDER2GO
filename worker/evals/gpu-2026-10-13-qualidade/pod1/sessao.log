@@ -1,0 +1,340 @@
+19:12:39 saldo US$ 9.10; NVIDIA L40S secure US$ 1.09/h; pods na conta: render2go-fila-dca936-2 (EXITED)
+19:12:41 espelho (R2): 6 de 6 modelo(s)
+19:12:42 evitando datacenters lentos: US-MO-1, US-NC-1
+19:12:44 pod maty8fxbp93k6d (NVIDIA L40S (secure) · máquina rápida) criado, US$ 1.09/h; esperando o agente...
+19:13:04 desligamento automático em 114.7 min
+19:13:05 pod maty8fxbp93k6d (NVIDIA L40S (secure) · máquina rápida): agente e CUDA ok; instalando o worker (~1–3 min)
+19:13:37 pod maty8fxbp93k6d (NVIDIA L40S (secure) · máquina rápida): modelos baixando a 906 MB/s (US-TX-3)
+19:15:55 pod maty8fxbp93k6d (NVIDIA L40S (secure) · máquina rápida): tempos da instalação: apt_download 4 | modelos_volume 4 | modelos_inicio 4 | baixado_config.json 4 | conferido_config.json 4 | baixado_model.safetensors 8 | conferido_model.safetensors 8 | baixado_wan2.2_i2v_lightx2v_4ste 10 | conferido_wan2.2_i2v_lightx2v_4ste 11 | baixado_wan2.2_i2v_lightx2v_4ste 12 | conferido_wan2.2_i2v_lightx2v_4ste 13 | apt 21 | baixado_wan_2.1_vae.safetensors 21 | conferido_wan_2.1_vae.safetensors 21 | baixado_nsfw_wan_umt5_xxl_v2_fp8 24 | conferido_nsfw_wan_umt5_xxl_v2_fp8 28 | baixado_wan2.2_i2v_high_noise_14 44 | baixado_umt5_xxl_fp8_e4m3fn_scal 52 | conferido_wan2.2_i2v_high_noise_14 55 | conferido_umt5_xxl_fp8_e4m3fn_scal 57 | baixado_wan2.2_i2v_low_noise_14B 58 | baixado_Wan2.2_I2V_High_R1_n54w_ 63 | conferido_wan2.2_i2v_low_noise_14B 68 | conferido_Wan2.2_I2V_High_R1_n54w_ 73 | baixado_Wan2.2_I2V_Low_R1_n54w_v 100 | conferido_Wan2.2_I2V_Low_R1_n54w_v 110 | modelos_conferidos 110 | ambiente_instalado 126 | compilador 146 | ambiente_pronto 149 | pronto 149
+19:16:18 pod maty8fxbp93k6d (NVIDIA L40S (secure) · máquina rápida): pronto (1 GPU)
+19:16:18 MARCA servicos_no_ar: 217.1 s
+19:16:22 MARCA pronto: 220.5 s
+19:17:23 no pod:
+19:16:31 [medida] modelo da legenda: espera de 0.1 s
+19:17:18 [medida] prompt A xicara-concreto: The cup slowly rotates on the plate, showcasing its details with smooth, continuous motion. Even stu
+19:17:22 [medida] prompt A xicara-vago: The main subject stays in place as soft light slowly glides across it, highlighting its shape and de
+19:17:22 [medida] prompt A xicara-vago: The main subject stays in place as soft light slowly glides across it, highlighting its shape and de
+19:18:24 no pod:
+19:18:12 [medida] prompt A perfume-vago: The main subject stays in place as soft light slowly glides across it, highlighting its shape and de
+19:18:16 [medida] prompt A rotulo-concreto: The camera slowly dolly-in toward the bottle, keeping the label clearly legible. Even studio lightin
+19:18:21 [medida] prompt A rotulo-vago: The main subject stays in place as soft light slowly glides across it, highlighting its shape and de
+19:18:21 [medida] prompt A rotulo-vago: The main subject stays in place as soft light slowly glides across it, highlighting its shape and de
+19:19:25 no pod:
+19:18:38 [medida] prompt A loja-vago: The main subject stays in place as soft light slowly glides across it, highlighting its shape and de
+19:18:42 [medida] prompt A salao-concreto: The camera slowly advances through the empty café room, capturing a wide shot of the space. Soft nat
+19:18:46 [medida] prompt A salao-vago: The main subject stays in place as soft light slowly glides across it, highlighting its shape and de
+19:18:46 [medida] prompt A salao-vago: The main subject stays in place as soft light slowly glides across it, highlighting its shape and de
+19:20:26 no pod:
+19:18:42 [medida] prompt A salao-concreto: The camera slowly advances through the empty café room, capturing a wide shot of the space. Soft nat
+19:18:46 [medida] prompt A salao-vago: The main subject stays in place as soft light slowly glides across it, highlighting its shape and de
+19:19:59 [medida] legenda xicara: 72.6 s {'descricao': 'The white ceramic cup and saucer with green and gold floral patterns are displayed against a neutral background.', 'categoria': 'produto', 'assunto': 'the ceramic cup and saucer', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 72.62}
+19:19:59 [medida] legenda xicara: 72.6 s {'descricao': 'The white ceramic cup and saucer with green and gold floral patterns are displayed against a neutral background.', 'categoria': 'produto', 'assunto': 'the ceramic cup and saucer', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 72.62}
+19:21:26 no pod:
+19:18:46 [medida] prompt A salao-vago: The main subject stays in place as soft light slowly glides across it, highlighting its shape and de
+19:19:59 [medida] legenda xicara: 72.6 s {'descricao': 'The white ceramic cup and saucer with green and gold floral patterns are displayed against a neutral background.', 'categoria': 'produto', 'assunto': 'the ceramic cup and saucer', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 72.62}
+19:20:52 [medida] legenda cafe: 53.2 s {'descricao': 'A white cup of coffee sits on a saucer surrounded by roasted coffee beans.', 'categoria': 'comida', 'assunto': 'the cup of coffee', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 53.21}
+19:20:52 [medida] legenda cafe: 53.2 s {'descricao': 'A white cup of coffee sits on a saucer surrounded by roasted coffee beans.', 'categoria': 'comida', 'assunto': 'the cup of coffee', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 53.21}
+19:22:27 no pod:
+19:19:59 [medida] legenda xicara: 72.6 s {'descricao': 'The white ceramic cup and saucer with green and gold floral patterns are displayed against a neutral background.', 'categoria': 'produto', 'assunto': 'the ceramic cup and saucer', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 72.62}
+19:20:52 [medida] legenda cafe: 53.2 s {'descricao': 'A white cup of coffee sits on a saucer surrounded by roasted coffee beans.', 'categoria': 'comida', 'assunto': 'the cup of coffee', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 53.21}
+19:21:46 [medida] legenda padaria: 53.7 s {'descricao': 'A group of men in a tent with sacks and barrels, possibly in a historical setting.', 'categoria': 'geral', 'assunto': 'the men in the tent', 'pessoas': True, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 53.7}
+19:21:46 [medida] legenda padaria: 53.7 s {'descricao': 'A group of men in a tent with sacks and barrels, possibly in a historical setting.', 'categoria': 'geral', 'assunto': 'the men in the tent', 'pessoas': True, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 53.7}
+19:23:28 no pod:
+19:20:52 [medida] legenda cafe: 53.2 s {'descricao': 'A white cup of coffee sits on a saucer surrounded by roasted coffee beans.', 'categoria': 'comida', 'assunto': 'the cup of coffee', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 53.21}
+19:21:46 [medida] legenda padaria: 53.7 s {'descricao': 'A group of men in a tent with sacks and barrels, possibly in a historical setting.', 'categoria': 'geral', 'assunto': 'the men in the tent', 'pessoas': True, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 53.7}
+19:22:39 [medida] legenda bolo: 52.8 s {'descricao': 'A slice of layered tiramisu dessert on a white plate with chocolate drizzle and a mint garnish.', 'categoria': 'comida', 'assunto': 'the tiramisu slice', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.78}
+19:22:39 [medida] legenda bolo: 52.8 s {'descricao': 'A slice of layered tiramisu dessert on a white plate with chocolate drizzle and a mint garnish.', 'categoria': 'comida', 'assunto': 'the tiramisu slice', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.78}
+19:24:29 no pod:
+19:22:39 [medida] legenda bolo: 52.8 s {'descricao': 'A slice of layered tiramisu dessert on a white plate with chocolate drizzle and a mint garnish.', 'categoria': 'comida', 'assunto': 'the tiramisu slice', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.78}
+19:23:33 [medida] legenda hamburguer: 53.5 s {'descricao': 'The large burger with lettuce and a thick patty is on a plate with a black background.', 'categoria': 'comida', 'assunto': 'the burger', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 53.53}
+19:24:22 [medida] legenda tenis: 49.2 s {'descricao': 'The beige and white sneakers with white laces are displayed on a wooden surface.', 'categoria': 'roupa', 'assunto': 'the beige and white sneakers', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 49.16}
+19:24:22 [medida] legenda tenis: 49.2 s {'descricao': 'The beige and white sneakers with white laces are displayed on a wooden surface.', 'categoria': 'roupa', 'assunto': 'the beige and white sneakers', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 49.16}
+19:25:30 no pod:
+19:23:33 [medida] legenda hamburguer: 53.5 s {'descricao': 'The large burger with lettuce and a thick patty is on a plate with a black background.', 'categoria': 'comida', 'assunto': 'the burger', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 53.53}
+19:24:22 [medida] legenda tenis: 49.2 s {'descricao': 'The beige and white sneakers with white laces are displayed on a wooden surface.', 'categoria': 'roupa', 'assunto': 'the beige and white sneakers', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 49.16}
+19:25:14 [medida] legenda perfume: 52.0 s {'descricao': 'A turquoise glass bottle with a violin-shaped design on a plain background.', 'categoria': 'produto', 'assunto': 'the turquoise glass bottle', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.01}
+19:25:14 [medida] legenda perfume: 52.0 s {'descricao': 'A turquoise glass bottle with a violin-shaped design on a plain background.', 'categoria': 'produto', 'assunto': 'the turquoise glass bottle', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.01}
+19:26:30 no pod:
+19:24:22 [medida] legenda tenis: 49.2 s {'descricao': 'The beige and white sneakers with white laces are displayed on a wooden surface.', 'categoria': 'roupa', 'assunto': 'the beige and white sneakers', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 49.16}
+19:25:14 [medida] legenda perfume: 52.0 s {'descricao': 'A turquoise glass bottle with a violin-shaped design on a plain background.', 'categoria': 'produto', 'assunto': 'the turquoise glass bottle', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.01}
+19:26:03 [medida] legenda rotulo: 49.0 s {'descricao': "A close-up of a yellow bottle labeled 'Ribbon Orange' with a slogan.", 'categoria': 'produto', 'assunto': 'the orange soda bottle', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 48.97}
+19:26:03 [medida] legenda rotulo: 49.0 s {'descricao': "A close-up of a yellow bottle labeled 'Ribbon Orange' with a slogan.", 'categoria': 'produto', 'assunto': 'the orange soda bottle', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 48.97}
+19:27:31 no pod:
+19:25:14 [medida] legenda perfume: 52.0 s {'descricao': 'A turquoise glass bottle with a violin-shaped design on a plain background.', 'categoria': 'produto', 'assunto': 'the turquoise glass bottle', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.01}
+19:26:03 [medida] legenda rotulo: 49.0 s {'descricao': "A close-up of a yellow bottle labeled 'Ribbon Orange' with a slogan.", 'categoria': 'produto', 'assunto': 'the orange soda bottle', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 48.97}
+19:26:56 [medida] legenda fachada: 52.8 s {'descricao': 'The Royal India Restaurant building with a sign and a car parked in front.', 'categoria': 'imovel', 'assunto': 'the royal india restaurant', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.83}
+19:26:56 [medida] legenda fachada: 52.8 s {'descricao': 'The Royal India Restaurant building with a sign and a car parked in front.', 'categoria': 'imovel', 'assunto': 'the royal india restaurant', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.83}
+19:28:32 no pod:
+19:26:03 [medida] legenda rotulo: 49.0 s {'descricao': "A close-up of a yellow bottle labeled 'Ribbon Orange' with a slogan.", 'categoria': 'produto', 'assunto': 'the orange soda bottle', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 48.97}
+19:26:56 [medida] legenda fachada: 52.8 s {'descricao': 'The Royal India Restaurant building with a sign and a car parked in front.', 'categoria': 'imovel', 'assunto': 'the royal india restaurant', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.83}
+19:27:49 [medida] legenda loja: 52.7 s {'descricao': 'The interior of a clothing store with a wooden counter and hanging clothes.', 'categoria': 'imovel', 'assunto': 'the clothing store interior', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.71}
+19:27:49 [medida] legenda loja: 52.7 s {'descricao': 'The interior of a clothing store with a wooden counter and hanging clothes.', 'categoria': 'imovel', 'assunto': 'the clothing store interior', 'pessoas': False, 'texto': False, 'modelo': 'qwen2.5vl:7b', 'versao': 1, 'segundos': 52.71}
+19:29:33 no pod:
+19:28:42 [medida] fase 4_480p
+19:28:55 [medida] ComfyUI 8290 no ar em 12.6 s []
+19:29:19 [medida] aquecimento aquece-A480: True em 24.8 s
+  passo 1/2 (nó 129:86)
+19:30:34 no pod:
+19:28:55 [medida] ComfyUI 8290 no ar em 12.6 s []
+19:29:19 [medida] aquecimento aquece-A480: True em 24.8 s
+19:30:12 [medida] A-480-xicara-concreto: True em 52.44 s (ComfyUI 52.13), VRAM 40725 MiB
+  passo 2/2 (nó 129:86)
+19:31:35 no pod:
+19:29:19 [medida] aquecimento aquece-A480: True em 24.8 s
+19:30:12 [medida] A-480-xicara-concreto: True em 52.44 s (ComfyUI 52.13), VRAM 40725 MiB
+19:31:05 [medida] A-480-xicara-vago: True em 53.1 s (ComfyUI 52.78), VRAM 40901 MiB
+  executando nó 129:85
+19:32:35 no pod:
+19:30:12 [medida] A-480-xicara-concreto: True em 52.44 s (ComfyUI 52.13), VRAM 40725 MiB
+19:31:05 [medida] A-480-xicara-vago: True em 53.1 s (ComfyUI 52.78), VRAM 40901 MiB
+19:31:58 [medida] A-480-cafe-concreto: True em 52.49 s (ComfyUI 52.17), VRAM 40901 MiB
+  passo 1/2 (nó 129:85)
+19:33:37 no pod:
+19:31:05 [medida] A-480-xicara-vago: True em 53.1 s (ComfyUI 52.78), VRAM 40901 MiB
+19:31:58 [medida] A-480-cafe-concreto: True em 52.49 s (ComfyUI 52.17), VRAM 40901 MiB
+19:32:51 [medida] A-480-cafe-vago: True em 52.85 s (ComfyUI 52.52), VRAM 40837 MiB
+  executando nó 129:87
+19:34:38 no pod:
+19:32:51 [medida] A-480-cafe-vago: True em 52.85 s (ComfyUI 52.52), VRAM 40837 MiB
+19:33:45 [medida] A-480-padaria-concreto: True em 54.05 s (ComfyUI 53.74), VRAM 40837 MiB
+19:34:37 [medida] A-480-padaria-vago: True em 52.21 s (ComfyUI 51.48), VRAM 41253 MiB
+  executando nó 129:98
+19:35:39 no pod:
+19:33:45 [medida] A-480-padaria-concreto: True em 54.05 s (ComfyUI 53.74), VRAM 40837 MiB
+19:34:37 [medida] A-480-padaria-vago: True em 52.21 s (ComfyUI 51.48), VRAM 41253 MiB
+19:35:29 [medida] A-480-bolo-concreto: True em 51.69 s (ComfyUI 51.3), VRAM 41253 MiB
+  executando nó 129:86
+19:36:40 no pod:
+19:34:37 [medida] A-480-padaria-vago: True em 52.21 s (ComfyUI 51.48), VRAM 41253 MiB
+19:35:29 [medida] A-480-bolo-concreto: True em 51.69 s (ComfyUI 51.3), VRAM 41253 MiB
+19:36:21 [medida] A-480-bolo-vago: True em 51.59 s (ComfyUI 51.04), VRAM 40965 MiB
+  passo 1/2 (nó 129:86)
+19:37:41 no pod:
+19:35:29 [medida] A-480-bolo-concreto: True em 51.69 s (ComfyUI 51.3), VRAM 41253 MiB
+19:36:21 [medida] A-480-bolo-vago: True em 51.59 s (ComfyUI 51.04), VRAM 40965 MiB
+19:37:12 [medida] A-480-hamburguer-concreto: True em 51.75 s (ComfyUI 51.31), VRAM 40837 MiB
+  executando nó 129:85
+19:38:42 no pod:
+19:36:21 [medida] A-480-bolo-vago: True em 51.59 s (ComfyUI 51.04), VRAM 40965 MiB
+19:37:12 [medida] A-480-hamburguer-concreto: True em 51.75 s (ComfyUI 51.31), VRAM 40837 MiB
+19:38:04 [medida] A-480-hamburguer-vago: True em 51.79 s (ComfyUI 51.32), VRAM 40869 MiB
+  passo 1/2 (nó 129:85)
+19:39:43 no pod:
+19:37:12 [medida] A-480-hamburguer-concreto: True em 51.75 s (ComfyUI 51.31), VRAM 40837 MiB
+19:38:04 [medida] A-480-hamburguer-vago: True em 51.79 s (ComfyUI 51.32), VRAM 40869 MiB
+19:38:58 [medida] A-480-tenis-concreto: True em 53.63 s (ComfyUI 53.03), VRAM 41413 MiB
+  passo 2/2 (nó 129:85)
+19:40:43 no pod:
+19:38:04 [medida] A-480-hamburguer-vago: True em 51.79 s (ComfyUI 51.32), VRAM 40869 MiB
+19:38:58 [medida] A-480-tenis-concreto: True em 53.63 s (ComfyUI 53.03), VRAM 41413 MiB
+19:39:52 [medida] A-480-tenis-vago: True em 54.14 s (ComfyUI 53.7), VRAM 41413 MiB
+  executando nó 108
+19:41:44 no pod:
+19:39:52 [medida] A-480-tenis-vago: True em 54.14 s (ComfyUI 53.7), VRAM 41413 MiB
+19:40:45 [medida] A-480-perfume-concreto: True em 52.81 s (ComfyUI 52.41), VRAM 41253 MiB
+19:41:37 [medida] A-480-perfume-vago: True em 51.89 s (ComfyUI 51.48), VRAM 41253 MiB
+  executando nó 129:86
+19:42:45 no pod:
+19:40:45 [medida] A-480-perfume-concreto: True em 52.81 s (ComfyUI 52.41), VRAM 41253 MiB
+19:41:37 [medida] A-480-perfume-vago: True em 51.89 s (ComfyUI 51.48), VRAM 41253 MiB
+19:42:30 [medida] A-480-rotulo-concreto: True em 53.18 s (ComfyUI 52.69), VRAM 41413 MiB
+  passo 1/2 (nó 129:86)
+19:43:46 no pod:
+19:41:37 [medida] A-480-perfume-vago: True em 51.89 s (ComfyUI 51.48), VRAM 41253 MiB
+19:42:30 [medida] A-480-rotulo-concreto: True em 53.18 s (ComfyUI 52.69), VRAM 41413 MiB
+19:43:25 [medida] A-480-rotulo-vago: True em 54.03 s (ComfyUI 53.5), VRAM 41413 MiB
+  passo 1/2 (nó 129:86)
+19:44:47 no pod:
+19:42:30 [medida] A-480-rotulo-concreto: True em 53.18 s (ComfyUI 52.69), VRAM 41413 MiB
+19:43:25 [medida] A-480-rotulo-vago: True em 54.03 s (ComfyUI 53.5), VRAM 41413 MiB
+19:44:16 [medida] A-480-fachada-concreto: True em 51.34 s (ComfyUI 50.89), VRAM 40837 MiB
+  executando nó 129:85
+19:45:47 no pod:
+19:43:25 [medida] A-480-rotulo-vago: True em 54.03 s (ComfyUI 53.5), VRAM 41413 MiB
+19:44:16 [medida] A-480-fachada-concreto: True em 51.34 s (ComfyUI 50.89), VRAM 40837 MiB
+19:45:08 [medida] A-480-fachada-vago: True em 51.81 s (ComfyUI 51.26), VRAM 40837 MiB
+  passo 1/2 (nó 129:85)
+19:46:48 no pod:
+19:44:16 [medida] A-480-fachada-concreto: True em 51.34 s (ComfyUI 50.89), VRAM 40837 MiB
+19:45:08 [medida] A-480-fachada-vago: True em 51.81 s (ComfyUI 51.26), VRAM 40837 MiB
+19:46:00 [medida] A-480-loja-concreto: True em 52.17 s (ComfyUI 51.66), VRAM 40901 MiB
+  executando nó 129:87
+19:47:49 no pod:
+19:46:00 [medida] A-480-loja-concreto: True em 52.17 s (ComfyUI 51.66), VRAM 40901 MiB
+19:46:53 [medida] A-480-loja-vago: True em 52.78 s (ComfyUI 52.11), VRAM 41253 MiB
+19:47:45 [medida] A-480-salao-concreto: True em 51.97 s (ComfyUI 51.46), VRAM 40837 MiB
+  executando nó 129:98
+19:48:50 no pod:
+19:46:53 [medida] A-480-loja-vago: True em 52.78 s (ComfyUI 52.11), VRAM 41253 MiB
+19:47:45 [medida] A-480-salao-concreto: True em 51.97 s (ComfyUI 51.46), VRAM 40837 MiB
+19:48:38 [medida] A-480-salao-vago: True em 52.43 s (ComfyUI 51.92), VRAM 41253 MiB
+  executando nó 129:86
+19:49:51 no pod:
+19:47:45 [medida] A-480-salao-concreto: True em 51.97 s (ComfyUI 51.46), VRAM 40837 MiB
+19:48:38 [medida] A-480-salao-vago: True em 52.43 s (ComfyUI 51.92), VRAM 41253 MiB
+19:49:16 [medida] aquecimento aquece-B480: True em 35.5 s
+  passo 1/2 (nó 129:85)
+19:50:52 no pod:
+19:48:38 [medida] A-480-salao-vago: True em 52.43 s (ComfyUI 51.92), VRAM 41253 MiB
+19:49:16 [medida] aquecimento aquece-B480: True em 35.5 s
+19:50:08 [medida] B-480-xicara-concreto: True em 52.74 s (ComfyUI 52.2), VRAM 40845 MiB
+  passo 2/2 (nó 129:85)
+19:51:53 no pod:
+19:49:16 [medida] aquecimento aquece-B480: True em 35.5 s
+19:50:08 [medida] B-480-xicara-concreto: True em 52.74 s (ComfyUI 52.2), VRAM 40845 MiB
+19:51:03 [medida] B-480-xicara-vago: True em 54.4 s (ComfyUI 53.99), VRAM 41261 MiB
+  executando nó 108
+19:52:53 no pod:
+19:51:03 [medida] B-480-xicara-vago: True em 54.4 s (ComfyUI 53.99), VRAM 41261 MiB
+19:51:55 [medida] B-480-cafe-concreto: True em 52.04 s (ComfyUI 51.5), VRAM 40909 MiB
+19:52:47 [medida] B-480-cafe-vago: True em 51.7 s (ComfyUI 51.2), VRAM 40845 MiB
+  executando nó 129:86
+19:53:54 no pod:
+19:51:55 [medida] B-480-cafe-concreto: True em 52.04 s (ComfyUI 51.5), VRAM 40909 MiB
+19:52:47 [medida] B-480-cafe-vago: True em 51.7 s (ComfyUI 51.2), VRAM 40845 MiB
+19:53:40 [medida] B-480-padaria-concreto: True em 52.63 s (ComfyUI 52.12), VRAM 40845 MiB
+  passo 1/2 (nó 129:86)
+19:54:55 no pod:
+19:52:47 [medida] B-480-cafe-vago: True em 51.7 s (ComfyUI 51.2), VRAM 40845 MiB
+19:53:40 [medida] B-480-padaria-concreto: True em 52.63 s (ComfyUI 52.12), VRAM 40845 MiB
+19:54:32 [medida] B-480-padaria-vago: True em 52.02 s (ComfyUI 51.46), VRAM 40845 MiB
+  executando nó 129:85
+19:55:56 no pod:
+19:53:40 [medida] B-480-padaria-concreto: True em 52.63 s (ComfyUI 52.12), VRAM 40845 MiB
+19:54:32 [medida] B-480-padaria-vago: True em 52.02 s (ComfyUI 51.46), VRAM 40845 MiB
+19:55:24 [medida] B-480-bolo-concreto: True em 51.89 s (ComfyUI 51.48), VRAM 40845 MiB
+  passo 1/2 (nó 129:85)
+19:56:57 no pod:
+19:54:32 [medida] B-480-padaria-vago: True em 52.02 s (ComfyUI 51.46), VRAM 40845 MiB
+19:55:24 [medida] B-480-bolo-concreto: True em 51.89 s (ComfyUI 51.48), VRAM 40845 MiB
+19:56:18 [medida] B-480-bolo-vago: True em 53.98 s (ComfyUI 53.33), VRAM 41261 MiB
+  passo 1/2 (nó 129:85)
+19:57:58 no pod:
+19:55:24 [medida] B-480-bolo-concreto: True em 51.89 s (ComfyUI 51.48), VRAM 40845 MiB
+19:56:18 [medida] B-480-bolo-vago: True em 53.98 s (ComfyUI 53.33), VRAM 41261 MiB
+19:57:11 [medida] B-480-hamburguer-concreto: True em 53.36 s (ComfyUI 52.32), VRAM 40845 MiB
+  executando nó 129:87
+19:58:58 no pod:
+19:57:11 [medida] B-480-hamburguer-concreto: True em 53.36 s (ComfyUI 52.32), VRAM 40845 MiB
+19:58:03 [medida] B-480-hamburguer-vago: True em 51.63 s (ComfyUI 51.03), VRAM 41261 MiB
+19:58:56 [medida] B-480-tenis-concreto: True em 52.95 s (ComfyUI 52.41), VRAM 41421 MiB
+  executando nó 129:98
+19:59:59 no pod:
+19:58:03 [medida] B-480-hamburguer-vago: True em 51.63 s (ComfyUI 51.03), VRAM 41261 MiB
+19:58:56 [medida] B-480-tenis-concreto: True em 52.95 s (ComfyUI 52.41), VRAM 41421 MiB
+19:59:50 [medida] B-480-tenis-vago: True em 53.65 s (ComfyUI 53.18), VRAM 41421 MiB
+  executando nó 129:86
+20:01:00 no pod:
+19:58:56 [medida] B-480-tenis-concreto: True em 52.95 s (ComfyUI 52.41), VRAM 41421 MiB
+19:59:50 [medida] B-480-tenis-vago: True em 53.65 s (ComfyUI 53.18), VRAM 41421 MiB
+20:00:43 [medida] B-480-perfume-concreto: True em 52.73 s (ComfyUI 52.24), VRAM 41277 MiB
+  passo 1/2 (nó 129:86)
+20:02:01 no pod:
+19:59:50 [medida] B-480-tenis-vago: True em 53.65 s (ComfyUI 53.18), VRAM 41421 MiB
+20:00:43 [medida] B-480-perfume-concreto: True em 52.73 s (ComfyUI 52.24), VRAM 41277 MiB
+20:01:34 [medida] B-480-perfume-vago: True em 51.74 s (ComfyUI 51.15), VRAM 40845 MiB
+  executando nó 129:85
+20:03:02 no pod:
+20:00:43 [medida] B-480-perfume-concreto: True em 52.73 s (ComfyUI 52.24), VRAM 41277 MiB
+20:01:34 [medida] B-480-perfume-vago: True em 51.74 s (ComfyUI 51.15), VRAM 40845 MiB
+20:02:29 [medida] B-480-rotulo-concreto: True em 54.54 s (ComfyUI 54.15), VRAM 41421 MiB
+  passo 1/2 (nó 129:85)
+20:04:03 no pod:
+20:01:34 [medida] B-480-perfume-vago: True em 51.74 s (ComfyUI 51.15), VRAM 40845 MiB
+20:02:29 [medida] B-480-rotulo-concreto: True em 54.54 s (ComfyUI 54.15), VRAM 41421 MiB
+20:03:24 [medida] B-480-rotulo-vago: True em 54.86 s (ComfyUI 54.46), VRAM 41421 MiB
+  passo 1/2 (nó 129:85)
+20:05:04 no pod:
+20:02:29 [medida] B-480-rotulo-concreto: True em 54.54 s (ComfyUI 54.15), VRAM 41421 MiB
+20:03:24 [medida] B-480-rotulo-vago: True em 54.86 s (ComfyUI 54.46), VRAM 41421 MiB
+20:04:17 [medida] B-480-fachada-concreto: True em 52.47 s (ComfyUI 52.0), VRAM 40845 MiB
+  executando nó 129:87
+20:06:05 no pod:
+20:04:17 [medida] B-480-fachada-concreto: True em 52.47 s (ComfyUI 52.0), VRAM 40845 MiB
+20:05:10 [medida] B-480-fachada-vago: True em 52.87 s (ComfyUI 52.47), VRAM 40845 MiB
+20:06:03 [medida] B-480-loja-concreto: True em 52.8 s (ComfyUI 52.27), VRAM 40845 MiB
+  executando nó 129:98
+20:07:06 no pod:
+20:05:10 [medida] B-480-fachada-vago: True em 52.87 s (ComfyUI 52.47), VRAM 40845 MiB
+20:06:03 [medida] B-480-loja-concreto: True em 52.8 s (ComfyUI 52.27), VRAM 40845 MiB
+20:06:55 [medida] B-480-loja-vago: True em 52.23 s (ComfyUI 51.75), VRAM 40845 MiB
+  executando nó 129:86
+20:08:06 no pod:
+20:06:03 [medida] B-480-loja-concreto: True em 52.8 s (ComfyUI 52.27), VRAM 40845 MiB
+20:06:55 [medida] B-480-loja-vago: True em 52.23 s (ComfyUI 51.75), VRAM 40845 MiB
+20:07:47 [medida] B-480-salao-concreto: True em 51.92 s (ComfyUI 51.38), VRAM 40845 MiB
+  passo 1/2 (nó 129:86)
+20:09:07 no pod:
+20:08:50 [medida] legenda (GPU ocupada) xicara: 7.9 s 
+20:08:56 [medida] legenda (GPU ocupada) cafe: 5.9 s 
+20:09:02 [medida] legenda (GPU ocupada) padaria: 6.5 s 
+20:09:02 [medida] legenda (GPU ocupada) padaria: 6.5 s
+20:10:08 no pod:
+20:09:41 [medida] D-480-xicara-concreto: True em 53.76 s (ComfyUI 53.32), VRAM 40909 MiB
+20:09:47 [medida] legenda (GPU ocupada) loja: 6.0 s 
+20:09:52 [medida] legenda (GPU ocupada) salao: 5.2 s assunto fora do formato: 'the café interior'
+  executando nó 129:85
+20:11:09 no pod:
+20:09:47 [medida] legenda (GPU ocupada) loja: 6.0 s 
+20:09:52 [medida] legenda (GPU ocupada) salao: 5.2 s assunto fora do formato: 'the café interior'
+20:10:33 [medida] D-480-xicara-vago: True em 51.93 s (ComfyUI 51.46), VRAM 40845 MiB
+  passo 1/2 (nó 129:85)
+20:12:10 no pod:
+20:09:52 [medida] legenda (GPU ocupada) salao: 5.2 s assunto fora do formato: 'the café interior'
+20:10:33 [medida] D-480-xicara-vago: True em 51.93 s (ComfyUI 51.46), VRAM 40845 MiB
+20:11:25 [medida] D-480-cafe-concreto: True em 52.25 s (ComfyUI 51.76), VRAM 41261 MiB
+  executando nó 129:87
+20:13:11 no pod:
+20:11:25 [medida] D-480-cafe-concreto: True em 52.25 s (ComfyUI 51.76), VRAM 41261 MiB
+20:12:17 [medida] D-480-cafe-vago: True em 52.33 s (ComfyUI 51.89), VRAM 40845 MiB
+20:13:09 [medida] D-480-padaria-concreto: True em 51.41 s (ComfyUI 50.98), VRAM 41261 MiB
+  executando nó 129:98
+20:14:12 no pod:
+20:12:17 [medida] D-480-cafe-vago: True em 52.33 s (ComfyUI 51.89), VRAM 40845 MiB
+20:13:09 [medida] D-480-padaria-concreto: True em 51.41 s (ComfyUI 50.98), VRAM 41261 MiB
+20:14:02 [medida] D-480-padaria-vago: True em 52.97 s (ComfyUI 52.35), VRAM 40845 MiB
+  executando nó 129:86
+20:15:13 no pod:
+20:13:09 [medida] D-480-padaria-concreto: True em 51.41 s (ComfyUI 50.98), VRAM 41261 MiB
+20:14:02 [medida] D-480-padaria-vago: True em 52.97 s (ComfyUI 52.35), VRAM 40845 MiB
+20:14:55 [medida] D-480-bolo-concreto: True em 53.15 s (ComfyUI 52.55), VRAM 40845 MiB
+  passo 1/2 (nó 129:86)
+20:16:13 no pod:
+20:14:02 [medida] D-480-padaria-vago: True em 52.97 s (ComfyUI 52.35), VRAM 40845 MiB
+20:14:55 [medida] D-480-bolo-concreto: True em 53.15 s (ComfyUI 52.55), VRAM 40845 MiB
+20:15:47 [medida] D-480-bolo-vago: True em 51.46 s (ComfyUI 50.87), VRAM 41533 MiB
+  executando nó 129:85
+20:17:14 no pod:
+20:14:55 [medida] D-480-bolo-concreto: True em 53.15 s (ComfyUI 52.55), VRAM 40845 MiB
+20:15:47 [medida] D-480-bolo-vago: True em 51.46 s (ComfyUI 50.87), VRAM 41533 MiB
+20:16:39 [medida] D-480-hamburguer-vago: True em 51.81 s (ComfyUI 51.26), VRAM 41261 MiB
+  passo 1/2 (nó 129:85)
+20:18:15 no pod:
+20:15:47 [medida] D-480-bolo-vago: True em 51.46 s (ComfyUI 50.87), VRAM 41533 MiB
+20:16:39 [medida] D-480-hamburguer-vago: True em 51.81 s (ComfyUI 51.26), VRAM 41261 MiB
+20:17:34 [medida] D-480-tenis-vago: True em 55.22 s (ComfyUI 54.55), VRAM 41421 MiB
+  passo 1/2 (nó 129:85)
+20:19:16 no pod:
+20:16:39 [medida] D-480-hamburguer-vago: True em 51.81 s (ComfyUI 51.26), VRAM 41261 MiB
+20:17:34 [medida] D-480-tenis-vago: True em 55.22 s (ComfyUI 54.55), VRAM 41421 MiB
+20:18:28 [medida] D-480-perfume-vago: True em 54.18 s (ComfyUI 53.69), VRAM 40909 MiB
+  executando nó 129:87
+20:20:17 no pod:
+20:18:28 [medida] D-480-perfume-vago: True em 54.18 s (ComfyUI 53.69), VRAM 40909 MiB
+20:19:23 [medida] D-480-rotulo-vago: True em 55.06 s (ComfyUI 54.59), VRAM 41101 MiB
+20:20:16 [medida] D-480-fachada-vago: True em 52.11 s (ComfyUI 51.63), VRAM 41261 MiB
+  executando nó 129:98
+20:21:17 no pod:
+20:19:23 [medida] D-480-rotulo-vago: True em 55.06 s (ComfyUI 54.59), VRAM 41101 MiB
+20:20:16 [medida] D-480-fachada-vago: True em 52.11 s (ComfyUI 51.63), VRAM 41261 MiB
+20:21:08 [medida] D-480-loja-vago: True em 52.25 s (ComfyUI 51.65), VRAM 40845 MiB
+20:21:08 [medida] D-480-loja-vago: True em 52.25 s (ComfyUI 51.65), VRAM 40845 MiB
+20:22:18 no pod:
+20:20:16 [medida] D-480-fachada-vago: True em 52.11 s (ComfyUI 51.63), VRAM 41261 MiB
+20:21:08 [medida] D-480-loja-vago: True em 52.25 s (ComfyUI 51.65), VRAM 40845 MiB
+20:21:21 [medida] FIM
+FIM_DO_ROTEIRO
+20:22:18 MARCA roteiro_terminado: 4177.0 s
+20:23:59 MARCA baixado: 4278.0 s
+20:24:00 pod maty8fxbp93k6d encerrado
+20:24:21 EXECUÇÃO: {"pod": 1, "saldo_inicial_usd": 9.0997, "usd_h_tabela": 1.09, "pods_antes": [{"id": "hf4dbmglblw7sh", "name": "render2go-fila-dca936-2", "desiredStatus": "EXITED"}], "descartados": [], "pod_id": "maty8fxbp93k6d", "nome": "maty8fxbp93k6d (NVIDIA L40S (secure) · máquina rápida)", "baixado": 123, "pods_depois": [{"id": "hf4dbmglblw7sh", "name": "render2go-fila-dca936-2", "desiredStatus": "EXITED"}], "pod_encerrado": true, "saldo_final_usd": 7.7056750003, "marcas": {"servicos_no_ar": 217.1, "pronto": 220.5, "roteiro_terminado": 4177.0, "baixado": 4278.0}, "gpu": "NVIDIA L40S", "usd_h": 1.09, "datacentro": "US-TX-3", "ligado_s": 4276, "custo_estimado_usd": 1.295}

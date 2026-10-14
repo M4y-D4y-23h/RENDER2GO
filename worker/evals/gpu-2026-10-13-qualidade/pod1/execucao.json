@@ -1,0 +1,36 @@
+{
+ "pod": 1,
+ "saldo_inicial_usd": 9.0997,
+ "usd_h_tabela": 1.09,
+ "pods_antes": [
+  {
+   "id": "hf4dbmglblw7sh",
+   "name": "render2go-fila-dca936-2",
+   "desiredStatus": "EXITED"
+  }
+ ],
+ "descartados": [],
+ "pod_id": "maty8fxbp93k6d",
+ "nome": "maty8fxbp93k6d (NVIDIA L40S (secure) · máquina rápida)",
+ "baixado": 123,
+ "pods_depois": [
+  {
+   "id": "hf4dbmglblw7sh",
+   "name": "render2go-fila-dca936-2",
+   "desiredStatus": "EXITED"
+  }
+ ],
+ "pod_encerrado": true,
+ "saldo_final_usd": 7.7056750003,
+ "marcas": {
+  "servicos_no_ar": 217.1,
+  "pronto": 220.5,
+  "roteiro_terminado": 4177.0,
+  "baixado": 4278.0
+ },
+ "gpu": "NVIDIA L40S",
+ "usd_h": 1.09,
+ "datacentro": "US-TX-3",
+ "ligado_s": 4276,
+ "custo_estimado_usd": 1.295
+}

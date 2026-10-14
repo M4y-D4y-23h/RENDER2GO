@@ -1,0 +1,262 @@
+01:25:21 saldo US$ 5.75; NVIDIA L40S secure US$ 1.09/h; pods na conta: render2go-fila-dca936-2 (EXITED)
+01:25:23 espelho (R2): 6 de 6 modelo(s)
+01:25:26 evitando datacenters lentos: US-MO-1, US-NC-1
+01:25:28 pod jp8drim1fpiqwt (NVIDIA L40S (secure) · máquina rápida) criado, US$ 1.09/h; esperando o agente...
+01:25:51 desligamento automático em 114.6 min
+01:25:52 pod jp8drim1fpiqwt (NVIDIA L40S (secure) · máquina rápida): agente e CUDA ok; instalando o worker (~1–3 min)
+01:26:19 pod jp8drim1fpiqwt (NVIDIA L40S (secure) · máquina rápida): modelos baixando a 1038 MB/s (US-TX-4)
+01:28:13 pod jp8drim1fpiqwt (NVIDIA L40S (secure) · máquina rápida): tempos da instalação: apt_download 4 | modelos_volume 4 | modelos_inicio 4 | baixado_config.json 4 | conferido_config.json 4 | baixado_model.safetensors 5 | conferido_model.safetensors 6 | baixado_wan2.2_i2v_lightx2v_4ste 9 | baixado_wan2.2_i2v_lightx2v_4ste 9 | conferido_wan2.2_i2v_lightx2v_4ste 10 | conferido_wan2.2_i2v_lightx2v_4ste 11 | baixado_wan_2.1_vae.safetensors 14 | conferido_wan_2.1_vae.safetensors 14 | apt 26 | baixado_umt5_xxl_fp8_e4m3fn_scal 26 | baixado_nsfw_wan_umt5_xxl_v2_fp8 27 | conferido_umt5_xxl_fp8_e4m3fn_scal 33 | conferido_nsfw_wan_umt5_xxl_v2_fp8 33 | baixado_wan2.2_i2v_high_noise_14 55 | baixado_wan2.2_i2v_low_noise_14B 58 | conferido_wan2.2_i2v_high_noise_14 67 | conferido_wan2.2_i2v_low_noise_14B 71 | baixado_Wan2.2_I2V_Low_R1_n54w_v 81 | baixado_Wan2.2_I2V_High_R1_n54w_ 81 | conferido_Wan2.2_I2V_Low_R1_n54w_v 93 | conferido_Wan2.2_I2V_High_R1_n54w_ 94 | modelos_conferidos 94 | ambiente_instalado 100 | compilador 122 | ambiente_pronto 126 | pronto 126
+01:28:40 pod jp8drim1fpiqwt (NVIDIA L40S (secure) · máquina rápida): pronto (1 GPU)
+01:28:40 MARCA servicos_no_ar: 194.6 s
+01:28:45 MARCA pronto: 199.5 s
+01:29:47 no pod:
+01:28:54 [medida] fase S_sage
+01:28:54 [medida] fase S_sage
+1791941335 cuda-keyring sha256 e7f219eab6fe4819cdb5c15b98233dc3420302d9c00883219cd3d896857cf48d
+01:30:48 no pod:
+01:28:54 [medida] fase S_sage
+01:28:54 [medida] fase S_sage
+1791941431 compilando: 13 CPUs na cota, 1511 GB, 6 processos
+01:40:56 no pod:
+01:28:54 [medida] fase S_sage
+01:40:49 [medida] SageAttention: SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79 (espera de 715.1 s)
+01:40:49 [medida] SageAttention: SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79 (espera de 715.1 s)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:41:57 no pod:
+01:40:49 [medida] SageAttention: SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79 (espera de 715.1 s)
+01:41:03 [medida] ComfyUI 8292 no ar em 13.6 s []
+01:41:31 [medida] aquecimento aquece-A480: True em 28.4 s
+  executando nó 129:85
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:42:57 no pod:
+01:41:03 [medida] ComfyUI 8292 no ar em 13.6 s []
+01:41:31 [medida] aquecimento aquece-A480: True em 28.4 s
+01:42:24 [medida] A-480-xicara-concreto: True em 52.73 s (ComfyUI 52.31), VRAM 40725 MiB
+  passo 1/2 (nó 129:85)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:43:58 no pod:
+01:41:31 [medida] aquecimento aquece-A480: True em 28.4 s
+01:42:24 [medida] A-480-xicara-concreto: True em 52.73 s (ComfyUI 52.31), VRAM 40725 MiB
+01:43:17 [medida] A-480-xicara-vago: True em 52.84 s (ComfyUI 52.43), VRAM 41253 MiB
+  passo 1/2 (nó 129:85)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:44:59 no pod:
+01:42:24 [medida] A-480-xicara-concreto: True em 52.73 s (ComfyUI 52.31), VRAM 40725 MiB
+01:43:17 [medida] A-480-xicara-vago: True em 52.84 s (ComfyUI 52.43), VRAM 41253 MiB
+01:44:10 [medida] A-480-cafe-concreto: True em 52.74 s (ComfyUI 52.32), VRAM 40837 MiB
+  executando nó 129:87
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:45:59 no pod:
+01:44:10 [medida] A-480-cafe-concreto: True em 52.74 s (ComfyUI 52.32), VRAM 40837 MiB
+01:45:03 [medida] A-480-cafe-vago: True em 52.75 s (ComfyUI 52.33), VRAM 40837 MiB
+01:45:57 [medida] A-480-padaria-concreto: True em 53.83 s (ComfyUI 53.4), VRAM 41397 MiB
+  executando nó 129:98
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:47:00 no pod:
+01:45:03 [medida] A-480-cafe-vago: True em 52.75 s (ComfyUI 52.33), VRAM 40837 MiB
+01:45:57 [medida] A-480-padaria-concreto: True em 53.83 s (ComfyUI 53.4), VRAM 41397 MiB
+01:46:50 [medida] A-480-padaria-vago: True em 53.24 s (ComfyUI 52.83), VRAM 41253 MiB
+  executando nó 129:86
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:48:01 no pod:
+01:45:57 [medida] A-480-padaria-concreto: True em 53.83 s (ComfyUI 53.4), VRAM 41397 MiB
+01:46:50 [medida] A-480-padaria-vago: True em 53.24 s (ComfyUI 52.83), VRAM 41253 MiB
+01:47:44 [medida] A-480-bolo-concreto: True em 54.12 s (ComfyUI 53.69), VRAM 40901 MiB
+  passo 1/2 (nó 129:86)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:49:02 no pod:
+01:46:50 [medida] A-480-padaria-vago: True em 53.24 s (ComfyUI 52.83), VRAM 41253 MiB
+01:47:44 [medida] A-480-bolo-concreto: True em 54.12 s (ComfyUI 53.69), VRAM 40901 MiB
+01:48:38 [medida] A-480-bolo-vago: True em 53.66 s (ComfyUI 52.86), VRAM 41253 MiB
+  passo 2/2 (nó 129:86)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:50:02 no pod:
+01:47:44 [medida] A-480-bolo-concreto: True em 54.12 s (ComfyUI 53.69), VRAM 40901 MiB
+01:48:38 [medida] A-480-bolo-vago: True em 53.66 s (ComfyUI 52.86), VRAM 41253 MiB
+01:49:32 [medida] A-480-hamburguer-concreto: True em 53.85 s (ComfyUI 53.34), VRAM 40837 MiB
+  executando nó 129:85
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:51:03 no pod:
+01:48:38 [medida] A-480-bolo-vago: True em 53.66 s (ComfyUI 52.86), VRAM 41253 MiB
+01:49:32 [medida] A-480-hamburguer-concreto: True em 53.85 s (ComfyUI 53.34), VRAM 40837 MiB
+01:50:26 [medida] A-480-hamburguer-vago: True em 53.6 s (ComfyUI 52.65), VRAM 41253 MiB
+  passo 1/2 (nó 129:85)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:52:04 no pod:
+01:49:32 [medida] A-480-hamburguer-concreto: True em 53.85 s (ComfyUI 53.34), VRAM 40837 MiB
+01:50:26 [medida] A-480-hamburguer-vago: True em 53.6 s (ComfyUI 52.65), VRAM 41253 MiB
+01:51:22 [medida] A-480-tenis-concreto: True em 55.78 s (ComfyUI 55.02), VRAM 40965 MiB
+  passo 1/2 (nó 129:85)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:53:05 no pod:
+01:50:26 [medida] A-480-hamburguer-vago: True em 53.6 s (ComfyUI 52.65), VRAM 41253 MiB
+01:51:22 [medida] A-480-tenis-concreto: True em 55.78 s (ComfyUI 55.02), VRAM 40965 MiB
+01:52:18 [medida] A-480-tenis-vago: True em 56.18 s (ComfyUI 55.54), VRAM 41413 MiB
+  executando nó 129:87
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:54:05 no pod:
+01:51:22 [medida] A-480-tenis-concreto: True em 55.78 s (ComfyUI 55.02), VRAM 40965 MiB
+01:52:18 [medida] A-480-tenis-vago: True em 56.18 s (ComfyUI 55.54), VRAM 41413 MiB
+01:53:12 [medida] A-480-perfume-concreto: True em 53.99 s (ComfyUI 53.31), VRAM 40837 MiB
+  executando nó 108
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:55:06 no pod:
+01:53:12 [medida] A-480-perfume-concreto: True em 53.99 s (ComfyUI 53.31), VRAM 40837 MiB
+01:54:05 [medida] A-480-perfume-vago: True em 53.3 s (ComfyUI 52.67), VRAM 40837 MiB
+01:55:01 [medida] A-480-rotulo-concreto: True em 55.49 s (ComfyUI 54.92), VRAM 41413 MiB
+  executando nó 129:86
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:56:07 no pod:
+01:54:05 [medida] A-480-perfume-vago: True em 53.3 s (ComfyUI 52.67), VRAM 40837 MiB
+01:55:01 [medida] A-480-rotulo-concreto: True em 55.49 s (ComfyUI 54.92), VRAM 41413 MiB
+01:55:57 [medida] A-480-rotulo-vago: True em 55.67 s (ComfyUI 54.8), VRAM 40933 MiB
+  executando nó 129:86
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:57:07 no pod:
+01:55:01 [medida] A-480-rotulo-concreto: True em 55.49 s (ComfyUI 54.92), VRAM 41413 MiB
+01:55:57 [medida] A-480-rotulo-vago: True em 55.67 s (ComfyUI 54.8), VRAM 40933 MiB
+01:56:51 [medida] A-480-fachada-concreto: True em 53.98 s (ComfyUI 53.09), VRAM 41253 MiB
+  passo 1/2 (nó 129:86)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:58:08 no pod:
+01:55:57 [medida] A-480-rotulo-vago: True em 55.67 s (ComfyUI 54.8), VRAM 40933 MiB
+01:56:51 [medida] A-480-fachada-concreto: True em 53.98 s (ComfyUI 53.09), VRAM 41253 MiB
+01:57:45 [medida] A-480-fachada-vago: True em 53.73 s (ComfyUI 53.03), VRAM 40837 MiB
+  passo 2/2 (nó 129:86)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+01:59:09 no pod:
+01:56:51 [medida] A-480-fachada-concreto: True em 53.98 s (ComfyUI 53.09), VRAM 41253 MiB
+01:57:45 [medida] A-480-fachada-vago: True em 53.73 s (ComfyUI 53.03), VRAM 40837 MiB
+01:58:39 [medida] A-480-loja-concreto: True em 53.91 s (ComfyUI 53.24), VRAM 41253 MiB
+  executando nó 129:85
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:00:10 no pod:
+01:57:45 [medida] A-480-fachada-vago: True em 53.73 s (ComfyUI 53.03), VRAM 40837 MiB
+01:58:39 [medida] A-480-loja-concreto: True em 53.91 s (ComfyUI 53.24), VRAM 41253 MiB
+01:59:32 [medida] A-480-loja-vago: True em 53.1 s (ComfyUI 52.51), VRAM 40837 MiB
+  passo 1/2 (nó 129:85)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:01:11 no pod:
+01:58:39 [medida] A-480-loja-concreto: True em 53.91 s (ComfyUI 53.24), VRAM 41253 MiB
+01:59:32 [medida] A-480-loja-vago: True em 53.1 s (ComfyUI 52.51), VRAM 40837 MiB
+02:00:27 [medida] A-480-salao-concreto: True em 54.16 s (ComfyUI 53.34), VRAM 41397 MiB
+  passo 2/2 (nó 129:85)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:02:11 no pod:
+02:00:27 [medida] A-480-salao-concreto: True em 54.16 s (ComfyUI 53.34), VRAM 41397 MiB
+02:01:21 [medida] A-480-salao-vago: True em 53.71 s (ComfyUI 53.1), VRAM 41253 MiB
+02:01:50 [medida] ComfyUI 8293 no ar em 14.1 s ['--use-sage-attention']
+  executando nó 129:86
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:03:12 no pod:
+02:01:21 [medida] A-480-salao-vago: True em 53.71 s (ComfyUI 53.1), VRAM 41253 MiB
+02:01:50 [medida] ComfyUI 8293 no ar em 14.1 s ['--use-sage-attention']
+02:02:33 [medida] aquecimento aquece-A480: True em 42.8 s
+  executando nó 129:87
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:04:13 no pod:
+02:02:33 [medida] aquecimento aquece-A480: True em 42.8 s
+02:03:18 [medida] A-480-xicara-concreto: True em 45.58 s (ComfyUI 45.14), VRAM 40837 MiB
+02:04:04 [medida] A-480-xicara-vago: True em 45.36 s (ComfyUI 44.92), VRAM 40965 MiB
+  executando nó 129:86
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:05:14 no pod:
+02:03:18 [medida] A-480-xicara-concreto: True em 45.58 s (ComfyUI 45.14), VRAM 40837 MiB
+02:04:04 [medida] A-480-xicara-vago: True em 45.36 s (ComfyUI 44.92), VRAM 40965 MiB
+02:04:48 [medida] A-480-cafe-concreto: True em 44.61 s (ComfyUI 44.17), VRAM 40837 MiB
+  executando nó 129:85
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:06:14 no pod:
+02:04:04 [medida] A-480-xicara-vago: True em 45.36 s (ComfyUI 44.92), VRAM 40965 MiB
+02:04:48 [medida] A-480-cafe-concreto: True em 44.61 s (ComfyUI 44.17), VRAM 40837 MiB
+02:05:34 [medida] A-480-cafe-vago: True em 44.94 s (ComfyUI 44.51), VRAM 40901 MiB
+  executando nó 129:87
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:07:15 no pod:
+02:05:34 [medida] A-480-cafe-vago: True em 44.94 s (ComfyUI 44.51), VRAM 40901 MiB
+02:06:19 [medida] A-480-padaria-concreto: True em 45.51 s (ComfyUI 45.07), VRAM 41253 MiB
+02:07:05 [medida] A-480-padaria-vago: True em 45.25 s (ComfyUI 44.83), VRAM 40709 MiB
+  executando nó 129:86
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:08:16 no pod:
+02:06:19 [medida] A-480-padaria-concreto: True em 45.51 s (ComfyUI 45.07), VRAM 41253 MiB
+02:07:05 [medida] A-480-padaria-vago: True em 45.25 s (ComfyUI 44.83), VRAM 40709 MiB
+02:07:50 [medida] A-480-bolo-concreto: True em 45.41 s (ComfyUI 44.99), VRAM 41253 MiB
+  executando nó 129:85
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:09:17 no pod:
+02:07:05 [medida] A-480-padaria-vago: True em 45.25 s (ComfyUI 44.83), VRAM 40709 MiB
+02:07:50 [medida] A-480-bolo-concreto: True em 45.41 s (ComfyUI 44.99), VRAM 41253 MiB
+02:08:36 [medida] A-480-bolo-vago: True em 46.18 s (ComfyUI 45.26), VRAM 41253 MiB
+  executando nó 129:87
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:10:17 no pod:
+02:08:36 [medida] A-480-bolo-vago: True em 46.18 s (ComfyUI 45.26), VRAM 41253 MiB
+02:09:23 [medida] A-480-hamburguer-concreto: True em 46.26 s (ComfyUI 45.54), VRAM 40837 MiB
+02:10:09 [medida] A-480-hamburguer-vago: True em 45.57 s (ComfyUI 44.97), VRAM 40901 MiB
+  executando nó 129:86
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:11:18 no pod:
+02:09:23 [medida] A-480-hamburguer-concreto: True em 46.26 s (ComfyUI 45.54), VRAM 40837 MiB
+02:10:09 [medida] A-480-hamburguer-vago: True em 45.57 s (ComfyUI 44.97), VRAM 40901 MiB
+02:10:57 [medida] A-480-tenis-concreto: True em 47.98 s (ComfyUI 47.42), VRAM 40965 MiB
+  executando nó 129:85
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:12:19 no pod:
+02:10:09 [medida] A-480-hamburguer-vago: True em 45.57 s (ComfyUI 44.97), VRAM 40901 MiB
+02:10:57 [medida] A-480-tenis-concreto: True em 47.98 s (ComfyUI 47.42), VRAM 40965 MiB
+02:11:44 [medida] A-480-tenis-vago: True em 46.68 s (ComfyUI 46.23), VRAM 40965 MiB
+  passo 1/2 (nó 129:85)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:13:19 no pod:
+02:11:44 [medida] A-480-tenis-vago: True em 46.68 s (ComfyUI 46.23), VRAM 40965 MiB
+02:12:30 [medida] A-480-perfume-concreto: True em 46.01 s (ComfyUI 45.14), VRAM 41253 MiB
+02:13:15 [medida] A-480-perfume-vago: True em 45.45 s (ComfyUI 44.86), VRAM 40645 MiB
+  executando nó 129:98
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:14:20 no pod:
+02:12:30 [medida] A-480-perfume-concreto: True em 46.01 s (ComfyUI 45.14), VRAM 41253 MiB
+02:13:15 [medida] A-480-perfume-vago: True em 45.45 s (ComfyUI 44.86), VRAM 40645 MiB
+02:14:03 [medida] A-480-rotulo-concreto: True em 47.23 s (ComfyUI 46.69), VRAM 40965 MiB
+  passo 1/2 (nó 129:86)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:15:21 no pod:
+02:13:15 [medida] A-480-perfume-vago: True em 45.45 s (ComfyUI 44.86), VRAM 40645 MiB
+02:14:03 [medida] A-480-rotulo-concreto: True em 47.23 s (ComfyUI 46.69), VRAM 40965 MiB
+02:14:50 [medida] A-480-rotulo-vago: True em 47.32 s (ComfyUI 46.87), VRAM 40965 MiB
+  passo 1/2 (nó 129:85)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:16:22 no pod:
+02:14:50 [medida] A-480-rotulo-vago: True em 47.32 s (ComfyUI 46.87), VRAM 40965 MiB
+02:15:36 [medida] A-480-fachada-concreto: True em 46.02 s (ComfyUI 45.59), VRAM 41685 MiB
+02:16:21 [medida] A-480-fachada-vago: True em 44.77 s (ComfyUI 44.34), VRAM 41253 MiB
+  executando nó 129:93
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:17:23 no pod:
+02:15:36 [medida] A-480-fachada-concreto: True em 46.02 s (ComfyUI 45.59), VRAM 41685 MiB
+02:16:21 [medida] A-480-fachada-vago: True em 44.77 s (ComfyUI 44.34), VRAM 41253 MiB
+02:17:07 [medida] A-480-loja-concreto: True em 46.02 s (ComfyUI 45.57), VRAM 41573 MiB
+  passo 1/2 (nó 129:86)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:18:23 no pod:
+02:16:21 [medida] A-480-fachada-vago: True em 44.77 s (ComfyUI 44.34), VRAM 41253 MiB
+02:17:07 [medida] A-480-loja-concreto: True em 46.02 s (ComfyUI 45.57), VRAM 41573 MiB
+02:17:53 [medida] A-480-loja-vago: True em 45.08 s (ComfyUI 44.65), VRAM 40229 MiB
+  passo 1/2 (nó 129:85)
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:19:24 no pod:
+02:17:07 [medida] A-480-loja-concreto: True em 46.02 s (ComfyUI 45.57), VRAM 41573 MiB
+02:17:53 [medida] A-480-loja-vago: True em 45.08 s (ComfyUI 44.65), VRAM 40229 MiB
+02:18:39 [medida] A-480-salao-concreto: True em 45.98 s (ComfyUI 45.52), VRAM 41253 MiB
+  executando nó 108
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:20:25 no pod:
+02:18:39 [medida] A-480-salao-concreto: True em 45.98 s (ComfyUI 45.52), VRAM 41253 MiB
+02:19:24 [medida] A-480-salao-vago: True em 45.17 s (ComfyUI 44.72), VRAM 41061 MiB
+02:19:47 [medida] FIM
+FIM_DO_ROTEIRO
+1791942048 SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79
+02:20:25 MARCA roteiro_terminado: 3299.4 s
+02:21:40 MARCA baixado: 3374.4 s
+02:21:41 pod jp8drim1fpiqwt encerrado
+02:22:02 EXECUÇÃO: {"pod": 3, "saldo_inicial_usd": 5.7549, "usd_h_tabela": 1.09, "pods_antes": [{"id": "hf4dbmglblw7sh", "name": "render2go-fila-dca936-2", "desiredStatus": "EXITED"}], "descartados": [], "pod_id": "jp8drim1fpiqwt", "nome": "jp8drim1fpiqwt (NVIDIA L40S (secure) · máquina rápida)", "baixado": 101, "pods_depois": [{"id": "hf4dbmglblw7sh", "name": "render2go-fila-dca936-2", "desiredStatus": "EXITED"}], "pod_encerrado": true, "saldo_final_usd": 4.738450464, "marcas": {"servicos_no_ar": 194.6, "pronto": 199.5, "roteiro_terminado": 3299.4, "baixado": 3374.4}, "gpu": "NVIDIA L40S", "usd_h": 1.09, "datacentro": "US-TX-4", "ligado_s": 3372, "custo_estimado_usd": 1.021}

@@ -1,0 +1,29 @@
+{
+ "_comment": "Rodada de qualidade de 13/10/2026 (LEIAME.md), escrito antes da rodada: um pedido concreto (no estilo da foto) e um vago (no Livre) por foto, como um cliente escreveria; seed do vídeo = seed_base + 10·i (+1 no vago), a mesma em todas as combinações. `pessoas`: a análise do servidor (render2go_servico.pessoas) que a foto teria. Fotos e licenças: fixtures/sfw/FONTES.md.",
+ "seed_base": 7000,
+ "vago": {"receita": "livre", "texto": "deixa bonito"},
+ "fotos": [
+  {"id": "xicara", "arquivo": "fixtures/sfw/produto-xicara.jpg", "pessoas": false,
+   "concreto": {"receita": "produto-giro", "texto": "a xícara gira devagar sobre o pires, mostrando os detalhes"}},
+  {"id": "cafe", "arquivo": "fixtures/sfw/produto-cafe.jpg", "pessoas": false,
+   "concreto": {"receita": "comida-bebida", "texto": "o vapor sobe devagar do café e a câmera se aproxima"}},
+  {"id": "padaria", "arquivo": "fixtures/sfw/pessoas-padaria-1900.jpg", "pessoas": true,
+   "concreto": {"receita": "livre", "texto": "as pessoas conversam e a câmera fica parada"}},
+  {"id": "bolo", "arquivo": "fixtures/sfw/comida-bolo.jpg", "pessoas": false,
+   "concreto": {"receita": "comida-prato", "texto": "a câmera se aproxima devagar do bolo e a calda brilha na luz"}},
+  {"id": "hamburguer", "arquivo": "fixtures/sfw/comida-hamburguer.jpg", "pessoas": false,
+   "concreto": {"receita": "comida-prato", "texto": "a câmera gira devagar ao redor do hambúrguer"}},
+  {"id": "tenis", "arquivo": "fixtures/sfw/roupa-tenis.jpg", "pessoas": false,
+   "concreto": {"receita": "produto-giro", "texto": "a câmera passa devagar pelos tênis, mostrando os detalhes"}},
+  {"id": "perfume", "arquivo": "fixtures/sfw/produto-perfume.jpg", "pessoas": false,
+   "concreto": {"receita": "produto-close", "texto": "a câmera se aproxima devagar do frasco e a luz passa pelo vidro"}},
+  {"id": "rotulo", "arquivo": "fixtures/sfw/produto-rotulo-suco.jpg", "pessoas": false,
+   "concreto": {"receita": "produto-close", "texto": "a câmera se aproxima devagar da garrafa e o rótulo continua legível"}},
+  {"id": "fachada", "arquivo": "fixtures/sfw/imovel-fachada.jpg", "pessoas": false,
+   "concreto": {"receita": "imovel-fachada", "texto": "a câmera sobe devagar mostrando a fachada do restaurante"}},
+  {"id": "loja", "arquivo": "fixtures/sfw/imovel-loja-roupa.jpg", "pessoas": false,
+   "concreto": {"receita": "imovel-sala", "texto": "a câmera avança devagar pela loja até o balcão"}},
+  {"id": "salao", "arquivo": "fixtures/sfw/imovel-cafe.jpg", "pessoas": false,
+   "concreto": {"receita": "imovel-sala", "texto": "a câmera avança devagar pelo salão vazio do café"}}
+ ]
+}

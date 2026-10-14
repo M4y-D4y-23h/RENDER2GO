@@ -1,0 +1,36 @@
+{
+ "pod": 3,
+ "saldo_inicial_usd": 5.7549,
+ "usd_h_tabela": 1.09,
+ "pods_antes": [
+  {
+   "id": "hf4dbmglblw7sh",
+   "name": "render2go-fila-dca936-2",
+   "desiredStatus": "EXITED"
+  }
+ ],
+ "descartados": [],
+ "pod_id": "jp8drim1fpiqwt",
+ "nome": "jp8drim1fpiqwt (NVIDIA L40S (secure) · máquina rápida)",
+ "baixado": 101,
+ "pods_depois": [
+  {
+   "id": "hf4dbmglblw7sh",
+   "name": "render2go-fila-dca936-2",
+   "desiredStatus": "EXITED"
+  }
+ ],
+ "pod_encerrado": true,
+ "saldo_final_usd": 4.738450464,
+ "marcas": {
+  "servicos_no_ar": 194.6,
+  "pronto": 199.5,
+  "roteiro_terminado": 3299.4,
+  "baixado": 3374.4
+ },
+ "gpu": "NVIDIA L40S",
+ "usd_h": 1.09,
+ "datacentro": "US-TX-4",
+ "ligado_s": 3372,
+ "custo_estimado_usd": 1.021
+}

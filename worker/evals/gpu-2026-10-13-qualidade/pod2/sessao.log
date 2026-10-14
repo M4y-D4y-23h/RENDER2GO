@@ -1,0 +1,345 @@
+00:11:46 saldo US$ 7.37; NVIDIA L40S secure US$ 1.09/h; pods na conta: render2go-fila-dca936-2 (EXITED), omnis-piloto-diag-codec-1791936637 (RUNNING)
+00:11:47 espelho (R2): 6 de 6 modelo(s)
+00:11:55 evitando datacenters lentos: US-MO-1, US-NC-1
+00:11:57 pod 3eci9wgie8quds (NVIDIA L40S (secure) · máquina rápida) criado, US$ 1.09/h; esperando o agente...
+00:12:30 desligamento automático em 114.5 min
+00:12:31 pod 3eci9wgie8quds (NVIDIA L40S (secure) · máquina rápida): agente e CUDA ok; instalando o worker (~1–3 min)
+00:12:55 pod 3eci9wgie8quds (NVIDIA L40S (secure) · máquina rápida): modelos baixando a 777 MB/s (US-TX-4)
+00:14:49 pod 3eci9wgie8quds (NVIDIA L40S (secure) · máquina rápida): tempos da instalação: apt_download 4 | modelos_volume 4 | modelos_inicio 4 | baixado_config.json 5 | conferido_config.json 5 | baixado_wan2.2_i2v_lightx2v_4ste 8 | baixado_wan2.2_i2v_lightx2v_4ste 9 | conferido_wan2.2_i2v_lightx2v_4ste 10 | conferido_wan2.2_i2v_lightx2v_4ste 10 | baixado_wan_2.1_vae.safetensors 12 | conferido_wan_2.1_vae.safetensors 13 | baixado_model.safetensors 15 | conferido_model.safetensors 15 | apt 26 | baixado_nsfw_wan_umt5_xxl_v2_fp8 29 | baixado_umt5_xxl_fp8_e4m3fn_scal 30 | conferido_nsfw_wan_umt5_xxl_v2_fp8 35 | conferido_umt5_xxl_fp8_e4m3fn_scal 36 | baixado_wan2.2_i2v_low_noise_14B 56 | baixado_wan2.2_i2v_high_noise_14 59 | conferido_wan2.2_i2v_low_noise_14B 70 | conferido_wan2.2_i2v_high_noise_14 71 | baixado_Wan2.2_I2V_Low_R1_n54w_v 81 | baixado_Wan2.2_I2V_High_R1_n54w_ 84 | conferido_Wan2.2_I2V_Low_R1_n54w_v 95 | ambiente_instalado 95 | conferido_Wan2.2_I2V_High_R1_n54w_ 96 | modelos_conferidos 96 | compilador 123 | ambiente_pronto 128 | pronto 128
+00:15:20 pod 3eci9wgie8quds (NVIDIA L40S (secure) · máquina rápida): pronto (1 GPU)
+00:15:20 MARCA servicos_no_ar: 205.9 s
+00:15:27 MARCA pronto: 213.5 s
+00:16:29 no pod:
+00:15:37 [medida] fase 7_720p
+00:15:51 [medida] ComfyUI 8291 no ar em 14.1 s []
+00:16:17 [medida] aquecimento aquece-A720: True em 25.4 s
+  executando nó 129:86
+00:17:30 no pod:
+00:15:37 [medida] fase 7_720p
+00:15:51 [medida] ComfyUI 8291 no ar em 14.1 s []
+00:16:17 [medida] aquecimento aquece-A720: True em 25.4 s
+  passo 1/2 (nó 129:86)
+00:18:31 no pod:
+00:15:37 [medida] fase 7_720p
+00:15:51 [medida] ComfyUI 8291 no ar em 14.1 s []
+00:16:17 [medida] aquecimento aquece-A720: True em 25.4 s
+  passo 1/2 (nó 129:85)
+00:19:31 no pod:
+00:15:51 [medida] ComfyUI 8291 no ar em 14.1 s []
+00:16:17 [medida] aquecimento aquece-A720: True em 25.4 s
+00:19:08 [medida] A-720-xicara-concreto: True em 170.88 s (ComfyUI 170.46), VRAM 44213 MiB
+  executando nó 129:86
+00:20:32 no pod:
+00:15:51 [medida] ComfyUI 8291 no ar em 14.1 s []
+00:16:17 [medida] aquecimento aquece-A720: True em 25.4 s
+00:19:08 [medida] A-720-xicara-concreto: True em 170.88 s (ComfyUI 170.46), VRAM 44213 MiB
+  executando nó 129:85
+00:21:33 no pod:
+00:15:51 [medida] ComfyUI 8291 no ar em 14.1 s []
+00:16:17 [medida] aquecimento aquece-A720: True em 25.4 s
+00:19:08 [medida] A-720-xicara-concreto: True em 170.88 s (ComfyUI 170.46), VRAM 44213 MiB
+  passo 1/2 (nó 129:85)
+00:22:33 no pod:
+00:16:17 [medida] aquecimento aquece-A720: True em 25.4 s
+00:19:08 [medida] A-720-xicara-concreto: True em 170.88 s (ComfyUI 170.46), VRAM 44213 MiB
+00:22:01 [medida] A-720-cafe-concreto: True em 172.48 s (ComfyUI 172.03), VRAM 44261 MiB
+  executando nó 129:86
+00:23:34 no pod:
+00:16:17 [medida] aquecimento aquece-A720: True em 25.4 s
+00:19:08 [medida] A-720-xicara-concreto: True em 170.88 s (ComfyUI 170.46), VRAM 44213 MiB
+00:22:01 [medida] A-720-cafe-concreto: True em 172.48 s (ComfyUI 172.03), VRAM 44261 MiB
+  executando nó 129:85
+00:24:35 no pod:
+00:16:17 [medida] aquecimento aquece-A720: True em 25.4 s
+00:19:08 [medida] A-720-xicara-concreto: True em 170.88 s (ComfyUI 170.46), VRAM 44213 MiB
+00:22:01 [medida] A-720-cafe-concreto: True em 172.48 s (ComfyUI 172.03), VRAM 44261 MiB
+  passo 2/2 (nó 129:85)
+00:25:36 no pod:
+00:19:08 [medida] A-720-xicara-concreto: True em 170.88 s (ComfyUI 170.46), VRAM 44213 MiB
+00:22:01 [medida] A-720-cafe-concreto: True em 172.48 s (ComfyUI 172.03), VRAM 44261 MiB
+00:24:55 [medida] A-720-padaria-concreto: True em 173.89 s (ComfyUI 173.44), VRAM 43429 MiB
+  passo 1/2 (nó 129:86)
+00:26:36 no pod:
+00:19:08 [medida] A-720-xicara-concreto: True em 170.88 s (ComfyUI 170.46), VRAM 44213 MiB
+00:22:01 [medida] A-720-cafe-concreto: True em 172.48 s (ComfyUI 172.03), VRAM 44261 MiB
+00:24:55 [medida] A-720-padaria-concreto: True em 173.89 s (ComfyUI 173.44), VRAM 43429 MiB
+  executando nó 129:85
+00:27:37 no pod:
+00:19:08 [medida] A-720-xicara-concreto: True em 170.88 s (ComfyUI 170.46), VRAM 44213 MiB
+00:22:01 [medida] A-720-cafe-concreto: True em 172.48 s (ComfyUI 172.03), VRAM 44261 MiB
+00:24:55 [medida] A-720-padaria-concreto: True em 173.89 s (ComfyUI 173.44), VRAM 43429 MiB
+  executando nó 129:87
+00:28:38 no pod:
+00:22:01 [medida] A-720-cafe-concreto: True em 172.48 s (ComfyUI 172.03), VRAM 44261 MiB
+00:24:55 [medida] A-720-padaria-concreto: True em 173.89 s (ComfyUI 173.44), VRAM 43429 MiB
+00:27:48 [medida] A-720-bolo-concreto: True em 173.16 s (ComfyUI 172.68), VRAM 44325 MiB
+  passo 1/2 (nó 129:86)
+00:29:39 no pod:
+00:22:01 [medida] A-720-cafe-concreto: True em 172.48 s (ComfyUI 172.03), VRAM 44261 MiB
+00:24:55 [medida] A-720-padaria-concreto: True em 173.89 s (ComfyUI 173.44), VRAM 43429 MiB
+00:27:48 [medida] A-720-bolo-concreto: True em 173.16 s (ComfyUI 172.68), VRAM 44325 MiB
+  executando nó 129:85
+00:30:40 no pod:
+00:22:01 [medida] A-720-cafe-concreto: True em 172.48 s (ComfyUI 172.03), VRAM 44261 MiB
+00:24:55 [medida] A-720-padaria-concreto: True em 173.89 s (ComfyUI 173.44), VRAM 43429 MiB
+00:27:48 [medida] A-720-bolo-concreto: True em 173.16 s (ComfyUI 172.68), VRAM 44325 MiB
+  executando nó 108
+00:31:40 no pod:
+00:24:55 [medida] A-720-padaria-concreto: True em 173.89 s (ComfyUI 173.44), VRAM 43429 MiB
+00:27:48 [medida] A-720-bolo-concreto: True em 173.16 s (ComfyUI 172.68), VRAM 44325 MiB
+00:30:41 [medida] A-720-hamburguer-concreto: True em 173.06 s (ComfyUI 172.5), VRAM 43461 MiB
+  passo 1/2 (nó 129:86)
+00:32:41 no pod:
+00:24:55 [medida] A-720-padaria-concreto: True em 173.89 s (ComfyUI 173.44), VRAM 43429 MiB
+00:27:48 [medida] A-720-bolo-concreto: True em 173.16 s (ComfyUI 172.68), VRAM 44325 MiB
+00:30:41 [medida] A-720-hamburguer-concreto: True em 173.06 s (ComfyUI 172.5), VRAM 43461 MiB
+  executando nó 129:85
+00:33:42 no pod:
+00:27:48 [medida] A-720-bolo-concreto: True em 173.16 s (ComfyUI 172.68), VRAM 44325 MiB
+00:30:41 [medida] A-720-hamburguer-concreto: True em 173.06 s (ComfyUI 172.5), VRAM 43461 MiB
+00:33:35 [medida] A-720-tenis-concreto: True em 173.01 s (ComfyUI 172.48), VRAM 45157 MiB
+  executando nó 129:98
+00:34:42 no pod:
+00:27:48 [medida] A-720-bolo-concreto: True em 173.16 s (ComfyUI 172.68), VRAM 44325 MiB
+00:30:41 [medida] A-720-hamburguer-concreto: True em 173.06 s (ComfyUI 172.5), VRAM 43461 MiB
+00:33:35 [medida] A-720-tenis-concreto: True em 173.01 s (ComfyUI 172.48), VRAM 45157 MiB
+  passo 1/2 (nó 129:86)
+00:35:43 no pod:
+00:27:48 [medida] A-720-bolo-concreto: True em 173.16 s (ComfyUI 172.68), VRAM 44325 MiB
+00:30:41 [medida] A-720-hamburguer-concreto: True em 173.06 s (ComfyUI 172.5), VRAM 43461 MiB
+00:33:35 [medida] A-720-tenis-concreto: True em 173.01 s (ComfyUI 172.48), VRAM 45157 MiB
+  passo 1/2 (nó 129:85)
+00:36:44 no pod:
+00:30:41 [medida] A-720-hamburguer-concreto: True em 173.06 s (ComfyUI 172.5), VRAM 43461 MiB
+00:33:35 [medida] A-720-tenis-concreto: True em 173.01 s (ComfyUI 172.48), VRAM 45157 MiB
+00:36:28 [medida] A-720-perfume-concreto: True em 173.14 s (ComfyUI 172.61), VRAM 45157 MiB
+  executando nó 129:86
+00:37:45 no pod:
+00:30:41 [medida] A-720-hamburguer-concreto: True em 173.06 s (ComfyUI 172.5), VRAM 43461 MiB
+00:33:35 [medida] A-720-tenis-concreto: True em 173.01 s (ComfyUI 172.48), VRAM 45157 MiB
+00:36:28 [medida] A-720-perfume-concreto: True em 173.14 s (ComfyUI 172.61), VRAM 45157 MiB
+  passo 1/2 (nó 129:86)
+00:38:45 no pod:
+00:30:41 [medida] A-720-hamburguer-concreto: True em 173.06 s (ComfyUI 172.5), VRAM 43461 MiB
+00:33:35 [medida] A-720-tenis-concreto: True em 173.01 s (ComfyUI 172.48), VRAM 45157 MiB
+00:36:28 [medida] A-720-perfume-concreto: True em 173.14 s (ComfyUI 172.61), VRAM 45157 MiB
+  passo 1/2 (nó 129:85)
+00:39:46 no pod:
+00:33:35 [medida] A-720-tenis-concreto: True em 173.01 s (ComfyUI 172.48), VRAM 45157 MiB
+00:36:28 [medida] A-720-perfume-concreto: True em 173.14 s (ComfyUI 172.61), VRAM 45157 MiB
+00:39:23 [medida] A-720-rotulo-concreto: True em 174.23 s (ComfyUI 173.74), VRAM 45157 MiB
+  executando nó 129:86
+00:40:47 no pod:
+00:33:35 [medida] A-720-tenis-concreto: True em 173.01 s (ComfyUI 172.48), VRAM 45157 MiB
+00:36:28 [medida] A-720-perfume-concreto: True em 173.14 s (ComfyUI 172.61), VRAM 45157 MiB
+00:39:23 [medida] A-720-rotulo-concreto: True em 174.23 s (ComfyUI 173.74), VRAM 45157 MiB
+  executando nó 129:85
+00:43:26 no pod:
+00:36:28 [medida] A-720-perfume-concreto: True em 173.14 s (ComfyUI 172.61), VRAM 45157 MiB
+00:39:23 [medida] A-720-rotulo-concreto: True em 174.23 s (ComfyUI 173.74), VRAM 45157 MiB
+00:42:18 [medida] A-720-fachada-concreto: True em 175.03 s (ComfyUI 174.54), VRAM 45445 MiB
+  passo 1/2 (nó 129:86)
+00:44:27 no pod:
+00:36:28 [medida] A-720-perfume-concreto: True em 173.14 s (ComfyUI 172.61), VRAM 45157 MiB
+00:39:23 [medida] A-720-rotulo-concreto: True em 174.23 s (ComfyUI 173.74), VRAM 45157 MiB
+00:42:18 [medida] A-720-fachada-concreto: True em 175.03 s (ComfyUI 174.54), VRAM 45445 MiB
+  passo 1/2 (nó 129:85)
+00:45:28 no pod:
+00:39:23 [medida] A-720-rotulo-concreto: True em 174.23 s (ComfyUI 173.74), VRAM 45157 MiB
+00:42:18 [medida] A-720-fachada-concreto: True em 175.03 s (ComfyUI 174.54), VRAM 45445 MiB
+00:45:13 [medida] A-720-loja-concreto: True em 174.35 s (ComfyUI 173.9), VRAM 44261 MiB
+  executando nó 129:86
+00:46:29 no pod:
+00:39:23 [medida] A-720-rotulo-concreto: True em 174.23 s (ComfyUI 173.74), VRAM 45157 MiB
+00:42:18 [medida] A-720-fachada-concreto: True em 175.03 s (ComfyUI 174.54), VRAM 45445 MiB
+00:45:13 [medida] A-720-loja-concreto: True em 174.35 s (ComfyUI 173.9), VRAM 44261 MiB
+  passo 1/2 (nó 129:86)
+00:47:29 no pod:
+00:39:23 [medida] A-720-rotulo-concreto: True em 174.23 s (ComfyUI 173.74), VRAM 45157 MiB
+00:42:18 [medida] A-720-fachada-concreto: True em 175.03 s (ComfyUI 174.54), VRAM 45445 MiB
+00:45:13 [medida] A-720-loja-concreto: True em 174.35 s (ComfyUI 173.9), VRAM 44261 MiB
+  passo 1/2 (nó 129:85)
+00:48:30 no pod:
+00:42:18 [medida] A-720-fachada-concreto: True em 175.03 s (ComfyUI 174.54), VRAM 45445 MiB
+00:45:13 [medida] A-720-loja-concreto: True em 174.35 s (ComfyUI 173.9), VRAM 44261 MiB
+00:48:09 [medida] A-720-salao-concreto: True em 175.99 s (ComfyUI 175.06), VRAM 45157 MiB
+  executando nó 129:86
+00:49:31 no pod:
+00:45:13 [medida] A-720-loja-concreto: True em 174.35 s (ComfyUI 173.9), VRAM 44261 MiB
+00:48:09 [medida] A-720-salao-concreto: True em 175.99 s (ComfyUI 175.06), VRAM 45157 MiB
+00:48:53 [medida] aquecimento aquece-B720: True em 39.4 s
+  executando nó 129:86
+00:50:32 no pod:
+00:48:53 [medida] aquecimento aquece-B720: True em 39.4 s
+00:49:32 [medida] legenda (GPU ocupada) xicara: 78.3 s 
+00:50:27 [medida] legenda (GPU ocupada) cafe: 55.4 s 
+00:50:27 [medida] legenda (GPU ocupada) cafe: 55.4 s
+00:51:32 no pod:
+00:49:32 [medida] legenda (GPU ocupada) xicara: 78.3 s 
+00:50:27 [medida] legenda (GPU ocupada) cafe: 55.4 s 
+00:51:24 [medida] legenda (GPU ocupada) padaria: 56.9 s 
+  passo 2/2 (nó 129:85)
+00:52:33 no pod:
+00:51:24 [medida] legenda (GPU ocupada) padaria: 56.9 s 
+00:51:51 [medida] B-720-xicara-concreto: True em 178.22 s (ComfyUI 177.52), VRAM 44301 MiB
+00:52:27 [medida] legenda (GPU ocupada) bolo: 62.3 s 
+00:52:27 [medida] legenda (GPU ocupada) bolo: 62.3 s
+00:53:34 no pod:
+00:51:51 [medida] B-720-xicara-concreto: True em 178.22 s (ComfyUI 177.52), VRAM 44301 MiB
+00:52:27 [medida] legenda (GPU ocupada) bolo: 62.3 s 
+00:53:27 [medida] legenda (GPU ocupada) hamburguer: 60.3 s 
+00:53:27 [medida] legenda (GPU ocupada) hamburguer: 60.3 s
+00:54:35 no pod:
+00:52:27 [medida] legenda (GPU ocupada) bolo: 62.3 s 
+00:53:27 [medida] legenda (GPU ocupada) hamburguer: 60.3 s 
+00:54:21 [medida] legenda (GPU ocupada) tenis: 53.5 s 
+00:54:21 [medida] legenda (GPU ocupada) tenis: 53.5 s
+00:55:35 no pod:
+00:53:27 [medida] legenda (GPU ocupada) hamburguer: 60.3 s 
+00:54:21 [medida] legenda (GPU ocupada) tenis: 53.5 s 
+00:55:17 [medida] legenda (GPU ocupada) perfume: 55.9 s 
+  executando nó 129:87
+00:56:36 no pod:
+00:55:17 [medida] legenda (GPU ocupada) perfume: 55.9 s 
+00:55:48 [medida] B-720-cafe-concreto: True em 179.44 s (ComfyUI 178.91), VRAM 43757 MiB
+00:56:18 [medida] legenda (GPU ocupada) rotulo: 61.0 s 
+00:56:18 [medida] legenda (GPU ocupada) rotulo: 61.0 s
+00:57:37 no pod:
+00:55:48 [medida] B-720-cafe-concreto: True em 179.44 s (ComfyUI 178.91), VRAM 43757 MiB
+00:56:18 [medida] legenda (GPU ocupada) rotulo: 61.0 s 
+00:57:20 [medida] legenda (GPU ocupada) fachada: 62.5 s 
+00:57:20 [medida] legenda (GPU ocupada) fachada: 62.5 s
+00:58:37 no pod:
+00:56:18 [medida] legenda (GPU ocupada) rotulo: 61.0 s 
+00:57:20 [medida] legenda (GPU ocupada) fachada: 62.5 s 
+00:58:17 [medida] legenda (GPU ocupada) loja: 55.9 s 
+  executando nó 129:87
+00:59:38 no pod:
+00:58:17 [medida] legenda (GPU ocupada) loja: 55.9 s 
+00:58:53 [medida] B-720-padaria-concreto: True em 179.11 s (ComfyUI 178.62), VRAM 41997 MiB
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s 
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s
+01:00:39 no pod:
+00:58:17 [medida] legenda (GPU ocupada) loja: 55.9 s 
+00:58:53 [medida] B-720-padaria-concreto: True em 179.11 s (ComfyUI 178.62), VRAM 41997 MiB
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s 
+  executando nó 129:85
+01:01:40 no pod:
+00:58:17 [medida] legenda (GPU ocupada) loja: 55.9 s 
+00:58:53 [medida] B-720-padaria-concreto: True em 179.11 s (ComfyUI 178.62), VRAM 41997 MiB
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s 
+  executando nó 129:87
+01:02:40 no pod:
+00:58:53 [medida] B-720-padaria-concreto: True em 179.11 s (ComfyUI 178.62), VRAM 41997 MiB
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s 
+01:01:55 [medida] B-720-bolo-concreto: True em 178.0 s (ComfyUI 177.51), VRAM 42125 MiB
+  executando nó 129:86
+01:03:41 no pod:
+00:58:53 [medida] B-720-padaria-concreto: True em 179.11 s (ComfyUI 178.62), VRAM 41997 MiB
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s 
+01:01:55 [medida] B-720-bolo-concreto: True em 178.0 s (ComfyUI 177.51), VRAM 42125 MiB
+  executando nó 129:85
+01:04:42 no pod:
+00:58:53 [medida] B-720-padaria-concreto: True em 179.11 s (ComfyUI 178.62), VRAM 41997 MiB
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s 
+01:01:55 [medida] B-720-bolo-concreto: True em 178.0 s (ComfyUI 177.51), VRAM 42125 MiB
+  executando nó 129:87
+01:05:43 no pod:
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s 
+01:01:55 [medida] B-720-bolo-concreto: True em 178.0 s (ComfyUI 177.51), VRAM 42125 MiB
+01:04:58 [medida] B-720-hamburguer-concreto: True em 177.78 s (ComfyUI 177.28), VRAM 43501 MiB
+  executando nó 129:86
+01:06:43 no pod:
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s 
+01:01:55 [medida] B-720-bolo-concreto: True em 178.0 s (ComfyUI 177.51), VRAM 42125 MiB
+01:04:58 [medida] B-720-hamburguer-concreto: True em 177.78 s (ComfyUI 177.28), VRAM 43501 MiB
+  executando nó 129:85
+01:07:44 no pod:
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s 
+01:01:55 [medida] B-720-bolo-concreto: True em 178.0 s (ComfyUI 177.51), VRAM 42125 MiB
+01:04:58 [medida] B-720-hamburguer-concreto: True em 177.78 s (ComfyUI 177.28), VRAM 43501 MiB
+  passo 2/2 (nó 129:85)
+01:08:45 no pod:
+01:01:55 [medida] B-720-bolo-concreto: True em 178.0 s (ComfyUI 177.51), VRAM 42125 MiB
+01:04:58 [medida] B-720-hamburguer-concreto: True em 177.78 s (ComfyUI 177.28), VRAM 43501 MiB
+01:08:02 [medida] B-720-tenis-concreto: True em 178.61 s (ComfyUI 178.13), VRAM 42221 MiB
+  executando nó 129:86
+01:09:45 no pod:
+01:01:55 [medida] B-720-bolo-concreto: True em 178.0 s (ComfyUI 177.51), VRAM 42125 MiB
+01:04:58 [medida] B-720-hamburguer-concreto: True em 177.78 s (ComfyUI 177.28), VRAM 43501 MiB
+01:08:02 [medida] B-720-tenis-concreto: True em 178.61 s (ComfyUI 178.13), VRAM 42221 MiB
+  executando nó 129:85
+01:10:46 no pod:
+01:01:55 [medida] B-720-bolo-concreto: True em 178.0 s (ComfyUI 177.51), VRAM 42125 MiB
+01:04:58 [medida] B-720-hamburguer-concreto: True em 177.78 s (ComfyUI 177.28), VRAM 43501 MiB
+01:08:02 [medida] B-720-tenis-concreto: True em 178.61 s (ComfyUI 178.13), VRAM 42221 MiB
+  passo 2/2 (nó 129:85)
+01:11:47 no pod:
+01:04:58 [medida] B-720-hamburguer-concreto: True em 177.78 s (ComfyUI 177.28), VRAM 43501 MiB
+01:08:02 [medida] B-720-tenis-concreto: True em 178.61 s (ComfyUI 178.13), VRAM 42221 MiB
+01:11:05 [medida] B-720-perfume-concreto: True em 177.94 s (ComfyUI 177.46), VRAM 43597 MiB
+  executando nó 129:86
+01:12:48 no pod:
+01:04:58 [medida] B-720-hamburguer-concreto: True em 177.78 s (ComfyUI 177.28), VRAM 43501 MiB
+01:08:02 [medida] B-720-tenis-concreto: True em 178.61 s (ComfyUI 178.13), VRAM 42221 MiB
+01:11:05 [medida] B-720-perfume-concreto: True em 177.94 s (ComfyUI 177.46), VRAM 43597 MiB
+  executando nó 129:85
+01:13:48 no pod:
+01:04:58 [medida] B-720-hamburguer-concreto: True em 177.78 s (ComfyUI 177.28), VRAM 43501 MiB
+01:08:02 [medida] B-720-tenis-concreto: True em 178.61 s (ComfyUI 178.13), VRAM 42221 MiB
+01:11:05 [medida] B-720-perfume-concreto: True em 177.94 s (ComfyUI 177.46), VRAM 43597 MiB
+  passo 1/2 (nó 129:85)
+01:14:49 no pod:
+01:08:02 [medida] B-720-tenis-concreto: True em 178.61 s (ComfyUI 178.13), VRAM 42221 MiB
+01:11:05 [medida] B-720-perfume-concreto: True em 177.94 s (ComfyUI 177.46), VRAM 43597 MiB
+01:14:07 [medida] B-720-rotulo-concreto: True em 177.58 s (ComfyUI 177.09), VRAM 43565 MiB
+  executando nó 129:86
+01:15:50 no pod:
+01:08:02 [medida] B-720-tenis-concreto: True em 178.61 s (ComfyUI 178.13), VRAM 42221 MiB
+01:11:05 [medida] B-720-perfume-concreto: True em 177.94 s (ComfyUI 177.46), VRAM 43597 MiB
+01:14:07 [medida] B-720-rotulo-concreto: True em 177.58 s (ComfyUI 177.09), VRAM 43565 MiB
+  executando nó 129:85
+01:16:50 no pod:
+01:08:02 [medida] B-720-tenis-concreto: True em 178.61 s (ComfyUI 178.13), VRAM 42221 MiB
+01:11:05 [medida] B-720-perfume-concreto: True em 177.94 s (ComfyUI 177.46), VRAM 43597 MiB
+01:14:07 [medida] B-720-rotulo-concreto: True em 177.58 s (ComfyUI 177.09), VRAM 43565 MiB
+  passo 2/2 (nó 129:85)
+01:17:51 no pod:
+01:11:05 [medida] B-720-perfume-concreto: True em 177.94 s (ComfyUI 177.46), VRAM 43597 MiB
+01:14:07 [medida] B-720-rotulo-concreto: True em 177.58 s (ComfyUI 177.09), VRAM 43565 MiB
+01:17:11 [medida] B-720-fachada-concreto: True em 178.22 s (ComfyUI 177.66), VRAM 43757 MiB
+  executando nó 129:86
+01:18:52 no pod:
+01:11:05 [medida] B-720-perfume-concreto: True em 177.94 s (ComfyUI 177.46), VRAM 43597 MiB
+01:14:07 [medida] B-720-rotulo-concreto: True em 177.58 s (ComfyUI 177.09), VRAM 43565 MiB
+01:17:11 [medida] B-720-fachada-concreto: True em 178.22 s (ComfyUI 177.66), VRAM 43757 MiB
+  executando nó 129:85
+01:19:53 no pod:
+01:11:05 [medida] B-720-perfume-concreto: True em 177.94 s (ComfyUI 177.46), VRAM 43597 MiB
+01:14:07 [medida] B-720-rotulo-concreto: True em 177.58 s (ComfyUI 177.09), VRAM 43565 MiB
+01:17:11 [medida] B-720-fachada-concreto: True em 178.22 s (ComfyUI 177.66), VRAM 43757 MiB
+  passo 2/2 (nó 129:85)
+01:20:53 no pod:
+01:14:07 [medida] B-720-rotulo-concreto: True em 177.58 s (ComfyUI 177.09), VRAM 43565 MiB
+01:17:11 [medida] B-720-fachada-concreto: True em 178.22 s (ComfyUI 177.66), VRAM 43757 MiB
+01:20:13 [medida] B-720-loja-concreto: True em 176.96 s (ComfyUI 176.47), VRAM 43501 MiB
+  executando nó 129:86
+01:21:54 no pod:
+01:14:07 [medida] B-720-rotulo-concreto: True em 177.58 s (ComfyUI 177.09), VRAM 43565 MiB
+01:17:11 [medida] B-720-fachada-concreto: True em 178.22 s (ComfyUI 177.66), VRAM 43757 MiB
+01:20:13 [medida] B-720-loja-concreto: True em 176.96 s (ComfyUI 176.47), VRAM 43501 MiB
+  executando nó 129:85
+01:22:55 no pod:
+01:14:07 [medida] B-720-rotulo-concreto: True em 177.58 s (ComfyUI 177.09), VRAM 43565 MiB
+01:17:11 [medida] B-720-fachada-concreto: True em 178.22 s (ComfyUI 177.66), VRAM 43757 MiB
+01:20:13 [medida] B-720-loja-concreto: True em 176.96 s (ComfyUI 176.47), VRAM 43501 MiB
+  passo 2/2 (nó 129:85)
+01:23:56 no pod:
+01:20:13 [medida] B-720-loja-concreto: True em 176.96 s (ComfyUI 176.47), VRAM 43501 MiB
+01:23:15 [medida] B-720-salao-concreto: True em 177.92 s (ComfyUI 177.39), VRAM 43757 MiB
+01:23:32 [medida] FIM
+FIM_DO_ROTEIRO
+01:23:56 MARCA roteiro_terminado
+01:24:34 MARCA baixado
+01:24:35 pod 3eci9wgie8quds encerrado
+01:24:56 EXECUÇÃO: {"pod": 2, "pod_id": "3eci9wgie8quds", "retomado": "o processo local caiu com o reinício do contêiner da sessão", "baixado": 51, "pods_depois": [{"id": "hf4dbmglblw7sh", "name": "render2go-fila-dca936-2", "desiredStatus": "EXITED"}], "pod_encerrado": true, "saldo_final_usd": 5.7548667491, "usd_h": 1.09, "ligado_s": 4358, "custo_estimado_usd": 1.32}

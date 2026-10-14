@@ -1,0 +1,458 @@
+{
+ "4176ff": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": true,
+  "motivo": "bolo inteiro e igual, giro leve suave"
+ },
+ "8c8e78": {
+  "pedido": "a xícara gira devagar sobre o pires, mostrando os detalhes",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um jato de líquido cai na xícara; a xícara não gira"
+ },
+ "7c9ea3": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": true,
+  "motivo": "fachada e letreiro iguais; o carro anda um pouco, cena igual"
+ },
+ "68a77a": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "deformação: uma película cobre o tênis de cima e escorre"
+ },
+ "fb01fc": {
+  "pedido": "a câmera sobe devagar mostrando a fachada do restaurante",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto novo: galhos de árvore entram no alto; o carro some"
+ },
+ "c69ead": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "os quadros da parede direita viram outros cartazes (um com rosto)"
+ },
+ "2bfba7": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um bule despeja líquido que transborda no pires"
+ },
+ "b04827": {
+  "pedido": "a câmera avança devagar pela loja até o balcão",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "avança até o balcão, loja e letreiro iguais"
+ },
+ "d406d2": {
+  "pedido": "a câmera avança devagar pelo salão vazio do café",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "os quadros da parede viram cartazes com texto inventado"
+ },
+ "1b12d2": {
+  "pedido": "a câmera sobe devagar mostrando a fachada do restaurante",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto novo: galhos de árvore e reflexo de sol no fim; cor lavada; o carro some"
+ },
+ "854b59": {
+  "pedido": "o vapor sobe devagar do café e a câmera se aproxima",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um jato de líquido cai no café"
+ },
+ "a63f03": {
+  "pedido": "a xícara gira devagar sobre o pires, mostrando os detalhes",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "a xícara gira, desenho e forma iguais"
+ },
+ "ef8e0e": {
+  "pedido": "a câmera se aproxima devagar do bolo e a calda brilha na luz",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "bolo igual, aproximação com giro leve"
+ },
+ "51a8ab": {
+  "pedido": "a câmera se aproxima devagar do bolo e a calda brilha na luz",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um fio de calda cai do alto sobre o bolo"
+ },
+ "542d4a": {
+  "pedido": "a xícara gira devagar sobre o pires, mostrando os detalhes",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "a xícara gira, desenho e forma iguais"
+ },
+ "9bcc68": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um jato de creme enche e transborda a xícara"
+ },
+ "fdb0e8": {
+  "pedido": "a câmera avança devagar pelo salão vazio do café",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "quadros viram cartazes com rosto e texto inventado (\"WINNER\")"
+ },
+ "28b744": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um objeto branco desce sobre o tênis com um clarão"
+ },
+ "78a100": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "o tênis vira uma massa branca (derretimento)"
+ },
+ "81eb8e": {
+  "pedido": "a câmera sobe devagar mostrando a fachada do restaurante",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "sobe pela fachada, letreiro igual, mas uma folha de árvore entra no canto do último quadro (regra estrita: nem em parte)"
+ },
+ "024538": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: café despejado que transborda; cor estourada"
+ },
+ "9bf650": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": true,
+  "motivo": "bolo igual, giro leve suave"
+ },
+ "977dad": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "movimento forte num pedido vago: o homem anda para a frente e muda de rosto e corpo"
+ },
+ "f841aa": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": true,
+  "motivo": "loja igual, aproximação suave"
+ },
+ "4cb9fe": {
+  "pedido": "as pessoas conversam e a câmera fica parada",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "o homem da esquerda muda de rosto e de corpo ao se mexer"
+ },
+ "4dc2e5": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "pessoa inventada: uma mulher aparece atrás do balcão"
+ },
+ "25eabd": {
+  "pedido": "a câmera se aproxima devagar do bolo e a calda brilha na luz",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "aproximação do bolo, forma e cor iguais"
+ },
+ "67ca6c": {
+  "pedido": "a câmera se aproxima devagar do frasco e a luz passa pelo vidro",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um líquido amarelo é despejado e o frasco muda de cor"
+ },
+ "2cabdd": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: suco despejado; a garrafa vira um copo"
+ },
+ "692863": {
+  "pedido": "as pessoas conversam e a câmera fica parada",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "o homem da esquerda muda de rosto e de corpo ao se mexer"
+ },
+ "cee6fe": {
+  "pedido": "a câmera gira devagar ao redor do hambúrguer",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "o hambúrguer gira, forma e cor iguais; o fundo clareia no fim"
+ },
+ "e2d272": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um fio de líquido enche o frasco"
+ },
+ "8114f3": {
+  "pedido": "a câmera passa devagar pelos tênis, mostrando os detalhes",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "a câmera passa pelos tênis, forma e cor iguais"
+ },
+ "e9925f": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": true,
+  "motivo": "hambúrguer igual, movimento suave"
+ },
+ "96f63d": {
+  "pedido": "a câmera passa devagar pelos tênis, mostrando os detalhes",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "a câmera passa pelos tênis, forma e cor iguais"
+ },
+ "c99ba3": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: calda despejada sobre o bolo"
+ },
+ "e2ee0c": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: grãos de café caem e enchem a xícara"
+ },
+ "f2e6d4": {
+  "pedido": "a câmera sobe devagar mostrando a fachada do restaurante",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto novo: galhos de árvore entram no alto; o carro muda"
+ },
+ "2de5e3": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um fio de líquido escorre dentro do frasco"
+ },
+ "10cb6a": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": true,
+  "motivo": "hambúrguer igual, movimento suave"
+ },
+ "74ed24": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "um carro que não estava na foto entra pela direita (regra estrita: nem em parte)"
+ },
+ "a5ede0": {
+  "pedido": "a câmera passa devagar pelos tênis, mostrando os detalhes",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "deformação: o tênis de cima se duplica e se sobrepõe no fim"
+ },
+ "759d8a": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: líquido despejado no alto da garrafa"
+ },
+ "f970b3": {
+  "pedido": "a câmera se aproxima devagar da garrafa e o rótulo continua legível",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "o rótulo deixa de ser legível (\"CRANGE\", texto embaralhado)"
+ },
+ "126e12": {
+  "pedido": "a câmera avança devagar pela loja até o balcão",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "pessoa inventada: uma mulher aparece atrás do balcão"
+ },
+ "f694cd": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: leite despejado no café"
+ },
+ "8f79d5": {
+  "pedido": "a câmera gira devagar ao redor do hambúrguer",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "o hambúrguer gira, forma e cor iguais"
+ },
+ "32f040": {
+  "pedido": "a câmera avança devagar pela loja até o balcão",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "avança até o balcão, loja e letreiro iguais"
+ },
+ "0fb76d": {
+  "pedido": "o vapor sobe devagar do café e a câmera se aproxima",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um jato de líquido cai no café"
+ },
+ "74f12a": {
+  "pedido": "as pessoas conversam e a câmera fica parada",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "o homem da esquerda muda de rosto e de corpo ao se mexer"
+ },
+ "51f93f": {
+  "pedido": "a câmera avança devagar pelo salão vazio do café",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "quadros viram cartazes com rosto e texto inventado (\"WINNER\")"
+ },
+ "12733d": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "deformação: a asa da xícara entorta e se alonga no fim"
+ },
+ "c88fa4": {
+  "pedido": "a câmera avança devagar pelo salão vazio do café",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "quadros da parede viram outros cartazes com rosto"
+ },
+ "05a45d": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "pessoas inventadas: um homem e uma criança entram no salão"
+ },
+ "c3ab38": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "movimento forte num pedido vago: as pessoas andam e mudam de rosto, surgem outras"
+ },
+ "e46f9d": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": true,
+  "motivo": "rótulo legível e igual, movimento suave"
+ },
+ "a5bd20": {
+  "pedido": "a câmera se aproxima devagar da garrafa e o rótulo continua legível",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "aproximação da garrafa, rótulo legível e igual"
+ },
+ "22dd6d": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: queijo derretido escorre de cima e surge fumaça"
+ },
+ "2ba276": {
+  "pedido": "a câmera se aproxima devagar do bolo e a calda brilha na luz",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "aproximação do bolo, forma e cor iguais"
+ },
+ "979cb4": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "movimento forte num pedido vago: as pessoas mudam de rosto e de postura"
+ },
+ "3201be": {
+  "pedido": "a câmera gira devagar ao redor do hambúrguer",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "o hambúrguer gira, forma e cor iguais"
+ },
+ "3496dd": {
+  "pedido": "a câmera se aproxima devagar do frasco e a luz passa pelo vidro",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "aproximação do frasco, forma e cor iguais"
+ },
+ "d929f7": {
+  "pedido": "o vapor sobe devagar do café e a câmera se aproxima",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um jato de leite cai no café no fim"
+ },
+ "2d9294": {
+  "pedido": "a câmera se aproxima devagar da garrafa e o rótulo continua legível",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "aproximação da garrafa; o rótulo continua legível e igual (a 1ª letra sai do quadro)"
+ },
+ "47d7d1": {
+  "pedido": "a xícara gira devagar sobre o pires, mostrando os detalhes",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um jato de líquido cai na xícara"
+ },
+ "7a3470": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": true,
+  "motivo": "fachada e letreiro iguais, movimento suave"
+ },
+ "dc7000": {
+  "pedido": "a câmera avança devagar pela loja até o balcão",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "avança até o balcão, loja e letreiro iguais"
+ },
+ "0b906f": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: líquido verde enche o frasco"
+ },
+ "5e737c": {
+  "pedido": "a câmera passa devagar pelos tênis, mostrando os detalhes",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "a câmera passa pelos tênis, forma e cor iguais"
+ },
+ "2e6e3f": {
+  "pedido": "a câmera se aproxima devagar da garrafa e o rótulo continua legível",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "o rótulo some e um líquido despejado cobre a garrafa"
+ },
+ "0e4918": {
+  "pedido": "a câmera gira devagar ao redor do hambúrguer",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto novo: um palito surge sobre o pão no fim (regra estrita: nem em parte)"
+ },
+ "5c5f11": {
+  "pedido": "a câmera se aproxima devagar do frasco e a luz passa pelo vidro",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: líquido verde enche o frasco"
+ },
+ "956495": {
+  "pedido": "deixa bonito",
+  "tipo": "vago",
+  "aproveitavel": false,
+  "motivo": "pessoa inventada: uma atendente aparece atrás do balcão"
+ },
+ "815810": {
+  "pedido": "as pessoas conversam e a câmera fica parada",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "o homem da esquerda muda de rosto e de corpo ao se mexer"
+ },
+ "0a1bd7": {
+  "pedido": "a câmera se aproxima devagar do frasco e a luz passa pelo vidro",
+  "tipo": "concreto",
+  "aproveitavel": true,
+  "motivo": "aproximação do frasco, forma e cor iguais"
+ },
+ "ad87ad": {
+  "pedido": "o vapor sobe devagar do café e a câmera se aproxima",
+  "tipo": "concreto",
+  "aproveitavel": false,
+  "motivo": "objeto inventado: um jato de café cai na xícara"
+ }
+}

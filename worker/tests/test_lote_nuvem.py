@@ -336,6 +336,36 @@ def test_agent_rejects_wrong_token(tmp_path):
         pod_agente.servidor("curto")
 
 
+def test_a_retried_upload_sends_the_whole_file_again(tmp_path, monkeypatch):
+    """13/10/2026: o envio cortado no meio era repetido só com o resto do arquivo (o arquivo aberto
+    já lido), e o agente gravava a cauda como se fosse o arquivo inteiro (o repo.tgz chegou cortado
+    ao pod e o bootstrap falhou em "repo")."""
+    srv = pod_agente.servidor("x" * 40, "127.0.0.1", 0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    real, falhas = ln.requests.request, []
+
+    def proxy_instavel(method, endereco, **kw):
+        if method == "PUT" and not falhas:  # o 1º envio cai depois de ler parte do corpo
+            corpo = kw.get("data")
+            if hasattr(corpo, "read"):
+                corpo.read(1000)
+            falhas.append(endereco)
+            raise ln.requests.ConnectionError("o proxy caiu no meio do envio")
+        return real(method, endereco, **kw)
+
+    monkeypatch.setattr(ln.requests, "request", proxy_instavel)
+    monkeypatch.setattr(ln.time, "sleep", lambda s: None)
+    try:
+        f = tmp_path / "repo.tgz"
+        f.write_bytes(os.urandom(5000))
+        ln.Agente(url, "x" * 40).put(f, str(tmp_path / "remoto" / "repo.tgz"))
+        assert len(falhas) == 1
+        assert (tmp_path / "remoto" / "repo.tgz").read_bytes() == f.read_bytes()
+    finally:
+        srv.shutdown()
+
+
 def test_agent_deadline_can_be_rescheduled_but_never_past_two_hours(tmp_path):
     d = pod_agente.Desligamento(1200, log=str(tmp_path / "deadman.txt"))
     srv = pod_agente.servidor("x" * 40, "127.0.0.1", 0, deadman=d)

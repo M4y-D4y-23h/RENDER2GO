@@ -1,0 +1,2109 @@
+{
+ "inicio": 1791936929.1526449,
+ "fases": "7",
+ "plano": {
+  "_comment": "Rodada de qualidade de 13/10/2026 (LEIAME.md), escrito antes da rodada: um pedido concreto (no estilo da foto) e um vago (no Livre) por foto, como um cliente escreveria; seed do vídeo = seed_base + 10·i (+1 no vago), a mesma em todas as combinações. `pessoas`: a análise do servidor (render2go_servico.pessoas) que a foto teria. Fotos e licenças: fixtures/sfw/FONTES.md.",
+  "seed_base": 7000,
+  "vago": {
+   "receita": "livre",
+   "texto": "deixa bonito"
+  },
+  "fotos": [
+   {
+    "id": "xicara",
+    "arquivo": "fixtures/sfw/produto-xicara.jpg",
+    "pessoas": false,
+    "concreto": {
+     "receita": "produto-giro",
+     "texto": "a xícara gira devagar sobre o pires, mostrando os detalhes"
+    }
+   },
+   {
+    "id": "cafe",
+    "arquivo": "fixtures/sfw/produto-cafe.jpg",
+    "pessoas": false,
+    "concreto": {
+     "receita": "comida-bebida",
+     "texto": "o vapor sobe devagar do café e a câmera se aproxima"
+    }
+   },
+   {
+    "id": "padaria",
+    "arquivo": "fixtures/sfw/pessoas-padaria-1900.jpg",
+    "pessoas": true,
+    "concreto": {
+     "receita": "livre",
+     "texto": "as pessoas conversam e a câmera fica parada"
+    }
+   },
+   {
+    "id": "bolo",
+    "arquivo": "fixtures/sfw/comida-bolo.jpg",
+    "pessoas": false,
+    "concreto": {
+     "receita": "comida-prato",
+     "texto": "a câmera se aproxima devagar do bolo e a calda brilha na luz"
+    }
+   },
+   {
+    "id": "hamburguer",
+    "arquivo": "fixtures/sfw/comida-hamburguer.jpg",
+    "pessoas": false,
+    "concreto": {
+     "receita": "comida-prato",
+     "texto": "a câmera gira devagar ao redor do hambúrguer"
+    }
+   },
+   {
+    "id": "tenis",
+    "arquivo": "fixtures/sfw/roupa-tenis.jpg",
+    "pessoas": false,
+    "concreto": {
+     "receita": "produto-giro",
+     "texto": "a câmera passa devagar pelos tênis, mostrando os detalhes"
+    }
+   },
+   {
+    "id": "perfume",
+    "arquivo": "fixtures/sfw/produto-perfume.jpg",
+    "pessoas": false,
+    "concreto": {
+     "receita": "produto-close",
+     "texto": "a câmera se aproxima devagar do frasco e a luz passa pelo vidro"
+    }
+   },
+   {
+    "id": "rotulo",
+    "arquivo": "fixtures/sfw/produto-rotulo-suco.jpg",
+    "pessoas": false,
+    "concreto": {
+     "receita": "produto-close",
+     "texto": "a câmera se aproxima devagar da garrafa e o rótulo continua legível"
+    }
+   },
+   {
+    "id": "fachada",
+    "arquivo": "fixtures/sfw/imovel-fachada.jpg",
+    "pessoas": false,
+    "concreto": {
+     "receita": "imovel-fachada",
+     "texto": "a câmera sobe devagar mostrando a fachada do restaurante"
+    }
+   },
+   {
+    "id": "loja",
+    "arquivo": "fixtures/sfw/imovel-loja-roupa.jpg",
+    "pessoas": false,
+    "concreto": {
+     "receita": "imovel-sala",
+     "texto": "a câmera avança devagar pela loja até o balcão"
+    }
+   },
+   {
+    "id": "salao",
+    "arquivo": "fixtures/sfw/imovel-cafe.jpg",
+    "pessoas": false,
+    "concreto": {
+     "receita": "imovel-sala",
+     "texto": "a câmera avança devagar pelo salão vazio do café"
+    }
+   }
+  ]
+ },
+ "ambiente": {
+  "cpus_conteiner": 13,
+  "os_cpu_count": 128,
+  "mem_gb": 1511.6,
+  "gpu": "NVIDIA L40S, 595.91.07, 46068 MiB",
+  "templates": {
+   "A": "/opt/render2go/worker/workflows/i2v_r1v2.v1.api.json",
+   "B": "/opt/render2go/worker/workflows/experimental/i2v_oficial_lightx2v.v1.api.json",
+   "D": "/opt/render2go/worker/workflows/experimental/i2v_oficial_lightx2v.v1.api.json"
+  },
+  "tradutor": "huihui_ai/qwen2.5-abliterate:7b",
+  "versao_prompt": 6
+ },
+ "P_prompts": {
+  "A": {
+   "xicara-concreto": {
+    "prompt": "The cup slowly rotates on the plate, showcasing its details with smooth, continuous motion. Even studio lighting creates soft shadows, highlighting its form. The camera slowly orbits around the product, keeping it centered in the frame. A single continuous uninterrupted shot. The same subject from the image stays in view from the first frame to the last. Its shape, colors, and details stay exactly the same. Slow, smooth, continuous motion. Slow orbit around the product, product centered in frame. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "produto",
+    "segundos": 46.84
+   },
+   "xicara-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 4.2
+   },
+   "cafe-concreto": {
+    "prompt": "The steam rises slowly from the coffee, gradually filling the space around it. Soft shadows add depth to the scene. Warm, cozy interior lighting highlights the vibrant, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors, and details stay exactly the same. Slow, smooth, continuous motion. Static camera, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "comida",
+    "segundos": 4.47
+   },
+   "cafe-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 4.51
+   },
+   "padaria-concreto": {
+    "prompt": "People converse naturally, their bodies and faces showing expression and movement. The camera stays still. Static camera. Natural pace, fluid motion. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 3.52
+   },
+   "padaria-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 4.39
+   },
+   "bolo-concreto": {
+    "prompt": "The camera slowly dolly-in toward the cake, emphasizing its calldes as soft shadows play across them. The warm, cozy interior lighting highlights its vibrant, natural colors with sharp focus. A single continuous uninterrupted shot. Close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "comida",
+    "segundos": 3.98
+   },
+   "bolo-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 4.34
+   },
+   "hamburguer-concreto": {
+    "prompt": "The camera slowly dollies in toward the hamburger, keeping it in view from start to finish. Warm, cozy interior lighting highlights the vibrant, natural colors with soft shadows. The same subject from the image stays in view from the first frame to the last. Its shape, colors, and details stay exactly the same. Close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "comida",
+    "segundos": 4.36
+   },
+   "hamburguer-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 3.91
+   },
+   "tenis-concreto": {
+    "prompt": "The camera slowly orbits around the shoe, keeping it centered in the frame. Even studio lighting creates soft shadows, emphasizing its shape and vibrant natural colors. A single continuous uninterrupted shot. Slow, smooth, continuous motion. Slow orbit around the product, product centered in frame. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "produto",
+    "segundos": 3.71
+   },
+   "tenis-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 4.48
+   },
+   "perfume-concreto": {
+    "prompt": "The camera slowly moves in toward the bottle, allowing the even studio lighting to softly illuminate the glass, creating sharp focus and vibrant natural colors. The light passes smoothly over the bottle, highlighting its shape and details. A single continuous uninterrupted shot, close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "produto",
+    "segundos": 4.21
+   },
+   "perfume-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 3.89
+   },
+   "rotulo-concreto": {
+    "prompt": "The camera slowly dolly-in toward the bottle, keeping the label clearly legible. Even studio lighting with soft shadows enhances the vibrant natural colors and sharp focus. The same subject stays in view from the first frame to the last, its shape, colors, and details exactly the same. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "produto",
+    "segundos": 4.32
+   },
+   "rotulo-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 4.49
+   },
+   "fachada-concreto": {
+    "prompt": "The camera slowly moves upward, capturing the entire width of the restaurant's facade in a wide shot, with golden hour sunlight casting long soft shadows. The vibrant natural colors and sharp focus highlight the building's details. Slow, smooth, continuous motion. Slow upward camera movement, wide shot. Golden hour sunlight, long soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "imovel",
+    "segundos": 3.99
+   },
+   "fachada-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 4.2
+   },
+   "loja-concreto": {
+    "prompt": "The camera slowly advances through the shop, maintaining a wide shot that stays on the same shoe from the first frame to the last, keeping its shape, colors, and details exactly the same. The same subject. Slow, smooth, continuous motion. Slow forward camera movement through the room, wide shot. Soft natural daylight. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "imovel",
+    "segundos": 4.4
+   },
+   "loja-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 4.33
+   },
+   "salao-concreto": {
+    "prompt": "The camera slowly advances through the empty café room, capturing a wide shot of the space. Soft natural daylight highlights the vibrant, natural colors and sharp focus of the scene. The same subject from the image stays in view from the first frame to the last. Slow, smooth, continuous motion. Slow forward camera movement through the room, wide shot. Soft natural daylight. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "imovel",
+    "segundos": 4.4
+   },
+   "salao-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 4.31
+   }
+  },
+  "D": {
+   "xicara-concreto": {
+    "prompt": "The cup slowly rotates on the plate, showcasing its details with smooth, continuous motion. Even studio lighting creates soft shadows, highlighting its form. The camera slowly orbits around the product, keeping it centered in the frame. A single continuous uninterrupted shot. The same subject from the image stays in view from the first frame to the last. Its shape, colors, and details stay exactly the same. Slow, smooth, continuous motion. Slow orbit around the product, product centered in frame. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "produto",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "xicara-vago": {
+    "prompt": "The ceramic cup and saucer stays in place as soft light slowly sweeps across it, highlighting its shape, colors and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "produto",
+    "segundos": 0.0,
+    "muda": true
+   },
+   "cafe-concreto": {
+    "prompt": "The steam rises slowly from the coffee, gradually filling the space around it. Soft shadows add depth to the scene. Warm, cozy interior lighting highlights the vibrant, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors, and details stay exactly the same. Slow, smooth, continuous motion. Static camera, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "comida",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "cafe-vago": {
+    "prompt": "The cup of coffee stays in place as soft highlights glisten on its surface and a thin wisp of steam rises gently from it. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "comida",
+    "segundos": 0.0,
+    "muda": true
+   },
+   "padaria-concreto": {
+    "prompt": "People converse naturally, their bodies and faces showing expression and movement. The camera stays still. Static camera. Natural pace, fluid motion. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "padaria-vago": {
+    "prompt": "The men in the tent stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 0.0,
+    "muda": true
+   },
+   "bolo-concreto": {
+    "prompt": "The camera slowly dolly-in toward the cake, emphasizing its calldes as soft shadows play across them. The warm, cozy interior lighting highlights its vibrant, natural colors with sharp focus. A single continuous uninterrupted shot. Close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "comida",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "bolo-vago": {
+    "prompt": "The tiramisu slice stays in place as soft highlights glisten on its surface and a thin wisp of steam rises gently from it. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "comida",
+    "segundos": 0.0,
+    "muda": true
+   },
+   "hamburguer-concreto": {
+    "prompt": "The camera slowly dollies in toward the hamburger, keeping it in view from start to finish. Warm, cozy interior lighting highlights the vibrant, natural colors with soft shadows. The same subject from the image stays in view from the first frame to the last. Its shape, colors, and details stay exactly the same. Close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "comida",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "hamburguer-vago": {
+    "prompt": "The burger stays in place as soft highlights glisten on its surface and a thin wisp of steam rises gently from it. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "comida",
+    "segundos": 0.0,
+    "muda": true
+   },
+   "tenis-concreto": {
+    "prompt": "The camera slowly orbits around the shoe, keeping it centered in the frame. Even studio lighting creates soft shadows, emphasizing its shape and vibrant natural colors. A single continuous uninterrupted shot. Slow, smooth, continuous motion. Slow orbit around the product, product centered in frame. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "roupa",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "tenis-vago": {
+    "prompt": "The beige and white sneakers stays in place while its fabric moves lightly, as if touched by a soft breeze. Slow, smooth, continuous motion. Slow orbit around the product, product centered in frame. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "roupa",
+    "segundos": 0.0,
+    "muda": true
+   },
+   "perfume-concreto": {
+    "prompt": "The camera slowly moves in toward the bottle, allowing the even studio lighting to softly illuminate the glass, creating sharp focus and vibrant natural colors. The light passes smoothly over the bottle, highlighting its shape and details. A single continuous uninterrupted shot, close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "produto",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "perfume-vago": {
+    "prompt": "The turquoise glass bottle stays in place as soft light slowly sweeps across it, highlighting its shape, colors and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "produto",
+    "segundos": 0.0,
+    "muda": true
+   },
+   "rotulo-concreto": {
+    "prompt": "The camera slowly dolly-in toward the bottle, keeping the label clearly legible. Even studio lighting with soft shadows enhances the vibrant natural colors and sharp focus. The same subject stays in view from the first frame to the last, its shape, colors, and details exactly the same. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "produto",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "rotulo-vago": {
+    "prompt": "The orange soda bottle stays in place as soft light slowly sweeps across it, highlighting its shape, colors and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "produto",
+    "segundos": 0.0,
+    "muda": true
+   },
+   "fachada-concreto": {
+    "prompt": "The camera slowly moves upward, capturing the entire width of the restaurant's facade in a wide shot, with golden hour sunlight casting long soft shadows. The vibrant natural colors and sharp focus highlight the building's details. Slow, smooth, continuous motion. Slow upward camera movement, wide shot. Golden hour sunlight, long soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "imovel",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "fachada-vago": {
+    "prompt": "The royal india restaurant stays exactly as it is, calm and steady, with smooth, continuous motion. Slow, smooth, continuous motion. Slow lateral tracking shot. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "imovel",
+    "segundos": 0.0,
+    "muda": true
+   },
+   "loja-concreto": {
+    "prompt": "The camera slowly advances through the shop, maintaining a wide shot that stays on the same shoe from the first frame to the last, keeping its shape, colors, and details exactly the same. The same subject. Slow, smooth, continuous motion. Slow forward camera movement through the room, wide shot. Soft natural daylight. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "imovel",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "loja-vago": {
+    "prompt": "The clothing store interior stays exactly as it is, calm and steady, with smooth, continuous motion. Slow, smooth, continuous motion. Slow lateral tracking shot. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "imovel",
+    "segundos": 0.0,
+    "muda": true
+   },
+   "salao-concreto": {
+    "prompt": "The camera slowly advances through the empty café room, capturing a wide shot of the space. Soft natural daylight highlights the vibrant, natural colors and sharp focus of the scene. The same subject from the image stays in view from the first frame to the last. Slow, smooth, continuous motion. Slow forward camera movement through the room, wide shot. Soft natural daylight. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": false,
+    "padrao": false,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "imovel",
+    "segundos": 0.0,
+    "muda": false
+   },
+   "salao-vago": {
+    "prompt": "The main subject stays in place as soft light slowly glides across it, highlighting its shape and details. Slow, smooth, continuous motion. Slow, gentle camera push-in. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "ref": "i2v@6",
+    "modelo": "huihui_ai/qwen2.5-abliterate:7b",
+    "vago": true,
+    "padrao": true,
+    "tentativas": 1,
+    "pessoas_recusadas": [],
+    "categoria": "geral",
+    "segundos": 0.0,
+    "muda": false
+   }
+  },
+  "legendas": {
+   "xicara": {
+    "legenda": {
+     "descricao": "The white ceramic cup and saucer with green and gold floral patterns are displayed against a neutral background.",
+     "categoria": "produto",
+     "assunto": "the ceramic cup and saucer",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 72.62
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 72.6
+   },
+   "cafe": {
+    "legenda": {
+     "descricao": "A white cup of coffee sits on a saucer surrounded by roasted coffee beans.",
+     "categoria": "comida",
+     "assunto": "the cup of coffee",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 53.21
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 53.2
+   },
+   "padaria": {
+    "legenda": {
+     "descricao": "A group of men in a tent with sacks and barrels, possibly in a historical setting.",
+     "categoria": "geral",
+     "assunto": "the men in the tent",
+     "pessoas": true,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 53.7
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 53.7
+   },
+   "bolo": {
+    "legenda": {
+     "descricao": "A slice of layered tiramisu dessert on a white plate with chocolate drizzle and a mint garnish.",
+     "categoria": "comida",
+     "assunto": "the tiramisu slice",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 52.78
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 52.8
+   },
+   "hamburguer": {
+    "legenda": {
+     "descricao": "The large burger with lettuce and a thick patty is on a plate with a black background.",
+     "categoria": "comida",
+     "assunto": "the burger",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 53.53
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 53.5
+   },
+   "tenis": {
+    "legenda": {
+     "descricao": "The beige and white sneakers with white laces are displayed on a wooden surface.",
+     "categoria": "roupa",
+     "assunto": "the beige and white sneakers",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 49.16
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 49.2
+   },
+   "perfume": {
+    "legenda": {
+     "descricao": "A turquoise glass bottle with a violin-shaped design on a plain background.",
+     "categoria": "produto",
+     "assunto": "the turquoise glass bottle",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 52.01
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 52.0
+   },
+   "rotulo": {
+    "legenda": {
+     "descricao": "A close-up of a yellow bottle labeled 'Ribbon Orange' with a slogan.",
+     "categoria": "produto",
+     "assunto": "the orange soda bottle",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 48.97
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 49.0
+   },
+   "fachada": {
+    "legenda": {
+     "descricao": "The Royal India Restaurant building with a sign and a car parked in front.",
+     "categoria": "imovel",
+     "assunto": "the royal india restaurant",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 52.83
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 52.8
+   },
+   "loja": {
+    "legenda": {
+     "descricao": "The interior of a clothing store with a wooden counter and hanging clothes.",
+     "categoria": "imovel",
+     "assunto": "the clothing store interior",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 52.71
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 52.7
+   },
+   "salao": {
+    "legenda": null,
+    "erro": "assunto fora do formato: 'the café interior'",
+    "threads": 6,
+    "segundos": 53.1
+   }
+  },
+  "cpu": 13,
+  "espera_modelo_legenda_s": 0.1,
+  "chamadas_tradutor_A": 22,
+  "chamadas_tradutor_total": 22,
+  "duracao_s": 731.1,
+  "de": "/root/render2go/qualidade/prompts.json"
+ },
+ "pod1_480p": {
+  "resumo_A": {
+   "videos": 22,
+   "ok": 22,
+   "reprovados": 0,
+   "conferencia": 0,
+   "barrados": 0,
+   "nsfw_media": 0.0128,
+   "executado_medio_s": 52.1,
+   "executado_mediano_s": 52.0,
+   "vram_pico_mib": 41413,
+   "sem_memoria": 0,
+   "prompt_cita_pessoa_sem_pessoa": 0
+  },
+  "resumo_B": {
+   "videos": 22,
+   "ok": 22,
+   "reprovados": 3,
+   "conferencia": 3,
+   "barrados": 0,
+   "nsfw_media": 0.0189,
+   "executado_medio_s": 52.2,
+   "executado_mediano_s": 52.2,
+   "vram_pico_mib": 41421,
+   "sem_memoria": 0,
+   "prompt_cita_pessoa_sem_pessoa": 0
+  },
+  "resumo_D": {
+   "videos": 22,
+   "ok": 22,
+   "reprovados": 1,
+   "conferencia": 1,
+   "barrados": 0,
+   "nsfw_media": 0.0137,
+   "executado_medio_s": 52.2,
+   "executado_mediano_s": 52.1,
+   "vram_pico_mib": 41533,
+   "sem_memoria": 0,
+   "prompt_cita_pessoa_sem_pessoa": 0
+  },
+  "resumo_D_todos_gerados": {
+   "videos": 14,
+   "ok": 14,
+   "reprovados": 1,
+   "conferencia": 1,
+   "barrados": 0,
+   "nsfw_media": 0.0104,
+   "executado_medio_s": 52.3,
+   "executado_mediano_s": 51.8,
+   "vram_pico_mib": 41533,
+   "sem_memoria": 0,
+   "prompt_cita_pessoa_sem_pessoa": 0
+  }
+ },
+ "7_720p": {
+  "A": [
+   {
+    "nome": "A-720-xicara-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "xicara-concreto",
+    "foto": "xicara",
+    "tipo": "concreto",
+    "seed": 7000,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The cup slowly rotates on the plate, showcasing its details with smooth, continuous motion. Even studio lighting creates soft shadows, highlighting its form. The camera slowly orbits around the product, keeping it centered in the frame. A single continuous uninterrupted shot. The same subject from the image stays in view from the first frame to the last. Its shape, colors, and details stay exactly the same. Slow, smooth, continuous motion. Slow orbit around the product, product centered in frame. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 170.86,
+    "total_s": 170.88,
+    "executado_s": 170.46,
+    "vram_pico_mib": 44213,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 170.46 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-xicara-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-xicara-concreto.png",
+    "inicio": 1791936977.235453,
+    "fim": 1791937148.268644,
+    "pessoas": false,
+    "similaridade": 0.9996,
+    "deriva_cor": 3.6,
+    "salto_cor": 1.08,
+    "conferencia": null,
+    "nsfw": 0.0001,
+    "nsfw_alto": 0.0001,
+    "nsfw_quadro": 0.0001,
+    "barrado": false,
+    "pior_quadro": 76,
+    "reprovado": false,
+    "sha": "7c961aa6daa6db08",
+    "tira": "A-720-xicara-concreto.jpg"
+   },
+   {
+    "nome": "A-720-cafe-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "cafe-concreto",
+    "foto": "cafe",
+    "tipo": "concreto",
+    "seed": 7010,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The steam rises slowly from the coffee, gradually filling the space around it. Soft shadows add depth to the scene. Warm, cozy interior lighting highlights the vibrant, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors, and details stay exactly the same. Slow, smooth, continuous motion. Static camera, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 172.46,
+    "total_s": 172.48,
+    "executado_s": 172.03,
+    "vram_pico_mib": 44261,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 172.03 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-cafe-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-cafe-concreto.png",
+    "inicio": 1791937148.2694812,
+    "fim": 1791937321.0934694,
+    "pessoas": false,
+    "similaridade": 1.0,
+    "deriva_cor": 1.92,
+    "salto_cor": 0.74,
+    "conferencia": null,
+    "nsfw": 0.0296,
+    "nsfw_alto": 0.0261,
+    "nsfw_quadro": 0.0318,
+    "barrado": false,
+    "pior_quadro": 60,
+    "reprovado": false,
+    "sha": "9d0118135411839a",
+    "tira": "A-720-cafe-concreto.jpg"
+   },
+   {
+    "nome": "A-720-padaria-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "padaria-concreto",
+    "foto": "padaria",
+    "tipo": "concreto",
+    "seed": 7020,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "People converse naturally, their bodies and faces showing expression and movement. The camera stays still. Static camera. Natural pace, fluid motion. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [
+     "people"
+    ],
+    "ok": true,
+    "erro": null,
+    "render_s": 173.85,
+    "total_s": 173.89,
+    "executado_s": 173.44,
+    "vram_pico_mib": 43429,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 173.44 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-padaria-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-padaria-concreto.png",
+    "inicio": 1791937321.0935981,
+    "fim": 1791937495.1607769,
+    "pessoas": true,
+    "similaridade": 0.9998,
+    "deriva_cor": 4.64,
+    "salto_cor": 1.39,
+    "conferencia": null,
+    "nsfw": 0.0258,
+    "nsfw_alto": 0.0051,
+    "nsfw_quadro": 0.0316,
+    "barrado": false,
+    "pior_quadro": 64,
+    "reprovado": false,
+    "sha": "ff8f22c78dd58ef6",
+    "tira": "A-720-padaria-concreto.jpg"
+   },
+   {
+    "nome": "A-720-bolo-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "bolo-concreto",
+    "foto": "bolo",
+    "tipo": "concreto",
+    "seed": 7030,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The camera slowly dolly-in toward the cake, emphasizing its calldes as soft shadows play across them. The warm, cozy interior lighting highlights its vibrant, natural colors with sharp focus. A single continuous uninterrupted shot. Close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 173.13,
+    "total_s": 173.16,
+    "executado_s": 172.68,
+    "vram_pico_mib": 44325,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 172.68 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-bolo-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-bolo-concreto.png",
+    "inicio": 1791937495.16084,
+    "fim": 1791937668.575056,
+    "pessoas": false,
+    "similaridade": 0.9999,
+    "deriva_cor": 8.48,
+    "salto_cor": 1.21,
+    "conferencia": null,
+    "nsfw": 0.0006,
+    "nsfw_alto": 0.0007,
+    "nsfw_quadro": 0.0007,
+    "barrado": false,
+    "pior_quadro": 56,
+    "reprovado": false,
+    "sha": "0d8c69442477a7ce",
+    "tira": "A-720-bolo-concreto.jpg"
+   },
+   {
+    "nome": "A-720-hamburguer-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "hamburguer-concreto",
+    "foto": "hamburguer",
+    "tipo": "concreto",
+    "seed": 7040,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The camera slowly dollies in toward the hamburger, keeping it in view from start to finish. Warm, cozy interior lighting highlights the vibrant, natural colors with soft shadows. The same subject from the image stays in view from the first frame to the last. Its shape, colors, and details stay exactly the same. Close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 173.02,
+    "total_s": 173.06,
+    "executado_s": 172.5,
+    "vram_pico_mib": 43461,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 172.50 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-hamburguer-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-hamburguer-concreto.png",
+    "inicio": 1791937668.5750992,
+    "fim": 1791937841.9985292,
+    "pessoas": false,
+    "similaridade": 0.9998,
+    "deriva_cor": 4.35,
+    "salto_cor": 1.6,
+    "conferencia": null,
+    "nsfw": 0.0161,
+    "nsfw_alto": 0.0115,
+    "nsfw_quadro": 0.0168,
+    "barrado": false,
+    "pior_quadro": 56,
+    "reprovado": false,
+    "sha": "043cb8c54cd5b0c9",
+    "tira": "A-720-hamburguer-concreto.jpg"
+   },
+   {
+    "nome": "A-720-tenis-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "tenis-concreto",
+    "foto": "tenis",
+    "tipo": "concreto",
+    "seed": 7050,
+    "dims": [
+     960,
+     960
+    ],
+    "prompt": "The camera slowly orbits around the shoe, keeping it centered in the frame. Even studio lighting creates soft shadows, emphasizing its shape and vibrant natural colors. A single continuous uninterrupted shot. Slow, smooth, continuous motion. Slow orbit around the product, product centered in frame. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 172.97,
+    "total_s": 173.01,
+    "executado_s": 172.48,
+    "vram_pico_mib": 45157,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 172.48 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-tenis-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-tenis-concreto.png",
+    "inicio": 1791937841.9985712,
+    "fim": 1791938015.38258,
+    "pessoas": false,
+    "similaridade": 0.9999,
+    "deriva_cor": 4.02,
+    "salto_cor": 1.05,
+    "conferencia": null,
+    "nsfw": 0.0031,
+    "nsfw_alto": 0.0035,
+    "nsfw_quadro": 0.0037,
+    "barrado": false,
+    "pior_quadro": 0,
+    "reprovado": false,
+    "sha": "d2bff985a27e6eee",
+    "tira": "A-720-tenis-concreto.jpg"
+   },
+   {
+    "nome": "A-720-perfume-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "perfume-concreto",
+    "foto": "perfume",
+    "tipo": "concreto",
+    "seed": 7060,
+    "dims": [
+     720,
+     1280
+    ],
+    "prompt": "The camera slowly moves in toward the bottle, allowing the even studio lighting to softly illuminate the glass, creating sharp focus and vibrant natural colors. The light passes smoothly over the bottle, highlighting its shape and details. A single continuous uninterrupted shot, close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 173.11,
+    "total_s": 173.14,
+    "executado_s": 172.61,
+    "vram_pico_mib": 45157,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 172.61 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-perfume-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-perfume-concreto.png",
+    "inicio": 1791938015.3826568,
+    "fim": 1791938188.6768165,
+    "pessoas": false,
+    "similaridade": 0.9997,
+    "deriva_cor": 5.39,
+    "salto_cor": 1.45,
+    "conferencia": null,
+    "nsfw": 0.0013,
+    "nsfw_alto": 0.0012,
+    "nsfw_quadro": 0.0013,
+    "barrado": false,
+    "pior_quadro": 56,
+    "reprovado": false,
+    "sha": "a100421f8f560d35",
+    "tira": "A-720-perfume-concreto.jpg"
+   },
+   {
+    "nome": "A-720-rotulo-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "rotulo-concreto",
+    "foto": "rotulo",
+    "tipo": "concreto",
+    "seed": 7070,
+    "dims": [
+     960,
+     960
+    ],
+    "prompt": "The camera slowly dolly-in toward the bottle, keeping the label clearly legible. Even studio lighting with soft shadows enhances the vibrant natural colors and sharp focus. The same subject stays in view from the first frame to the last, its shape, colors, and details exactly the same. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 174.18,
+    "total_s": 174.23,
+    "executado_s": 173.74,
+    "vram_pico_mib": 45157,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 173.74 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-rotulo-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-rotulo-concreto.png",
+    "inicio": 1791938188.67686,
+    "fim": 1791938363.240642,
+    "pessoas": false,
+    "similaridade": 0.9996,
+    "deriva_cor": 7.7,
+    "salto_cor": 0.92,
+    "conferencia": null,
+    "nsfw": 0.0751,
+    "nsfw_alto": 0.0727,
+    "nsfw_quadro": 0.0867,
+    "barrado": false,
+    "pior_quadro": 52,
+    "reprovado": false,
+    "sha": "bd6ad7183f40ced7",
+    "tira": "A-720-rotulo-concreto.jpg"
+   },
+   {
+    "nome": "A-720-fachada-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "fachada-concreto",
+    "foto": "fachada",
+    "tipo": "concreto",
+    "seed": 7080,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The camera slowly moves upward, capturing the entire width of the restaurant's facade in a wide shot, with golden hour sunlight casting long soft shadows. The vibrant natural colors and sharp focus highlight the building's details. Slow, smooth, continuous motion. Slow upward camera movement, wide shot. Golden hour sunlight, long soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 174.99,
+    "total_s": 175.03,
+    "executado_s": 174.54,
+    "vram_pico_mib": 45445,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 174.54 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-fachada-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-fachada-concreto.png",
+    "inicio": 1791938363.24073,
+    "fim": 1791938538.6401885,
+    "pessoas": false,
+    "similaridade": 0.9998,
+    "deriva_cor": 11.02,
+    "salto_cor": 1.42,
+    "conferencia": null,
+    "nsfw": 0.0,
+    "nsfw_alto": 0.0,
+    "nsfw_quadro": 0.0,
+    "barrado": false,
+    "pior_quadro": 32,
+    "reprovado": false,
+    "sha": "097fd42d33ee9864",
+    "tira": "A-720-fachada-concreto.jpg"
+   },
+   {
+    "nome": "A-720-loja-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "loja-concreto",
+    "foto": "loja",
+    "tipo": "concreto",
+    "seed": 7090,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The camera slowly advances through the shop, maintaining a wide shot that stays on the same shoe from the first frame to the last, keeping its shape, colors, and details exactly the same. The same subject. Slow, smooth, continuous motion. Slow forward camera movement through the room, wide shot. Soft natural daylight. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 174.32,
+    "total_s": 174.35,
+    "executado_s": 173.9,
+    "vram_pico_mib": 44261,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 173.90 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-loja-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-loja-concreto.png",
+    "inicio": 1791938538.6402702,
+    "fim": 1791938713.3223352,
+    "pessoas": false,
+    "similaridade": 0.9999,
+    "deriva_cor": 33.7,
+    "salto_cor": 1.36,
+    "conferencia": null,
+    "nsfw": 0.0,
+    "nsfw_alto": 0.0,
+    "nsfw_quadro": 0.0001,
+    "barrado": false,
+    "pior_quadro": 80,
+    "reprovado": false,
+    "sha": "7a90c79de3178fbd",
+    "tira": "A-720-loja-concreto.jpg"
+   },
+   {
+    "nome": "A-720-salao-concreto",
+    "combo": "A",
+    "res": "720",
+    "pedido": "salao-concreto",
+    "foto": "salao",
+    "tipo": "concreto",
+    "seed": 7100,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The camera slowly advances through the empty café room, capturing a wide shot of the space. Soft natural daylight highlights the vibrant, natural colors and sharp focus of the scene. The same subject from the image stays in view from the first frame to the last. Slow, smooth, continuous motion. Slow forward camera movement through the room, wide shot. Soft natural daylight. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 175.95,
+    "total_s": 175.99,
+    "executado_s": 175.06,
+    "vram_pico_mib": 45157,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 175.06 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/A720/A-720-salao-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/A720/A-720-salao-concreto.png",
+    "inicio": 1791938713.32239,
+    "fim": 1791938889.6579194,
+    "pessoas": false,
+    "similaridade": 0.9998,
+    "deriva_cor": 3.38,
+    "salto_cor": 0.94,
+    "conferencia": null,
+    "nsfw": 0.0023,
+    "nsfw_alto": 0.0008,
+    "nsfw_quadro": 0.0025,
+    "barrado": false,
+    "pior_quadro": 64,
+    "reprovado": false,
+    "sha": "9078dd7c73861261",
+    "tira": "A-720-salao-concreto.jpg"
+   }
+  ],
+  "aquecimento_A": {
+   "ok": true,
+   "erro": null,
+   "total_s": 25.4,
+   "executado_s": [
+    24.93
+   ],
+   "log": [
+    "\u001b[32m[INFO]\u001b[0m Requested to load WanTEModel",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WanVAE",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WAN21",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WAN21",
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 24.93 seconds\u001b[0m"
+   ]
+  },
+  "resumo_A": {
+   "videos": 11,
+   "ok": 11,
+   "reprovados": 0,
+   "conferencia": 0,
+   "barrados": 0,
+   "nsfw_media": 0.014,
+   "executado_medio_s": 173.0,
+   "executado_mediano_s": 172.7,
+   "vram_pico_mib": 45445,
+   "sem_memoria": 0,
+   "prompt_cita_pessoa_sem_pessoa": 0
+  },
+  "B": [
+   {
+    "nome": "B-720-xicara-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "xicara-concreto",
+    "foto": "xicara",
+    "tipo": "concreto",
+    "seed": 7000,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The cup slowly rotates on the plate, showcasing its details with smooth, continuous motion. Even studio lighting creates soft shadows, highlighting its form. The camera slowly orbits around the product, keeping it centered in the frame. A single continuous uninterrupted shot. The same subject from the image stays in view from the first frame to the last. Its shape, colors, and details stay exactly the same. Slow, smooth, continuous motion. Slow orbit around the product, product centered in frame. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 178.2,
+    "total_s": 178.22,
+    "executado_s": 177.52,
+    "vram_pico_mib": 44301,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 177.52 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-xicara-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-xicara-concreto.png",
+    "inicio": 1791938933.1574082,
+    "fim": 1791939111.504702,
+    "pessoas": false,
+    "similaridade": 0.9996,
+    "deriva_cor": 3.96,
+    "salto_cor": 1.02,
+    "conferencia": null,
+    "nsfw": 0.0013,
+    "nsfw_alto": 0.0019,
+    "nsfw_quadro": 0.0023,
+    "barrado": false,
+    "pior_quadro": 80,
+    "reprovado": false,
+    "sha": "b59c1abb1cf3c2a8",
+    "tira": "B-720-xicara-concreto.jpg"
+   },
+   {
+    "nome": "B-720-cafe-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "cafe-concreto",
+    "foto": "cafe",
+    "tipo": "concreto",
+    "seed": 7010,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The steam rises slowly from the coffee, gradually filling the space around it. Soft shadows add depth to the scene. Warm, cozy interior lighting highlights the vibrant, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors, and details stay exactly the same. Slow, smooth, continuous motion. Static camera, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 179.41,
+    "total_s": 179.44,
+    "executado_s": 178.91,
+    "vram_pico_mib": 43757,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 178.91 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-cafe-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-cafe-concreto.png",
+    "inicio": 1791939169.0115542,
+    "fim": 1791939348.795019,
+    "pessoas": false,
+    "similaridade": 0.9999,
+    "deriva_cor": 5.29,
+    "salto_cor": 1.74,
+    "conferencia": null,
+    "nsfw": 0.0238,
+    "nsfw_alto": 0.0243,
+    "nsfw_quadro": 0.0309,
+    "barrado": false,
+    "pior_quadro": 32,
+    "reprovado": false,
+    "sha": "1e79902b04c25ff9",
+    "tira": "B-720-cafe-concreto.jpg"
+   },
+   {
+    "nome": "B-720-padaria-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "padaria-concreto",
+    "foto": "padaria",
+    "tipo": "concreto",
+    "seed": 7020,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "People converse naturally, their bodies and faces showing expression and movement. The camera stays still. Static camera. Natural pace, fluid motion. Realistic, natural colors. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [
+     "people"
+    ],
+    "ok": true,
+    "erro": null,
+    "render_s": 179.08,
+    "total_s": 179.11,
+    "executado_s": 178.62,
+    "vram_pico_mib": 41997,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 178.62 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-padaria-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-padaria-concreto.png",
+    "inicio": 1791939354.2807622,
+    "fim": 1791939533.6155274,
+    "pessoas": true,
+    "similaridade": 0.9999,
+    "deriva_cor": 5.92,
+    "salto_cor": 4.58,
+    "conferencia": null,
+    "nsfw": 0.0225,
+    "nsfw_alto": 0.0027,
+    "nsfw_quadro": 0.0358,
+    "barrado": false,
+    "pior_quadro": 56,
+    "reprovado": false,
+    "sha": "79b77df866017700",
+    "tira": "B-720-padaria-concreto.jpg"
+   },
+   {
+    "nome": "B-720-bolo-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "bolo-concreto",
+    "foto": "bolo",
+    "tipo": "concreto",
+    "seed": 7030,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The camera slowly dolly-in toward the cake, emphasizing its calldes as soft shadows play across them. The warm, cozy interior lighting highlights its vibrant, natural colors with sharp focus. A single continuous uninterrupted shot. Close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 177.97,
+    "total_s": 178.0,
+    "executado_s": 177.51,
+    "vram_pico_mib": 42125,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 177.51 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-bolo-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-bolo-concreto.png",
+    "inicio": 1791939537.710683,
+    "fim": 1791939715.953589,
+    "pessoas": false,
+    "similaridade": 0.9999,
+    "deriva_cor": 2.56,
+    "salto_cor": 0.88,
+    "conferencia": null,
+    "nsfw": 0.0006,
+    "nsfw_alto": 0.0006,
+    "nsfw_quadro": 0.0006,
+    "barrado": false,
+    "pior_quadro": 80,
+    "reprovado": false,
+    "sha": "7571c31c9440be98",
+    "tira": "B-720-bolo-concreto.jpg"
+   },
+   {
+    "nome": "B-720-hamburguer-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "hamburguer-concreto",
+    "foto": "hamburguer",
+    "tipo": "concreto",
+    "seed": 7040,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The camera slowly dollies in toward the hamburger, keeping it in view from start to finish. Warm, cozy interior lighting highlights the vibrant, natural colors with soft shadows. The same subject from the image stays in view from the first frame to the last. Its shape, colors, and details stay exactly the same. Close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Warm cozy interior lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 177.75,
+    "total_s": 177.78,
+    "executado_s": 177.28,
+    "vram_pico_mib": 43501,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 177.28 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-hamburguer-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-hamburguer-concreto.png",
+    "inicio": 1791939720.633763,
+    "fim": 1791939898.7670178,
+    "pessoas": false,
+    "similaridade": 0.9999,
+    "deriva_cor": 5.31,
+    "salto_cor": 1.77,
+    "conferencia": null,
+    "nsfw": 0.0106,
+    "nsfw_alto": 0.0082,
+    "nsfw_quadro": 0.0117,
+    "barrado": false,
+    "pior_quadro": 56,
+    "reprovado": false,
+    "sha": "a9dff75ec113a154",
+    "tira": "B-720-hamburguer-concreto.jpg"
+   },
+   {
+    "nome": "B-720-tenis-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "tenis-concreto",
+    "foto": "tenis",
+    "tipo": "concreto",
+    "seed": 7050,
+    "dims": [
+     960,
+     960
+    ],
+    "prompt": "The camera slowly orbits around the shoe, keeping it centered in the frame. Even studio lighting creates soft shadows, emphasizing its shape and vibrant natural colors. A single continuous uninterrupted shot. Slow, smooth, continuous motion. Slow orbit around the product, product centered in frame. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 178.57,
+    "total_s": 178.61,
+    "executado_s": 178.13,
+    "vram_pico_mib": 42221,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 178.13 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-tenis-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-tenis-concreto.png",
+    "inicio": 1791939903.6795082,
+    "fim": 1791940082.660009,
+    "pessoas": false,
+    "similaridade": 0.9999,
+    "deriva_cor": 36.47,
+    "salto_cor": 2.53,
+    "conferencia": null,
+    "nsfw": 0.0079,
+    "nsfw_alto": 0.0077,
+    "nsfw_quadro": 0.008,
+    "barrado": false,
+    "pior_quadro": 76,
+    "reprovado": false,
+    "sha": "110f54a119ecb014",
+    "tira": "B-720-tenis-concreto.jpg"
+   },
+   {
+    "nome": "B-720-perfume-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "perfume-concreto",
+    "foto": "perfume",
+    "tipo": "concreto",
+    "seed": 7060,
+    "dims": [
+     720,
+     1280
+    ],
+    "prompt": "The camera slowly moves in toward the bottle, allowing the even studio lighting to softly illuminate the glass, creating sharp focus and vibrant natural colors. The light passes smoothly over the bottle, highlighting its shape and details. A single continuous uninterrupted shot, close-up. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 177.91,
+    "total_s": 177.94,
+    "executado_s": 177.46,
+    "vram_pico_mib": 43597,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 177.46 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-perfume-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-perfume-concreto.png",
+    "inicio": 1791940087.19201,
+    "fim": 1791940265.2876549,
+    "pessoas": false,
+    "similaridade": 0.9997,
+    "deriva_cor": 34.9,
+    "salto_cor": 3.85,
+    "conferencia": null,
+    "nsfw": 0.0048,
+    "nsfw_alto": 0.0053,
+    "nsfw_quadro": 0.0057,
+    "barrado": false,
+    "pior_quadro": 76,
+    "reprovado": false,
+    "sha": "17053ad9c764c29a",
+    "tira": "B-720-perfume-concreto.jpg"
+   },
+   {
+    "nome": "B-720-rotulo-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "rotulo-concreto",
+    "foto": "rotulo",
+    "tipo": "concreto",
+    "seed": 7070,
+    "dims": [
+     960,
+     960
+    ],
+    "prompt": "The camera slowly dolly-in toward the bottle, keeping the label clearly legible. Even studio lighting with soft shadows enhances the vibrant natural colors and sharp focus. The same subject stays in view from the first frame to the last, its shape, colors, and details exactly the same. Slow, smooth, continuous motion. Slow dolly-in toward the product, close-up. Even studio lighting, soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 177.55,
+    "total_s": 177.58,
+    "executado_s": 177.09,
+    "vram_pico_mib": 43565,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 177.09 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-rotulo-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-rotulo-concreto.png",
+    "inicio": 1791940270.0775776,
+    "fim": 1791940447.9841497,
+    "pessoas": false,
+    "similaridade": 0.9998,
+    "deriva_cor": 7.08,
+    "salto_cor": 1.01,
+    "conferencia": null,
+    "nsfw": 0.0487,
+    "nsfw_alto": 0.0467,
+    "nsfw_quadro": 0.0518,
+    "barrado": false,
+    "pior_quadro": 72,
+    "reprovado": false,
+    "sha": "75a11817b2d13a0a",
+    "tira": "B-720-rotulo-concreto.jpg"
+   },
+   {
+    "nome": "B-720-fachada-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "fachada-concreto",
+    "foto": "fachada",
+    "tipo": "concreto",
+    "seed": 7080,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The camera slowly moves upward, capturing the entire width of the restaurant's facade in a wide shot, with golden hour sunlight casting long soft shadows. The vibrant natural colors and sharp focus highlight the building's details. Slow, smooth, continuous motion. Slow upward camera movement, wide shot. Golden hour sunlight, long soft shadows. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 178.18,
+    "total_s": 178.22,
+    "executado_s": 177.66,
+    "vram_pico_mib": 43757,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 177.66 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-fachada-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-fachada-concreto.png",
+    "inicio": 1791940452.7728295,
+    "fim": 1791940631.393011,
+    "pessoas": false,
+    "similaridade": 0.9998,
+    "deriva_cor": 16.5,
+    "salto_cor": 1.69,
+    "conferencia": null,
+    "nsfw": 0.0,
+    "nsfw_alto": 0.0,
+    "nsfw_quadro": 0.0,
+    "barrado": false,
+    "pior_quadro": 20,
+    "reprovado": false,
+    "sha": "00f2e2c752a232b6",
+    "tira": "B-720-fachada-concreto.jpg"
+   },
+   {
+    "nome": "B-720-loja-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "loja-concreto",
+    "foto": "loja",
+    "tipo": "concreto",
+    "seed": 7090,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The camera slowly advances through the shop, maintaining a wide shot that stays on the same shoe from the first frame to the last, keeping its shape, colors, and details exactly the same. The same subject. Slow, smooth, continuous motion. Slow forward camera movement through the room, wide shot. Soft natural daylight. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 176.93,
+    "total_s": 176.96,
+    "executado_s": 176.47,
+    "vram_pico_mib": 43501,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 176.47 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-loja-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-loja-concreto.png",
+    "inicio": 1791940635.9840374,
+    "fim": 1791940813.2723715,
+    "pessoas": false,
+    "similaridade": 0.9999,
+    "deriva_cor": 27.43,
+    "salto_cor": 1.26,
+    "conferencia": null,
+    "nsfw": 0.0,
+    "nsfw_alto": 0.0,
+    "nsfw_quadro": 0.0,
+    "barrado": false,
+    "pior_quadro": 80,
+    "reprovado": false,
+    "sha": "bbdc5368a2dafeeb",
+    "tira": "B-720-loja-concreto.jpg"
+   },
+   {
+    "nome": "B-720-salao-concreto",
+    "combo": "B",
+    "res": "720",
+    "pedido": "salao-concreto",
+    "foto": "salao",
+    "tipo": "concreto",
+    "seed": 7100,
+    "dims": [
+     1280,
+     720
+    ],
+    "prompt": "The camera slowly advances through the empty café room, capturing a wide shot of the space. Soft natural daylight highlights the vibrant, natural colors and sharp focus of the scene. The same subject from the image stays in view from the first frame to the last. Slow, smooth, continuous motion. Slow forward camera movement through the room, wide shot. Soft natural daylight. Clean commercial look, high detail, vibrant natural colors, sharp focus. A single continuous uninterrupted shot, the same subject from the image stays in view from the first frame to the last, its shape, colors and details stay exactly the same.",
+    "prompt_cita_pessoa": [],
+    "ok": true,
+    "erro": null,
+    "render_s": 177.89,
+    "total_s": 177.92,
+    "executado_s": 177.39,
+    "vram_pico_mib": 43757,
+    "sem_memoria": false,
+    "log": [
+     "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 177.39 seconds\u001b[0m"
+    ],
+    "video": "/root/render2go/qualidade/saida/videos/B720/B-720-salao-concreto.mp4",
+    "foto_preparada": "/root/render2go/qualidade/saida/videos/B720/B-720-salao-concreto.png",
+    "inicio": 1791940817.68879,
+    "fim": 1791940995.9434438,
+    "pessoas": false,
+    "similaridade": 0.9998,
+    "deriva_cor": 6.33,
+    "salto_cor": 0.83,
+    "conferencia": null,
+    "nsfw": 0.0012,
+    "nsfw_alto": 0.0006,
+    "nsfw_quadro": 0.0013,
+    "barrado": false,
+    "pior_quadro": 24,
+    "reprovado": false,
+    "sha": "05819697a7ef98a6",
+    "tira": "B-720-salao-concreto.jpg"
+   }
+  ],
+  "aquecimento_B": {
+   "ok": true,
+   "erro": null,
+   "total_s": 39.4,
+   "executado_s": [
+    38.83
+   ],
+   "log": [
+    "\u001b[32m[INFO]\u001b[0m Requested to load WanTEModel",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WAN21",
+    "\u001b[32m[INFO]\u001b[0m Requested to load WAN21",
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 38.83 seconds\u001b[0m"
+   ]
+  },
+  "legendas_com_gpu": [
+   {
+    "legenda": {
+     "descricao": "The white ceramic cup and saucer with green and gold floral designs are set against a plain background.",
+     "categoria": "produto",
+     "assunto": "the ceramic cup and saucer",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 78.31
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 78.3,
+    "foto": "xicara",
+    "inicio": 1791938893.7486699,
+    "fim": 1791938972.1363845
+   },
+   {
+    "legenda": {
+     "descricao": "A white cup of coffee sits on a saucer surrounded by roasted coffee beans.",
+     "categoria": "comida",
+     "assunto": "the cup of coffee",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 55.41
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 55.4,
+    "foto": "cafe",
+    "inicio": 1791938972.1364427,
+    "fim": 1791939027.7047384
+   },
+   {
+    "legenda": {
+     "descricao": "A group of men in a tent with sacks and barrels, possibly in a historical setting.",
+     "categoria": "geral",
+     "assunto": "the men in the tent",
+     "pessoas": true,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 56.9
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 56.9,
+    "foto": "padaria",
+    "inicio": 1791939027.7048047,
+    "fim": 1791939084.7268527
+   },
+   {
+    "legenda": {
+     "descricao": "A slice of layered tiramisu dessert on a white plate with chocolate drizzle and cocoa powder.",
+     "categoria": "comida",
+     "assunto": "the tiramisu dessert",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 62.3
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 62.3,
+    "foto": "bolo",
+    "inicio": 1791939084.7269318,
+    "fim": 1791939147.169178
+   },
+   {
+    "legenda": {
+     "descricao": "The large burger with lettuce and a thick patty is on a plate with a black background.",
+     "categoria": "comida",
+     "assunto": "the burger",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 60.32
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 60.3,
+    "foto": "hamburguer",
+    "inicio": 1791939147.169257,
+    "fim": 1791939207.6463003
+   },
+   {
+    "legenda": {
+     "descricao": "The beige and white sneakers with white laces are placed on a wooden surface.",
+     "categoria": "roupa",
+     "assunto": "the beige sneakers",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 53.44
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 53.5,
+    "foto": "tenis",
+    "inicio": 1791939207.6463523,
+    "fim": 1791939261.2645316
+   },
+   {
+    "legenda": {
+     "descricao": "The turquoise glass bottle with a violin shape and floral etching is displayed against a plain background.",
+     "categoria": "produto",
+     "assunto": "the turquoise glass bottle",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 55.83
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 55.9,
+    "foto": "perfume",
+    "inicio": 1791939261.2645886,
+    "fim": 1791939317.1800315
+   },
+   {
+    "legenda": {
+     "descricao": "A close-up of a yellow bottle labeled 'Ribbon Orange' with a slogan.",
+     "categoria": "produto",
+     "assunto": "the ribbon orange bottle",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 60.97
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 61.0,
+    "foto": "rotulo",
+    "inicio": 1791939317.1800935,
+    "fim": 1791939378.3403814
+   },
+   {
+    "legenda": {
+     "descricao": "The Royal India Restaurant building with a sign and a parked car in front.",
+     "categoria": "imovel",
+     "assunto": "the royal india restaurant",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 62.45
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 62.5,
+    "foto": "fachada",
+    "inicio": 1791939378.3404603,
+    "fim": 1791939440.9813538
+   },
+   {
+    "legenda": {
+     "descricao": "The clothing store interior with 'Inherit Clothing Company' sign and wooden counter.",
+     "categoria": "imovel",
+     "assunto": "the clothing store interior",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 55.93
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 55.9,
+    "foto": "loja",
+    "inicio": 1791939440.9814043,
+    "fim": 1791939497.0596328
+   },
+   {
+    "legenda": {
+     "descricao": "The interior of a small, cozy restaurant with wooden tables and chairs, checkered floor, and framed pictures on the walls.",
+     "categoria": "geral",
+     "assunto": "the restaurant interior",
+     "pessoas": false,
+     "texto": false,
+     "modelo": "qwen2.5vl:7b",
+     "versao": 1,
+     "segundos": 62.36
+    },
+    "erro": null,
+    "threads": 6,
+    "segundos": 62.4,
+    "foto": "salao",
+    "inicio": 1791939497.059688,
+    "fim": 1791939559.5877845
+   }
+  ],
+  "traducoes_entre_videos": [
+   {
+    "pedido": "xicara-concreto",
+    "segundos": 57.5,
+    "vram_pico_mib": 28887,
+    "erro": null
+   },
+   {
+    "pedido": "cafe-concreto",
+    "segundos": 5.5,
+    "vram_pico_mib": 28665,
+    "erro": null
+   },
+   {
+    "pedido": "padaria-concreto",
+    "segundos": 4.1,
+    "vram_pico_mib": 28441,
+    "erro": null
+   },
+   {
+    "pedido": "bolo-concreto",
+    "segundos": 4.7,
+    "vram_pico_mib": 30041,
+    "erro": null
+   },
+   {
+    "pedido": "hamburguer-concreto",
+    "segundos": 4.9,
+    "vram_pico_mib": 28697,
+    "erro": null
+   },
+   {
+    "pedido": "tenis-concreto",
+    "segundos": 4.5,
+    "vram_pico_mib": 30553,
+    "erro": null
+   },
+   {
+    "pedido": "perfume-concreto",
+    "segundos": 4.8,
+    "vram_pico_mib": 30521,
+    "erro": null
+   },
+   {
+    "pedido": "rotulo-concreto",
+    "segundos": 4.8,
+    "vram_pico_mib": 29625,
+    "erro": null
+   },
+   {
+    "pedido": "fachada-concreto",
+    "segundos": 4.6,
+    "vram_pico_mib": 30521,
+    "erro": null
+   },
+   {
+    "pedido": "loja-concreto",
+    "segundos": 4.4,
+    "vram_pico_mib": 29241,
+    "erro": null
+   }
+  ],
+  "resumo_B": {
+   "videos": 11,
+   "ok": 11,
+   "reprovados": 0,
+   "conferencia": 0,
+   "barrados": 0,
+   "nsfw_media": 0.011,
+   "executado_medio_s": 177.6,
+   "executado_mediano_s": 177.5,
+   "vram_pico_mib": 44301,
+   "sem_memoria": 0,
+   "prompt_cita_pessoa_sem_pessoa": 0
+  },
+  "duracao_s": 4074.3
+ },
+ "fim": 1791941012.0752451
+}

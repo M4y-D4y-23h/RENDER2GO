@@ -1,0 +1,18 @@
+{
+ "pod": 2,
+ "pod_id": "3eci9wgie8quds",
+ "retomado": "o processo local caiu com o reinício do contêiner da sessão",
+ "baixado": 51,
+ "pods_depois": [
+  {
+   "id": "hf4dbmglblw7sh",
+   "name": "render2go-fila-dca936-2",
+   "desiredStatus": "EXITED"
+  }
+ ],
+ "pod_encerrado": true,
+ "saldo_final_usd": 5.7548667491,
+ "usd_h": 1.09,
+ "ligado_s": 4358,
+ "custo_estimado_usd": 1.32
+}

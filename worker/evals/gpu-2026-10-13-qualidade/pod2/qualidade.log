@@ -1,0 +1,390 @@
+00:15:37 [medida] fase 7_720p
+00:15:51 [medida] ComfyUI 8291 no ar em 14.1 s []
+enfileirado: d8115b95-0239-4f8d-9250-5ebdb4fe130c
+  executando nó 129:90
+  executando nó 97
+  executando nó 129:84
+  executando nó 129:89
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:131
+  executando nó 129:116
+  executando nó 129:125
+  executando nó 129:120
+  executando nó 129:119
+  executando nó 129:117
+  executando nó 129:95
+  executando nó 129:116
+  executando nó 129:104
+  executando nó 129:124
+  executando nó 129:125
+  executando nó 129:122
+  executando nó 129:120
+  executando nó 129:118
+  executando nó 129:119
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:96
+  executando nó 129:117
+  executando nó 129:103
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:16:17 [medida] aquecimento aquece-A720: True em 25.4 s
+enfileirado: fe9a7136-0f24-4e5c-a18e-4dcf402370a2
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:19:08 [medida] A-720-xicara-concreto: True em 170.88 s (ComfyUI 170.46), VRAM 44213 MiB
+enfileirado: bef1966a-f66e-4639-9cf2-d4e807b03b6f
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:22:01 [medida] A-720-cafe-concreto: True em 172.48 s (ComfyUI 172.03), VRAM 44261 MiB
+enfileirado: 51d53f48-861b-4f8e-bc6b-0ba1c625f1c3
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:24:55 [medida] A-720-padaria-concreto: True em 173.89 s (ComfyUI 173.44), VRAM 43429 MiB
+enfileirado: d79cd8cd-8523-4396-8495-bbaa5d6dafd7
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:27:48 [medida] A-720-bolo-concreto: True em 173.16 s (ComfyUI 172.68), VRAM 44325 MiB
+enfileirado: 1e4c6cc6-1839-4733-b0d5-60f6f63ba1f9
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:30:41 [medida] A-720-hamburguer-concreto: True em 173.06 s (ComfyUI 172.5), VRAM 43461 MiB
+enfileirado: 0060347e-5086-4847-8e04-e425fda9173a
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:33:35 [medida] A-720-tenis-concreto: True em 173.01 s (ComfyUI 172.48), VRAM 45157 MiB
+enfileirado: 2e71b889-f8b9-41f3-8650-949b38a620bf
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:36:28 [medida] A-720-perfume-concreto: True em 173.14 s (ComfyUI 172.61), VRAM 45157 MiB
+enfileirado: 6bc7d95b-836b-4a59-ae27-282602ab679f
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:39:23 [medida] A-720-rotulo-concreto: True em 174.23 s (ComfyUI 173.74), VRAM 45157 MiB
+enfileirado: f74a2052-f9bb-4a42-aaea-a07169e18b14
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:42:18 [medida] A-720-fachada-concreto: True em 175.03 s (ComfyUI 174.54), VRAM 45445 MiB
+enfileirado: 022b8d81-0cab-4405-b090-fbc3f25b1b84
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:45:13 [medida] A-720-loja-concreto: True em 174.35 s (ComfyUI 173.9), VRAM 44261 MiB
+enfileirado: 797e7b9d-8768-451c-bb02-3aad8a664d65
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:48:09 [medida] A-720-salao-concreto: True em 175.99 s (ComfyUI 175.06), VRAM 45157 MiB
+enfileirado: d78c9692-565f-44bf-8123-e5bda526d14f
+  executando nó 97
+  executando nó 129:84
+  executando nó 129:89
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:116
+  executando nó 129:117
+  executando nó 129:95
+  executando nó 129:201
+  executando nó 129:116
+  executando nó 129:104
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:96
+  executando nó 129:202
+  executando nó 129:117
+  executando nó 129:103
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:48:53 [medida] aquecimento aquece-B720: True em 39.4 s
+enfileirado: 5609f1c3-8ce2-496b-8115-69ccce81e354
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+00:49:32 [medida] legenda (GPU ocupada) xicara: 78.3 s 
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+00:50:27 [medida] legenda (GPU ocupada) cafe: 55.4 s 
+  passo 1/2 (nó 129:85)
+00:51:24 [medida] legenda (GPU ocupada) padaria: 56.9 s 
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:51:51 [medida] B-720-xicara-concreto: True em 178.22 s (ComfyUI 177.52), VRAM 44301 MiB
+00:52:27 [medida] legenda (GPU ocupada) bolo: 62.3 s 
+enfileirado: 919c0a72-5859-4183-9b3f-30339f549150
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+00:53:27 [medida] legenda (GPU ocupada) hamburguer: 60.3 s 
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+00:54:21 [medida] legenda (GPU ocupada) tenis: 53.5 s 
+  passo 1/2 (nó 129:85)
+00:55:17 [medida] legenda (GPU ocupada) perfume: 55.9 s 
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:55:48 [medida] B-720-cafe-concreto: True em 179.44 s (ComfyUI 178.91), VRAM 43757 MiB
+enfileirado: 793eb0ae-e3a4-4053-b799-4fe05c2e5320
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+00:56:18 [medida] legenda (GPU ocupada) rotulo: 61.0 s 
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+00:57:20 [medida] legenda (GPU ocupada) fachada: 62.5 s 
+  passo 1/2 (nó 129:85)
+00:58:17 [medida] legenda (GPU ocupada) loja: 55.9 s 
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+00:58:53 [medida] B-720-padaria-concreto: True em 179.11 s (ComfyUI 178.62), VRAM 41997 MiB
+enfileirado: acc1298e-7d6f-4803-b40d-ffe010885516
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+00:59:19 [medida] legenda (GPU ocupada) salao: 62.4 s 
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:01:55 [medida] B-720-bolo-concreto: True em 178.0 s (ComfyUI 177.51), VRAM 42125 MiB
+enfileirado: 0fea86f4-0fb0-46e1-a1a7-eab8d5477f5d
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:04:58 [medida] B-720-hamburguer-concreto: True em 177.78 s (ComfyUI 177.28), VRAM 43501 MiB
+enfileirado: 7a9078c6-686f-4590-b0eb-db6f56a67c06
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:08:02 [medida] B-720-tenis-concreto: True em 178.61 s (ComfyUI 178.13), VRAM 42221 MiB
+enfileirado: 7bd19a85-1275-4a7d-b9da-650888041741
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:11:05 [medida] B-720-perfume-concreto: True em 177.94 s (ComfyUI 177.46), VRAM 43597 MiB
+enfileirado: 83791257-3568-4bbe-aae5-8ff5f8922c15
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:14:07 [medida] B-720-rotulo-concreto: True em 177.58 s (ComfyUI 177.09), VRAM 43565 MiB
+enfileirado: b651584d-526d-4bec-bcd2-56ccaf099b85
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:17:11 [medida] B-720-fachada-concreto: True em 178.22 s (ComfyUI 177.66), VRAM 43757 MiB
+enfileirado: 910f8cfb-1331-4af0-864d-3237dc0e02c2
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:20:13 [medida] B-720-loja-concreto: True em 176.96 s (ComfyUI 176.47), VRAM 43501 MiB
+enfileirado: 5fb58b14-c8a8-4a0e-a261-4987b22b41d4
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:23:15 [medida] B-720-salao-concreto: True em 177.92 s (ComfyUI 177.39), VRAM 43757 MiB
+01:23:32 [medida] FIM
+FIM_DO_ROTEIRO

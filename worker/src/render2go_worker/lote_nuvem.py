@@ -200,10 +200,20 @@ class Agente:
         return float(r.json()["em_s"])
 
     def put(self, local: Path, remoto: str) -> None:
-        with local.open("rb") as f:
-            r = self._req("PUT", "/arquivo", params={"caminho": remoto}, data=f, timeout=600)
+        """Envia o arquivo inteiro a cada tentativa, e o agente confirma os bytes recebidos. Até
+        13/10/2026, o corpo ia como o arquivo aberto: a tentativa que repetia um envio cortado no
+        meio mandava só o resto (o arquivo já lido), e o agente gravava a cauda como se fosse o
+        arquivo inteiro (o repo.tgz de 2,5 MB chegou cortado ao pod, e o bootstrap falhou)."""
+        dados = local.read_bytes()
+        r = self._req("PUT", "/arquivo", params={"caminho": remoto}, data=dados, timeout=600)
         if r.status_code != 200:
             raise AgenteError(f"envio de {local.name}: HTTP {r.status_code} {r.text[:200]}")
+        try:
+            recebidos = r.json().get("bytes")
+        except ValueError:
+            recebidos = None
+        if recebidos != len(dados):
+            raise AgenteError(f"envio de {local.name}: {recebidos} de {len(dados)} bytes no pod")
 
     def get(self, remoto: str, local: Path) -> bool:
         r = self._req("GET", "/arquivo", params={"caminho": remoto}, timeout=600)

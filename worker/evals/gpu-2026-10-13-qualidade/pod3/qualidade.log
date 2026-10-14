@@ -1,0 +1,681 @@
+01:28:54 [medida] fase S_sage
+01:40:49 [medida] SageAttention: SAGE_OK sageattention-2.2.0-cp312-cp312-linux_x86_64.whl 5a4fb56f71b5fd63d960326af3b2903106c4c91e9ea12b5d217db415326c6e79 (espera de 715.1 s)
+01:41:03 [medida] ComfyUI 8292 no ar em 13.6 s []
+enfileirado: bb97c1ad-826e-4d53-8843-ee26c2de7ebc
+  executando nó 129:90
+  executando nó 97
+  executando nó 129:84
+  executando nó 129:89
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:131
+  executando nó 129:116
+  executando nó 129:125
+  executando nó 129:120
+  executando nó 129:119
+  executando nó 129:117
+  executando nó 129:95
+  executando nó 129:116
+  executando nó 129:104
+  executando nó 129:124
+  executando nó 129:125
+  executando nó 129:122
+  executando nó 129:120
+  executando nó 129:118
+  executando nó 129:119
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:96
+  executando nó 129:117
+  executando nó 129:103
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:41:31 [medida] aquecimento aquece-A480: True em 28.4 s
+enfileirado: f74f4fcc-6b7e-4139-9a50-2866b0474dc1
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:42:24 [medida] A-480-xicara-concreto: True em 52.73 s (ComfyUI 52.31), VRAM 40725 MiB
+enfileirado: 856c1611-4d4c-45e8-b026-6316467c6c74
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:43:17 [medida] A-480-xicara-vago: True em 52.84 s (ComfyUI 52.43), VRAM 41253 MiB
+enfileirado: dbe1f659-e1c8-475b-b9eb-2cce6d05ff6c
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:44:10 [medida] A-480-cafe-concreto: True em 52.74 s (ComfyUI 52.32), VRAM 40837 MiB
+enfileirado: 478674b5-0834-4a97-85dc-d12be242dece
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:45:03 [medida] A-480-cafe-vago: True em 52.75 s (ComfyUI 52.33), VRAM 40837 MiB
+enfileirado: b51e591a-992c-4a61-bce4-b1c3fa22945a
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:45:57 [medida] A-480-padaria-concreto: True em 53.83 s (ComfyUI 53.4), VRAM 41397 MiB
+enfileirado: a30c8456-2955-40ca-b900-9d88bf73b350
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:46:50 [medida] A-480-padaria-vago: True em 53.24 s (ComfyUI 52.83), VRAM 41253 MiB
+enfileirado: 26302f27-edf7-4ee9-8020-c73f69b7d5a5
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:47:44 [medida] A-480-bolo-concreto: True em 54.12 s (ComfyUI 53.69), VRAM 40901 MiB
+enfileirado: f02c976b-073e-4810-94c8-b37d6c5b5d53
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:48:38 [medida] A-480-bolo-vago: True em 53.66 s (ComfyUI 52.86), VRAM 41253 MiB
+enfileirado: 602267bc-2be5-40f6-8278-2396b0391a38
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:49:32 [medida] A-480-hamburguer-concreto: True em 53.85 s (ComfyUI 53.34), VRAM 40837 MiB
+enfileirado: 0c76f03b-f7e8-4e52-baa2-1a02e61fc8b4
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:50:26 [medida] A-480-hamburguer-vago: True em 53.6 s (ComfyUI 52.65), VRAM 41253 MiB
+enfileirado: 170fa15a-3535-41b5-b257-d56b2c9b46e8
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:51:22 [medida] A-480-tenis-concreto: True em 55.78 s (ComfyUI 55.02), VRAM 40965 MiB
+enfileirado: c276b79f-5bb9-4afe-8734-7223f030e1f4
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:52:18 [medida] A-480-tenis-vago: True em 56.18 s (ComfyUI 55.54), VRAM 41413 MiB
+enfileirado: c60b2910-9c98-4bf8-90a1-ec309a9ae126
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:53:12 [medida] A-480-perfume-concreto: True em 53.99 s (ComfyUI 53.31), VRAM 40837 MiB
+enfileirado: 15331991-c0c1-469c-b5f7-fd0f0d0fa466
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:54:05 [medida] A-480-perfume-vago: True em 53.3 s (ComfyUI 52.67), VRAM 40837 MiB
+enfileirado: fdfa9c15-a742-4604-a609-de6e164db029
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:55:01 [medida] A-480-rotulo-concreto: True em 55.49 s (ComfyUI 54.92), VRAM 41413 MiB
+enfileirado: 2c83d7fd-f86b-4c39-92bf-20a585814ca4
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:55:57 [medida] A-480-rotulo-vago: True em 55.67 s (ComfyUI 54.8), VRAM 40933 MiB
+enfileirado: 55362201-8f2b-458a-bc30-6b5c0271f407
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:56:51 [medida] A-480-fachada-concreto: True em 53.98 s (ComfyUI 53.09), VRAM 41253 MiB
+enfileirado: 9e1588ca-06fe-4e98-8068-87ad013ce1c3
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:57:45 [medida] A-480-fachada-vago: True em 53.73 s (ComfyUI 53.03), VRAM 40837 MiB
+enfileirado: 2534530c-a6e1-4d7d-8b1f-3dd9dd2f2a23
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:58:39 [medida] A-480-loja-concreto: True em 53.91 s (ComfyUI 53.24), VRAM 41253 MiB
+enfileirado: 759bdc33-f704-4cd8-8855-06527d4b5f10
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+01:59:32 [medida] A-480-loja-vago: True em 53.1 s (ComfyUI 52.51), VRAM 40837 MiB
+enfileirado: 12c279dc-aa1f-4e2f-a9da-337da646e0e2
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:00:27 [medida] A-480-salao-concreto: True em 54.16 s (ComfyUI 53.34), VRAM 41397 MiB
+enfileirado: 64ae60b0-8dba-4840-9d15-ddd02fc47b24
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:01:21 [medida] A-480-salao-vago: True em 53.71 s (ComfyUI 53.1), VRAM 41253 MiB
+02:01:50 [medida] ComfyUI 8293 no ar em 14.1 s ['--use-sage-attention']
+enfileirado: f3a334fa-38fc-4863-9fdb-dc2aaf88aa61
+  executando nó 129:162
+  executando nó 129:90
+  executando nó 97
+  executando nó 129:84
+  executando nó 129:89
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:131
+  executando nó 129:116
+  executando nó 129:125
+  executando nó 129:120
+  executando nó 129:119
+  executando nó 129:117
+  executando nó 129:95
+  executando nó 129:116
+  executando nó 129:104
+  executando nó 129:124
+  executando nó 129:125
+  executando nó 129:122
+  executando nó 129:120
+  executando nó 129:118
+  executando nó 129:119
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:96
+  executando nó 129:117
+  executando nó 129:103
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:02:33 [medida] aquecimento aquece-A480: True em 42.8 s
+enfileirado: 3312ad38-949d-467f-a48b-b54149d8c86b
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:161
+  executando nó 129:163
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:03:18 [medida] A-480-xicara-concreto: True em 45.58 s (ComfyUI 45.14), VRAM 40837 MiB
+enfileirado: a69d6b05-53da-412d-b14c-a977759d028e
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:04:04 [medida] A-480-xicara-vago: True em 45.36 s (ComfyUI 44.92), VRAM 40965 MiB
+enfileirado: c9fcf336-b558-40ad-b619-b8ffe6423050
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:04:48 [medida] A-480-cafe-concreto: True em 44.61 s (ComfyUI 44.17), VRAM 40837 MiB
+enfileirado: 3268d11e-122d-412b-9984-ee7aafd934d2
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:05:34 [medida] A-480-cafe-vago: True em 44.94 s (ComfyUI 44.51), VRAM 40901 MiB
+enfileirado: f9d06d27-6767-49ef-88b0-a9446e4cad9f
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:06:19 [medida] A-480-padaria-concreto: True em 45.51 s (ComfyUI 45.07), VRAM 41253 MiB
+enfileirado: 98faf7ea-5e95-4b0a-a3f0-cd50551c3043
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:07:05 [medida] A-480-padaria-vago: True em 45.25 s (ComfyUI 44.83), VRAM 40709 MiB
+enfileirado: 5770a644-e228-4361-a6d5-5796c0c7baa4
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:07:50 [medida] A-480-bolo-concreto: True em 45.41 s (ComfyUI 44.99), VRAM 41253 MiB
+enfileirado: d9eb77bd-2ec5-46f4-b82a-5240a22073b9
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:08:36 [medida] A-480-bolo-vago: True em 46.18 s (ComfyUI 45.26), VRAM 41253 MiB
+enfileirado: d0a38ba5-5bc2-4722-b830-db4d2bca4536
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:09:23 [medida] A-480-hamburguer-concreto: True em 46.26 s (ComfyUI 45.54), VRAM 40837 MiB
+enfileirado: 7fdd5b9d-48a8-4ad9-81df-de7d539e6286
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:10:09 [medida] A-480-hamburguer-vago: True em 45.57 s (ComfyUI 44.97), VRAM 40901 MiB
+enfileirado: 66666fa9-e659-4915-b478-476aeea34419
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:10:57 [medida] A-480-tenis-concreto: True em 47.98 s (ComfyUI 47.42), VRAM 40965 MiB
+enfileirado: 7ebac224-1ec5-4638-82ac-ad0b8ed5a314
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:11:44 [medida] A-480-tenis-vago: True em 46.68 s (ComfyUI 46.23), VRAM 40965 MiB
+enfileirado: dc152c8e-02b6-4e91-86b5-995229ae1790
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:12:30 [medida] A-480-perfume-concreto: True em 46.01 s (ComfyUI 45.14), VRAM 41253 MiB
+enfileirado: 6b39cfa2-0070-4d1a-abea-27c0facbe1c9
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:13:15 [medida] A-480-perfume-vago: True em 45.45 s (ComfyUI 44.86), VRAM 40645 MiB
+enfileirado: 3d226218-3ea2-491b-a108-20af69f5a979
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:14:03 [medida] A-480-rotulo-concreto: True em 47.23 s (ComfyUI 46.69), VRAM 40965 MiB
+enfileirado: 90300d86-0802-427b-8e6d-b155c04193a7
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:14:50 [medida] A-480-rotulo-vago: True em 47.32 s (ComfyUI 46.87), VRAM 40965 MiB
+enfileirado: 4be7ade8-4571-42df-a837-78a242c74196
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:15:36 [medida] A-480-fachada-concreto: True em 46.02 s (ComfyUI 45.59), VRAM 41685 MiB
+enfileirado: 5258c6cb-d504-4357-9c67-71880dba25f0
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:16:21 [medida] A-480-fachada-vago: True em 44.77 s (ComfyUI 44.34), VRAM 41253 MiB
+enfileirado: 3d0925be-afc4-4970-a08c-5c44aaec0c57
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:17:07 [medida] A-480-loja-concreto: True em 46.02 s (ComfyUI 45.57), VRAM 41573 MiB
+enfileirado: b0110e4e-fa00-407b-9690-0ca1297da00b
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:17:53 [medida] A-480-loja-vago: True em 45.08 s (ComfyUI 44.65), VRAM 40229 MiB
+enfileirado: d47ff58e-02f2-4603-a9ee-e1a43be2b5b3
+  executando nó 97
+  executando nó 129:93
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:18:39 [medida] A-480-salao-concreto: True em 45.98 s (ComfyUI 45.52), VRAM 41253 MiB
+enfileirado: c8cd4a26-1519-467c-bbc9-24708387c90b
+  executando nó 97
+  executando nó 129:98
+  executando nó 129:86
+  passo 1/2 (nó 129:86)
+  passo 2/2 (nó 129:86)
+  executando nó 129:85
+  passo 1/2 (nó 129:85)
+  passo 2/2 (nó 129:85)
+  executando nó 129:87
+  executando nó 129:94
+  executando nó 108
+02:19:24 [medida] A-480-salao-vago: True em 45.17 s (ComfyUI 44.72), VRAM 41061 MiB
+02:19:47 [medida] FIM
+FIM_DO_ROTEIRO
