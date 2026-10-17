@@ -50,11 +50,19 @@ worker próprio (`tokens_worker`), que vence com o pod e é revogado quando ele 
 
 Postgres: conexões num pool (RENDER2GO_DB_POOL, padrão 10 por processo); antes, cada transação abria
 uma conexão nova.
+
+Versões do pedido (ADR 0018, 17/10/2026; render2go_servico.versoes): cada pedido novo (`lotes.revisao`) tem uma cadeia
+de versões (`versoes`), da base do envio a cada tradução que chega do pod. Os vídeos só vão para um pod quando a versão
+atual é a liberada (`versao_liberada = versao_atual`, em `reivindicar`, `trabalho`, `fila` e na ordem dos pedidos da
+conta): no modo "seguir", ela se libera sozinha, menos num passo material (`decisao_em`); no "revisar", só o cliente
+libera (`aprovar_versao`). Cada vídeo grava a versão com que saiu (`jobs.versao_id`) e o SHA-256 do prompt que foi para
+o pod (`jobs.prompt_sha`).
 """
 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -62,9 +70,11 @@ import sqlite3
 import statistics
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
+
+from render2go_servico import versoes as versoes_mod
 
 MAX_TENTATIVAS = 3
 FINAIS = ("ok", "erro", "cancelado")
@@ -212,6 +222,13 @@ ESQUEMA = [
         lease_ate DOUBLE PRECISION, arquivo TEXT, bytes_video BIGINT, duracao DOUBLE PRECISION,
         segundos DOUBLE PRECISION, erro TEXT, motivo TEXT, concluido_em DOUBLE PRECISION,
         excluido_em DOUBLE PRECISION, ip TEXT)""",
+    # versões do pedido (ADR 0018, 17/10/2026; render2go_servico.versoes): a base (envio ou edição do texto) e cada
+    # passo (tradução, guarda final, texto recusado). `hash` encadeia o da anterior com o conteúdo (JSON canônico);
+    # `liberada_por`: "automatico" (modo seguir, sem passo material) ou "cliente" (aprovou esta versão)
+    """CREATE TABLE IF NOT EXISTS versoes (
+        id TEXT PRIMARY KEY, lote_id TEXT NOT NULL REFERENCES lotes(id), numero INTEGER NOT NULL,
+        criado DOUBLE PRECISION NOT NULL, origem TEXT NOT NULL, conteudo TEXT NOT NULL, hash TEXT NOT NULL,
+        material TEXT, liberada_em DOUBLE PRECISION, liberada_por TEXT, UNIQUE (lote_id, numero))""",
 ]
 # índices: depois das colunas novas (um banco antigo ganha a coluna antes do índice que a usa)
 INDICES = [
@@ -251,6 +268,7 @@ INDICES = [
     "CREATE INDEX IF NOT EXISTS avaliacoes_cliente ON avaliacoes (cliente_id)",
     "CREATE INDEX IF NOT EXISTS montagens_cliente ON montagens (cliente_id, criado)",
     "CREATE INDEX IF NOT EXISTS montagens_status ON montagens (status, criado)",
+    "CREATE INDEX IF NOT EXISTS jobs_versao ON jobs (versao_id)",
 ]
 # vídeos já iniciados (ou prontos) de cada cliente nos pedidos em andamento: a vez na fila é por cliente
 INICIADOS_POR_CLIENTE = (
@@ -260,9 +278,13 @@ INICIADOS_POR_CLIENTE = (
 )
 # pedidos da mesma conta, um depois do outro (pedido do dono, 12/10/2026): há outro pedido da conta, mais
 # antigo, ainda em andamento? (l = o lote do job candidato)
+# A versão liberada (ADR 0018): sem versões (o pedido de antes) ou com a versão atual liberada; o vídeo do pedido que
+# espera a decisão ou a aprovação do cliente não vai para um pod, não conta como trabalho e não segura os pedidos
+# seguintes da conta. `{t}`: o nome da tabela do lote na consulta
+VERSAO_LIBERADA = "({t}.versao_atual IS NULL OR {t}.versao_liberada = {t}.versao_atual)"
 PEDIDO_ANTERIOR_ABERTO = (
     "SELECT 1 FROM lotes a WHERE a.cliente_id = l.cliente_id AND a.status IN ('aprovado', 'processando')"
-    " AND (a.criado < l.criado OR (a.criado = l.criado AND a.id < l.id))"
+    " AND (a.criado < l.criado OR (a.criado = l.criado AND a.id < l.id)) AND " + VERSAO_LIBERADA.format(t="a")
 )
 # contas sem saldo puladas numa reivindicação antes de desistir (as próximas ficam para o próximo pedido)
 MAX_CONTAS_SEM_SALDO = 20
@@ -302,6 +324,7 @@ TRAVA_ESQUEMA = 20261008
 # Civil: 6 meses), movimentos e pagamentos (registro financeiro) e a auditoria do painel.
 HISTORICO = (
     "jobs",
+    "versoes",
     "consentimentos",
     "fotos",
     "eventos",
@@ -421,6 +444,18 @@ COLUNAS_NOVAS = [
     ("geradores", "subida_tipo", "TEXT"),
     ("geradores", "agente_em", "DOUBLE PRECISION"),
     ("geradores", "versao", "TEXT"),
+    # versões do pedido e revisão pelo cliente (ADR 0018, 17/10/2026): o modo ("seguir" ou "revisar"; NULL = o pedido
+    # de antes, sem versões), a versão atual e a liberada para os pods, desde quando um passo material espera a decisão
+    # do cliente, e como cada tradução saiu (JSON: intenção, restrições, modo do texto fixo, substituição)
+    ("lotes", "revisao", "TEXT"),
+    ("lotes", "versao_atual", "TEXT"),
+    ("lotes", "versao_liberada", "TEXT"),
+    ("lotes", "decisao_em", "DOUBLE PRECISION"),
+    ("lotes", "traducao", "TEXT"),
+    ("fotos", "traducao", "TEXT"),
+    # a versão com que o vídeo foi para o pod e o SHA-256 do prompt que foi (o que o vídeo executou de fato)
+    ("jobs", "versao_id", "TEXT"),
+    ("jobs", "prompt_sha", "TEXT"),
 ]
 MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
@@ -447,6 +482,10 @@ ORIGEM_EVENTO = ("ip", "dispositivo", "agente", "fuso", "impressao", "porta")  #
 
 class BancoError(Exception):
     pass
+
+
+class VersaoMudou(BancoError):
+    """A versão que o cliente viu não é mais a atual (outra aba, uma tradução que chegou, uma edição): nada muda."""
 
 
 class SaldoInsuficiente(BancoError):
@@ -2365,15 +2404,19 @@ class Banco:
         autorizacao: dict | None = None,
         preco_video: int | None = None,
         cobranca: str = "video",
+        revisao: str | None = None,
     ) -> str:
         """fotos: [{nome, tipo, bytes, chave, prompt?}] (já validadas pela API; prompt: texto próprio da foto).
         origem: {ip, dispositivo, agente, fuso} de quem pediu.
         autorizacao: {declarante, texto_versao, texto} quando a caixa de autorização foi marcada;
         gravada na mesma transação, com a origem e a lista de fotos (auditoria).
         preco_video: centavos por vídeo do pré-pago; None não cobra. cobranca: "video" (ADR 0012: cada vídeo
-        cobrado quando sai certo) ou "pedido" (o pedido inteiro no envio, como antes de 12/10/2026)."""
+        cobrado quando sai certo) ou "pedido" (o pedido inteiro no envio, como antes de 12/10/2026).
+        revisao (ADR 0018): "seguir" ou "revisar" (o pedido ganha versões no envio); None, sem versões (como antes)."""
         if cobranca not in ("video", "pedido"):
             raise BancoError(f"cobrança inválida: {cobranca}")
+        if revisao is not None and revisao not in versoes_mod.MODOS:
+            raise BancoError(f"revisão inválida: {revisao}")
         lid = novo_id("lote")
         agora = time.time()
         o = origem or {}
@@ -2383,8 +2426,8 @@ class Banco:
                 raise BancoError("cliente não encontrado")
             c.run(
                 "INSERT INTO lotes (id, cliente_id, status, pedido, n_fotos, prioridade, criado, ip, dispositivo,"
-                " agente, fuso, impressao, preco_video, rede, modelo, porta, cobranca)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " agente, fuso, impressao, preco_video, rede, modelo, porta, cobranca, revisao)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     lid,
                     cliente_id,
@@ -2403,6 +2446,7 @@ class Banco:
                     pedido.get("modelo") or MODELO_PADRAO,
                     o.get("porta"),
                     None if preco_video is None or cobranca == "pedido" else "video",
+                    revisao,
                 ),
             )
             if autorizacao:
@@ -2616,7 +2660,8 @@ class Banco:
         with self.tx() as c:
             return c.all(
                 "SELECT l.id, l.cliente_id, l.prioridade, l.criado,"
-                " SUM(CASE WHEN j.status = 'pendente' THEN 1 ELSE 0 END) AS pendentes,"
+                f" SUM(CASE WHEN j.status = 'pendente' AND {VERSAO_LIBERADA.format(t='l')} THEN 1 ELSE 0 END)"
+                " AS pendentes,"
                 " SUM(CASE WHEN j.status = 'em_andamento' THEN 1 ELSE 0 END) AS andamento,"
                 " SUM(CASE WHEN j.status <> 'pendente' THEN 1 ELSE 0 END) AS iniciados"
                 " FROM jobs j JOIN lotes l ON l.id = j.lote_id"
@@ -3122,10 +3167,17 @@ class Banco:
             (time.time(), lote_id),
         )
 
-    def confirmar_envio(self, lote_id: str, tamanhos: dict[str, int | None]) -> list[str]:
+    def confirmar_envio(
+        self,
+        lote_id: str,
+        tamanhos: dict[str, int | None],
+        analisar: Callable[[str], dict] | None = None,
+        regras: dict | None = None,
+    ) -> list[str]:
         """tamanhos: chave → bytes no armazenamento (None = ausente). Devolve os problemas.
         Pedido do pré-pago no modo antigo (cobranca NULL): cobra o pedido inteiro na mesma transação
-        (SaldoInsuficiente: nada muda). No modo "video" (ADR 0012), nada é cobrado aqui."""
+        (SaldoInsuficiente: nada muda). No modo "video" (ADR 0012), nada é cobrado aqui. Pedido com versões (ADR
+        0018): nasce a 1ª versão (a base do envio), com a intenção de cada texto (`analisar`, da API) e as `regras`."""
         problemas = []
         with self.tx() as c:
             lote = c.one("SELECT * FROM lotes WHERE id = ?", (lote_id,))
@@ -3143,6 +3195,8 @@ class Banco:
                 c.run("UPDATE fotos SET enviada = 1 WHERE lote_id = ?", (lote_id,))
                 c.run("UPDATE lotes SET status = 'aguardando_aprovacao' WHERE id = ?", (lote_id,))
                 self.evento(c, lote_id, "enviado")
+                if lote.get("revisao"):
+                    self._versao_base(c, lote_id, "envio", analisar, regras)
         return problemas
 
     def aprovar(self, lote_id: str, quem: str, tarefas: list[dict], legenda: bool = False) -> None:
@@ -3228,18 +3282,33 @@ class Banco:
             self._estornar_lote(c, lote_id, f"pedido recusado: {motivo}"[:200])
             self.evento(c, lote_id, "recusado", {"por": quem, "motivo": motivo})
 
-    def definir_prompt_foto(self, foto_id: str, prompt_en: str, compilador: str, detalhe: dict | None = None) -> None:
+    def definir_prompt_foto(
+        self,
+        foto_id: str,
+        prompt_en: str,
+        compilador: str,
+        detalhe: dict | None = None,
+        traducao: dict | None = None,
+        material: str | None = None,
+    ) -> None:
         """Prompt compilado do texto próprio de uma foto: vale para todas as fotos do lote com o mesmo texto.
-        `detalhe`: como a tradução saiu (render2go_worker.traducao: vago, movimento padrão, pessoa inventada)."""
+        `detalhe`: como a tradução saiu (render2go_worker.traducao: vago, movimento padrão, pessoa inventada).
+        Pedido com versões (ADR 0018): `traducao` (o que o cartão do cliente mostra) fica nas fotos e a tradução vira um
+        passo da versão; `material`: por que ela precisa da decisão do cliente (None: não precisa)."""
         with self.tx() as c:
             f = c.one("SELECT lote_id, prompt FROM fotos WHERE id = ?", (foto_id,))
             if f is None or f["prompt"] is None:
                 raise BancoError("foto sem texto próprio")
+            lt = self._travar_lote(c, f["lote_id"])  # antes das fotos: a mesma ordem da edição do texto
             n = c.run(
-                "UPDATE fotos SET prompt_en = ? WHERE lote_id = ? AND prompt = ? AND prompt_en IS NULL",
-                (prompt_en, f["lote_id"], f["prompt"]),
+                "UPDATE fotos SET prompt_en = ?, traducao = ? WHERE lote_id = ? AND prompt = ? AND prompt_en IS NULL",
+                (prompt_en, json.dumps(traducao, ensure_ascii=False) if traducao else None, f["lote_id"], f["prompt"]),
             )
             self.evento(c, f["lote_id"], "prompt_foto", {"compilador": compilador, "fotos": n, **(detalhe or {})})
+            if n and lt.get("revisao"):
+                grupo = self._grupo_da_foto(c, f["lote_id"], f["prompt"])
+                passo = versoes_mod.passo_traducao(grupo, prompt_en, compilador, traducao or {}, material)
+                self._gravar_versao(c, lt, "traducao", passo, material)
 
     def definir_prompt_da_foto(
         self, foto_id: str, prompt_en: str, compilador: str, legenda: dict | None, detalhe: dict | None = None
@@ -3287,14 +3356,278 @@ class Banco:
         with self.tx() as c:
             return c.one("SELECT * FROM fotos WHERE id = ?", (foto_id,))
 
-    def definir_prompt(self, lote_id: str, prompt_en: str, compilador: str, detalhe: dict | None = None) -> None:
+    def definir_prompt(
+        self,
+        lote_id: str,
+        prompt_en: str,
+        compilador: str,
+        detalhe: dict | None = None,
+        traducao: dict | None = None,
+        material: str | None = None,
+    ) -> None:
+        """O prompt do texto do pedido (uma vez só). `traducao` e `material`: como em `definir_prompt_foto`."""
         with self.tx() as c:
-            c.run(
-                "UPDATE lotes SET prompt_en = ?, compilador = ?, status = 'processando'"
+            lt = self._travar_lote(c, lote_id)
+            n = c.run(
+                "UPDATE lotes SET prompt_en = ?, compilador = ?, status = 'processando', traducao = ?"
                 " WHERE id = ? AND prompt_en IS NULL",
-                (prompt_en, compilador, lote_id),
+                (prompt_en, compilador, json.dumps(traducao, ensure_ascii=False) if traducao else None, lote_id),
             )
             self.evento(c, lote_id, "prompt", {"compilador": compilador, **(detalhe or {})})
+            if n and lt is not None and lt.get("revisao"):
+                passo = versoes_mod.passo_traducao(
+                    versoes_mod.GRUPO_PEDIDO, prompt_en, compilador, traducao or {}, material
+                )
+                self._gravar_versao(c, lt, "traducao", passo, material)
+
+    # -- versões do pedido (ADR 0018) --------------------------------------------------------
+
+    def _travar_lote(self, c, lote_id: str) -> dict | None:
+        """O lote, travado até o fim da transação (Postgres): as versões de um pedido nascem uma de cada vez."""
+        return c.one("SELECT * FROM lotes WHERE id = ?" + (" FOR UPDATE" if self.pg else ""), (lote_id,))
+
+    def _grupo_da_foto(self, c, lote_id: str, texto: str | None) -> str:
+        """O grupo de texto de uma foto (render2go_servico.versoes.grupos_de): o do pedido ou o da 1ª foto, pelo nome,
+        com o mesmo texto próprio."""
+        if not texto:
+            return versoes_mod.GRUPO_PEDIDO
+        f = c.one("SELECT id FROM fotos WHERE lote_id = ? AND prompt = ? ORDER BY nome LIMIT 1", (lote_id, texto))
+        return f["id"] if f else versoes_mod.GRUPO_PEDIDO
+
+    def _versao_base(
+        self,
+        c,
+        lote_id: str,
+        origem: str,
+        analisar: Callable[[str], dict] | None,
+        regras: dict | None,
+        anterior: dict | None = None,
+    ) -> dict:
+        """A base de uma versão (envio ou edição do texto): o pedido, o detalhamento, as fotos e os grupos de texto,
+        com a intenção de cada um lida pela API (`analisar`)."""
+        lt = self._travar_lote(c, lote_id)
+        fotos = c.all("SELECT id, nome, bytes, prompt FROM fotos WHERE lote_id = ?", (lote_id,))
+        pedido = json.loads(lt["pedido"])
+        grupos = versoes_mod.grupos_de(pedido["prompt"], fotos)
+        for g in grupos:
+            g["intencao"] = analisar(g["texto"]) if analisar else None
+        conteudo = versoes_mod.base(origem, pedido, lt["revisao"], fotos, grupos, regras or {}, anterior)
+        return self._gravar_versao(c, lt, origem, conteudo, None)
+
+    def _gravar_versao(self, c, lt: dict, origem: str, conteudo: dict, material: str | None) -> dict:
+        """Grava a próxima versão do lote `lt` (já travado por quem chama) e decide a liberação: no modo "seguir", a
+        versão se libera sozinha enquanto nenhum passo material espera a decisão do cliente (`decisao_em`); no
+        "revisar", nunca sozinha. A base (envio ou edição) recomeça a decisão do zero."""
+        if origem not in versoes_mod.ORIGENS:
+            raise BancoError(f"origem de versão inválida: {origem}")
+        agora = time.time()
+        ant = c.one("SELECT numero, hash FROM versoes WHERE lote_id = ? ORDER BY numero DESC LIMIT 1", (lt["id"],))
+        numero = int(ant["numero"]) + 1 if ant else 1
+        h = versoes_mod.encadear(ant["hash"] if ant else None, conteudo)
+        vid = novo_id("ver")
+        base = origem in versoes_mod.BASES
+        decisao = None if base else lt.get("decisao_em")
+        if material and decisao is None:
+            decisao = agora
+        liberar = lt["revisao"] == "seguir" and decisao is None
+        c.run(
+            "INSERT INTO versoes (id, lote_id, numero, criado, origem, conteudo, hash, material, liberada_em,"
+            " liberada_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (vid, lt["id"], numero, agora, origem, versoes_mod.canonico(conteudo), h, material,
+             agora if liberar else None, "automatico" if liberar else None),
+        )  # fmt: skip
+        liberada = vid if liberar else (None if base else lt.get("versao_liberada"))
+        c.run(
+            "UPDATE lotes SET versao_atual = ?, versao_liberada = ?, decisao_em = ? WHERE id = ?",
+            (vid, liberada, decisao, lt["id"]),
+        )
+        lt.update(versao_atual=vid, versao_liberada=liberada, decisao_em=decisao)
+        self.evento(c, lt["id"], "versao", {"numero": numero, "origem": origem, "material": material,
+                                            "liberada": liberar})  # fmt: skip
+        return {"id": vid, "numero": numero, "hash": h, "liberada": liberar}
+
+    def estados_versao(self, lotes: list[str]) -> dict[str, dict]:
+        """O estado da versão atual de cada pedido com versões (render2go_servico.versoes.estado), com a liberação:
+        `liberada` (a atual pode ir para os pods), `numero_liberado`, `decisao_em` e `compilando` (traduções que ainda
+        não terminaram)."""
+        if not lotes:
+            return {}
+        marcas = ", ".join("?" * len(lotes))
+        with self.tx() as c:
+            lts = c.all(
+                f"SELECT id, versao_atual, versao_liberada, decisao_em FROM lotes WHERE id IN ({marcas})"
+                " AND versao_atual IS NOT NULL",
+                tuple(lotes),
+            )
+            if not lts:
+                return {}
+            ids = tuple(r["id"] for r in lts)
+            marcas = ", ".join("?" * len(ids))
+            linhas = c.all(
+                "SELECT lote_id, id, numero, hash, origem, conteudo, criado, liberada_em, liberada_por FROM versoes"
+                f" WHERE lote_id IN ({marcas}) ORDER BY lote_id, numero",
+                ids,
+            )
+            compilando = {
+                r["lote_id"]: int(r["n"])
+                for r in c.all(
+                    f"SELECT lote_id, COUNT(*) AS n FROM jobs WHERE lote_id IN ({marcas}) AND tipo = 'compilar'"
+                    " AND status IN ('pendente', 'em_andamento') GROUP BY lote_id",
+                    ids,
+                )
+            }
+        por: dict[str, list[dict]] = {}
+        for v in linhas:
+            por.setdefault(v["lote_id"], []).append(v)
+        out: dict[str, dict] = {}
+        for lt in lts:
+            vs = por.get(lt["id"]) or []
+            ate = next((x["numero"] for x in vs if x["id"] == lt["versao_atual"]), 0)
+            est = versoes_mod.estado([v for v in vs if v["numero"] <= ate])
+            if est is None:
+                continue
+            lib = next((v for v in vs if v["id"] == lt["versao_liberada"]), None)
+            est.update(
+                id=lt["versao_atual"],
+                liberada=lt["versao_liberada"] == lt["versao_atual"],
+                numero_liberado=lib["numero"] if lib else None,
+                liberada_por=lib["liberada_por"] if lib else None,
+                decisao_em=lt["decisao_em"],
+                compilando=compilando.get(lt["id"], 0),
+            )
+            out[lt["id"]] = est
+        return out
+
+    def aprovar_versao(self, lote_id: str, cliente_id: str, numero: int, hash_: str) -> dict:
+        """O cliente aprova a versão que viu (número e hash): ela vai para os pods. No modo "revisar", só a versão com
+        todas as traduções prontas; nos dois modos, só a versão atual (outra aba, uma tradução nova ou uma edição
+        mudaram a versão: VersaoMudou, nada muda). Aprovar de novo a versão já liberada não muda nada."""
+        agora = time.time()
+        with self.tx() as c:
+            lt = c.one(
+                "SELECT * FROM lotes WHERE id = ? AND cliente_id = ?" + (" FOR UPDATE" if self.pg else ""),
+                (lote_id, cliente_id),
+            )
+            if lt is None:
+                raise BancoError("lote não encontrado")
+            if not lt.get("versao_atual"):
+                raise BancoError("este pedido não tem versões para aprovar")
+            if lt["status"] not in ("aprovado", "processando") or lt.get("interrompido_em"):
+                raise BancoError("o pedido não está esperando a sua aprovação")
+            v = c.one("SELECT * FROM versoes WHERE id = ?", (lt["versao_atual"],))
+            if int(v["numero"]) != int(numero) or not hmac.compare_digest(str(v["hash"]), str(hash_)):
+                raise VersaoMudou("o pedido mudou depois que você o abriu: confira a versão nova antes de aprovar")
+            if lt["versao_liberada"] == lt["versao_atual"]:
+                return {"numero": int(v["numero"]), "ja": True}
+            if lt["revisao"] == "revisar":
+                falta = c.one(
+                    "SELECT COUNT(*) AS n FROM jobs WHERE lote_id = ? AND tipo = 'compilar'"
+                    " AND status IN ('pendente', 'em_andamento')",
+                    (lote_id,),
+                )
+                todas = c.all(
+                    "SELECT numero, hash, origem, conteudo, criado FROM versoes WHERE lote_id = ? AND numero <= ?"
+                    " ORDER BY numero",
+                    (lote_id, int(v["numero"])),
+                )
+                est = versoes_mod.estado(todas)
+                if int(falta["n"]) or est is None or not versoes_mod.traduzida(est):
+                    raise BancoError("o texto final ainda está sendo preparado; aprove quando ele aparecer")
+            c.run("UPDATE lotes SET versao_liberada = ?, decisao_em = NULL WHERE id = ?", (lt["versao_atual"], lote_id))
+            c.run("UPDATE versoes SET liberada_em = ?, liberada_por = 'cliente' WHERE id = ?", (agora, v["id"]))
+            self.evento(c, lote_id, "versao_aprovada", {"numero": int(v["numero"]), "hash": v["hash"],
+                                                        "modo": lt["revisao"]})  # fmt: skip
+        return {"numero": int(v["numero"]), "ja": False}
+
+    def editar_texto(
+        self,
+        lote_id: str,
+        cliente_id: str,
+        numero: int,
+        hash_: str,
+        grupo: str,
+        texto: str,
+        analisar: Callable[[str], dict] | None = None,
+        regras: dict | None = None,
+    ) -> dict:
+        """O cliente muda o texto de um grupo (o do pedido ou um texto próprio) antes de qualquer vídeo começar: a
+        versão vista precisa ser a atual (VersaoMudou), as traduções saem, o pedido volta para a revisão de conteúdo
+        (a equipe vê o texto novo antes de qualquer pod) e nasce a base nova (origem "edicao"). Com um vídeo já num pod
+        ou pronto, recusa: o caminho é parar o pedido e fazer outro."""
+        with self.tx() as c:
+            # os jobs antes do lote: a ordem da conclusão (job, depois lote); com um pod pegando um job agora, espera
+            jobs = c.all(
+                "SELECT j.id, j.tipo, j.status FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                " WHERE j.lote_id = ? AND l.cliente_id = ?" + (" FOR UPDATE OF j" if self.pg else ""),
+                (lote_id, cliente_id),
+            )
+            lt = self._travar_lote(c, lote_id)
+            if lt is None or lt["cliente_id"] != cliente_id:
+                raise BancoError("lote não encontrado")
+            if not lt.get("versao_atual"):
+                raise BancoError("este pedido não tem versões para editar")
+            if lt["status"] not in ("aguardando_aprovacao", "aprovado", "processando") or lt.get("interrompido_em"):
+                raise BancoError("o pedido não pode mais ser editado")
+            v = c.one("SELECT numero, hash FROM versoes WHERE id = ?", (lt["versao_atual"],))
+            if int(v["numero"]) != int(numero) or not hmac.compare_digest(str(v["hash"]), str(hash_)):
+                raise VersaoMudou("o pedido mudou depois que você o abriu: confira a versão nova antes de editar")
+            if any(j["tipo"] == "render" and j["status"] not in ("pendente", "cancelado") for j in jobs):
+                raise BancoError("um vídeo deste pedido já começou: pare o pedido e faça outro com o texto novo")
+            if any(j["tipo"] == "compilar" and j["status"] == "em_andamento" for j in jobs):
+                raise BancoError("a tradução do texto está em andamento; tente de novo em alguns segundos")
+            pedido = json.loads(lt["pedido"])
+            if grupo == versoes_mod.GRUPO_PEDIDO:
+                antes = pedido["prompt"]
+                pedido["prompt"] = texto
+                c.run("UPDATE fotos SET prompt = NULL WHERE lote_id = ? AND prompt = ?", (lote_id, texto))
+            else:
+                f = c.one("SELECT prompt FROM fotos WHERE id = ? AND lote_id = ?", (grupo, lote_id))
+                if f is None or not f["prompt"] or self._grupo_da_foto(c, lote_id, f["prompt"]) != grupo:
+                    raise BancoError("texto não encontrado neste pedido")
+                antes = f["prompt"]
+                novo = None if texto == pedido["prompt"] else texto  # igual ao do pedido: não é texto próprio
+                c.run("UPDATE fotos SET prompt = ? WHERE lote_id = ? AND prompt = ?", (novo, lote_id, antes))
+            if antes == texto:
+                raise BancoError("o texto novo é igual ao de agora")
+            distintos = c.one(
+                "SELECT COUNT(DISTINCT prompt) AS n FROM fotos WHERE lote_id = ? AND prompt IS NOT NULL", (lote_id,)
+            )["n"]
+            pedido.pop("textos_por_foto", None)
+            if distintos:
+                pedido["textos_por_foto"] = int(distintos)
+            c.run("DELETE FROM jobs WHERE lote_id = ?", (lote_id,))  # nenhum começou: nada cobrado nem reservado
+            c.run(
+                "UPDATE lotes SET pedido = ?, status = 'aguardando_aprovacao', aprovado_em = NULL, aprovado_por = NULL,"
+                " prompt_en = NULL, compilador = NULL, traducao = NULL WHERE id = ?",
+                (json.dumps(pedido, ensure_ascii=False), lote_id),
+            )
+            c.run("UPDATE fotos SET prompt_en = NULL, traducao = NULL WHERE lote_id = ?", (lote_id,))
+            self.evento(c, lote_id, "texto_editado", {"grupo": grupo, "versao_vista": int(numero), "jobs": len(jobs)})
+            nova = self._versao_base(c, lote_id, "edicao", analisar, regras, {"grupo": grupo, "texto": antes})
+        return {"numero": nova["numero"], "status": "aguardando_aprovacao"}
+
+    def guarda_trocou(self, job_id: str, worker: str, tentativa: str | None, prompt_en: str, motivo: str) -> dict:
+        """A guarda final trocou o prompt de um vídeo na hora de ir para o pod (render2go_servico.api,
+        `sem_pessoa_inventada`): o vídeo não vai com outra versão sem decisão. A troca vira um passo material da
+        versão (o pedido espera o cliente nos dois modos) e o vídeo volta para a fila sem contar tentativa."""
+        with self.tx() as c:
+            job = self._da_tentativa(c, job_id, worker, tentativa)
+            lt = self._travar_lote(c, job["lote_id"])
+            f = c.one("SELECT id, nome, prompt FROM fotos WHERE id = ?", (job["foto_id"],))
+            grupo = self._grupo_da_foto(c, job["lote_id"], f["prompt"])
+            passo = versoes_mod.passo_guarda(grupo, f["nome"], f["id"], prompt_en, motivo)
+            v = self._gravar_versao(c, lt, "guarda", passo, motivo)
+            c.run(
+                "UPDATE jobs SET status = 'pendente', worker = NULL, lease_ate = NULL, atualizado = ?,"
+                " tentativas = CASE WHEN tentativas > 0 THEN tentativas - 1 ELSE 0 END WHERE id = ?",
+                (time.time(), job_id),
+            )
+        return v
+
+    def prompt_do_job(self, job_id: str, prompt_sha: str) -> None:
+        """O SHA-256 do prompt que foi para o pod com este vídeo (o que ele executou de fato)."""
+        with self.tx() as c:
+            c.run("UPDATE jobs SET prompt_sha = ? WHERE id = ?", (prompt_sha, job_id))
 
     # -- fila -----------------------------------------------------------------------------
 
@@ -3353,7 +3686,8 @@ class Banco:
                 fora = f" AND l.cliente_id NOT IN ({', '.join('?' * len(sem_saldo))})" if sem_saldo else ""
                 job = c.one(
                     f"WITH inic AS ({INICIADOS_POR_CLIENTE})"
-                    " SELECT j.*, l.cliente_id AS _cliente, l.preco_video AS _preco, l.cobranca AS _cobranca"
+                    " SELECT j.*, l.cliente_id AS _cliente, l.preco_video AS _preco, l.cobranca AS _cobranca,"
+                    " l.versao_atual AS _versao_atual, l.versao_liberada AS _versao_liberada"
                     " FROM jobs j JOIN lotes l ON l.id = j.lote_id"
                     " LEFT JOIN fotos f ON f.id = j.foto_id"
                     " LEFT JOIN inic ON inic.cliente_id = l.cliente_id"
@@ -3367,6 +3701,9 @@ class Banco:
                     # pedidos da mesma conta, um depois do outro: os vídeos só do mais antigo em andamento
                     # (a tradução do pedido seguinte pode adiantar: é rápida e não gera vídeo)
                     f" AND (j.tipo = 'compilar' OR NOT EXISTS ({PEDIDO_ANTERIOR_ABERTO})){liberada}"
+                    # versões do pedido (ADR 0018): o vídeo só com a versão atual liberada (a tradução, antes: é ela
+                    # que faz o texto final que o cliente aprova no modo "revisar")
+                    f" AND (j.tipo = 'compilar' OR {VERSAO_LIBERADA.format(t='l')})"
                     f" AND j.tipo IN ({', '.join('?' * len(tipos))}){filtro_modelo}{fora}"
                     # o compilar do lote passa na frente; o de um texto próprio espera a vez como um render
                     " ORDER BY CASE WHEN j.tipo = 'compilar' AND j.foto_id IS NULL THEN 0 ELSE 1 END, l.prioridade,"
@@ -3376,6 +3713,8 @@ class Banco:
                 if job is None:
                     return None
                 cliente, preco = job.pop("_cliente"), job.pop("_preco")
+                versao = job.pop("_versao_liberada") if job["tipo"] == "render" else job.get("_versao_atual")
+                job.pop("_versao_atual", None)
                 if job.pop("_cobranca") == "video" and preco and job["tipo"] == "render":
                     self._travar_cliente(c, cliente)
                     if self._saldo(c, cliente) - self._reservado(c, cliente) < int(preco):
@@ -3389,8 +3728,8 @@ class Banco:
             c.run(
                 "UPDATE jobs SET status = 'em_andamento', worker = ?, lease_ate = ?, tentativas = tentativas + 1,"
                 " atualizado = ?, tentativa_id = ?, tentativa_em = ?, prazo_tentativa = ?, progresso = NULL,"
-                " progresso_em = ?, gpu_em = NULL WHERE id = ?",
-                (worker, min(agora + lease_s, prazo), agora, tentativa, agora, prazo, agora, job["id"]),
+                " progresso_em = ?, gpu_em = NULL, versao_id = ?, prompt_sha = NULL WHERE id = ?",
+                (worker, min(agora + lease_s, prazo), agora, tentativa, agora, prazo, agora, versao, job["id"]),
             )
             if job["tipo"] == "render":  # fim da subida deste pod (previsão para o cliente)
                 c.run(
@@ -3399,7 +3738,7 @@ class Banco:
                 )
             job.update(
                 status="em_andamento", worker=worker, tentativas=job["tentativas"] + 1, tentativa_id=tentativa,
-                tentativa_em=agora, prazo_tentativa=prazo,
+                tentativa_em=agora, prazo_tentativa=prazo, versao_id=versao,
             )  # fmt: skip
             return job
 
@@ -3648,6 +3987,13 @@ class Banco:
                 " WHERE f.lote_id = ? AND f.prompt = (SELECT g.prompt FROM fotos g WHERE g.id = ?))",
                 (motivo, lote_id, lote_id, foto_id),
             )
+            vt = self._travar_lote(c, lote_id)
+            f = c.one("SELECT prompt FROM fotos WHERE id = ?", (foto_id,))
+            if vt is not None and vt.get("revisao") and f is not None:  # o cartão diz que essas fotos não viram vídeo
+                grupo = self._grupo_da_foto(c, lote_id, f["prompt"])
+                # só o código: a palavra e a categoria que barraram ficam no evento e no job (o painel vê), nunca na
+                # versão, que o cartão do cliente mostra
+                self._gravar_versao(c, vt, "recusa", versoes_mod.passo_recusa(grupo, "texto"), None)
 
     def falhas_de(self, lotes: list[str]) -> dict[str, list[dict]]:
         """Os vídeos que não saíram (erro ou cancelado) de cada pedido, com o motivo gravado e as notas dos
@@ -4101,13 +4447,15 @@ class Banco:
         ]
 
     def _liberado(self) -> str:
-        """Condição SQL (jobs j, fotos f) para contar o job como trabalho de pod: o vídeo, com a foto liberada pelo
-        filtro das fotos; a tradução, com alguma foto do pedido liberada (com o analisador parado, nenhum pod sobe
-        só para traduzir pedidos que não vão gerar nada ainda)."""
+        """Condição SQL (jobs j, fotos f, lotes l) para contar o job como trabalho de pod: o vídeo, com a foto liberada
+        pelo filtro das fotos e a versão atual do pedido liberada (ADR 0018: o pedido que espera o cliente não liga
+        nem segura pod); a tradução, com alguma foto do pedido liberada (com o analisador parado, nenhum pod sobe só
+        para traduzir pedidos que não vão gerar nada ainda)."""
+        versao = VERSAO_LIBERADA.format(t="l")
         if not self.exigir_filtro:
-            return "1 = 1"
+            return f"(j.tipo <> 'render' OR {versao})"
         return (
-            "((j.tipo = 'render' AND f.filtro = 'ok')"
+            f"((j.tipo = 'render' AND f.filtro = 'ok' AND {versao})"
             # a tradução da legenda por foto (ADR 0014) leva a foto ao pod: só com a foto liberada
             " OR (j.tipo = 'compilar' AND j.foto_id IS NOT NULL AND l.legenda = 1 AND f.filtro = 'ok')"
             " OR (j.tipo = 'compilar' AND (j.foto_id IS NULL OR COALESCE(l.legenda, 0) = 0) AND EXISTS"

@@ -29,7 +29,11 @@ Cliente (sessão; ou Authorization: Bearer <código de acesso antigo>):
     POST /api/interesses               "Tenho interesse" numa finalidade em breve
     POST /api/lotes                    cria o lote; devolve uma URL de envio por foto (pré-pago: confere o saldo)
     POST /api/lotes/{id}/enviado       confere no armazenamento, cobra (pré-pago) e manda para aprovação
-    GET  /api/lotes  /api/lotes/{id}   andamento, previsão, cobrança e links dos vídeos (abrir e baixar)
+    GET  /api/lotes  /api/lotes/{id}   andamento, previsão, cobrança, links dos vídeos (abrir e baixar) e o cartão
+                                       "Entendemos seu pedido assim" (ADR 0018: versão, adaptação e texto final)
+    POST /api/pedido/entendimento      o que entendemos de um texto antes de enviar (intenção, ajustes, pendências)
+    POST /api/lotes/{id}/versao/aprovar  aprova a versão vista (número e hash): só ela vai para os pods
+    POST /api/lotes/{id}/texto         muda um texto antes de qualquer vídeo começar (volta para a revisão)
     GET  /api/saldo                    pré-pago: saldo, preços por segundo e extrato
     POST /api/pagamentos/pix           recarga por Pix (ADR 0008): QR Code e copia e cola
     GET  /api/pagamentos  /api/pagamentos/{id}   recargas e a situação (confere no Mercado Pago)
@@ -128,13 +132,14 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field, field_validator
-from render2go_worker import conferencia, filtro_imagem, filtros, lote, preparo, presets, traducao
+from render2go_worker import compiler, conferencia, filtro_imagem, filtros, intencao, lote, preparo, presets, traducao
 from render2go_worker import legenda as legenda_mod
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from render2go_servico import (
     SERVICO_DIR,
     contas,
+    entendimento,
     filtro_fotos,
     modelos,
     montagem,
@@ -144,6 +149,7 @@ from render2go_servico import (
     pessoas,
     precos,
     suporte,
+    versoes,
 )
 from render2go_servico.armazenamento import (
     Armazenamento,
@@ -152,7 +158,7 @@ from render2go_servico.armazenamento import (
     chave_saida,
     chave_tentativa,
 )
-from render2go_servico.db import MONTAGEM_VIDEOS_DIAS, Banco, BancoError, SaldoInsuficiente, novo_id
+from render2go_servico.db import MONTAGEM_VIDEOS_DIAS, Banco, BancoError, SaldoInsuficiente, VersaoMudou, novo_id
 
 TIPOS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 MAX_FOTOS_LOTE = 1000  # por envio (pedido HTTP): o pedido maior vai em partes, sem limite no total (pago e interno)
@@ -691,6 +697,10 @@ class Config:
     # (RENDER2GO_PRECO_MONTAGEM, centavos; None: o plano pago não monta)
     montagem: str = "interno"
     preco_montagem: int | None = None
+    # revisão pelo cliente antes de gerar (ADR 0018; RENDER2GO_REVISAO_CLIENTE=0 desliga): o pedido pode escolher o modo
+    # "revisar" (só gera depois que o cliente aprova a versão final). Desligada, todo pedido segue no modo "seguir", que
+    # continua parando para a decisão do cliente num passo material
+    revisao_cliente: bool = True
     retrato_s: float = RETRATO_S  # validade do retrato da fila e dos pods (0: sempre lê do banco)
     # foto do perfil: quem baixa do Gravatar (os testes trocam; nenhum teste fala com o Gravatar de verdade)
     baixar_gravatar: Callable[[str], Any] = perfil.baixar_gravatar
@@ -824,6 +834,7 @@ class Config:
             legenda_por_foto=legenda == "1",
             montagem=modo_montagem,
             preco_montagem=preco_montagem,
+            revisao_cliente=os.environ.get("RENDER2GO_REVISAO_CLIENTE", "1").strip() != "0",
         )
 
     def limitar(self, chave: str) -> None:
@@ -1222,6 +1233,85 @@ def _fotos_do_envio(cliente_id: str, fotos_in: list, textos: list[str | None], u
     return fotos
 
 
+def briefing_de(b: BriefingIn | None) -> dict | None:
+    """O detalhamento como fica no pedido: só os campos preenchidos, sem espaços sobrando (None: nenhum)."""
+    if b is None:
+        return None
+    d = {
+        "uso": b.uso,
+        "manter": " ".join((b.manter or "").split()) or None,
+        "evitar": list(dict.fromkeys(b.evitar)),
+        "outros": " ".join((b.outros or "").split()) or None,
+    }
+    return {k: v for k, v in d.items() if v} or None
+
+
+def conferir_briefing(b: dict | None) -> None:
+    """Os textos livres do detalhamento passam pelo mesmo filtro de conteúdo (C1) do texto do pedido: a equipe e o
+    cartão do cliente os mostram, mesmo sem irem para o gerador."""
+    for campo in ("manter", "outros"):
+        if b and b.get(campo):
+            d = filtros.avaliar(b[campo])
+            if not d.allowed:
+                recusa = motivos.recusa_texto(d.reason)
+                raise HTTPException(422, f"Detalhes do pedido: {recusa}")
+
+
+def restricoes_do_pedido(pedido: dict) -> tuple[str, ...]:
+    """As restrições marcadas no detalhamento (o "Não pode acontecer"), na ordem."""
+    return tuple((pedido.get("briefing") or {}).get("evitar") or ())
+
+
+def intencao_dict(it: intencao.Intencao) -> dict:
+    """A intenção como fica na versão (render2go_servico.versoes): o tipo, as ações, as negações, as restrições e as
+    pendências (só os códigos; as mensagens saem do código na hora de mostrar)."""
+    return {"tipo": it.tipo, "acoes": list(it.acoes), "negadas": list(it.negadas), "restricoes": list(it.restricoes),
+            "pendencias": [p.codigo for p in it.pendencias], "versao": it.versao}  # fmt: skip
+
+
+def analisador(pedido: dict) -> Callable[[str], dict]:
+    """A leitura da intenção de cada texto de um pedido, com as restrições marcadas e a duração dele."""
+    extras = restricoes_do_pedido(pedido)
+    duracao = int(pedido.get("duracao") or intencao.DURACAO_MAX_S)
+    return lambda t: intencao_dict(intencao.analisar(t, restricoes=extras, duracao_max=duracao))
+
+
+def regras_da_versao() -> dict:
+    """As versões do que decide a adaptação, gravadas na base de cada versão do pedido."""
+    rec = lote.load_receitas()
+    return {"intencao": intencao.VERSAO, "receitas": rec.get("version"), "presets": rec.get("presets_version"),
+            "compilador": f"i2v@{compiler.PROFILES['i2v']['version']}"}  # fmt: skip
+
+
+def conferir_pendencias(textos: list[tuple[str, str]], extras: tuple[str, ...], duracao: int, confirmar: bool) -> bool:
+    """A intenção de cada texto (render2go_worker.intencao) antes de criar nada: contradição e pedido fora da
+    capacidade voltam 422 com as pendências (o cliente muda o texto); a ambiguidade, até o cliente confirmar
+    "seguir com o texto como está" (`confirmar`). `textos`: [(de onde, texto)]. Devolve se houve ambiguidade
+    confirmada (fica no pedido)."""
+    itens = []
+    for de, t in textos:
+        for pd in intencao.analisar(t, restricoes=extras, duracao_max=duracao).pendencias:
+            itens.append({"texto": de, "trecho": pd.trecho, "codigo": pd.codigo, "mensagem": pd.mensagem,
+                          "confirmavel": pd.confirmavel})  # fmt: skip
+    bloqueiam = [x for x in itens if not x["confirmavel"]]
+    if bloqueiam or (itens and not confirmar):
+        raise HTTPException(422, {"pendencias": itens, "confirmavel": not bloqueiam})
+    return bool(itens)
+
+
+def material_da_traducao(it: intencao.Intencao, body: PromptIn, trocado: bool) -> str | None:
+    """Por que esta tradução precisa da decisão do cliente (ADR 0018), ou None. A leitura é a da API (o pod de antes
+    não manda a dele): uma instrução que não chegou ao prompt (o padrão no lugar de uma ação, a substituição por pessoa
+    inventada, a guarda da tradução que trocou o prompt) ou uma restrição que o pod não aplicou."""
+    if it.tipo == "vazio":
+        return None  # sem instrução, o movimento padrão é o que foi prometido
+    if set(it.restricoes) - set(body.restricoes or ()) or (it.tipo == "restricao" and not body.restrito):
+        return "restricoes"
+    if it.tipo != "restricao" and (body.substituiu or body.padrao or body.vago or trocado):
+        return "substituiu"
+    return None
+
+
 def duracoes(plano: str) -> list[int]:
     """Durações aceitas nos pedidos novos: 3 s só no teste gratuito; nos outros planos, 4 e 5 s (o teto de 13/10/2026,
     `precos.DURACAO_MAX`; os pedidos de antes seguem com a duração que tinham)."""
@@ -1319,6 +1409,20 @@ class FotosIn(BaseModel):
     """Mais fotos num pedido grande, em partes (12/10/2026)."""
 
     fotos: list[FotoIn] = Field(min_length=1, max_length=MAX_FOTOS_LOTE)
+    confirmar_texto: bool = False  # textos próprios ambíguos: "seguir com o texto como está" (ADR 0018)
+
+
+class BriefingIn(BaseModel):
+    """O detalhamento opcional do pedido (17/10/2026): cada campo é do cliente. O uso é só contexto (nunca vira
+    elemento da cena nem vai para o gerador); o "não pode acontecer" marcado vale na geração (restrições do
+    render2go_worker.intencao) e na conferência; os textos livres valem só na conferência do resultado."""
+
+    uso: Literal["redes", "anuncio", "site", "whatsapp", "outro"] | None = None
+    manter: str | None = Field(None, max_length=200)  # o que deve continuar igual
+    evitar: list[Literal["sem_pessoas", "camera_parada", "sem_rotacao", "sem_aproximacao", "estatico"]] = Field(
+        default_factory=list, max_length=5
+    )
+    outros: str | None = Field(None, max_length=200)  # outras coisas que não podem mudar
 
 
 class LoteIn(BaseModel):
@@ -1333,6 +1437,43 @@ class LoteIn(BaseModel):
     modelo: str = Field(modelos.PADRAO, max_length=60)
     navegador: NavegadorIn | None = None
     fotos: list[FotoIn] = Field(max_length=MAX_FOTOS_LOTE)
+    # ADR 0018: "seguir" (gera com a adaptação; só uma mudança material pede a decisão) ou "revisar" (só gera depois
+    # que o cliente aprova a versão final); o detalhamento opcional; e a confirmação do texto ambíguo
+    revisao: Literal["seguir", "revisar"] = "seguir"
+    briefing: BriefingIn | None = None
+    confirmar_texto: bool = False
+
+
+class AprovarVersaoIn(BaseModel):
+    """A versão que o cliente viu (ADR 0018): o número e o hash; outra versão atual recusa (409)."""
+
+    numero: int = Field(ge=1, le=10**6)
+    hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class TextoIn(AprovarVersaoIn):
+    """Um texto novo para um grupo (o do pedido, "pedido", ou o id de um texto próprio), antes de qualquer vídeo."""
+
+    grupo: str = Field(min_length=1, max_length=80)
+    texto: str = Field(min_length=3, max_length=600)
+    confirmar_texto: bool = False
+
+
+class EntendimentoIn(BaseModel):
+    """O que entendemos de um pedido antes de enviar (a mesma leitura do envio, sem criar nada)."""
+
+    prompt: str = Field(min_length=3, max_length=600)
+    receita: str = Field("produto-close", max_length=60)
+    duracao: int | None = Field(None, ge=1, le=60)
+    briefing: BriefingIn | None = None
+    textos: list[str] = Field(default_factory=list, max_length=MAX_TEXTOS_FOTO)  # os textos próprios distintos
+
+    @field_validator("textos")
+    @classmethod
+    def _textos_curtos(cls, v: list[str]) -> list[str]:
+        if any(len(t) > 600 for t in v):
+            raise ValueError("texto próprio acima de 600 caracteres")
+        return v
 
 
 class PromptIn(BaseModel):
@@ -1348,9 +1489,17 @@ class PromptIn(BaseModel):
     # a legenda da foto (ADR 0014; render2go_worker.legenda.Legenda.como_dict), só na tradução de uma foto com a
     # legenda por foto; a API confere de novo (legenda.de_dict) e, fora do formato, a foto segue sem ela
     legenda: dict[str, Any] | None = None
+    # a intenção do texto no pod (17/10/2026; render2go_worker.traducao.Traducao). Um pod de antes não manda nada:
+    # a API lê a intenção de novo e, se a instrução ou as restrições não chegaram ao prompt, pede a decisão do cliente
+    intencao: str | None = Field(None, max_length=20)
+    restricoes: list[str] | None = Field(None, max_length=20)
+    restrito: bool = False
+    substituiu: bool = False
 
     def model_post_init(self, _: Any) -> None:
         self.pessoas_recusadas = [p[:40] for p in self.pessoas_recusadas]
+        if self.restricoes is not None:
+            self.restricoes = [r[:40] for r in self.restricoes]
 
     @field_validator("legenda")
     @classmethod
@@ -2396,6 +2545,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "proporcao_auto": [lote.VERTICAL, lote.HORIZONTAL],
             "ampliacao_aviso": preparo.AMPLIACAO_AVISO,
             "qualidades": list(lote.QUALIDADES),
+            # ADR 0018: o modo "revisar" (se a chave está ligada), os usos e o "Não pode acontecer" do detalhamento
+            "revisao_cliente": c.revisao_cliente,
+            "usos": [{"id": k, "texto": v} for k, v in entendimento.USOS.items()],
+            "restricoes": [{"id": k, "texto": entendimento.RESTRICOES[k]} for k in intencao.RESTRICOES_MARCAVEIS],
             "limites": {
                 "fotos": None,  # sem limite no pago e no interno; o teste tem o dele (plano.max_fotos)
                 "por_envio": FOTOS_POR_ENVIO,  # a página manda o pedido maior em partes
@@ -2461,6 +2614,19 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         # no teste gratuito, que já tem o teto de 5 fotos
         if cli["plano"] == "teste" and c.banco.fotos_hoje(cli["id"]) + len(body.fotos) > cli["cota_fotos_dia"]:
             raise HTTPException(429, f"cota diária de {cli['cota_fotos_dia']} fotos atingida")
+        # a intenção de cada texto antes de criar nada (17/10/2026): contradição e pedido fora da capacidade voltam com
+        # as pendências; a ambiguidade, até o cliente confirmar o texto como está
+        briefing = briefing_de(body.briefing)
+        conferir_briefing(briefing)
+        extras = tuple((briefing or {}).get("evitar") or ())
+        proprios = list(dict.fromkeys(t for t in textos if t))
+        ambiguo = conferir_pendencias(
+            [("Texto do pedido", body.prompt)] + [(f"Texto próprio: {t[:60]}", t) for t in proprios],
+            extras, int(body.duracao or intencao.DURACAO_MAX_S), body.confirmar_texto,
+        )  # fmt: skip
+        # com a legenda por foto ligada (experimento do ADR 0014, desligado em produção), o pedido segue como antes, sem
+        # versões: uma tradução por foto não cabe nos grupos de texto que o cliente vê e aprova
+        revisao = None if c.legenda_por_foto else body.revisao if c.revisao_cliente else "seguir"
         preco_video = None
         if cli["plano"] in precos.PLANOS_COBRADOS:  # pré-pago: cada vídeo é cobrado quando sai certo (ADR 0012)
             preco_video = precos.preco_video(body.qualidade, body.duracao)
@@ -2468,9 +2634,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             if livre < preco_video:  # o saldo paga ao menos o 1º vídeo; o resto espera a recarga
                 raise HTTPException(402, sem_saldo_video(preco_video, livre))
         fotos = _fotos_do_envio(cli["id"], body.fotos, textos, set())
-        pedido = body.model_dump(exclude={"fotos", "declarante", "navegador"})
+        pedido = body.model_dump(exclude={"fotos", "declarante", "navegador", "revisao", "briefing", "confirmar_texto"})
         if any(textos):  # pedido em sequência: os textos ficam nas fotos; aqui, só quantos são
             pedido["textos_por_foto"] = len({t for t in textos if t})
+        if briefing:  # o detalhamento fica no pedido (o pod não recebe: `reivindicar`)
+            pedido["briefing"] = briefing
+        if ambiguo:  # o cliente confirmou o texto ambíguo como está (auditoria do pedido)
+            pedido["texto_confirmado"] = True
         autorizacao = None
         if body.consentimento:  # registro de auditoria: conta, de onde, qual texto, quais fotos, sinais
             sinais = body.navegador.model_dump() if body.navegador else {}
@@ -2485,13 +2655,14 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if cli["plano"] == "teste":  # envio anterior que não terminou não segura o teste
             c.banco.substituir_envios(cli["id"])
         lid = c.banco.criar_lote(
-            cli["id"], pedido, fotos, origem=origem, autorizacao=autorizacao, preco_video=preco_video
+            cli["id"], pedido, fotos, origem=origem, autorizacao=autorizacao, preco_video=preco_video, revisao=revisao
         )
         c.banco.registrar_acesso(cli["id"], "pedido", origem, {"lote": lid, "fotos": len(fotos)})
         envios = _envios(c, fotos, c.banco.fotos(lid))
         # custo: a estimativa do pedido inteiro; cada vídeo é cobrado só quando sai certo (ADR 0012)
         custo = len(fotos) * body.variacoes * preco_video if preco_video else 0
-        return {"lote": lid, "envios": envios, "expira_s": URL_ENVIO_S, "custo": custo, "preco_video": preco_video}
+        return {"lote": lid, "envios": envios, "expira_s": URL_ENVIO_S, "custo": custo, "preco_video": preco_video,
+                "revisao": revisao}  # fmt: skip
 
     def _envios(c: Config, fotos: list[dict], gravadas: list[dict]) -> list[dict]:
         """URL de envio de cada foto: só aceita exatamente os bytes declarados (o R2 recusa outro tamanho)."""
@@ -2529,7 +2700,13 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         envio = SimpleNamespace(prompt=pedido["prompt"], fotos=body.fotos)
         textos = _textos_por_foto(envio, receita)
         existentes = c.banco.fotos(lote_id)
-        distintos = {f["prompt"] for f in existentes if f["prompt"]} | {t for t in textos if t}
+        ja = {f["prompt"] for f in existentes if f["prompt"]}
+        novos = list(dict.fromkeys(t for t in textos if t and t not in ja))
+        conferir_pendencias(
+            [(f"Texto próprio: {t[:60]}", t) for t in novos], restricoes_do_pedido(pedido),
+            int(pedido.get("duracao") or intencao.DURACAO_MAX_S), body.confirmar_texto,
+        )  # fmt: skip
+        distintos = ja | {t for t in textos if t}
         if len(distintos) > MAX_TEXTOS_FOTO:
             raise HTTPException(
                 422,
@@ -2560,7 +2737,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 )
             )
         try:
-            problemas = c.banco.confirmar_envio(lote_id, tamanhos)
+            problemas = c.banco.confirmar_envio(
+                lote_id, tamanhos, analisar=analisador(json.loads(lt["pedido"])), regras=regras_da_versao()
+            )
         except SaldoInsuficiente as e:  # outro pedido gastou o saldo enquanto as fotos subiam
             with contextlib.suppress(BancoError):
                 c.banco.recusar(lote_id, "saldo", "saldo insuficiente quando as fotos terminaram de chegar")
@@ -2626,7 +2805,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         livre: int | None = None,
         avaliacao: int | None = None,
         pedir_avaliacao: bool = False,
+        estado: dict | None = None,
     ) -> dict:
+        """Um pedido para a página. `estado`: o da versão atual (`Banco.estados_versao`), nos pedidos com versões
+        (ADR 0018): vira o cartão "Entendemos seu pedido assim" e, enquanto espera o cliente, a previsão diz isso."""
         if jobs is None:
             jobs = [j for j in c.banco.jobs(lt["id"]) if j["tipo"] == "render"]
         contagem = {
@@ -2654,6 +2836,23 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if por_video and lt["status"] in ("aprovado", "processando") and pendente:
             livre = c.banco.saldo_livre(cliente_id) if livre is None else livre
             aguardando_saldo = livre < int(lt["preco_video"])
+        cartao = None
+        if estado is None and lt.get("versao_atual"):
+            estado = c.banco.estados_versao([lt["id"]]).get(lt["id"])
+        if estado is not None:
+            cartao = entendimento.cartao(
+                estado, receitas=lote.load_receitas(), presets_data=entendimento.dados_presets(),
+                videos=len(jobs) or None, preco_video=lt["preco_video"],
+                duracao_max=int(pedido.get("duracao") or intencao.DURACAO_MAX_S),
+            )  # fmt: skip
+        espera_cliente = (
+            cartao is not None and not cartao["versao"]["liberada"] and lt["status"] in ("aprovado", "processando")
+            and not lt.get("interrompido_em") and pendente
+        )  # fmt: skip
+        if espera_cliente:
+            previsao = {"fase": "decisao" if cartao["decisoes"] else "revisao", "pronto": cartao["aprovar"]}
+        else:
+            previsao = {"fase": "saldo"} if aguardando_saldo else _previsao(c, lt, jobs)
         return {
             "lote": lt["id"],
             "status": lt["status"],
@@ -2680,13 +2879,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             ),
             "avaliacao": avaliacao,  # a nota que o cliente deu (1 a 5), se deu
             "pedir_avaliacao": pedir_avaliacao,  # mostrar o card de satisfação neste pedido
-            "previsao": {"fase": "saldo"} if aguardando_saldo else _previsao(c, lt, jobs),
+            "previsao": previsao,
             # pré-pago: quanto o pedido custou e quanto já voltou para o saldo; no modo por vídeo, o que já
             # foi cobrado dos vídeos entregues, o preço de cada um e se espera a recarga
             "cobranca": cobranca if lt["preco_video"] is not None else None,
             "por_video": por_video,
             "preco_video": lt["preco_video"],
             "aguardando_saldo": aguardando_saldo,
+            # ADR 0018: o modo de revisão, o cartão "Entendemos seu pedido assim" e se o pedido espera o cliente
+            "revisao": lt.get("revisao"),
+            "entendimento": cartao,
+            "espera_cliente": espera_cliente,
         }
 
     def _previsao(c: Config, lt: dict, jobs: list[dict]) -> dict | None:
@@ -2784,9 +2987,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         cobr = c.banco.cobrancas([lt["id"] for lt in lotes if lt["preco_video"] is not None])
         livre = c.banco.saldo_livre(cli["id"]) if any(lt.get("cobranca") == "video" for lt in lotes) else None
         notas, pedir = _avaliacoes(c, cli, lotes)
+        estados = c.banco.estados_versao([lt["id"] for lt in lotes if lt.get("versao_atual")])
         return [
             _resumo(lt, c, cli["id"], jobs[lt["id"]], cobr.get(lt["id"]), pedidos[lt["id"]], livre,
-                    avaliacao=notas.get(lt["id"]), pedir_avaliacao=lt["id"] in pedir)
+                    avaliacao=notas.get(lt["id"]), pedir_avaliacao=lt["id"] in pedir, estado=estados.get(lt["id"]))
             for lt in lotes
         ]  # fmt: skip
 
@@ -3174,6 +3378,89 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             raise HTTPException(404 if "não encontrado" in str(e) else 409, str(e)) from e
         _se_fechou(c, lote_id)
         return {"lote": lote_id, "cancelados": n}
+
+    @app.post("/api/lotes/{lote_id}/versao/aprovar")
+    def aprovar_versao(
+        lote_id: str, body: AprovarVersaoIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)
+    ):
+        """O cliente aprova a versão que viu (ADR 0018): no modo "revisar", o texto final; nos dois modos, uma decisão
+        pendente (a adaptação mudou). Outra aba, uma tradução nova ou uma edição mudaram a versão: 409, nada muda."""
+        try:
+            r = c.banco.aprovar_versao(lote_id, cli["id"], body.numero, body.hash)
+        except VersaoMudou as e:
+            raise HTTPException(409, str(e), headers={"X-Render2Go-Motivo": "versao"}) from e
+        except BancoError as e:
+            raise HTTPException(404 if "não encontrado" in str(e) else 409, str(e)) from e
+        c.banco.registrar_acesso(cli["id"], "versao_aprovada", origem_de(request), {"lote": lote_id, **r})
+        return {"lote": lote_id, **r}
+
+    @app.post("/api/lotes/{lote_id}/texto")
+    def mudar_texto(
+        lote_id: str, body: TextoIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)
+    ):
+        """Um texto novo antes de qualquer vídeo começar (ADR 0018): as mesmas conferências do envio (filtro de
+        conteúdo, estilo, intenção); o pedido volta para a revisão de conteúdo e a versão vista deixa de valer."""
+        lt = c.banco.lote(lote_id, cli["id"])
+        if lt is None:
+            raise HTTPException(404, "lote não encontrado")
+        pedido = json.loads(lt["pedido"])
+        texto = " ".join(body.texto.split())
+        d = filtros.avaliar(texto)
+        if not d.allowed:
+            c.banco.registrar_acesso(cli["id"], "texto_recusado_filtro", origem_de(request),
+                                     {"motivo": d.reason, "lote": lote_id, "texto": texto[:300]})  # fmt: skip
+            recusa = motivos.recusa_texto(d.reason)
+            raise HTTPException(422, recusa[0].upper() + recusa[1:])
+        receita = lote.load_receitas()["receitas"].get(pedido.get("receita"))
+        if receita is None:
+            raise HTTPException(422, "receita desconhecida")
+        try:
+            presets.compose("i2v", texto, receita["presets"])
+        except presets.PresetError as e:
+            raise HTTPException(422, str(e)) from e
+        conferir_pendencias([("Texto novo", texto)], restricoes_do_pedido(pedido),
+                            int(pedido.get("duracao") or intencao.DURACAO_MAX_S), body.confirmar_texto)  # fmt: skip
+        try:
+            r = c.banco.editar_texto(lote_id, cli["id"], body.numero, body.hash, body.grupo, texto,
+                                     analisar=analisador(pedido), regras=regras_da_versao())  # fmt: skip
+        except VersaoMudou as e:
+            raise HTTPException(409, str(e), headers={"X-Render2Go-Motivo": "versao"}) from e
+        except BancoError as e:
+            raise HTTPException(404 if "não encontrado" in str(e) else 409, str(e)) from e
+        c.banco.registrar_acesso(cli["id"], "texto_editado", origem_de(request), {"lote": lote_id, "grupo": body.grupo})
+        if cli["plano"] == "interno":  # como no envio: o dono revisa o próprio pedido ao fazê-lo
+            _aprovar(c, lote_id, "auto:interno")
+            return {"lote": lote_id, "status": "aprovado", "numero": r["numero"]}
+        return {"lote": lote_id, **r}
+
+    @app.post("/api/pedido/entendimento")
+    def entender_pedido(body: EntendimentoIn, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """O que entendemos de um pedido antes de enviar (a mesma leitura do envio, sem criar nada): por texto, a
+        intenção, a frase em português, os ajustes com o motivo e as pendências; e o que fica igual e os limites."""
+        c.limitar(f"entendimento:{cli['id']}")
+        rec = lote.load_receitas()
+        if body.receita not in rec["receitas"]:
+            raise HTTPException(422, "receita desconhecida")
+        briefing = briefing_de(body.briefing)
+        extras = tuple((briefing or {}).get("evitar") or ())
+        duracao = int(body.duracao or intencao.DURACAO_MAX_S)
+        textos = [body.prompt, *dict.fromkeys(" ".join(t.split()) for t in body.textos if t.strip())]
+        for t in textos:
+            if not filtros.avaliar(t).allowed:  # o mesmo aviso do envio, sem dizer a palavra
+                raise HTTPException(422, "um dos textos não segue as regras de conteúdo; reveja antes de enviar")
+        p = entendimento.dados_presets()
+        grupos = [{"texto": t, "proprio": i > 0, **entendimento.texto(t, body.receita, receitas=rec, presets_data=p,
+                   restricoes_extras=extras, duracao_max=duracao)} for i, t in enumerate(textos)]  # fmt: skip
+        continuidade = next((g.pop("continuidade") for g in grupos if g.get("continuidade")), None)
+        for g in grupos:
+            g.pop("continuidade", None)
+        categoria = traducao.categoria_da_receita(rec, body.receita)
+        return {
+            "grupos": grupos,
+            "preservar": entendimento.preservar({"briefing": briefing}, continuidade),
+            "limites": entendimento.limites(categoria, body.duracao),
+            "uso": entendimento.USOS.get((briefing or {}).get("uso") or ""),
+        }
 
     @app.post("/api/lotes/{lote_id}/avaliacao")
     def avaliar_lote(lote_id: str, body: AvaliacaoIn, cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -3774,7 +4061,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             for k in range(1, pedido["variacoes"] + 1)
         ]
         try:
-            c.banco.aprovar(lote_id, quem, tarefas, legenda=c.legenda_por_foto)
+            # pedido com versões (ADR 0018): uma tradução por texto, como o cliente vê no cartão (a legenda por foto,
+            # proposta e desligada, não entra nele)
+            c.banco.aprovar(lote_id, quem, tarefas, legenda=c.legenda_por_foto and not lt.get("revisao"))
         except BancoError as e:
             raise HTTPException(409, str(e)) from e
         _se_fechou(c, lote_id)  # todas as fotos recusadas pelo filtro das fotos: o pedido já fecha na aprovação
@@ -4229,6 +4518,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             return {"job": None, "fila": c.banco.fila()}
         lt = c.banco.lote(job["lote_id"])
         pedido = json.loads(lt["pedido"])
+        extras = restricoes_do_pedido(pedido)
+        pedido.pop("briefing", None)  # o detalhamento não vai para o pod: só as restrições marcadas (`regras`)
         foto = c.banco.foto(job["foto_id"]) if job["foto_id"] else None
         if job["tipo"] == "compilar" and foto is not None:
             # texto próprio de uma foto: o worker compila esse texto como compilaria o do pedido; na tradução da
@@ -4249,6 +4540,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         }
         if job["tipo"] == "compilar":  # categoria da foto e a regra da pessoa inventada (render2go_worker.traducao)
             out["regras"] = regras_traducao(c, lt, pedido, foto)
+            if extras:  # as restrições marcadas no pedido (17/10/2026); o pod de antes as ignora e a API percebe
+                out["regras"]["restricoes"] = list(extras)
             if _por_foto(lt, foto):  # legenda por foto (ADR 0014): a foto vai junto (só liberada, `reivindicar`)
                 out |= {
                     "legenda": True,
@@ -4259,9 +4552,24 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         if job["tipo"] == "render":
             # o do texto próprio da foto ou, com a legenda por foto (ADR 0014), o da própria foto; senão, o do pedido
             prompt_en = foto["prompt_en"] if foto["prompt"] or _por_foto(lt, foto) else lt["prompt_en"]
+            # a última barreira antes do pod: nenhum vídeo sai com pessoa inventada no prompt
+            final = sem_pessoa_inventada(c, lt, pedido, foto, prompt_en, "render")
+            if lt.get("versao_atual"):
+                # versões (ADR 0018): o vídeo vai com o prompt da versão liberada; a guarda que trocou o prompt (ou um
+                # prompt que não confere) vira uma versão nova, que espera a decisão do cliente: nunca outra versão
+                # calada. O vídeo volta para a fila sem contar tentativa
+                est = c.banco.estados_versao([lt["id"]]).get(lt["id"])
+                grupo = next((g["id"] for g in (est or {}).get("grupos", ()) if foto["prompt"] and g["proprio"]
+                              and g["texto"] == foto["prompt"]), versoes.GRUPO_PEDIDO)  # fmt: skip
+                esperado = versoes.prompt_esperado(est, foto["id"], grupo) if est else None
+                if esperado is None or not hmac.compare_digest(esperado, versoes.sha(final)):
+                    motivo = "pessoa_inventada" if final != prompt_en else "prompt_diferente"
+                    with contextlib.suppress(BancoError):  # o job já não está com este pod: nada vai para ele
+                        c.banco.guarda_trocou(job["id"], body.worker, job.get("tentativa_id"), final, motivo)
+                    return {"job": None, "fila": c.banco.fila()}
+                c.banco.prompt_do_job(job["id"], versoes.sha(final))
             out |= {
-                # a última barreira antes do pod: nenhum vídeo sai com pessoa inventada no prompt
-                "prompt_en": sem_pessoa_inventada(c, lt, pedido, foto, prompt_en, "render"),
+                "prompt_en": final,
                 "arquivo": job["arquivo"],
                 "seed": job["seed"],
                 "foto_url": c.armazenamento.url("GET", foto["chave"], 3600),
@@ -4344,18 +4652,34 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
                 leg = legenda_mod.de_dict(body.legenda).como_dict()
             except legenda_mod.LegendaError:
                 leg = None  # fora do formato: a foto segue sem legenda (nunca uma legenda pela metade)
-        prompt_en = sem_pessoa_inventada(c, lt, json.loads(lt["pedido"]), foto, body.prompt_en, "traducao", leg)
-        detalhe = {"vago": body.vago, "padrao": body.padrao or prompt_en != body.prompt_en,
+        pedido = json.loads(lt["pedido"])
+        prompt_en = sem_pessoa_inventada(c, lt, pedido, foto, body.prompt_en, "traducao", leg)
+        trocado = prompt_en != body.prompt_en
+        detalhe = {"vago": body.vago, "padrao": body.padrao or trocado,
                    "tentativas": body.tentativas, "pessoas_recusadas": body.pessoas_recusadas}  # fmt: skip
-        if prompt_en != body.prompt_en and not filtros.avaliar(prompt_en).allowed:  # o padrão é fixo, mas confere
+        if trocado and not filtros.avaliar(prompt_en).allowed:  # o padrão é fixo, mas confere
             raise HTTPException(500, "o movimento padrão não passou no filtro")
+        # a intenção (17/10/2026; ADR 0018), lida de novo aqui: o que o cartão do cliente mostra e se a tradução
+        # precisa da decisão dele (a instrução ou uma restrição não chegou ao prompt)
+        texto = foto["prompt"] if foto is not None and foto["prompt"] else pedido["prompt"]
+        it = intencao.analisar(texto, restricoes=restricoes_do_pedido(pedido),
+                               duracao_max=int(pedido.get("duracao") or intencao.DURACAO_MAX_S))  # fmt: skip
+        material = material_da_traducao(it, body, trocado)
+        traducao_info = {
+            "intencao": it.tipo, "restricoes": list(it.restricoes), "restrito": body.restrito,
+            "substituiu": body.substituiu, "padrao": body.padrao or trocado, "trocado": trocado,
+            "sem_pessoas": regras_traducao(c, lt, pedido, foto)["sem_pessoas"],
+            "pod": {"intencao": body.intencao, "restricoes": body.restricoes},
+        }  # fmt: skip
+        if material:
+            detalhe["material"] = material
         if _por_foto(lt, foto):
             c.banco.definir_prompt_da_foto(job["foto_id"], prompt_en, body.compilador, leg, detalhe)
         elif job["foto_id"]:
-            c.banco.definir_prompt_foto(job["foto_id"], prompt_en, body.compilador, detalhe)
+            c.banco.definir_prompt_foto(job["foto_id"], prompt_en, body.compilador, detalhe, traducao_info, material)
         else:
-            c.banco.definir_prompt(job["lote_id"], prompt_en, body.compilador, detalhe)
-        return {"ok": True, "padrao": prompt_en != body.prompt_en}
+            c.banco.definir_prompt(job["lote_id"], prompt_en, body.compilador, detalhe, traducao_info, material)
+        return {"ok": True, "padrao": trocado}
 
     @app.post("/api/worker/jobs/{job_id}/concluir")
     def concluir(job_id: str, body: ConcluirIn, dono: str = Depends(worker_auth), c: Config = Depends(config)):

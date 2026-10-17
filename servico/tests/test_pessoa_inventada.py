@@ -115,8 +115,9 @@ def test_the_last_barrier_replaces_a_person_prompt_translated_before_the_rule(ap
     _aprovar(api, lid)
     comp = _job(api)
     _concluir_ok(api, comp)
-    with api.banco.tx() as c:  # o prompt de antes, gravado direto (sem passar pela regra da API)
-        c.run("UPDATE lotes SET prompt_en = ?, status = 'processando' WHERE id = ?", (PESSOA, lid))
+    with api.banco.tx() as c:  # o prompt de antes, gravado direto (sem passar pela regra da API), num pedido de antes
+        # das versões (ADR 0018: com versões, o prompt que não confere com a versão não vai para o pod; test_versoes.py)
+        c.run("UPDATE lotes SET prompt_en = ?, status = 'processando', versao_atual = NULL WHERE id = ?", (PESSOA, lid))
     vistos = {}
     for _ in range(2):
         r = _job(api)
