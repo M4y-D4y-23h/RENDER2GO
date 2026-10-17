@@ -36,7 +36,7 @@ import unicodedata
 from dataclasses import asdict, dataclass
 from typing import Any
 
-VERSAO = 1  # muda junto com as regras abaixo; fica gravada na versão do pedido (render2go_servico)
+VERSAO = 2  # muda junto com as regras abaixo; fica gravada na versão do pedido (render2go_servico)
 TIPOS = ("vazio", "acao", "restricao", "ambiguo", "contraditorio", "fora_capacidade")
 DURACAO_MAX_S = 5  # o maior vídeo dos pedidos novos (render2go_servico.precos.DURACAO_MAX)
 
@@ -464,9 +464,8 @@ def analisar(
         tipo = "contraditorio" if contradicoes else "fora_capacidade"
     elif acoes:
         tipo = "acao"
-    elif restr:
-        tipo = "restricao"
     elif desconhecidas:
+        # antes da restrição: o texto fixo dela tomaria o lugar do verbo, sem aviso (17/10/2026)
         tipo = "ambiguo"
         trecho = ", ".join(dict.fromkeys(desconhecidas[:3]))
         pendencias = [Pendencia(
@@ -477,6 +476,8 @@ def analisar(
             trecho,
             confirmavel=True,
         )]  # fmt: skip
+    elif restr:
+        tipo = "restricao"
     else:
         tipo = "vazio"
     return Intencao(

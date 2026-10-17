@@ -241,6 +241,26 @@ def test_marked_restrictions_reach_the_translation():
     assert tr.intencao == "acao" and "Static camera." in tr.prompt
 
 
+@pytest.mark.parametrize(
+    ("texto", "marcadas"),
+    [("que a marca resplenda", ("sem_pessoas",)), ("arrodeie a vitrine, sem pessoas", ()),
+     ("que a marca resplenda", ("camera_parada",))],
+)  # fmt: skip
+def test_an_unknown_verb_does_not_hide_behind_a_restriction(texto, marcadas):
+    """Achado no teste da página (17/10/2026): um verbo que não reconhecemos, com uma restrição
+    (escrita ou marcada), virava "restricao" e o texto fixo tomava o lugar do pedido, sem aviso.
+    Agora é ambíguo (o cliente confirma) e, confirmado, vai para o tradutor com as restrições."""
+    r = i.analisar(texto, restricoes=marcadas)
+    assert r.tipo == "ambiguo" and r.bloqueia and r.pendencias[0].confirmavel
+    assert set(marcadas) <= set(r.restricoes)
+    fn = _compilador("The shop sign shines softly.")
+    tr = t.traduzir(texto, "livre", receitas=REC, compile_fn=fn, restricoes_extras=marcadas)
+    assert not tr.padrao and not tr.restrito and tr.prompt.startswith("The shop sign shines softly")
+    assert set(marcadas) <= set(tr.restricoes)
+    if "camera_parada" in marcadas:
+        assert "Static camera." in tr.prompt
+
+
 def test_the_pod_refuses_unknown_marked_restrictions():
     from render2go_worker import fila
 
