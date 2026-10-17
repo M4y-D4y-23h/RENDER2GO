@@ -145,3 +145,11 @@ Relatórios: [`relatorios/2026-10-13-cpu-i2v7-casos-v4-instruct-7b.md`](relatori
 - **O que vale nas duas versões, no código:** zero pessoa inventada no prompt final (78 rodadas de fotos sem pessoas, nenhuma tradução refeita), e os 43–44 pedidos vagos viraram o movimento padrão com a categoria e o assunto da legenda (`i2v-v4-*`). Os 3 casos vagos com pessoa na foto falham nas duas versões só pelo limite de palavras: o movimento padrão de "pessoa" com um assunto de 2 palavras tem 14.
 
 **Decisão (pela regra escrita antes):** **o tradutor continua o abliterado com o v6**; o `qwen2.5:7b-instruct` fica registrado com estes números, e o v8 também. A legenda por foto **não entra no prompt do tradutor** (nenhuma versão do prompt a recebe na produção); ela continua candidata só no código (categoria e assunto do movimento padrão e a regra da pessoa, mais rígida), que é o que a rodada em GPU mede (ADR 0014, combinação D redefinida antes da rodada).
+
+## 17/10/2026: a intenção antes da tradução (`intencao.py`), sem rodada nova do LLM
+
+O prompt do compilador **não mudou** (continua o v6, abliterado) e nenhuma rodada de fidelidade com o Ollama foi feita nesta data: o que mudou é a decisão no código, antes do LLM (`render2go_worker.intencao` e `traducao.plano`; ADR 0018). Os 63 casos `i2v` de [`cases.v4.json`](cases.v4.json) passados pela classificação nova, sem o LLM: 43 "ação", 18 "vazio", 1 "restrição" e 1 "ambíguo".
+
+- **Contra a `main` em `e1c98bf`:** só `i2v-v3-ref-jogador` muda, de "vago" (virava o movimento padrão da categoria) para "ambíguo" (o cliente confirma o texto como está, e ele vai para o tradutor). Os três casos do relato de 17/10 ("Gire lentamente o produto.", "Que o letreiro brilhe suavemente.", "Mantenha tudo imóvel, sem movimento.") não estavam nos casos; estão nos testes (`worker/tests/test_intencao.py`).
+- **A regra do verbo desconhecido antes da restrição** (commit "Intenção: verbo desconhecido não some atrás de uma restrição", `intencao.VERSAO` 2): nenhum dos 63 casos muda.
+- **Fica pendente:** uma rodada de fidelidade com o LLM (`python tools/eval_compiler.py --out saida/fid`, `worker/README.md`) com os textos do relato e com restrições marcadas, para medir o prompt final dos textos que agora vão para o tradutor em vez do texto fixo. Não foi rodada; nenhum número aqui vem dela.
