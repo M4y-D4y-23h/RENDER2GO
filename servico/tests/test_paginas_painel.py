@@ -20,6 +20,7 @@ from test_paginas import (  # noqa: E402,F401
     PAGINA,
     SECOES_PAINEL,
     _api,
+    _axe,
     _cliente,
     _com_sessao,
     _lote,
@@ -37,6 +38,7 @@ DADOS = {
     "revisao": "lotes",
     "historico": "historico?grupo=todos",
     "montagens": "montagens",
+    "entregas": "entregas",
     "clientes": "clientes",
     "suporte": "suporte",
     "interesses": "interesses",
@@ -211,7 +213,8 @@ def test_the_operator_sees_only_what_the_role_opens(ambiente, navegador):  # noq
     pw.expect(pg.locator("#quem-nome")).to_have_text("maria.revisora")
     pw.expect(pg.locator("#quem-papel")).to_have_text("Operador")
     visiveis = pg.locator("#menu-painel a[data-secao]:visible").evaluate_all("(a) => a.map((x) => x.dataset.secao)")
-    assert visiveis == ["visao-geral", "revisao", "historico", "montagens", "clientes", "suporte", "interesses", "pods"]
+    assert visiveis == ["visao-geral", "revisao", "historico", "montagens", "entregas", "clientes", "suporte",
+                        "interesses", "pods"]  # fmt: skip
     assert pg.locator("#menu-painel .grupo:visible").count() == 4  # o grupo "Segurança" inteiro sai
     # visão geral: sem dinheiro e sem os Pix pendentes
     pw.expect(pg.locator("#resumo-hoje")).not_to_contain_text("Cobrado")
@@ -506,3 +509,66 @@ def test_panel_sections_do_not_shift_when_the_api_answers_late(ambiente, navegad
     pg.wait_for_timeout(300)
     assert pg.evaluate("window.__cls") < 0.001, pg.evaluate("window.__deslocados")
     ctx.close()
+
+
+def test_deliveries_review_criteria_with_evidence_and_owner_decides_corrections(ambiente, navegador):  # noqa: F811
+    """Entregas (17/10/2026): o vídeo entregue com os critérios do pedido; a decisão de cada um pede a evidência e
+    muda a situação; o pedido de correção do cliente, decidido pelo dono com o crédito; o operador não decide."""
+    erros: list[str] = []
+    tok = _cliente(ambiente)
+    lid = _lote(ambiente, tok, {"pote.png": _png((40, 90, 160), "circulo")}, pronto=True, prompt="o pote gira devagar")
+    (job,) = [j for j in ambiente.banco.jobs(lid) if j["tipo"] == "render"]
+    cid = ambiente.banco.lote(lid)["cliente_id"]
+    ambiente.banco.registrar_retorno(job["id"], cid, False, "defeito_visual", None, "quadro estranho no fim")
+    ambiente.banco.pedir_correcao(job["id"], cid, 3600)
+    ctx = navegador.new_context(viewport={"width": 1280, "height": 800})
+    _com_sessao(ctx, ambiente, admin=True)
+    pg = _pagina(ctx, erros)
+    pg.goto(f"{ambiente.url}{PAINEL}/#entregas")
+    _secao_pronta(pg, "entregas")
+    pw.expect(pg.locator("#entregas-correcoes")).to_contain_text("Defeito visual")
+    pedido = pg.locator(".entrega-pedido", has_text="o pote gira devagar")
+    pw.expect(pedido).to_contain_text("Ainda não verificado")
+    pedido.locator(f"[data-foco='{job['id']}:revisar']").click()
+    janela = pg.locator("dialog.entrega-video[open]")
+    pw.expect(janela).to_contain_text("Mostra o que você pediu")
+    item = janela.locator(".criterios-video li", has_text="Mostra o que você pediu")
+    item.locator("button", has_text="Salvar").click()
+    pw.expect(item).to_contain_text("a decisão precisa da evidência")
+    item.locator("select").select_option("nao_atendido")
+    item.locator("input").fill("o pote não gira, só a luz passa")
+    item.locator("button", has_text="Salvar").click()
+    pw.expect(janela.locator(".situacao-video")).to_contain_text("Não atende ao pedido")
+    assert _axe(pg) == []
+    janela.locator(".dialogo-cab button").click()
+    pw.expect(pedido).to_contain_text("Não atende ao pedido")
+    # a correção: o dono decide, com o crédito do valor cobrado do vídeo
+    pg.locator("[data-foco$=':decidir']").click()
+    decisao = pg.locator("dialog.entrega-correcao[open]")
+    decisao.locator("select").select_option("falha_tecnica")
+    decisao.locator("textarea").fill("quadro trocado no fim do vídeo")
+    decisao.locator("input[type=checkbox]").check()
+    decisao.locator("button", has_text="Salvar a decisão").click()
+    pw.expect(decisao).to_have_count(0)
+    pw.expect(pg.locator("#entregas-correcoes")).to_contain_text("crédito")
+    with ambiente.banco.tx() as c:
+        assert c.one("SELECT COUNT(*) AS n FROM movimentos WHERE tipo = 'credito'")["n"] == 1
+        assert c.one("SELECT COUNT(*) AS n FROM auditoria_admin WHERE acao = 'criterio'")["n"] == 1
+    ctx.close()
+    # o operador revisa os vídeos, mas não decide correções (o crédito é do dono)
+    tok2 = _cliente(ambiente, saldo="50")
+    lid2 = _lote(ambiente, tok2, {"vaso.png": _png((200, 120, 60), "barras")}, pronto=True)
+    (job2,) = [j for j in ambiente.banco.jobs(lid2) if j["tipo"] == "render"]
+    cid2 = ambiente.banco.lote(lid2)["cliente_id"]
+    ambiente.banco.registrar_retorno(job2["id"], cid2, False, "defeito_visual")
+    ambiente.banco.pedir_correcao(job2["id"], cid2, 3600)
+    cookie, _ = _pessoa(ambiente, "maria.revisora", "operador")
+    ctx = navegador.new_context(viewport={"width": 1280, "height": 800})
+    _com_pessoa(ctx, ambiente, cookie, "operador")
+    pg = _pagina(ctx, erros)
+    pg.goto(f"{ambiente.url}{PAINEL}/#entregas")
+    _secao_pronta(pg, "entregas")
+    pw.expect(pg.locator("#entregas-correcoes")).to_contain_text("Aberta")
+    assert pg.locator("[data-foco$=':decidir']").count() == 0
+    ctx.close()
+    assert erros == [], erros

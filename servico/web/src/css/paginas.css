@@ -1807,6 +1807,7 @@ html[data-secao="visao-geral"] #sec-visao-geral,
 html[data-secao="revisao"] #sec-revisao,
 html[data-secao="historico"] #sec-historico,
 html[data-secao="montagens"] #sec-montagens,
+html[data-secao="entregas"] #sec-entregas,
 html[data-secao="clientes"] #sec-clientes,
 html[data-secao="suporte"] #sec-suporte,
 html[data-secao="interesses"] #sec-interesses,
@@ -1824,6 +1825,7 @@ html[data-secao="visao-geral"] .menu-painel a[data-secao="visao-geral"],
 html[data-secao="revisao"] .menu-painel a[data-secao="revisao"],
 html[data-secao="historico"] .menu-painel a[data-secao="historico"],
 html[data-secao="montagens"] .menu-painel a[data-secao="montagens"],
+html[data-secao="entregas"] .menu-painel a[data-secao="entregas"],
 html[data-secao="clientes"] .menu-painel a[data-secao="clientes"],
 html[data-secao="suporte"] .menu-painel a[data-secao="suporte"],
 html[data-secao="interesses"] .menu-painel a[data-secao="interesses"],
@@ -1842,6 +1844,7 @@ html[data-secao="visao-geral"] .menu-painel a[data-secao="visao-geral"] .icone,
 html[data-secao="revisao"] .menu-painel a[data-secao="revisao"] .icone,
 html[data-secao="historico"] .menu-painel a[data-secao="historico"] .icone,
 html[data-secao="montagens"] .menu-painel a[data-secao="montagens"] .icone,
+html[data-secao="entregas"] .menu-painel a[data-secao="entregas"] .icone,
 html[data-secao="clientes"] .menu-painel a[data-secao="clientes"] .icone,
 html[data-secao="suporte"] .menu-painel a[data-secao="suporte"] .icone,
 html[data-secao="interesses"] .menu-painel a[data-secao="interesses"] .icone,
@@ -2315,6 +2318,109 @@ html:not([data-convite]) #convite {
   flex-wrap: wrap;
   gap: var(--esp-2);
   margin-top: var(--esp-2);
+}
+
+/* retorno sobre cada vídeo entregue (17/10/2026): a pergunta ocupa a linha inteira, embaixo do vídeo */
+.videos .video {
+  flex-wrap: wrap;
+}
+
+.retorno-video {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-2) var(--esp-3);
+  padding: var(--esp-1) var(--esp-2) var(--esp-2);
+  border-top: 1px solid var(--cor-borda);
+}
+
+.retorno-video p {
+  margin: 0;
+}
+
+.pergunta-retorno {
+  font-size: var(--texto-sm);
+  font-weight: 650;
+}
+
+.motivos-retorno {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.motivos-retorno > legend {
+  padding: 0;
+  font-weight: 650;
+}
+
+/* painel, Entregas (17/10/2026): os pedidos com os vídeos e a janela de revisão de um vídeo, critério a critério */
+.titulo-bloco {
+  margin: var(--esp-4) 0 var(--esp-2);
+  font-size: var(--titulo-3);
+}
+
+.entregas-lista {
+  display: grid;
+  gap: var(--esp-4);
+}
+
+.entrega-pedido {
+  display: grid;
+  gap: var(--esp-2);
+  padding: var(--esp-4);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  background: var(--cor-superficie);
+}
+
+.entrega-pedido h3,
+.entrega-pedido p {
+  margin: 0;
+}
+
+.entrega-pedido h3 {
+  font-family: var(--fonte-texto);
+  font-size: var(--texto-md);
+}
+
+.criterios-video {
+  display: grid;
+  gap: var(--esp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.criterios-video > li {
+  display: grid;
+  gap: var(--esp-2);
+  padding-bottom: var(--esp-3);
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.criterios-video p {
+  margin: 0;
+}
+
+.criterio-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  align-items: end;
+  gap: var(--esp-2);
+}
+
+.area-video video {
+  width: 100%;
+  max-height: 60vh;
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie-2);
+}
+
+.situacao-video {
+  font-weight: 650;
 }
 
 /* ADR 0018: o detalhamento opcional, "Antes de gerar", a prévia e as pendências do texto no formulário */

@@ -7,7 +7,7 @@
 <!-- antes de desenhar: o tema, a seção do endereço (#pods, #acessos...), o convite (#convite=...), a marca de
      "entrou no painel" e o papel de quem entrou; com a marca, já pede à API o que a seção mostra (caminhos
      relativos a esta página: a API do painel fica no mesmo endereço secreto) -->
-<script src="/estatico/inicio.js" data-chave="render2go-painel-conectado" data-papel="render2go-painel-papel" data-so-dono="gpus pagamentos acessos auditoria seguranca" data-secoes data-antecipar="visao-geral=api/sessao,api/resumo revisao=api/sessao,api/resumo,api/lotes historico=api/sessao,api/resumo,api/historico?grupo=todos montagens=api/sessao,api/resumo,api/montagens clientes=api/sessao,api/resumo,api/clientes suporte=api/sessao,api/resumo,api/suporte interesses=api/sessao,api/resumo,api/interesses pods=api/sessao,api/resumo,api/pods gpus=api/sessao,api/resumo,api/geradores?dias=30 pagamentos=api/sessao,api/resumo,api/pagamentos acessos=api/sessao,api/resumo,api/acessos auditoria=api/sessao,api/resumo,api/auditoria seguranca=api/sessao,api/resumo,api/seguranca"></script>
+<script src="/estatico/inicio.js" data-chave="render2go-painel-conectado" data-papel="render2go-painel-papel" data-so-dono="gpus pagamentos acessos auditoria seguranca" data-secoes data-antecipar="visao-geral=api/sessao,api/resumo revisao=api/sessao,api/resumo,api/lotes historico=api/sessao,api/resumo,api/historico?grupo=todos montagens=api/sessao,api/resumo,api/montagens entregas=api/sessao,api/resumo,api/entregas clientes=api/sessao,api/resumo,api/clientes suporte=api/sessao,api/resumo,api/suporte interesses=api/sessao,api/resumo,api/interesses pods=api/sessao,api/resumo,api/pods gpus=api/sessao,api/resumo,api/geradores?dias=30 pagamentos=api/sessao,api/resumo,api/pagamentos acessos=api/sessao,api/resumo,api/acessos auditoria=api/sessao,api/resumo,api/auditoria seguranca=api/sessao,api/resumo,api/seguranca"></script>
 <!--@cabeca-->
 <!-- o script do painel só existe neste endereço (não fica em /estatico/) -->
 <script src="painel.js" defer></script>
@@ -51,6 +51,7 @@
           <li data-rota="GET /api/lotes"><a href="#revisao" data-secao="revisao"><!--@icone escudo--><span>Revisão</span><span class="contagem" id="n-pendentes"></span></a></li>
           <li data-rota="GET /api/historico"><a href="#historico" data-secao="historico"><!--@icone historico--><span>Histórico</span></a></li>
           <li data-rota="GET /api/montagens"><a href="#montagens" data-secao="montagens"><!--@icone editar--><span>Montagens</span></a></li>
+          <li data-rota="GET /api/entregas"><a href="#entregas" data-secao="entregas"><!--@icone ok--><span>Entregas</span></a></li>
         </ul>
       </div>
       <div class="grupo">
@@ -262,6 +263,28 @@
         </div>
         <div class="dados-vista" id="montagens-dados" aria-busy="true">
           <div id="montagens-tabela" class="tabela" role="region" aria-label="Montagens das contas" tabindex="0">
+            <div class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- entregas (17/10/2026): a revisão dos vídeos no piloto, critério a critério, e os pedidos de correção -->
+      <section class="secao-painel" id="sec-entregas" aria-labelledby="t-entregas">
+        <div class="cab-pagina">
+          <h1 id="t-entregas" tabindex="-1">Entregas</h1>
+          <p class="fraco">Os vídeos entregues nos últimos 14 dias, para a revisão do piloto: cada critério do pedido (obrigatório ou preferência, com a origem) recebe o estado e a evidência, o que você viu no vídeo inteiro. Um obrigatório não atendido decide; sem decisão, o vídeo fica “ainda não verificado”. A conferência automática de cor aparece só como observação. Pedidos de correção dos clientes: a equipe classifica; o crédito, só o dono.</p>
+        </div>
+        <div class="dados-vista" id="entregas-dados" aria-busy="true">
+          <h2 class="titulo-bloco">Piloto, últimos 14 dias</h2>
+          <div id="entregas-piloto" class="piloto">
+            <div class="esqueleto" aria-hidden="true"><span></span><span></span></div>
+          </div>
+          <h2 class="titulo-bloco">Pedidos de correção</h2>
+          <div id="entregas-correcoes" class="tabela" role="region" aria-label="Pedidos de correção" tabindex="0">
+            <div class="esqueleto" aria-hidden="true"><span></span><span></span></div>
+          </div>
+          <h2 class="titulo-bloco">Vídeos entregues</h2>
+          <div id="entregas-lista" class="entregas-lista">
             <div class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
           </div>
         </div>

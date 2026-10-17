@@ -229,6 +229,26 @@ ESQUEMA = [
         id TEXT PRIMARY KEY, lote_id TEXT NOT NULL REFERENCES lotes(id), numero INTEGER NOT NULL,
         criado DOUBLE PRECISION NOT NULL, origem TEXT NOT NULL, conteudo TEXT NOT NULL, hash TEXT NOT NULL,
         material TEXT, liberada_em DOUBLE PRECISION, liberada_por TEXT, UNIQUE (lote_id, numero))""",
+    # critérios de entrega (17/10/2026; render2go_servico.criterios): cada avaliação de um critério num vídeo, com quem
+    # avaliou e a evidência; `modo` "decisao" (uma pessoa) ou "observacao" (avaliador automático novo, que não decide).
+    # Fica o histórico: vale a última decisão de cada critério. Sem chave estrangeira para jobs (como as montagens)
+    """CREATE TABLE IF NOT EXISTS criterios_avaliados (
+        id TEXT PRIMARY KEY, lote_id TEXT NOT NULL REFERENCES lotes(id), job_id TEXT NOT NULL, versao_id TEXT,
+        criterio TEXT NOT NULL, estado TEXT NOT NULL, modo TEXT NOT NULL, avaliador TEXT NOT NULL, evidencia TEXT,
+        criado DOUBLE PRECISION NOT NULL)""",
+    # o retorno do cliente sobre cada vídeo entregue ("Pode usar como está?"; "O que precisa mudar?"): um por vídeo,
+    # que ele pode mudar; o motivo, o critério afetado e um comentário curto
+    """CREATE TABLE IF NOT EXISTS retornos (
+        job_id TEXT PRIMARY KEY, lote_id TEXT NOT NULL REFERENCES lotes(id),
+        cliente_id TEXT NOT NULL REFERENCES clientes(id), versao_id TEXT, usavel INTEGER NOT NULL, motivo TEXT,
+        criterio TEXT, comentario TEXT, criado DOUBLE PRECISION NOT NULL, atualizado DOUBLE PRECISION NOT NULL)""",
+    # pedido de correção de um vídeo (um por vídeo): ligado ao vídeo, à versão e ao critério afetado; a equipe
+    # classifica (falha técnica, fora do combinado, pedido novo) e pode dar um crédito (referência correcao:<id>)
+    """CREATE TABLE IF NOT EXISTS correcoes (
+        id TEXT PRIMARY KEY, job_id TEXT NOT NULL UNIQUE, lote_id TEXT NOT NULL REFERENCES lotes(id),
+        cliente_id TEXT NOT NULL REFERENCES clientes(id), versao_id TEXT, motivo TEXT NOT NULL, criterio TEXT,
+        comentario TEXT, status TEXT NOT NULL, classificacao TEXT, nota TEXT, credito BIGINT, decidido_por TEXT,
+        decidido_em DOUBLE PRECISION, criado DOUBLE PRECISION NOT NULL)""",
 ]
 # índices: depois das colunas novas (um banco antigo ganha a coluna antes do índice que a usa)
 INDICES = [
@@ -267,6 +287,11 @@ INDICES = [
     "CREATE INDEX IF NOT EXISTS avaliacoes_quando ON avaliacoes (quando)",
     "CREATE INDEX IF NOT EXISTS avaliacoes_cliente ON avaliacoes (cliente_id)",
     "CREATE INDEX IF NOT EXISTS montagens_cliente ON montagens (cliente_id, criado)",
+    "CREATE INDEX IF NOT EXISTS criterios_avaliados_job ON criterios_avaliados (job_id, criterio, criado)",
+    "CREATE INDEX IF NOT EXISTS criterios_avaliados_lote ON criterios_avaliados (lote_id)",
+    "CREATE INDEX IF NOT EXISTS retornos_lote ON retornos (lote_id)",
+    "CREATE INDEX IF NOT EXISTS correcoes_status ON correcoes (status, criado)",
+    "CREATE INDEX IF NOT EXISTS correcoes_lote ON correcoes (lote_id)",
     "CREATE INDEX IF NOT EXISTS montagens_status ON montagens (status, criado)",
     "CREATE INDEX IF NOT EXISTS jobs_versao ON jobs (versao_id)",
 ]
@@ -325,6 +350,9 @@ TRAVA_ESQUEMA = 20261008
 HISTORICO = (
     "jobs",
     "versoes",
+    "criterios_avaliados",
+    "retornos",
+    "correcoes",
     "consentimentos",
     "fotos",
     "eventos",
@@ -461,7 +489,7 @@ MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
 SESSAO_TIPOS = ("cliente", "admin", "mfa")
 COMANDOS = ("desligar_pod", "emergencia", "retomar")
-TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno", "video", "montagem")
+TIPOS_MOVIMENTO = ("recarga", "ajuste", "pedido", "estorno", "video", "montagem", "credito")
 # o que conta como gasto de uma rodada: "pedido" (cobrado inteiro no envio), "video" (ADR 0012) e "montagem" (ADR 0015)
 GASTO = "tipo IN ('pedido', 'video', 'montagem')"
 # montagem de vídeos (ADR 0015): as que ainda não terminaram (o preço delas fica reservado no saldo livre)
@@ -876,6 +904,9 @@ class Banco:
             )
             c.run("DELETE FROM interesses WHERE cliente_id = ?", (cliente_id,))
             c.run("DELETE FROM avaliacoes WHERE cliente_id = ?", (cliente_id,))
+            # os retornos sobre os vídeos saem; das correções (ligadas a créditos do extrato), só o comentário
+            c.run("DELETE FROM retornos WHERE cliente_id = ?", (cliente_id,))
+            c.run("UPDATE correcoes SET comentario = NULL WHERE cliente_id = ?", (cliente_id,))
             c.run("DELETE FROM codigos_recuperacao WHERE cliente_id = ?", (cliente_id,))
             c.run("UPDATE suporte SET email = NULL WHERE cliente_id = ?", (cliente_id,))
 
@@ -2533,6 +2564,317 @@ class Banco:
             return c.all(f"SELECT * FROM fotos WHERE id IN ({', '.join('?' * len(ids))}) ORDER BY nome", tuple(ids))
 
     # -- satisfação ------------------------------------------------------------------------
+
+    # -- critérios de entrega, retorno do cliente e correções (17/10/2026; render2go_servico.criterios) ------------
+
+    def _video_entregue(self, c, job_id: str, cliente_id: str | None = None) -> dict:
+        """O vídeo entregue (render "ok", não excluído), com o pedido, a versão e o grupo de texto da foto."""
+        sql = (
+            "SELECT j.id, j.lote_id, j.foto_id, j.status, j.arquivo, j.atualizado, j.excluido_em, j.versao_id,"
+            " j.deriva_cor, j.salto_cor, l.cliente_id, f.prompt AS foto_prompt FROM jobs j"
+            " JOIN lotes l ON l.id = j.lote_id LEFT JOIN fotos f ON f.id = j.foto_id"
+            " WHERE j.id = ? AND j.tipo = 'render'"
+        )
+        args: tuple = (job_id, cliente_id) if cliente_id else (job_id,)
+        j = c.one(sql + (" AND l.cliente_id = ?" if cliente_id else ""), args)
+        if j is None:
+            raise BancoError("vídeo não encontrado")
+        if j["status"] != "ok" or j.get("excluido_em"):
+            raise BancoError("este vídeo não foi entregue")
+        j["grupo"] = self._grupo_da_foto(c, j["lote_id"], j.get("foto_prompt"))
+        return j
+
+    def video_entregue(self, job_id: str, cliente_id: str | None = None) -> dict:
+        """O vídeo entregue de `_video_entregue` (da conta, com `cliente_id`); BancoError se não foi entregue."""
+        with self.tx() as c:
+            return self._video_entregue(c, job_id, cliente_id)
+
+    def avaliar_criterio(
+        self, job_id: str, criterio: str, estado: str, avaliador: str, evidencia: str | None, modo: str = "decisao"
+    ) -> dict:
+        """Uma avaliação de um critério num vídeo entregue, com quem avaliou e a evidência. Fica o histórico (vale a
+        última decisão); a observação de um avaliador automático novo nunca decide."""
+        from render2go_servico import criterios as criterios_mod
+
+        if estado not in criterios_mod.ESTADOS or modo not in criterios_mod.MODOS:
+            raise BancoError("estado ou modo de avaliação inválido")
+        if modo == "decisao" and not (evidencia or "").strip():
+            raise BancoError("a decisão precisa da evidência (o que foi visto no vídeo)")
+        with self.tx() as c:
+            j = self._video_entregue(c, job_id)
+            linha = {"id": novo_id("crt"), "lote_id": j["lote_id"], "job_id": job_id, "versao_id": j.get("versao_id"),
+                     "criterio": criterio, "estado": estado, "modo": modo, "avaliador": avaliador,
+                     "evidencia": (evidencia or "").strip()[:500] or None, "criado": time.time()}  # fmt: skip
+            c.run(
+                "INSERT INTO criterios_avaliados (id, lote_id, job_id, versao_id, criterio, estado, modo, avaliador,"
+                " evidencia, criado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                tuple(linha.values()),
+            )
+        return linha
+
+    def criterios_dos_videos(self, jobs: list[str]) -> dict[str, dict[str, Any]]:
+        """Por vídeo: a última decisão de cada critério (estado, avaliador, evidência, quando) e as observações."""
+        if not jobs:
+            return {}
+        with self.tx() as c:
+            linhas = c.all(
+                "SELECT job_id, criterio, estado, modo, avaliador, evidencia, criado FROM criterios_avaliados"
+                f" WHERE job_id IN ({', '.join('?' * len(jobs))}) ORDER BY criado",
+                tuple(jobs),
+            )
+        out: dict[str, dict[str, Any]] = {j: {"decisoes": {}, "observacoes": []} for j in jobs}
+        for r in linhas:
+            if r["modo"] == "decisao":
+                out[r["job_id"]]["decisoes"][r["criterio"]] = r  # a mais recente fica (ordem de criação)
+            else:
+                out[r["job_id"]]["observacoes"].append(r)
+        return out
+
+    def registrar_retorno(
+        self,
+        job_id: str,
+        cliente_id: str,
+        usavel: bool,
+        motivo: str | None = None,
+        criterio: str | None = None,
+        comentario: str | None = None,
+    ) -> dict:
+        """ "Pode usar como está?": o retorno do cliente sobre um vídeo entregue (um por vídeo; responder de novo troca
+        o anterior). Sem poder usar, o motivo é obrigatório (render2go_servico.criterios.MOTIVOS_RETORNO)."""
+        from render2go_servico import criterios as criterios_mod
+
+        if not usavel and motivo not in criterios_mod.MOTIVOS_RETORNO:
+            raise BancoError("diga o que precisa mudar")
+        if usavel:
+            motivo = criterio = comentario = None
+        agora = time.time()
+        with self.tx() as c:
+            j = self._video_entregue(c, job_id, cliente_id)
+            c.run(
+                "INSERT INTO retornos (job_id, lote_id, cliente_id, versao_id, usavel, motivo, criterio, comentario,"
+                " criado, atualizado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (job_id) DO UPDATE SET"
+                " usavel = excluded.usavel, motivo = excluded.motivo, criterio = excluded.criterio,"
+                " comentario = excluded.comentario, atualizado = excluded.atualizado",
+                (job_id, j["lote_id"], cliente_id, j.get("versao_id"), int(bool(usavel)), motivo, criterio,
+                 (comentario or "").strip()[:300] or None, agora, agora),
+            )  # fmt: skip
+            return c.one("SELECT * FROM retornos WHERE job_id = ?", (job_id,))
+
+    def retornos_de(self, lotes: list[str]) -> dict[str, dict]:
+        """O retorno e a correção (se houver) de cada vídeo dos pedidos (a lista de pedidos: uma consulta de cada)."""
+        if not lotes:
+            return {}
+        marcas = ", ".join("?" * len(lotes))
+        with self.tx() as c:
+            rets = c.all(f"SELECT * FROM retornos WHERE lote_id IN ({marcas})", tuple(lotes))
+            cors = c.all(
+                "SELECT id, job_id, status, classificacao, nota, credito, decidido_em, criado FROM correcoes"
+                f" WHERE lote_id IN ({marcas})",
+                tuple(lotes),
+            )
+        out: dict[str, dict] = {r["job_id"]: {"retorno": r, "correcao": None} for r in rets}
+        for x in cors:
+            out.setdefault(x["job_id"], {"retorno": None, "correcao": None})["correcao"] = x
+        return out
+
+    def pedir_correcao(self, job_id: str, cliente_id: str, prazo_s: float) -> dict:
+        """O cliente pede a correção de um vídeo que ele disse que não pode usar: uma por vídeo (o 2º pedido devolve o
+        primeiro), até `prazo_s` depois da entrega. Fica ligada ao vídeo, à versão e ao critério do retorno; a equipe
+        classifica (`decidir_correcao`). Refazer é com a foto enviada de novo num pedido novo (as fotos do pedido são
+        apagadas quando ele fecha)."""
+        agora = time.time()
+        with self.tx() as c:
+            j = self._video_entregue(c, job_id, cliente_id)
+            ja = c.one("SELECT * FROM correcoes WHERE job_id = ?", (job_id,))
+            if ja is not None:
+                return {**ja, "ja": True}
+            r = c.one("SELECT * FROM retornos WHERE job_id = ?", (job_id,))
+            if r is None or int(r["usavel"]):
+                raise BancoError("diga antes o que precisa mudar neste vídeo")
+            if agora - float(j["atualizado"]) > prazo_s:
+                raise BancoError(f"o prazo para pedir correção é de {int(prazo_s // 3600)} h depois da entrega")
+            cid = novo_id("cor")
+            n = c.run(
+                "INSERT INTO correcoes (id, job_id, lote_id, cliente_id, versao_id, motivo, criterio, comentario,"
+                " status, criado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'aberta', ?) ON CONFLICT (job_id) DO NOTHING",
+                (cid, job_id, j["lote_id"], cliente_id, j.get("versao_id"), r["motivo"], r.get("criterio"),
+                 r.get("comentario"), agora),
+            )  # fmt: skip
+            linha = c.one("SELECT * FROM correcoes WHERE job_id = ?", (job_id,))
+            if n:
+                self.evento(c, j["lote_id"], "correcao_pedida", {"correcao": cid, "job": job_id, "motivo": r["motivo"]})
+            return {**linha, "ja": not n}
+
+    def decidir_correcao(self, correcao_id: str, quem: str, classificacao: str, nota: str, creditar: bool) -> dict:
+        """A equipe classifica um pedido de correção: falha técnica, fora do combinado (um obrigatório da versão não
+        atendido) ou pedido novo. Nas duas primeiras, pode devolver o valor cobrado do vídeo como crédito no saldo, com
+        a referência única correcao:<id> (decidir duas vezes, ou em duas abas, credita uma vez só). O pedido novo não
+        tem crédito. A cobrança do vídeo continua como foi (ADR 0012)."""
+        from render2go_servico import criterios as criterios_mod
+
+        if classificacao not in criterios_mod.CLASSIFICACOES:
+            raise BancoError("classificação inválida")
+        if creditar and classificacao not in criterios_mod.COM_CREDITO:
+            raise BancoError("pedido novo não tem crédito")
+        if not nota.strip():
+            raise BancoError("escreva o motivo da decisão")
+        agora = time.time()
+        with self.tx() as c:
+            x = c.one("SELECT * FROM correcoes WHERE id = ?" + (" FOR UPDATE" if self.pg else ""), (correcao_id,))
+            if x is None:
+                raise BancoError("correção não encontrada")
+            if x["status"] != "aberta":
+                return {**x, "ja": True}
+            credito = 0
+            if creditar:
+                self._travar_cliente(c, x["cliente_id"])
+                cobrado = c.one("SELECT valor FROM movimentos WHERE referencia = ?", (f"video:{x['job_id']}",))
+                credito = -int(cobrado["valor"]) if cobrado and int(cobrado["valor"]) < 0 else 0
+                if credito and not self._movimento(
+                    c, x["cliente_id"], "credito", credito, f"correcao:{correcao_id}", lote_id=x["lote_id"],
+                    job_id=x["job_id"], descricao="Crédito de correção", por=quem,
+                ):  # fmt: skip
+                    credito = 0  # já creditado (não acontece com a linha travada; a referência garante)
+            c.run(
+                "UPDATE correcoes SET status = 'decidida', classificacao = ?, nota = ?, credito = ?, decidido_por = ?,"
+                " decidido_em = ? WHERE id = ? AND status = 'aberta'",
+                (classificacao, nota.strip()[:500], credito, quem, agora, correcao_id),
+            )
+            self.evento(c, x["lote_id"], "correcao_decidida", {"correcao": correcao_id, "classificacao": classificacao,
+                                                                 "credito": credito})  # fmt: skip
+            return {**c.one("SELECT * FROM correcoes WHERE id = ?", (correcao_id,)), "ja": False}
+
+    def entregas(self, desde: float, limite: int = 30) -> tuple[list[dict], dict[str, list[dict]]]:
+        """Os pedidos com vídeos entregues desde `desde` (os mais recentes primeiro, até `limite`) e os vídeos de cada
+        um, com a medida da conferência e o texto próprio da foto: a revisão do piloto no painel."""
+        with self.tx() as c:
+            lotes = c.all(
+                "SELECT l.id, l.cliente_id, l.criado, l.status, l.pedido, l.revisao, l.versao_atual, l.n_fotos,"
+                " cl.email FROM lotes l LEFT JOIN clientes cl ON cl.id = l.cliente_id WHERE l.id IN (SELECT lote_id"
+                " FROM jobs WHERE tipo = 'render' AND status = 'ok' AND atualizado >= ?) ORDER BY l.criado DESC"
+                " LIMIT ?",
+                (desde, limite),
+            )
+            if not lotes:
+                return [], {}
+            marcas = ", ".join("?" * len(lotes))
+            jobs = c.all(
+                "SELECT j.id, j.lote_id, j.arquivo, j.atualizado, j.deriva_cor, j.salto_cor, j.versao_id,"
+                f" f.prompt AS texto FROM jobs j LEFT JOIN fotos f ON f.id = j.foto_id WHERE j.lote_id IN ({marcas})"
+                " AND j.tipo = 'render' AND j.status = 'ok' AND j.excluido_em IS NULL ORDER BY j.arquivo",
+                tuple(x["id"] for x in lotes),
+            )
+        por: dict[str, list[dict]] = {x["id"]: [] for x in lotes}
+        for j in jobs:
+            por[j["lote_id"]].append(j)
+        return lotes, por
+
+    def metricas_piloto(self, desde: float) -> dict[str, Any]:
+        """As métricas do piloto (docs/16) desde `desde`: os pedidos com versões e as decisões que pediram do cliente,
+        os vídeos entregues com e sem retorno, a 1ª entrega utilizável, as correções e os créditos, os tempos (de
+        relógio, não de atenção do cliente) e o custo de GPU por vídeo utilizável. O que o banco não sabe (taxas,
+        armazenamento, trabalho da equipe) não entra como número: vai em `nao_medido`."""
+
+        def tempos(v: list[float]) -> dict[str, Any]:
+            v = sorted(x for x in v if x is not None and x >= 0)
+            return {"n": len(v), "p50_s": round(statistics.median(v), 1) if v else None}
+
+        with self.tx() as c:
+            lotes = c.all(
+                "SELECT id, revisao, versao_atual, versao_liberada, status, interrompido_em, criado FROM lotes"
+                " WHERE criado >= ? AND revisao IS NOT NULL",
+                (desde,),
+            )
+            versoes = c.all(
+                "SELECT v.lote_id, v.origem, v.material, v.criado, v.liberada_em, v.liberada_por FROM versoes v"
+                " JOIN lotes l ON l.id = v.lote_id WHERE l.criado >= ? AND l.revisao IS NOT NULL",
+                (desde,),
+            )
+            jobs = c.all(
+                "SELECT j.id, j.lote_id, j.atualizado, l.criado AS lote_criado FROM jobs j"
+                " JOIN lotes l ON l.id = j.lote_id WHERE j.tipo = 'render' AND j.status = 'ok' AND j.atualizado >= ?",
+                (desde,),
+            )
+            rets = {r["job_id"]: r for r in c.all("SELECT * FROM retornos WHERE atualizado >= ?", (desde,))}
+            cors = c.all("SELECT status, classificacao, credito FROM correcoes WHERE criado >= ?", (desde,))
+        materiais: dict[str, int] = {}
+        for v in versoes:
+            if v["material"]:
+                materiais[v["material"]] = materiais.get(v["material"], 0) + 1
+        esperando = sum(
+            1 for x in lotes if x["versao_atual"] and x["versao_liberada"] != x["versao_atual"]
+            and x["status"] in ("aprovado", "processando") and not x["interrompido_em"]
+        )  # fmt: skip
+        do_cliente = [v for v in versoes if v["liberada_por"] == "cliente"]
+        com_retorno = [j for j in jobs if j["id"] in rets]
+        usaveis = [j for j in com_retorno if int(rets[j["id"]]["usavel"])]
+        motivos: dict[str, int] = {}
+        for j in com_retorno:
+            m = rets[j["id"]]["motivo"]
+            if m:
+                motivos[m] = motivos.get(m, 0) + 1
+        por_lote: dict[str, list[dict]] = {}
+        for j in jobs:
+            por_lote.setdefault(j["lote_id"], []).append(j)
+        respondidos = [js for js in por_lote.values() if all(j["id"] in rets for j in js)]
+        classes: dict[str, int] = {}
+        for x in cors:
+            if x["classificacao"]:
+                classes[x["classificacao"]] = classes.get(x["classificacao"], 0) + 1
+        gpu = self.relatorio_geradores(desde)["totais"]["custo_usd"]
+        return {
+            "desde": desde,
+            "pedidos": {
+                "total": len(lotes), "revisar": sum(1 for x in lotes if x["revisao"] == "revisar"),
+                "seguir": sum(1 for x in lotes if x["revisao"] == "seguir"), "esperando_cliente": esperando,
+                "decisoes_materiais": sum(materiais.values()), "por_motivo": materiais,
+                "aprovados_pelo_cliente": len({v["lote_id"] for v in do_cliente}),
+                "textos_mudados": sum(1 for v in versoes if v["origem"] == "edicao"),
+            },
+            "videos": {
+                "entregues": len(jobs), "com_retorno": len(com_retorno), "sem_retorno": len(jobs) - len(com_retorno),
+                "usaveis": len(usaveis), "precisam_mudar": len(com_retorno) - len(usaveis), "por_motivo": motivos,
+            },
+            # pedidos em que o cliente respondeu sobre todos os vídeos; "utilizaveis": todos podem ser usados como estão
+            "primeira_entrega": {"pedidos_respondidos": len(respondidos),
+                                 "utilizaveis": sum(1 for js in respondidos if all(int(rets[j["id"]]["usavel"])
+                                                                                    for j in js))},
+            "correcoes": {"total": len(cors), "abertas": sum(1 for x in cors if x["status"] == "aberta"),
+                          "por_classificacao": classes, "creditos": sum(int(x["credito"] or 0) for x in cors)},
+            "tempos": {
+                "ate_aprovacao_do_cliente": tempos([v["liberada_em"] - v["criado"] for v in do_cliente]),
+                "ate_peca_utilizavel": tempos([j["atualizado"] - j["lote_criado"] for j in usaveis]),
+            },
+            "custo": {
+                "gpu_usd": gpu,
+                "gpu_usd_por_video_entregue": round(gpu / len(jobs), 4) if jobs else None,
+                "gpu_usd_por_video_utilizavel": round(gpu / len(usaveis), 4) if usaveis else None,
+            },
+            "nao_medido": ["tempo ativo do cliente na página", "taxas do Pix", "armazenamento",
+                           "trabalho da equipe (revisão e correções)"],
+        }  # fmt: skip
+
+    def cobrado_por_video(self, jobs: list[str]) -> dict[str, int]:
+        """Quanto cada vídeo custou (centavos, positivo): o valor que um crédito de correção devolve."""
+        if not jobs:
+            return {}
+        with self.tx() as c:
+            linhas = c.all(
+                f"SELECT referencia, valor FROM movimentos WHERE referencia IN ({', '.join('?' * len(jobs))})",
+                tuple(f"video:{j}" for j in jobs),
+            )
+        return {r["referencia"].removeprefix("video:"): -int(r["valor"]) for r in linhas if int(r["valor"]) < 0}
+
+    def correcoes(self, status: str | None = None, limite: int = 200) -> list[dict]:
+        """Os pedidos de correção (os abertos primeiro), com o retorno do cliente."""
+        with self.tx() as c:
+            return c.all(
+                "SELECT x.*, j.arquivo, cl.email FROM correcoes x LEFT JOIN jobs j ON j.id = x.job_id"
+                " LEFT JOIN clientes cl ON cl.id = x.cliente_id"
+                + (" WHERE x.status = ?" if status else "")
+                + " ORDER BY CASE WHEN x.status = 'aberta' THEN 0 ELSE 1 END, x.criado DESC LIMIT ?",
+                ((status, limite) if status else (limite,)),
+            )
 
     def avaliar(self, lote_id: str, cliente_id: str, nota: int) -> None:
         """Satisfação com um pedido terminado, de 1 a 5: uma por pedido (a 2ª vez não muda a 1ª)."""
@@ -4368,7 +4710,8 @@ class Banco:
             return {}
         with self.tx() as c:
             linhas = c.all(
-                "SELECT id, lote_id, tipo, arquivo, status, aviso, excluido_em, foto_id, erro, barrado_em FROM jobs"
+                "SELECT id, lote_id, tipo, arquivo, status, aviso, excluido_em, foto_id, erro, barrado_em, atualizado"
+                " FROM jobs"
                 f" WHERE lote_id IN ({', '.join('?' * len(lotes))}) AND tipo = 'render' ORDER BY arquivo",
                 tuple(lotes),
             )

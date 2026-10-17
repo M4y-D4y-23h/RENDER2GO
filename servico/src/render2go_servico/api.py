@@ -139,6 +139,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from render2go_servico import (
     SERVICO_DIR,
     contas,
+    criterios,
     entendimento,
     filtro_fotos,
     modelos,
@@ -299,6 +300,12 @@ PERMISSOES_PAINEL: dict[tuple[str, str], frozenset[str]] = {
     ("GET", "/api/fotos/{foto_id}/recusada"): _DONO,
     ("POST", "/api/fotos/{foto_id}/liberar"): _DONO,
     ("GET", "/api/lotes/{lote_id}/auditoria"): _TODOS,
+    # entregas (17/10/2026): a revisão dos vídeos no piloto (critérios, com a evidência) e os pedidos de correção; o
+    # vídeo abre por um link de 10 min, com cada acesso na auditoria; o crédito de uma correção, só o dono
+    ("GET", "/api/entregas"): _TODOS,
+    ("GET", "/api/jobs/{job_id}/video"): _TODOS,
+    ("POST", "/api/jobs/{job_id}/criterios"): _TODOS,
+    ("POST", "/api/correcoes/{correcao_id}/decidir"): _DONO,
     ("GET", "/api/historico"): _TODOS,
     ("GET", "/api/montagens"): _TODOS,  # montagem de vídeos (ADR 0015): a lista, sem os vídeos
     ("GET", "/api/suporte"): _TODOS,
@@ -663,6 +670,18 @@ def analisar_continuamente(banco: Banco, armazenamento: Any, analisar: Callable[
             parar.wait(intervalo_s)
 
 
+def _prazo_correcao(valor: str) -> int:
+    """RENDER2GO_CORRECAO_PRAZO_H: de 1 a 720 h (30 dias, o tempo dos vídeos no armazenamento); fora disso, a
+    configuração não sobe (melhor do que um prazo sem limite)."""
+    try:
+        horas = int(valor.strip())
+    except ValueError:
+        raise ValueError(f"RENDER2GO_CORRECAO_PRAZO_H inválido: {valor!r}") from None
+    if not 1 <= horas <= 720:
+        raise ValueError("RENDER2GO_CORRECAO_PRAZO_H: de 1 a 720 horas")
+    return horas
+
+
 @dataclass
 class Config:
     banco: Banco
@@ -701,6 +720,11 @@ class Config:
     # "revisar" (só gera depois que o cliente aprova a versão final). Desligada, todo pedido segue no modo "seguir", que
     # continua parando para a decisão do cliente num passo material
     revisao_cliente: bool = True
+    # retorno do cliente e pedidos de correção (17/10/2026; render2go_servico.criterios): RENDER2GO_CORRECOES=0 deixa só
+    # o retorno ("Pode usar como está?"); RENDER2GO_CORRECAO_PRAZO_H, as horas depois da entrega para pedir a correção
+    # (uma por vídeo; a equipe classifica e, na falha técnica ou fora do combinado, pode dar um crédito)
+    correcoes: bool = True
+    correcao_prazo_h: int = 72
     retrato_s: float = RETRATO_S  # validade do retrato da fila e dos pods (0: sempre lê do banco)
     # foto do perfil: quem baixa do Gravatar (os testes trocam; nenhum teste fala com o Gravatar de verdade)
     baixar_gravatar: Callable[[str], Any] = perfil.baixar_gravatar
@@ -835,6 +859,8 @@ class Config:
             montagem=modo_montagem,
             preco_montagem=preco_montagem,
             revisao_cliente=os.environ.get("RENDER2GO_REVISAO_CLIENTE", "1").strip() != "0",
+            correcoes=os.environ.get("RENDER2GO_CORRECOES", "1").strip() != "0",
+            correcao_prazo_h=_prazo_correcao(os.environ.get("RENDER2GO_CORRECAO_PRAZO_H", "72")),
         )
 
     def limitar(self, chave: str) -> None:
@@ -1373,6 +1399,37 @@ class SuporteIn(BaseModel):
 
 class AvaliacaoIn(BaseModel):
     nota: int = Field(ge=1, le=5)  # 1 muito pouco, 2 pouco, 3 neutro, 4 satisfeito, 5 muito satisfeito
+
+
+class RetornoIn(BaseModel):
+    """ "Pode usar como está?" sobre um vídeo entregue; sem poder usar, "O que precisa mudar?": o motivo
+    (render2go_servico.criterios.MOTIVOS_RETORNO), o critério do pedido que ficou de fora (opcional) e um comentário
+    curto (passa pelo filtro de conteúdo)."""
+
+    usavel: bool
+    motivo: (
+        Literal["pedido_nao_atendido", "produto_alterado", "texto_incorreto", "movimento_inadequado", "defeito_visual",
+                "problema_arquivo"] | None
+    ) = None  # fmt: skip
+    criterio: str | None = Field(None, max_length=80)
+    comentario: str | None = Field(None, max_length=300)
+
+
+class CriterioIn(BaseModel):
+    """A equipe avalia um critério de um vídeo (revisão do piloto): o estado e o que viu no vídeo (a evidência)."""
+
+    criterio: str = Field(min_length=1, max_length=80)
+    estado: Literal["atendido", "parcial", "nao_atendido", "nao_verificavel"]
+    evidencia: str = Field(min_length=3, max_length=500)
+
+
+class DecisaoCorrecaoIn(BaseModel):
+    """A classificação de um pedido de correção (render2go_servico.criterios.CLASSIFICACOES), o motivo da decisão
+    (fica no painel) e, na falha técnica ou fora do combinado, se devolve o valor do vídeo como crédito."""
+
+    classificacao: Literal["falha_tecnica", "fora_do_combinado", "pedido_novo"]
+    nota: str = Field(min_length=3, max_length=500)
+    creditar: bool = False
 
 
 class TextosMontagemIn(BaseModel):
@@ -2549,6 +2606,9 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "revisao_cliente": c.revisao_cliente,
             "usos": [{"id": k, "texto": v} for k, v in entendimento.USOS.items()],
             "restricoes": [{"id": k, "texto": entendimento.RESTRICOES[k]} for k in intencao.RESTRICOES_MARCAVEIS],
+            # retorno sobre cada vídeo ("O que precisa mudar?") e a política de correção (17/10/2026)
+            "motivos_retorno": [{"id": k, "texto": v} for k, v in criterios.MOTIVOS_RETORNO.items()],
+            "correcao": {"ligada": c.correcoes, "prazo_h": c.correcao_prazo_h},
             "limites": {
                 "fotos": None,  # sem limite no pago e no interno; o teste tem o dele (plano.max_fotos)
                 "por_envio": FOTOS_POR_ENVIO,  # a página manda o pedido maior em partes
@@ -2756,10 +2816,64 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             return {"lote": lote_id, "status": "aprovado", "videos": r["videos"]}
         return {"lote": lote_id, "status": "aguardando_aprovacao"}
 
-    def _video(c: Config, cliente_id: str, lote_id: str, j: dict) -> dict:
-        """Um vídeo do pedido para a página; pronto (e não excluído), com os links assinados por 24 h."""
+    def _correcao_cliente(x: dict) -> dict:
+        """A correção como o cliente vê: a situação, em português, e o crédito (a nota da equipe fica no painel)."""
+        refazer = (" Para refazer, envie a foto de novo num pedido novo (as fotos do pedido são apagadas quando ele"
+                   " termina).")  # fmt: skip
+        credito = int(x.get("credito") or 0)
+        if x["status"] == "aberta":
+            texto = "Pedido de correção recebido: a equipe confere o vídeo e responde aqui."
+        elif x["classificacao"] == "pedido_novo":
+            texto = ("Analisado: o que você quer agora não estava no pedido. Para isso, faça um pedido novo com o "
+                     "texto do jeito que quer.")  # fmt: skip
+        else:
+            tecnica = x["classificacao"] == "falha_tecnica"
+            causa = "o vídeo saiu com defeito" if tecnica else "o vídeo não atendeu ao pedido"
+            texto = f"Analisado: {causa}." + (f" {precos.reais(credito)} voltaram para o seu saldo." if credito else "")
+            texto += refazer
+        return {"status": x["status"], "texto": texto, "credito": credito}
+
+    def _retorno_do_video(c: Config, j: dict, ret: dict | None, grupo: str | None) -> dict:
+        """O retorno e a correção de um vídeo entregue e se a correção ainda pode ser pedida."""
+        r = (ret or {}).get("retorno")
+        x = (ret or {}).get("correcao")
+        dentro = time.time() - float(j.get("atualizado") or 0) <= c.correcao_prazo_h * 3600
+        out: dict[str, Any] = {
+            "retorno": None if r is None else {
+                "usavel": bool(r["usavel"]), "motivo": r["motivo"], "criterio": r["criterio"],
+                "comentario": r["comentario"],
+                "motivo_texto": criterios.MOTIVOS_RETORNO.get(r["motivo"] or ""),
+            },
+            "correcao": None if x is None else _correcao_cliente(x),
+            "pode_corrigir": bool(c.correcoes and r is not None and not r["usavel"] and x is None and dentro),
+        }  # fmt: skip
+        if grupo:
+            out["grupo"] = grupo
+        return out
+
+    def _grupo_do_video(estado: dict | None, j: dict) -> str | None:
+        """O grupo de texto de um vídeo (pedidos com versões): o do texto próprio da foto ou o do pedido."""
+        if estado is None:
+            return None
+        proprio = j.get("texto")
+        return next((g["id"] for g in estado["grupos"] if g["proprio"] and g["texto"] == proprio),
+                    versoes.GRUPO_PEDIDO)  # fmt: skip
+
+    def _criterios_do_video(c: Config, j: dict) -> list[dict]:
+        """Os critérios que valem para um vídeo (os do pedido todo e os do grupo de texto dele); pedido sem versões:
+        nenhum."""
+        est = c.banco.estados_versao([j["lote_id"]]).get(j["lote_id"])
+        return criterios.do_video(criterios.do_pedido(est, lote.load_receitas()), j["grupo"]) if est else []
+
+    def _video(
+        c: Config, cliente_id: str, lote_id: str, j: dict, retorno: dict | None = None, grupo: str | None = None
+    ) -> dict:
+        """Um vídeo do pedido para a página; pronto (e não excluído), com os links assinados por 24 h e, entregue, o
+        retorno do cliente ("Pode usar como está?") e a correção pedida (`retorno`: a entrada de `retornos_de`)."""
         item = {"id": j["id"], "arquivo": j["arquivo"], "status": j["status"], "aviso": j["aviso"],
                 "texto": j.get("texto"), "excluido": bool(j.get("excluido_em"))}  # fmt: skip
+        if j["status"] == "ok" and not j.get("excluido_em"):
+            item.update(_retorno_do_video(c, j, retorno, grupo))
         if m := motivos.motivo(j):  # por que não saiu (a categoria; o texto técnico fica no painel)
             item["motivo"] = motivos.MOTIVOS[m]
         if j["status"] == "ok" and not j.get("excluido_em"):
@@ -2790,8 +2904,10 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             if j["status"] == "ok" and not j.get("excluido_em")
         ]
         pagina = prontos[depois : depois + VIDEOS_POR_PAGINA]
+        estado = c.banco.estados_versao([lote_id]).get(lote_id) if lt.get("versao_atual") else None
+        rets = c.banco.retornos_de([lote_id])
         return {
-            "videos": [_video(c, cli["id"], lote_id, j) for j in pagina],
+            "videos": [_video(c, cli["id"], lote_id, j, rets.get(j["id"]), _grupo_do_video(estado, j)) for j in pagina],
             "mais": max(0, len(prontos) - depois - len(pagina)),
         }
 
@@ -2806,11 +2922,17 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         avaliacao: int | None = None,
         pedir_avaliacao: bool = False,
         estado: dict | None = None,
+        retornos: dict | None = None,
     ) -> dict:
         """Um pedido para a página. `estado`: o da versão atual (`Banco.estados_versao`), nos pedidos com versões
-        (ADR 0018): vira o cartão "Entendemos seu pedido assim" e, enquanto espera o cliente, a previsão diz isso."""
+        (ADR 0018): vira o cartão "Entendemos seu pedido assim" e, enquanto espera o cliente, a previsão diz isso.
+        `retornos`: o retorno e a correção de cada vídeo (`Banco.retornos_de`)."""
         if jobs is None:
             jobs = [j for j in c.banco.jobs(lt["id"]) if j["tipo"] == "render"]
+        if estado is None and lt.get("versao_atual"):
+            estado = c.banco.estados_versao([lt["id"]]).get(lt["id"])
+        if retornos is None:
+            retornos = c.banco.retornos_de([lt["id"]]) if any(j["status"] == "ok" for j in jobs) else {}
         contagem = {
             "prontos": sum(1 for j in jobs if j["status"] == "ok"),
             "falhas": sum(1 for j in jobs if j["status"] == "erro"),
@@ -2826,7 +2948,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             jobs_lista = prontos[:VIDEOS_POR_PAGINA]
         else:
             jobs_lista = jobs
-        videos = [_video(c, cliente_id, lt["id"], j) for j in jobs_lista]
+        videos = [_video(c, cliente_id, lt["id"], j, retornos.get(j["id"]), _grupo_do_video(estado, j))
+                  for j in jobs_lista]  # fmt: skip
         pedido = pedido if pedido is not None else json.loads(lt["pedido"])
         if lt["preco_video"] is not None and cobranca is None:
             cobranca = c.banco.cobranca(lt["id"])
@@ -2837,8 +2960,6 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             livre = c.banco.saldo_livre(cliente_id) if livre is None else livre
             aguardando_saldo = livre < int(lt["preco_video"])
         cartao = None
-        if estado is None and lt.get("versao_atual"):
-            estado = c.banco.estados_versao([lt["id"]]).get(lt["id"])
         if estado is not None:
             cartao = entendimento.cartao(
                 estado, receitas=lote.load_receitas(), presets_data=entendimento.dados_presets(),
@@ -2896,6 +3017,8 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "entendimento": cartao,
             "espera_cliente": espera_cliente,
             "editavel": editavel,
+            # os critérios do pedido (o que a conferência do resultado olha); o retorno de um vídeo pode apontar um
+            "criterios": criterios.do_pedido(estado, lote.load_receitas()) if estado is not None else None,
         }
 
     def _previsao(c: Config, lt: dict, jobs: list[dict]) -> dict | None:
@@ -2994,9 +3117,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
         livre = c.banco.saldo_livre(cli["id"]) if any(lt.get("cobranca") == "video" for lt in lotes) else None
         notas, pedir = _avaliacoes(c, cli, lotes)
         estados = c.banco.estados_versao([lt["id"] for lt in lotes if lt.get("versao_atual")])
+        rets = c.banco.retornos_de([i for i in ids if any(j["status"] == "ok" for j in jobs[i])])
         return [
             _resumo(lt, c, cli["id"], jobs[lt["id"]], cobr.get(lt["id"]), pedidos[lt["id"]], livre,
-                    avaliacao=notas.get(lt["id"]), pedir_avaliacao=lt["id"] in pedir, estado=estados.get(lt["id"]))
+                    avaliacao=notas.get(lt["id"]), pedir_avaliacao=lt["id"] in pedir, estado=estados.get(lt["id"]),
+                    retornos=rets)
             for lt in lotes
         ]  # fmt: skip
 
@@ -3467,6 +3592,49 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "limites": entendimento.limites(categoria, body.duracao),
             "uso": entendimento.USOS.get((briefing or {}).get("uso") or ""),
         }
+
+    # -- retorno sobre cada vídeo e pedido de correção (17/10/2026; render2go_servico.criterios) ---------------------
+
+    @app.post("/api/videos/{job_id}/retorno")
+    def retorno_video(
+        job_id: str, body: RetornoIn, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)
+    ):
+        """ "Pode usar como está?" sobre um vídeo entregue; sem poder usar, "O que precisa mudar?" (o motivo, o critério
+        do pedido que ficou de fora e um comentário curto). Responder de novo troca a resposta; a cobrança não muda."""
+        if not body.usavel and body.motivo is None:
+            raise HTTPException(422, "diga o que precisa mudar")
+        comentario = " ".join((body.comentario or "").split()) or None
+        if comentario and not body.usavel and not filtros.avaliar(comentario).allowed:
+            raise HTTPException(422, "o comentário não segue as regras de conteúdo; reescreva sem esse trecho")
+        try:
+            j = c.banco.video_entregue(job_id, cli["id"])
+        except BancoError as e:
+            raise HTTPException(404 if "não encontrado" in str(e) else 409, str(e)) from e
+        criterio = None if body.usavel else body.criterio
+        if criterio and criterio not in {x["id"] for x in _criterios_do_video(c, j)}:
+            raise HTTPException(422, "esse critério não é deste vídeo")
+        try:
+            c.banco.registrar_retorno(job_id, cli["id"], body.usavel, body.motivo, criterio, comentario)
+        except BancoError as e:
+            raise HTTPException(409, str(e)) from e
+        c.banco.registrar_acesso(cli["id"], "retorno_video", origem_de(request),
+                                 {"job": job_id, "usavel": body.usavel, "motivo": body.motivo})  # fmt: skip
+        ret = c.banco.retornos_de([j["lote_id"]]).get(job_id)
+        return {"job": job_id, **_retorno_do_video(c, j, ret, None)}
+
+    @app.post("/api/videos/{job_id}/correcao")
+    def pedir_correcao(job_id: str, request: Request, cli: dict = Depends(cliente), c: Config = Depends(config)):
+        """Pedido de correção de um vídeo que o cliente disse que não pode usar: um por vídeo, até
+        RENDER2GO_CORRECAO_PRAZO_H depois da entrega; a equipe classifica e responde no pedido."""
+        if not c.correcoes:
+            raise HTTPException(409, "os pedidos de correção não estão abertos agora; fale com o suporte")
+        try:
+            x = c.banco.pedir_correcao(job_id, cli["id"], c.correcao_prazo_h * 3600)
+        except BancoError as e:
+            raise HTTPException(404 if "não encontrado" in str(e) else 409, str(e)) from e
+        if not x["ja"]:
+            c.banco.registrar_acesso(cli["id"], "correcao_pedida", origem_de(request), {"job": job_id, "id": x["id"]})
+        return {"job": job_id, "correcao": _correcao_cliente(x), "ja": x["ja"]}
 
     @app.post("/api/lotes/{lote_id}/avaliacao")
     def avaliar_lote(lote_id: str, body: AvaliacaoIn, cli: dict = Depends(cliente), c: Config = Depends(config)):
@@ -4168,6 +4336,106 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "folha": c.armazenamento.url("GET", chave_quarentena(j["cliente_id"], j["lote_id"], f"{stem}.jpg"), 600),
             "expira_s": 600,
         }
+
+    # -- entregas: a revisão dos vídeos no piloto e os pedidos de correção (17/10/2026) ----------------------------
+
+    @rotas.get("/api/entregas")
+    def entregas(dias: int = 14, _: str = Depends(admin), c: Config = Depends(config)):
+        """Os pedidos com vídeos entregues nos últimos `dias`: por vídeo, os critérios (obrigatórios e preferências),
+        a última decisão de cada um, com quem e a evidência, as observações dos avaliadores automáticos (que não
+        decidem), a situação, o retorno do cliente e a correção pedida. E os pedidos de correção (os abertos
+        primeiro), com o motivo, o critério e o valor que o crédito devolve, e as métricas do piloto (docs/16)."""
+        if not 1 <= dias <= 90:
+            raise HTTPException(422, "dias: de 1 a 90")
+        lotes_, por = c.banco.entregas(time.time() - dias * 86400)
+        estados = c.banco.estados_versao([x["id"] for x in lotes_ if x.get("versao_atual")])
+        rets = c.banco.retornos_de([x["id"] for x in lotes_])
+        avals = c.banco.criterios_dos_videos([j["id"] for js in por.values() for j in js])
+        rec = lote.load_receitas()
+        out = []
+        for x in lotes_:
+            est = estados.get(x["id"])
+            todos = criterios.do_pedido(est, rec) if est else []
+            videos = []
+            for j in por[x["id"]]:
+                grupo = _grupo_do_video(est, j)
+                lista = criterios.do_video(todos, grupo)
+                av = avals.get(j["id"], {"decisoes": {}, "observacoes": []})
+                decisoes = {k: v["estado"] for k, v in av["decisoes"].items()}
+                ret = rets.get(j["id"]) or {}
+                videos.append({
+                    "id": j["id"], "arquivo": j["arquivo"], "entregue": j["atualizado"], "grupo": grupo,
+                    "criterios": [k["id"] for k in lista],
+                    "decisoes": av["decisoes"],
+                    "observacoes": av["observacoes"] + criterios.observacoes_tecnicas(j),
+                    "situacao": criterios.situacao(lista, decisoes) if lista else None,
+                    "retorno": ret.get("retorno"), "correcao": ret.get("correcao"),
+                })  # fmt: skip
+            pedido = json.loads(x["pedido"])
+            out.append({"lote": x["id"], "email": x.get("email"), "criado": x["criado"], "status": x["status"],
+                        "prompt": pedido.get("prompt"), "revisao": x.get("revisao"),
+                        "versao": est["numero"] if est else None, "criterios": todos, "videos": videos})  # fmt: skip
+        itens = c.banco.correcoes()
+        cobrado = c.banco.cobrado_por_video([x["job_id"] for x in itens])
+        correcoes = [{**x, "motivo_texto": criterios.MOTIVOS_RETORNO.get(x["motivo"]),
+                      "valor_video": cobrado.get(x["job_id"], 0)} for x in itens]  # fmt: skip
+        piloto = c.banco.metricas_piloto(time.time() - dias * 86400)
+        # a situação dos vídeos listados, pelas decisões da equipe (só os obrigatórios; sem decisão, não verificado)
+        situacoes = [(v["situacao"] or {}).get("situacao") for p in out for v in p["videos"]]
+        piloto["conferencia"] = {k: situacoes.count(k) for k in criterios.SITUACOES}
+        return {"pedidos": out, "correcoes": correcoes, "piloto": piloto, "estados": criterios.ROTULO_ESTADO,
+                "motivos": criterios.MOTIVOS_RETORNO, "classificacoes": criterios.CLASSIFICACOES,
+                "com_credito": list(criterios.COM_CREDITO)}  # fmt: skip
+
+    @rotas.get("/api/jobs/{job_id}/video")
+    def ver_video_entregue(job_id: str, request: Request, quem: str = Depends(admin), c: Config = Depends(config)):
+        """O vídeo entregue, para a revisão do piloto: um link de 10 min; cada acesso fica na auditoria do painel."""
+        try:
+            j = c.banco.video_entregue(job_id)
+        except BancoError as e:
+            raise HTTPException(404, str(e)) from e
+        _auditar(c, request, quem, "ver_video_entrega", j["lote_id"], {"job": job_id, "arquivo": j["arquivo"]})
+        chave = chave_saida(j["cliente_id"], j["lote_id"], j["arquivo"])
+        return {"arquivo": j["arquivo"], "video": c.armazenamento.url("GET", chave, 600), "expira_s": 600}
+
+    @rotas.post("/api/jobs/{job_id}/criterios")
+    def avaliar_criterio(
+        job_id: str, body: CriterioIn, request: Request, quem: str = Depends(admin), c: Config = Depends(config)
+    ):
+        """A decisão de uma pessoa sobre um critério de um vídeo, com a evidência (o que viu no vídeo inteiro)."""
+        try:
+            j = c.banco.video_entregue(job_id)
+        except BancoError as e:
+            raise HTTPException(404, str(e)) from e
+        lista = _criterios_do_video(c, j)
+        if body.criterio not in {k["id"] for k in lista}:
+            raise HTTPException(422, "esse critério não é deste vídeo")
+        try:
+            c.banco.avaliar_criterio(job_id, body.criterio, body.estado, f"equipe:{quem}", body.evidencia)
+        except BancoError as e:
+            raise HTTPException(422, str(e)) from e
+        _auditar(c, request, quem, "criterio", j["lote_id"],
+                 {"job": job_id, "criterio": body.criterio, "estado": body.estado})  # fmt: skip
+        decisoes = {k: v["estado"] for k, v in c.banco.criterios_dos_videos([job_id])[job_id]["decisoes"].items()}
+        return {"job": job_id, "situacao": criterios.situacao(lista, decisoes)}
+
+    @rotas.post("/api/correcoes/{correcao_id}/decidir")
+    def decidir_correcao(
+        correcao_id: str, body: DecisaoCorrecaoIn, request: Request, quem: str = Depends(admin),
+        c: Config = Depends(config),
+    ):  # fmt: skip
+        """A classificação de um pedido de correção (só o dono: pode devolver dinheiro ao saldo). O crédito é o valor
+        cobrado do vídeo, com a referência única correcao:<id>; decidir de novo não muda nada."""
+        try:
+            x = c.banco.decidir_correcao(correcao_id, quem, body.classificacao, body.nota, body.creditar)
+        except BancoError as e:
+            raise HTTPException(404 if "não encontrada" in str(e) else 422, str(e)) from e
+        if not x["ja"]:
+            _auditar(c, request, quem, "correcao", x["lote_id"],
+                     {"correcao": correcao_id, "classificacao": body.classificacao, "credito": x["credito"],
+                      "cliente": x["cliente_id"]})  # fmt: skip
+        return {"correcao": correcao_id, "status": x["status"], "classificacao": x["classificacao"],
+                "credito": x["credito"], "ja": x["ja"]}  # fmt: skip
 
     @rotas.get("/api/clientes")
     def lista_clientes(busca: str | None = None, _: str = Depends(admin), c: Config = Depends(config)):

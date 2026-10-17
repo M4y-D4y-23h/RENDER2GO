@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Painel · Render2Go</title>
 <meta name="robots" content="noindex, nofollow">
-<script src="/estatico/inicio.js?v=ac8a0489bb76" integrity="sha384-jcgOXWliJEmWFt5OI2ubr/+4nqocPN6RohZTaMKiUnxmU1R8syI0PpqQr/H7/g2w" data-chave="render2go-painel-conectado" data-papel="render2go-painel-papel" data-so-dono="gpus pagamentos acessos auditoria seguranca" data-secoes data-antecipar="visao-geral=api/sessao,api/resumo revisao=api/sessao,api/resumo,api/lotes historico=api/sessao,api/resumo,api/historico?grupo=todos montagens=api/sessao,api/resumo,api/montagens clientes=api/sessao,api/resumo,api/clientes suporte=api/sessao,api/resumo,api/suporte interesses=api/sessao,api/resumo,api/interesses pods=api/sessao,api/resumo,api/pods gpus=api/sessao,api/resumo,api/geradores?dias=30 pagamentos=api/sessao,api/resumo,api/pagamentos acessos=api/sessao,api/resumo,api/acessos auditoria=api/sessao,api/resumo,api/auditoria seguranca=api/sessao,api/resumo,api/seguranca"></script>
+<script src="/estatico/inicio.js?v=ac8a0489bb76" integrity="sha384-jcgOXWliJEmWFt5OI2ubr/+4nqocPN6RohZTaMKiUnxmU1R8syI0PpqQr/H7/g2w" data-chave="render2go-painel-conectado" data-papel="render2go-painel-papel" data-so-dono="gpus pagamentos acessos auditoria seguranca" data-secoes data-antecipar="visao-geral=api/sessao,api/resumo revisao=api/sessao,api/resumo,api/lotes historico=api/sessao,api/resumo,api/historico?grupo=todos montagens=api/sessao,api/resumo,api/montagens entregas=api/sessao,api/resumo,api/entregas clientes=api/sessao,api/resumo,api/clientes suporte=api/sessao,api/resumo,api/suporte interesses=api/sessao,api/resumo,api/interesses pods=api/sessao,api/resumo,api/pods gpus=api/sessao,api/resumo,api/geradores?dias=30 pagamentos=api/sessao,api/resumo,api/pagamentos acessos=api/sessao,api/resumo,api/acessos auditoria=api/sessao,api/resumo,api/auditoria seguranca=api/sessao,api/resumo,api/seguranca"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
@@ -12,7 +12,7 @@
 <meta name="format-detection" content="telephone=no">
 <meta name="application-name" content="Render2Go">
 <meta name="apple-mobile-web-app-title" content="Render2Go">
-<link rel="stylesheet" href="/estatico/estilo.css?v=eed4e3fb6b5e" integrity="sha384-2foUiOUL4xGUijZVn4OUU/F/sYNbmc9iPVjsotGPGVi7Sd+D11nTJdajM9NUdXag">
+<link rel="stylesheet" href="/estatico/estilo.css?v=cb998e1de32d" integrity="sha384-o/KrQ2Pkrk2hwJBkSbOlzxE7WkkNcRxx4dNecgF2mpWsqIMGHhm0Yirj9TvDv4ff">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -26,7 +26,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="painel.js?v=985f43f0ffdd" integrity="sha384-zEFUqkD2qkIU08JkaujhDGvyc265DZaLl6V2uTXiOrqZLXrb9Ne/SETFBEddHZHp" defer></script>
+<script src="painel.js?v=41da09be225a" integrity="sha384-9kuMIvvUBxOfyNKlwsFy/AGuMylAtxq9IQkogtlDbl0z0+4tIT1OYJZWQPjzidCD" defer></script>
 </head>
 <body data-pagina="painel">
 <a class="pular" href="#conteudo">Pular para o conteúdo</a>
@@ -72,6 +72,7 @@
 <li data-rota="GET /api/lotes"><a href="#revisao" data-secao="revisao"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z"/></svg><span>Revisão</span><span class="contagem" id="n-pendentes"></span></a></li>
 <li data-rota="GET /api/historico"><a href="#historico" data-secao="historico"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4v4.5H8M12 7.5V12l3 2"/></svg><span>Histórico</span></a></li>
 <li data-rota="GET /api/montagens"><a href="#montagens" data-secao="montagens"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17zM14.5 7.5l2 2"/></svg><span>Montagens</span></a></li>
+<li data-rota="GET /api/entregas"><a href="#entregas" data-secao="entregas"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Entregas</span></a></li>
 </ul>
 </div>
 <div class="grupo">
@@ -266,6 +267,26 @@
 </div>
 <div class="dados-vista" id="montagens-dados" aria-busy="true">
 <div id="montagens-tabela" class="tabela" role="region" aria-label="Montagens das contas" tabindex="0">
+<div class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
+</div>
+</div>
+</section>
+<section class="secao-painel" id="sec-entregas" aria-labelledby="t-entregas">
+<div class="cab-pagina">
+<h1 id="t-entregas" tabindex="-1">Entregas</h1>
+<p class="fraco">Os vídeos entregues nos últimos 14 dias, para a revisão do piloto: cada critério do pedido (obrigatório ou preferência, com a origem) recebe o estado e a evidência, o que você viu no vídeo inteiro. Um obrigatório não atendido decide; sem decisão, o vídeo fica “ainda não verificado”. A conferência automática de cor aparece só como observação. Pedidos de correção dos clientes: a equipe classifica; o crédito, só o dono.</p>
+</div>
+<div class="dados-vista" id="entregas-dados" aria-busy="true">
+<h2 class="titulo-bloco">Piloto, últimos 14 dias</h2>
+<div id="entregas-piloto" class="piloto">
+<div class="esqueleto" aria-hidden="true"><span></span><span></span></div>
+</div>
+<h2 class="titulo-bloco">Pedidos de correção</h2>
+<div id="entregas-correcoes" class="tabela" role="region" aria-label="Pedidos de correção" tabindex="0">
+<div class="esqueleto" aria-hidden="true"><span></span><span></span></div>
+</div>
+<h2 class="titulo-bloco">Vídeos entregues</h2>
+<div id="entregas-lista" class="entregas-lista">
 <div class="esqueleto" aria-hidden="true"><span></span><span></span><span></span></div>
 </div>
 </div>

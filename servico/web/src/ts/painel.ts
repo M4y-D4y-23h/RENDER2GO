@@ -19,6 +19,7 @@ import {
 } from "./painel-base";
 import { criarClientes, criarInteresses, criarSuporte } from "./painel-clientes";
 import { iniciarEntrada } from "./painel-entrada";
+import { criarEntregas } from "./painel-entregas";
 import { criarGpus, criarPagamentos, criarPods } from "./painel-operacao";
 import { criarHistorico, criarMontagens, criarRevisao } from "./painel-pedidos";
 import { type Resumo, criarAcessos, criarAuditoria, criarSeguranca, criarVisaoGeral } from "./painel-seguranca";
@@ -29,6 +30,7 @@ const SECOES = {
   revisao: { titulo: "Revisão", rota: "GET /api/lotes" },
   historico: { titulo: "Histórico", rota: "GET /api/historico" },
   montagens: { titulo: "Montagens", rota: "GET /api/montagens" },
+  entregas: { titulo: "Entregas", rota: "GET /api/entregas" },
   clientes: { titulo: "Contas e saldo", rota: "GET /api/clientes" },
   suporte: { titulo: "Suporte", rota: "GET /api/suporte" },
   interesses: { titulo: "Interesse", rota: "GET /api/interesses" },
@@ -122,6 +124,7 @@ function iniciarPainel(): void {
     revisao: criarRevisao({ aoContar: contarPendentes, aoMudar }),
     historico: criarHistorico(),
     montagens: criarMontagens(),
+    entregas: criarEntregas(),
     clientes: criarClientes(),
     suporte: criarSuporte(),
     interesses: criarInteresses(),

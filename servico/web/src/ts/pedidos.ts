@@ -37,11 +37,27 @@ import { type Conta, aoMudarConta, atualizarConta } from "./conta";
 import { type Entendimento, type Pendencia, type Previa, cartaoEntendimento, listaPendencias, pendenciasDe, previaEntendimento } from "./entendimento";
 import { botaoInteresse } from "./interesse";
 import { abrirVideo } from "./player";
+import { type CorrecaoVideo, type CriterioPedido, type RetornoVideo, configurarRetorno, retornoDoVideo } from "./retorno";
 import { criarSequencia } from "./sequencia";
 
 type Movimento = { quando: number; tipo: string; valor: number; lote_id: string | null; descricao: string | null };
 type Saldo = { pre_pago: boolean; saldo?: number; precos?: Record<string, number>; extrato?: Movimento[] };
-type Video = { id?: string; arquivo: string; status: string; aviso: string | null; url?: string; baixar?: string; texto?: string | null; excluido?: boolean; motivo?: string };
+type Video = {
+  id?: string;
+  arquivo: string;
+  status: string;
+  aviso: string | null;
+  url?: string;
+  baixar?: string;
+  texto?: string | null;
+  excluido?: boolean;
+  motivo?: string;
+  // entregue (17/10/2026): o retorno do cliente, a correção pedida, se ainda pode pedir e o grupo de texto
+  retorno?: RetornoVideo | null;
+  correcao?: CorrecaoVideo | null;
+  pode_corrigir?: boolean;
+  grupo?: string;
+};
 // previsão em segundos; o cliente vê só o tempo, não as etapas internas. "revisao" e "decisao" (ADR 0018): o pedido
 // espera o cliente (aprovar a versão, ou decidir sobre uma mudança na adaptação); `pronto`: já dá para aprovar
 type Previsao = { fase: "analise" | "fila" | "gerando" | "saldo" | "revisao" | "decisao"; inicio_max_s?: number; inicio_s?: number; fim_s?: number; pronto?: boolean } | null;
@@ -79,6 +95,8 @@ type Lote = {
   entendimento?: Entendimento | null;
   espera_cliente?: boolean;
   editavel?: boolean;
+  // os critérios do pedido (o que a conferência do resultado olha); o retorno de um vídeo pode apontar um
+  criterios?: CriterioPedido[] | null;
 };
 type Envio = { original: string; url: string; tipo: string };
 
@@ -90,7 +108,7 @@ const MAX_MEDIDAS = 500; // fotos medidas para o aviso de foto pequena (pedido g
 // envio (válidos por 1 h) não vencem enquanto as partes anteriores sobem
 const BYTES_POR_PARTE = 512 * 1024 ** 2;
 const NICHOS: Record<string, string> = { geral: "Geral", produto: "Produtos", imovel: "Imóveis", comida: "Comida e bebida", pessoa: "Pessoas" };
-const MOVIMENTOS: Record<string, string> = { recarga: "Recarga", ajuste: "Ajuste", pedido: "Pedido", estorno: "Devolvido", video: "Vídeo entregue" };
+const MOVIMENTOS: Record<string, string> = { recarga: "Recarga", ajuste: "Ajuste", pedido: "Pedido", estorno: "Devolvido", video: "Vídeo entregue", credito: "Crédito" };
 const ROTULO_TEXTO = {
   unico: ["O que deve acontecer nos vídeos?", "Escreva em português, do seu jeito. O texto vale para cada foto, uma de cada vez: descreva o que acontece numa foto só. Pode ser simples ou detalhado."],
   sequencia: ["Texto padrão", "Vale para cada foto que não tiver um texto próprio, uma de cada vez: descreva o que acontece numa foto só. Em português, do seu jeito."],
@@ -267,7 +285,8 @@ function textoPrevisao(p: NonNullable<Previsao>): string {
 // vídeos além dos primeiros de cada pedido grande, já buscados com "Mostrar mais" (lote → vídeos)
 const maisVideos = new Map<string, Video[]>();
 
-function itemVideo(lote: string, v: Video): HTMLElement {
+function itemVideo(l: Lote, v: Video): HTMLElement {
+  const lote = l.lote;
   const assistir = criar("button", { type: "button", className: "assistir", dados: { foco: `${lote}:assistir:${v.arquivo}` } }, [
     criar("span", { className: "play" }, [icone("play", "cheio")]),
     criar("span", { className: "nome", textContent: v.arquivo }),
@@ -281,7 +300,8 @@ function itemVideo(lote: string, v: Video): HTMLElement {
     a.setAttribute("aria-label", `Baixar ${v.arquivo}`);
     itens.push(a);
   }
-  return criar("li", { className: "video" }, itens);
+  const retorno = baixar ? retornoDoVideo(v, l.criterios ?? [], () => recarregarLista()) : null;
+  return criar("li", { className: "video" }, [...itens, retorno]);
 }
 
 // recarrega a lista de pedidos (definida em criarPedidos; o cartão a usa depois de parar um pedido)
@@ -413,7 +433,7 @@ function cartaoLote(l: Lote): HTMLElement {
     const mostrar = (v: Video) => {
       if (naLista.has(v.arquivo)) return; // um vídeo que fica pronto fora da ordem pode mudar de página: sem repetir
       naLista.add(v.arquivo);
-      lista.append(itemVideo(l.lote, v));
+      lista.append(itemVideo(l, v));
     };
     for (const v of [...prontos, ...(maisVideos.get(l.lote) ?? [])]) mostrar(v);
     cartao.append(lista);
@@ -641,7 +661,7 @@ export function criarPedidos(ctx: {
         l.pedir_avaliacao,
         l.interrompido_em,
         l.nao_sairam,
-        l.videos.map((v) => [v.arquivo, v.status, !!v.url, !!v.excluido]),
+        l.videos.map((v) => [v.arquivo, v.status, !!v.url, !!v.excluido, v.retorno?.usavel, v.retorno?.motivo, v.correcao?.texto, v.pode_corrigir]),
         // a versão (o hash muda a cada passo) e o que o cliente pode fazer com ela
         l.entendimento && [l.entendimento.versao.numero, l.entendimento.versao.hash, l.entendimento.versao.liberada, l.entendimento.aprovar, l.espera_cliente, l.editavel],
       ]),
@@ -1120,6 +1140,7 @@ export function criarPedidos(ctx: {
       () => (el("esqueleto-pedido").hidden = true), // com erro, fica a mensagem acima, não um esqueleto sem fim
     );
     receitas = dados;
+    configurarRetorno(receitas);
     // estilos agrupados por nicho; o "Livre" (geral) vem primeiro, como a API manda
     const grupos = new Map<string, HTMLOptGroupElement>();
     const opcoes: HTMLElement[] = [];

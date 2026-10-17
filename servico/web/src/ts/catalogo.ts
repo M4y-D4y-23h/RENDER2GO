@@ -55,6 +55,9 @@ export type Receitas = {
   revisao_cliente?: boolean;
   usos?: { id: string; texto: string }[];
   restricoes?: { id: string; texto: string }[];
+  // retorno sobre cada vídeo: os motivos de "O que precisa mudar?" e a política de correção (17/10/2026)
+  motivos_retorno?: { id: string; texto: string }[];
+  correcao?: { ligada: boolean; prazo_h: number };
 };
 
 let pedido: Promise<Receitas> | null = null;

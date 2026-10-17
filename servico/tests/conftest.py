@@ -34,6 +34,9 @@ def banco(request, tmp_path):
         with psycopg.connect(PG_URL, autocommit=True) as con:
             for t in (
                 "versoes",
+                "criterios_avaliados",
+                "retornos",
+                "correcoes",
                 "codigos_recuperacao",
                 "admin_convites",
                 "admins",

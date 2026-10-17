@@ -295,6 +295,7 @@ SECOES_PAINEL = [
     "revisao",
     "historico",
     "montagens",
+    "entregas",
     "clientes",
     "suporte",
     "interesses",
@@ -1642,3 +1643,46 @@ def test_understanding_card_review_before_generating_and_two_tabs(ambiente, nave
     ctx.close()
     # as recusas esperadas da API (a pendência, 422; a versão velha, 409) aparecem no console como recursos
     assert [e for e in erros if not re.search(r"status of (409|422)", e)] == [], erros
+
+
+def test_client_says_what_must_change_and_asks_for_a_correction(ambiente, navegador):  # noqa: F811
+    """Retorno sobre cada vídeo (17/10/2026): "Pode usar como está?"; "Não, precisa mudar" abre a janela com o motivo,
+    o critério do pedido e um comentário; depois, "Pedir correção" (com a política explicada) e a resposta da equipe
+    no próprio vídeo, com o crédito, sem a nota interna."""
+    erros: list[str] = []
+    tok = _cliente(ambiente)
+    lid = _lote(ambiente, tok, {"pote.png": _png((40, 90, 160), "circulo")}, pronto=True, prompt="o pote gira devagar")
+    (job,) = [j for j in ambiente.banco.jobs(lid) if j["tipo"] == "render"]
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, tok)
+    pg = _pagina(ctx, erros)
+    pg.goto(ambiente.url)
+    video = pg.locator("#lotes .video", has_text=job["arquivo"])
+    pw.expect(video.locator(".retorno-video")).to_contain_text("Pode usar como está?")
+    video.locator(f"[data-foco='{job['id']}:mudar']").click()
+    janela = pg.locator("dialog.retorno-video[open]")
+    janela.locator("button", has_text="Enviar").click()
+    pw.expect(janela).to_contain_text("Escolha o que aconteceu.")  # o motivo é obrigatório
+    janela.locator("label", has_text="O produto mudou").click()
+    janela.locator("select").select_option("produto")
+    janela.locator("textarea").fill("a tampa ficou de outra cor")
+    assert _axe(pg) == []
+    janela.locator("button", has_text="Enviar").click()
+    pw.expect(janela).to_have_count(0)
+    pw.expect(video).to_contain_text("Você marcou: precisa mudar (O produto mudou).")
+    video.locator(f"[data-foco='{job['id']}:corrigir']").click()
+    pg.locator("dialog.confirmacao[open]").locator("button", has_text="Pedir correção").click()
+    pw.expect(video).to_contain_text("Pedido de correção recebido")
+    (x,) = ambiente.banco.correcoes()
+    assert (x["motivo"], x["criterio"]) == ("produto_alterado", "produto")
+    assert x["comentario"] == "a tampa ficou de outra cor"
+    # a equipe decide (fora do combinado, com crédito); o cliente vê a resposta e o crédito, nunca a nota
+    ambiente.banco.decidir_correcao(x["id"], "dono", "fora_do_combinado", "nota interna da equipe", True)
+    pg.reload()
+    video = pg.locator("#lotes .video", has_text=job["arquivo"])
+    pw.expect(video).to_contain_text("voltaram para o seu saldo")
+    assert "nota interna" not in pg.locator("#lotes").inner_text()
+    pg.evaluate("Promise.all(document.getAnimations().map((a) => a.finished))")  # o cartão termina de surgir
+    assert _axe(pg) == []
+    ctx.close()
+    assert erros == [], erros
