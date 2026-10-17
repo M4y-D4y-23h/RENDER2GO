@@ -82,3 +82,22 @@ L40S secure (US$ 1,09/h), US-NC-1, com o vídeo de 3 s em 832×480 da foto `fixt
 ## Alternativa a medir se a taxa de volta for baixa: volume de rede do RunPod com tudo instalado
 
 Um volume de rede (US$ 0,07/GB/mês, ~US$ 4/mês para 60 GB) num datacenter com estoque de L40S, com ambiente e modelos prontos, montado por **qualquer** pod novo daquele datacenter (não só pelo mesmo host): subida esperada de ~1–1,5 min para todos os pods, inclusive os da escala, sem depender de uma GPU específica livre. Contra: prende os pods a um datacenter, e ler os modelos direto dele cai na mesma exceção da regra (seção 5). O `lote_nuvem` já tem o modo `--volume` (de 07/10), que hoje copia tudo para o disco local (77 s medidos). Fica para a conversa sobre a capacidade.
+
+## Atualização de 17/10/2026 (2): o disco "vazio" era um pod substituto; diagnóstico do volume
+
+- **O caso:** depois da atualização do servidor de 17/10/2026, o dono viu o disco de volume vazio "depois da retomada".
+  A versão da hibernação tinha mudado (`83ade25e…` → `1ada2ec0…`: `Dockerfile`, `models.lock.json` e `pod_agente.py`).
+  A regra desta decisão encerrou o hibernado de 12/10 (o disco foi junto), e o pedido seguinte subiu um pod do zero,
+  com um disco novo. Não houve retomada. Evidências (metadados e faturamento, só leitura) em
+  `worker/evals/volume-2026-10-17/`.
+- **Diagnóstico por sessão** (`render2go_worker/volume.py`): a montagem, o sistema de arquivos, se é persistente, o
+  espaço, a sentinela, o marcador e o motivo de o cache não servir; tudo vai para o relatório de GPUs.
+- **Fail-closed:** o cache só é gravado numa montagem persistente e que comporta tudo. Sem marcador, o pod é encerrado
+  em vez de hibernar. O SHA-256 continua sendo refeito em toda volta.
+- **Antes de uma atualização:** `render2go-servico hibernados` diz o que a versão nova faria com cada hibernado
+  (`docs/09`, seção 0).
+- **O fim do disco** (`geradores.volume_fim_em`) e o custo parado entram no relatório.
+- **Em aberto:** a taxa real de voltas, porque de 12 a 17/10 o hibernado nunca foi usado (US$ 2,56 de disco), e se
+  vale separar a versão do agente da versão do conteúdo do disco. Editar o pod, que troca o agente, mantém o
+  `/workspace`, pelo contrato do RunPod; isso pede um teste num pod descartável antes de qualquer mudança.
+
