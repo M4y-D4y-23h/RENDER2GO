@@ -639,6 +639,60 @@ def montagem(cfg, a, b, anon):
         conferir(r.status_code in (401, 403), f"painel das montagens com {quem}: recusado", str(r.status_code))
 
 
+def fidelidade(cfg, a, b, anon, adm, lote_a):
+    """ADR 0018 (17/10/2026): versões, texto, entendimento, retorno, correção e as rotas novas do painel."""
+    foto = cfg.banco.fotos(lote_a)[0]
+    job = "job_" + secrets.token_hex(8)
+    agora = time.time()
+    with cfg.banco.tx() as c:  # um vídeo entregue da conta A (como se o pod tivesse gerado)
+        c.run(
+            "INSERT INTO jobs (id, lote_id, tipo, foto_id, arquivo, status, criado, atualizado)"
+            " VALUES (?, ?, 'render', ?, 'bolo-v1.mp4', 'ok', ?, ?)",
+            (job, lote_a, foto["id"], agora, agora),
+        )
+    versao = {"numero": 1, "hash": "0" * 64}
+    r = b.post(f"{BASE}/api/lotes/{lote_a}/versao/aprovar", json=versao, headers=PAGINA)
+    conferir(r.status_code == 404, "outra conta não aprova a versão do pedido alheio (IDOR)", str(r.status_code))
+    r = b.post(f"{BASE}/api/lotes/{lote_a}/texto", json={**versao, "grupo": "pedido", "texto": "o bolo gira"},
+               headers=PAGINA)  # fmt: skip
+    conferir(r.status_code == 404, "outra conta não muda o texto do pedido alheio (IDOR)", str(r.status_code))
+    r = a.post(f"{BASE}/api/lotes/{lote_a}/versao/aprovar", json={"numero": 1, "hash": "' OR 1=1--"}, headers=PAGINA)
+    conferir(r.status_code == 422, "hash malicioso na aprovação da versão: 422", str(r.status_code))
+    r = anon.post(f"{BASE}/api/pedido/entendimento", json={"prompt": "o bolo gira"}, headers=PAGINA)
+    conferir(r.status_code == 401, "entendimento do pedido sem sessão: 401", str(r.status_code))
+    corpo = {"usavel": False, "motivo": "defeito_visual", "comentario": "borrão no fim"}
+    r = b.post(f"{BASE}/api/videos/{job}/retorno", json=corpo, headers=PAGINA)
+    conferir(r.status_code == 404, "outra conta não responde sobre o vídeo alheio (IDOR)", str(r.status_code))
+    r = a.post(f"{BASE}/api/videos/{job}/retorno", json=corpo, headers={"Sec-Fetch-Site": "cross-site", **PAGINA})
+    conferir(r.status_code == 403, "CSRF no retorno sobre um vídeo: 403", str(r.status_code))
+    r = a.post(f"{BASE}/api/videos/{job}/retorno", json={**corpo, "motivo": "' OR 1=1--"}, headers=PAGINA)
+    conferir(r.status_code == 422, "motivo fora da lista no retorno: 422", str(r.status_code))
+    r = a.post(f"{BASE}/api/videos/{job}/retorno", json=corpo, headers=PAGINA)
+    conferir(r.status_code == 200, "a própria conta responde sobre o vídeo", str(r.status_code))
+    r = b.post(f"{BASE}/api/videos/{job}/correcao", headers=PAGINA)
+    conferir(r.status_code == 404, "outra conta não pede correção do vídeo alheio (IDOR)", str(r.status_code))
+    r = a.post(f"{BASE}/api/videos/{job}/correcao", headers=PAGINA)
+    conferir(r.status_code == 200, "a própria conta pede a correção", str(r.status_code))
+    cid = (cfg.banco.correcoes() or [{}])[0].get("id", "cor_x")
+    decisao = {"classificacao": "falha_tecnica", "nota": "quadro estranho", "creditar": True}
+    for quem, nav in (("anônimo", anon), ("sessão de cliente", a)):
+        r = nav.post(f"{BASE}{PAINEL}/api/correcoes/{cid}/decidir", json=decisao, headers=PAGINA)
+        conferir(r.status_code in (401, 403), f"decidir correção (crédito) com {quem}: recusado", str(r.status_code))
+        r = nav.get(f"{BASE}{PAINEL}/api/entregas")
+        conferir(r.status_code in (401, 403), f"painel das entregas com {quem}: recusado", str(r.status_code))
+        r = nav.get(f"{BASE}{PAINEL}/api/jobs/{job}/video")
+        conferir(r.status_code in (401, 403), f"vídeo entregue pelo painel com {quem}: recusado", str(r.status_code))
+    r = adm.post(f"{BASE}{PAINEL}/api/correcoes/{cid}/decidir", json={**decisao, "classificacao": "pedido_novo"},
+                 headers=PAGINA)  # fmt: skip
+    conferir(r.status_code == 422, "pedido novo não tem crédito: 422", str(r.status_code))
+    primeira = adm.post(f"{BASE}{PAINEL}/api/correcoes/{cid}/decidir", json=decisao, headers=PAGINA)
+    segunda = adm.post(f"{BASE}{PAINEL}/api/correcoes/{cid}/decidir", json=decisao, headers=PAGINA)
+    with cfg.banco.tx() as c:
+        n = c.one("SELECT COUNT(*) AS n FROM movimentos WHERE referencia = ?", (f"correcao:{cid}",))["n"]
+    conferir(primeira.status_code == 200 and segunda.json().get("ja") is True and n <= 1,
+             "a mesma correção decidida duas vezes: no máximo um crédito", f"{primeira.status_code} {n}")  # fmt: skip
+
+
 def webhook(anon, mp, pid_mp):
     url = f"{BASE}/api/pagamentos/mercadopago?data.id={pid_mp}&type=payment"
     r = anon.post(url, json={"type": "payment", "data": {"id": pid_mp}})
@@ -924,6 +978,7 @@ def main() -> int:
         acessos_painel(adm)
         configuracoes(cfg, enviados, a, b)
         montagem(cfg, a, b, anon)
+        fidelidade(cfg, a, b, anon, adm, lote_a)
         sessoes(enviados)
         limites(enviados)
     finally:
