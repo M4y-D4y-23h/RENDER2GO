@@ -66,6 +66,7 @@ from render2go_worker import (
     compiler,
     conferencia,
     filtro_imagem,
+    intencao,
     legenda,
     lote,
     media,
@@ -259,6 +260,16 @@ def semente_do_pedido(lote_id: str) -> int:
     return (
         int.from_bytes(hashlib.sha256(f"traducao:{lote_id}".encode()).digest()[:4], "big") % 10**9
     )
+
+
+def _restricoes(valor: Any) -> tuple[str, ...]:
+    """As restrições marcadas no pedido (`regras.restricoes` da API, 17/10/2026): nomes conhecidos
+    (`intencao.RESTRICOES`); qualquer outra coisa derruba a tradução, nunca é ignorada."""
+    if not valor:
+        return ()
+    if not isinstance(valor, list) or any(r not in intencao.RESTRICOES for r in valor):
+        raise traducao.TraducaoError(f"restrições desconhecidas: {valor!r}"[:200])
+    return tuple(valor)
 
 
 def carimbo_ok(segredo: str | None, job: dict) -> bool:
@@ -518,6 +529,9 @@ class WorkerFila:
                 sem_pessoas=regras.get("sem_pessoas"),
                 assunto=regras.get("assunto") or "",
                 legenda=leg,
+                # as restrições marcadas no pedido (17/10/2026): só as conhecidas; uma de fora
+                # (API mais nova) derruba a tradução em vez de passar calada (TraducaoError)
+                restricoes_extras=_restricoes(regras.get("restricoes")),
                 compile_fn=self._compilar_em_cache,
                 seed=semente_do_pedido(job["lote"]),
                 ollama_url=self.cfg.ollama,

@@ -219,6 +219,30 @@ _INTERJEICAO = re.compile(r"\bolh[ae] (?:que|so|isso|como)\b|\bveja (?:que|so)\b
 _FIM_VERBAL = re.compile(r"(?:e|em|a|am)$")
 
 
+# as restrições que o serviço entende (render2go_worker.traducao aplica cada uma) e as que o cliente
+# pode marcar no pedido, fora do texto
+RESTRICOES = (
+    "estatico", "camera_parada", "assunto_parado", "sem_rotacao", "sem_aproximacao",
+    "sem_afastamento", "sem_luz", "sem_vapor", "sem_pessoas",
+)  # fmt: skip
+RESTRICOES_MARCAVEIS = (
+    "sem_pessoas",
+    "camera_parada",
+    "sem_rotacao",
+    "sem_aproximacao",
+    "estatico",
+)
+_NEGA_CONCEITO = {
+    "sem_rotacao": "rotacao", "sem_aproximacao": "aproximacao", "sem_afastamento": "afastamento",
+    "sem_luz": "luz", "sem_vapor": "vapor",
+}  # fmt: skip
+NOME_CONCEITO = {
+    "rotacao": "giro", "aproximacao": "aproximação", "afastamento": "afastamento",
+    "luz": "brilho ou luz", "movimento": "movimento", "vapor": "vapor ou fumaça",
+    "camera": "movimento de câmera",
+}  # fmt: skip
+
+
 @dataclass(frozen=True)
 class Pendencia:
     """O que precisa de uma decisão do cliente antes de gerar (nunca o raciocínio de um modelo).
@@ -347,8 +371,16 @@ def _pendencias_fora(base: str, duracao_max: int) -> list[Pendencia]:
     return out
 
 
-def analisar(texto: str, *, duracao_max: int = DURACAO_MAX_S) -> Intencao:
-    """O que o texto pede (ver o começo do módulo). Texto vazio: "vazio"."""
+def analisar(
+    texto: str, *, duracao_max: int = DURACAO_MAX_S, restricoes: tuple[str, ...] | list[str] = ()
+) -> Intencao:
+    """O que o texto pede (ver o começo do módulo). Texto vazio: "vazio". `restricoes`: as marcadas
+    pelo cliente fora do texto (o "Não pode acontecer" do pedido, `RESTRICOES_MARCAVEIS`), que
+    valem como se estivessem escritas: "gire o produto" com "o produto não gira" marcado é uma
+    contradição; "deixa bonito" com "câmera parada", uma restrição."""
+    desconhecida = [r for r in restricoes if r not in RESTRICOES]
+    if desconhecida:
+        raise ValueError(f"restrição desconhecida: {desconhecida[0]!r}")
     clausulas = _clausulas(texto)
     base = " ".join(" ".join(c) for c in clausulas)
     acoes: list[str] = []
@@ -372,6 +404,10 @@ def analisar(texto: str, *, duracao_max: int = DURACAO_MAX_S) -> Intencao:
             camera = any(t in _CAMERA for t in base.split())
             conceitos.add("camera" if camera else "rotacao")
             camera_acao = camera_acao or camera
+    for r in restricoes:  # as marcadas: a restrição e o conceito negado (para a contradição)
+        restringe(r)
+        if r in _NEGA_CONCEITO:
+            negados.add(_NEGA_CONCEITO[r])
     if _TUDO_PARADO.search(base):
         restringe("estatico")
     if _SEM_PESSOAS.search(base):
@@ -415,7 +451,7 @@ def analisar(texto: str, *, duracao_max: int = DURACAO_MAX_S) -> Intencao:
     pendencias = _pendencias_fora(base, duracao_max)
     contradicoes = []
     if conceitos & negados:
-        mesmos = ", ".join(sorted(conceitos & negados))
+        mesmos = ", ".join(NOME_CONCEITO.get(c, c) for c in sorted(conceitos & negados))
         contradicoes.append(f"pede e proíbe o mesmo movimento ({mesmos})")
     if "estatico" in restr and (conceitos - {"aproximacao", "afastamento", "camera"}):
         contradicoes.append("pede a cena parada e também um movimento")

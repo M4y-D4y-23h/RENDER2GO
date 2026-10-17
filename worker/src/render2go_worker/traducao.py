@@ -286,23 +286,13 @@ def _padrao(
     presets_data: dict[str, Any] | None,
 ) -> tuple[str, str]:
     """(texto fixo, sufixo dos presets) do movimento padrão (`prompt_padrao`)."""
-    r = _receita(receitas, receita_id)
-    if r.get("camera_padrao") or not r.get("acao_en"):
-        mov = _movimento(receitas, categoria or CATEGORIA_PADRAO, sem_pessoas)
-        sel, acao, padrao = {**r["presets"], **mov["presets"]}, mov["acao_en"], mov["assunto"]
-    else:
-        sel, acao, padrao = dict(r["presets"]), r["acao_en"], r["assunto"]
-    texto = compiler.fill_subject(acao, assunto or padrao)
-    if sem_pessoas and prompt_cita_pessoa(texto):  # estilo com pessoa ou um assunto que é alguém
-        mov = _movimento(receitas, CATEGORIA_PADRAO, True)
-        sel = {**r["presets"], **mov["presets"]}
-        texto = compiler.fill_subject(mov["acao_en"], mov["assunto"])
-    return texto, presets.suffix(r["modo"], sel, presets_data)
+    texto, sel, modo = _fixo(receitas, receita_id, categoria, sem_pessoas, assunto, None)
+    return texto, presets.suffix(modo, sel, presets_data)
 
 
 # Restrições (17/10/2026): textos fixos, em inglês, que nunca contradizem o que o cliente proibiu.
 # Nenhum cita pessoa nem movimento de câmera (a câmera vem do preset "parada" quando a restrição
-# pede).
+# pede)
 ESTATICO_EN = (
     "{assunto} and everything around it stay completely still; nothing in the scene moves."
 )
@@ -314,8 +304,7 @@ _CAMERAS_APROXIMAM = {
 }  # fmt: skip
 _CAMERAS_GIRAM = {"orbita-produto", "orbita-veiculo", "orbita-corpo-inteiro"}
 _CAMERAS_AFASTAM = {"acompanha-recuando"}
-# o texto fixo que contradiz cada restrição (luz que passa, vapor, tecido que mexe, produto que
-# gira)
+# o texto fixo que contradiz cada restrição (luz, vapor, tecido que mexe, produto que gira)
 _TEXTO_CONTRADIZ = {
     "sem_luz": re.compile(r"\b(?:light|glisten|highlight|reflection|glow|sparkle)", re.IGNORECASE),
     "sem_vapor": re.compile(r"\b(?:steam|smoke|vapor)", re.IGNORECASE),
@@ -354,11 +343,9 @@ def prompt_restrito(
     presets_data: dict[str, Any] | None = None,
 ) -> str:
     """O texto fixo de um pedido só com restrições ("Mantenha tudo imóvel", "câmera parada", "não
-    gire",
-    "sem pessoas"): o movimento padrão quando ele não contradiz nada; senão, o neutro ("stays in
-    place,
-    calm and steady") ou, com tudo parado, a cena imóvel; a câmera e o ritmo com as restrições
-    (`com_restricoes`). Sem LLM."""
+    gire", "sem pessoas"): o movimento padrão quando ele não contradiz nada; senão, o neutro
+    ("stays in place, calm and steady") ou, com tudo parado, a cena imóvel; a câmera e o ritmo com
+    as restrições (`com_restricoes`). Sem LLM."""
     texto, sufixo = _restrito(
         receitas, receita_id, tuple(restricoes), categoria, sem_pessoas, assunto, presets_data
     )
@@ -374,6 +361,22 @@ def _restrito(
     assunto: str,
     presets_data: dict[str, Any] | None,
 ) -> tuple[str, str]:
+    texto, sel, modo = _fixo(receitas, receita_id, categoria, sem_pessoas, assunto, restricoes)
+    return texto, presets.suffix(modo, sel, presets_data)
+
+
+def _fixo(
+    receitas: dict[str, Any],
+    receita_id: str,
+    categoria: str | None,
+    sem_pessoas: bool,
+    assunto: str,
+    restricoes: tuple[str, ...] | None,
+) -> tuple[str, dict[str, str], str]:
+    """(texto fixo em inglês, presets, modo do estilo) do movimento padrão (`restricoes` None) ou do
+    texto das restrições. Livre (`camera_padrao`) ou estilo sem texto fixo: o movimento da categoria
+    da foto, com os presets dele por cima dos do estilo; os outros, o do próprio estilo. Com a regra
+    da pessoa inventada, nunca cita uma pessoa (cai no padrão "geral", sem o assunto)."""
     r = _receita(receitas, receita_id)
     if r.get("camera_padrao") or not r.get("acao_en"):
         mov = _movimento(receitas, categoria or CATEGORIA_PADRAO, sem_pessoas)
@@ -381,15 +384,69 @@ def _restrito(
     else:
         sel, acao, padrao = dict(r["presets"]), r["acao_en"], r["assunto"]
     if sem_pessoas and prompt_cita_pessoa(compiler.fill_subject(acao, assunto or padrao)):
-        mov = _movimento(receitas, CATEGORIA_PADRAO, True)
+        mov = _movimento(
+            receitas, CATEGORIA_PADRAO, True
+        )  # estilo com pessoa ou assunto que é alguém
         sel, acao, padrao = {**r["presets"], **mov["presets"]}, mov["acao_en"], mov["assunto"]
-    rs = set(restricoes)
-    if "estatico" in rs:
-        acao = ESTATICO_EN
-    elif any(regra.search(acao) for nome, regra in _TEXTO_CONTRADIZ.items() if nome in rs):
-        acao = NEUTRO_EN
-    texto = compiler.fill_subject(acao, assunto or padrao)
-    return texto, presets.suffix(r["modo"], com_restricoes(sel, rs), presets_data)
+        assunto = ""
+    if restricoes is not None:
+        rs = set(restricoes)
+        if "estatico" in rs:
+            acao = ESTATICO_EN
+        elif any(regra.search(acao) for nome, regra in _TEXTO_CONTRADIZ.items() if nome in rs):
+            acao = NEUTRO_EN
+        sel = com_restricoes(sel, rs)
+    return compiler.fill_subject(acao, assunto or padrao), sel, r["modo"]
+
+
+@dataclass(frozen=True)
+class Plano:
+    """O que a tradução vai fazer com um texto, sem o LLM (17/10/2026): a mesma decisão de
+    `traduzir`, para a API mostrar ao cliente, antes de qualquer pod, o que foi entendido e o que o
+    sistema acrescenta (render2go_servico, cartão "Entendemos seu pedido assim")."""
+
+    modo: str
+    """"padrao" (sem instrução), "restrito" (só restrições) ou "traduzir" (vai para o LLM)."""
+    intencao: intencao.Intencao
+    categoria: str
+    sem_pessoas: bool
+    """A regra da pessoa inventada vale."""
+    presets: dict[str, str]
+    """Os presets que entram no prompt, já com as restrições."""
+    texto_fixo: str = ""
+    """O texto fixo em inglês (padrão ou restrições), sem os presets; "" no modo traduzir."""
+    camera_sugerida: bool = False
+    """Livre: a câmera suave entrou porque o texto não fala da câmera."""
+
+
+def plano(
+    texto: str,
+    receita_id: str,
+    *,
+    receitas: dict[str, Any],
+    categoria: str | None = None,
+    sem_pessoas: bool | None = None,
+    restricoes_extras: Iterable[str] = (),
+) -> Plano:
+    """A decisão de `traduzir` para este texto (modo, presets, texto fixo), sem chamar o LLM."""
+    r = _receita(receitas, receita_id)
+    categoria = categoria or categoria_da_receita(receitas, receita_id)
+    it = intencao.analisar(texto, restricoes=tuple(restricoes_extras))
+    base = True if sem_pessoas is None else sem_pessoas
+    sem = (base or "sem_pessoas" in it.restricoes) and not texto_cita_pessoa(texto)
+    modo = {"vazio": "padrao", "restricao": "restrito"}.get(it.tipo, "traduzir")
+    if modo == "traduzir":
+        sel = dict(r["presets"])
+        cam = r.get("camera_padrao")
+        sugerida = bool(cam and "camera" not in sel and not texto_fala_da_camera(texto))
+        if sugerida:
+            sel["camera"] = cam
+        return Plano(modo, it, categoria, sem, com_restricoes(sel, it.restricoes),
+                     camera_sugerida=sugerida)  # fmt: skip
+    restricoes = it.restricoes if modo == "restrito" else None
+    fixo, sel, _ = _fixo(receitas, receita_id, categoria, sem if modo == "padrao" else True, "",
+                         restricoes)  # fmt: skip
+    return Plano(modo, it, categoria, sem, sel, texto_fixo=fixo)
 
 
 def entrada(
@@ -412,9 +469,8 @@ def entrada(
     cam = r.get("camera_padrao")
     if cam and "camera" not in sel and not texto_fala_da_camera(texto):
         sel["camera"] = cam
-    sel = com_restricoes(
-        sel, restricoes
-    )  # a câmera parada pedida vale por cima da do estilo (17/10)
+    # a câmera parada pedida vale por cima da do estilo (17/10/2026)
+    sel = com_restricoes(sel, restricoes)
     composed = presets.compose(r["modo"], texto, sel)
     perfil = compiler.PROFILES["i2v"]
     extra = []
@@ -476,14 +532,16 @@ def traduzir(
     seed: int | None = None,
     selections: dict[str, str] | None = None,
     legenda: Any = None,
+    restricoes_extras: Iterable[str] = (),
     **kw: Any,
 ) -> Traducao:
     """Traduz um pedido I2V com as regras do serviço. `sem_pessoas`: None = na dúvida, sim (a regra
     só não vale se o texto do cliente cita alguém). `assunto`: o da foto no movimento padrão (vazio
     = o do texto fixo). `legenda`: a da foto (render2go_worker.legenda, ADR 0014): a categoria e o
     assunto dela valem no movimento padrão, a regra da pessoa inventada vale também se ela diz que a
-    foto não tem pessoas, e o prompt v8 em diante a recebe. `kw` vai para o compilador (ollama_url,
-    model, keep_alive...).
+    foto não tem pessoas, e o prompt v8 em diante a recebe. `restricoes_extras`: as que o cliente
+    marcou no pedido, fora do texto (`intencao.RESTRICOES_MARCAVEIS`); valem como as escritas. `kw`
+    vai para o compilador (ollama_url, model, keep_alive...).
     CompilerRefused e os erros do compilador sobem para quem chama: o pedido vago também passa pelo
     compilador, para a regra REFUSED continuar valendo, mas o texto dele não é usado."""
     t0 = time.monotonic()
@@ -493,7 +551,7 @@ def traduzir(
         categoria = leg["categoria"]
         assunto = assunto or leg["assunto"]
     categoria = categoria or categoria_da_receita(receitas, receita_id)
-    it = intencao.analisar(texto)
+    it = intencao.analisar(texto, restricoes=tuple(restricoes_extras))
     restricoes = it.restricoes
     base = True if sem_pessoas is None else sem_pessoas
     if leg is not None and not leg["pessoas"]:  # análise ou legenda sem pessoas: a regra vale
@@ -558,13 +616,9 @@ def traduzir(
             **kw,
         )
         model = comp.model
-        if (
-            modo != "traduzir"
-        ):  # o texto passou pelo tradutor (regra REFUSED), mas o dele não é usado
+        if modo != "traduzir":  # passou pelo tradutor (regra REFUSED), mas o texto dele não vale
             return fixo(tentativa)
-        if getattr(
-            comp, "vague", False
-        ):  # o tradutor não traduziu uma instrução: a API pede a decisão
+        if getattr(comp, "vague", False):  # o tradutor não traduziu uma instrução: decide o cliente
             return fixo(tentativa, substituiu=True)
         achadas = prompt_cita_pessoa(comp.prompt) if sem else []
         if not achadas:

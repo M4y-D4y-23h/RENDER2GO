@@ -212,3 +212,74 @@ def test_every_fixed_text_passes_the_text_filter_and_cites_nobody():
                     "exige_consentimento"
                 ), p
                 assert filtros.avaliar(p).allowed, p
+
+
+# -- restrições marcadas no pedido (fora do texto) ----------------------------------------------
+
+
+def test_marked_restrictions_count_as_written_ones():
+    r = i.analisar("deixa bonito", restricoes=("camera_parada",))
+    assert r.tipo == "restricao" and r.restricoes == ("camera_parada",)
+    r = i.analisar("gire o produto", restricoes=("sem_rotacao",))
+    assert r.tipo == "contraditorio" and "giro" in r.pendencias[0].mensagem
+    r = i.analisar("a câmera se aproxima do bolo", restricoes=("camera_parada",))
+    assert r.tipo == "contraditorio"
+    r = i.analisar("o vapor sobe", restricoes=("sem_pessoas", "camera_parada"))
+    assert r.tipo == "acao" and set(r.restricoes) == {"sem_pessoas", "camera_parada"}
+    with pytest.raises(ValueError):
+        i.analisar("deixa bonito", restricoes=("qualquer",))
+    assert set(i.RESTRICOES_MARCAVEIS) <= set(i.RESTRICOES)
+
+
+def test_marked_restrictions_reach_the_translation():
+    fn = _compilador("The cake sits on the table.")
+    tr = t.traduzir("deixa bonito", "livre", receitas=REC, categoria="comida", compile_fn=fn,
+                    restricoes_extras=("sem_aproximacao",))  # fmt: skip
+    assert tr.restrito and "push-in" not in tr.prompt and tr.restricoes == ("sem_aproximacao",)
+    tr = t.traduzir("o vapor sobe da xícara", "livre", receitas=REC, compile_fn=fn,
+                    restricoes_extras=("camera_parada",))  # fmt: skip
+    assert tr.intencao == "acao" and "Static camera." in tr.prompt
+
+
+def test_the_pod_refuses_unknown_marked_restrictions():
+    from render2go_worker import fila
+
+    assert fila._restricoes(None) == () and fila._restricoes(["sem_pessoas"]) == ("sem_pessoas",)
+    for ruim in (["apagar_tudo"], "sem_pessoas", [1]):
+        with pytest.raises(t.TraducaoError):
+            fila._restricoes(ruim)
+
+
+# -- o plano (a mesma decisão, sem o LLM, para a API mostrar antes do pod) ------------------------
+
+
+@pytest.mark.parametrize(
+    "texto,restr",
+    [
+        ("deixa bonito", ()),
+        ("Mantenha tudo imóvel, sem movimento.", ()),
+        ("não gire o produto", ()),
+        ("sem vapor", ()),
+        ("Gire lentamente o produto.", ()),
+        ("a câmera fica parada e o vapor sobe", ()),
+        ("deixa bonito", ("camera_parada",)),
+        ("o produto brilha", ("sem_aproximacao", "sem_pessoas")),
+        ("arrodeie a vitrine", ()),
+    ],
+)
+def test_the_plan_matches_what_the_translation_does(texto, restr):
+    from render2go_worker import presets
+
+    for receita in REC["receitas"]:
+        for categoria in (None, "comida", "carro", "pessoa"):
+            fn = _compilador("The subject shines.")
+            tr = t.traduzir(texto, receita, receitas=REC, categoria=categoria, compile_fn=fn,
+                            restricoes_extras=restr)  # fmt: skip
+            pl = t.plano(texto, receita, receitas=REC, categoria=categoria, restricoes_extras=restr)
+            sufixo = presets.suffix(REC["receitas"][receita]["modo"], pl.presets)
+            assert pl.intencao.tipo == tr.intencao and pl.sem_pessoas == tr.sem_pessoas
+            if pl.modo == "traduzir":
+                assert fn.chamadas[0]["suffix"] == sufixo and not tr.padrao and not tr.restrito
+            else:
+                assert tr.prompt == f"{pl.texto_fixo} {sufixo}".strip(), (receita, categoria)
+                assert tr.restrito == (pl.modo == "restrito") and tr.padrao == (pl.modo == "padrao")
