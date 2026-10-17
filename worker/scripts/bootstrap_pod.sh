@@ -48,6 +48,12 @@
 #   links é FALHOU (até 12/10/2026, virava uma subida do zero por cima dos links, gravando no volume).
 #   O SHA-256 de todos os modelos é refeito em segundo plano (e traz os arquivos para a memória antes
 #   do 1º vídeo). Arquivo que não confere: FALHOU, o marcador sai e o pod é encerrado.
+# - diagnóstico (17/10/2026): $R/volume.json (render2go_worker/volume.py, só a biblioteca padrão) diz
+#   onde o cache está, em que montagem e sistema de arquivos, o espaço, a sentinela ($L/sentinela.json:
+#   o pod que gravou), o marcador e o motivo de o cache não servir nesta subida e na gravação do fim
+#   ("primeira", "vazio", "sem_montagem", "outra_versao", "incompleto", "corrompido"...). O cache só é
+#   gravado numa montagem persistente (o disco do contêiner é apagado na parada) e que comporta tudo;
+#   senão, nada de marcador: o orquestrador encerra o pod em vez de hibernar um disco que voltaria vazio.
 #
 # Com BOOTSTRAP_SO_FUNCOES=1, o script só define as funções (os testes carregam com `source`).
 set -uo pipefail
@@ -68,6 +74,8 @@ W=/opt/render2go/worker COMFY_DIR=/opt/comfyui OLLAMA_MODELS=/opt/ollama/models
 export OLLAMA_MODELS R
 L=${RENDER2GO_LOCAL:-}
 VERSAO=$(cat $R/versao_hib 2>/dev/null || true)
+SUBIDA=$(cat $R/subida 2>/dev/null || true)  # fria ou retomada (do orquestrador), para o diagnóstico do volume
+MOTIVO_VOL="" DETALHE_VOL=""  # por que a volta não usou o disco de volume (render2go_worker/volume.py, MOTIVOS)
 # sem fsync no dpkg: o disco do contêiner é descartável. Na volta, o apt do ffmpeg (~200 pacotes, ~20 s)
 # roda em paralelo com a subida dos serviços (o AMBIENTE sai antes dele)
 APT=(apt-get -o Dpkg::Options::=--force-unsafe-io)
@@ -141,26 +149,42 @@ PY
   echo "SHA-256 do disco de volume conferido"
 }
 
+# o diagnóstico do volume: o arquivo do código (só ele, se o repositório ainda não foi aberto) com o Python do
+# sistema, isolado (-I). Nunca derruba a subida. Uso: diagnostico_volume <inicio|gravacao> <motivo> [detalhe] [bytes]
+volpy() {
+  local py=$W/src/render2go_worker/volume.py
+  [[ -f $py ]] || { mkdir -p /opt/render2go && tar -xzf "$REPO_TGZ" -C /opt/render2go --wildcards \
+    '*render2go_worker/volume.py'; } >/dev/null 2>&1
+  python3 -I "$py" "$@"
+}
+diagnostico_volume() {
+  [[ -n "$L" ]] || return 0
+  volpy diagnosticar --local "$L" --saida $R/volume.json --etapa "$1" --versao "$VERSAO" --subida "$SUBIDA" \
+    --motivo "$2" --detalhe "${3:-}" ${4:+--necessario "$4"} >/dev/null 2>&1 || true
+}
+
 # volta da hibernação: nada baixado se o marcador é desta versão e o volume tem tudo. Tudo é conferido
-# no próprio volume ANTES dos links: o que falta aqui (return 1) vira a subida do zero, com /opt intacto.
-# Depois dos links, uma falha é FALHOU: o orquestrador para o pod de novo, ou o encerra se o problema for
-# o disco de volume ("disco de volume" no motivo)
+# no próprio volume ANTES dos links: o que falta aqui (return 1, com o motivo em MOTIVO_VOL) vira a subida
+# do zero, com /opt intacto. Depois dos links, uma falha é FALHOU: o orquestrador para o pod de novo, ou o
+# encerra se o problema for o disco de volume ("disco de volume" no motivo)
 retomada() {
-  [[ -n "$L" && -n "$VERSAO" && -f $L/instalado ]] || return 1
+  [[ -n "$L" && -n "$VERSAO" ]] || { MOTIVO_VOL=sem_local; return 1; }
+  [[ -f $L/instalado ]] || { MOTIVO_VOL=sem_marcador; return 1; }
   local v
-  read -r v _ < $L/instalado || return 1
-  [[ "$v" == "$VERSAO" ]] || { echo "disco de volume de outra versão ($v)"; return 1; }
-  mkdir -p /opt/render2go && tar -xzf "$REPO_TGZ" -C /opt/render2go || return 1
-  lista_modelos > $R/modelos.tsv || return 1
+  read -r v _ < $L/instalado || { MOTIVO_VOL=sem_marcador; return 1; }
+  [[ "$v" == "$VERSAO" ]] || { echo "disco de volume de outra versão ($v)"; MOTIVO_VOL=outra_versao DETALHE_VOL=$v; return 1; }
+  mkdir -p /opt/render2go && tar -xzf "$REPO_TGZ" -C /opt/render2go || { MOTIVO_VOL=repo; return 1; }
+  lista_modelos > $R/modelos.tsv || { MOTIVO_VOL=repo; return 1; }
   local url dest bytes sha
   while IFS=$'\t' read -r url dest bytes sha; do
     [ "$(stat -c %s "$L/comfyui/models/${dest#/opt/comfyui/models/}" 2>/dev/null)" = "$bytes" ] \
-      || { echo "faltando no volume: $dest"; return 1; }
+      || { echo "faltando no volume: $dest"; MOTIVO_VOL=incompleto DETALHE_VOL=$(basename "$dest"); return 1; }
   done < $R/modelos.tsv
   [[ -x $L/venv/bin/python && -x $L/ollama/usr/bin/ollama && -d $L/ollama/models/blobs ]] \
-    || { echo "ambiente incompleto no volume"; return 1; }
+    || { echo "ambiente incompleto no volume"; MOTIVO_VOL=ambiente_incompleto; return 1; }
   links && links_dados || falha "disco de volume: os links para $L não foram criados"
   marca retomada_links
+  diagnostico_volume inicio ok  # antes do AMBIENTE: o orquestrador lê quando o worker começa
   echo AMBIENTE > $EST  # os serviços já podem subir (não dependem do apt)
   "${APT[@]}" install -y -qq --no-install-recommends --no-download curl ffmpeg procps >/dev/null 2>&1 \
     || { "${APT[@]}" update -qq && "${APT[@]}" install -y -qq --no-install-recommends curl ffmpeg procps >/dev/null; } \
@@ -168,7 +192,8 @@ retomada() {
   marca retomada_apt
   echo PRONTO > $EST
   echo "PRONTO (volta da hibernação)"
-  conferir_volume > $R/conferir.log 2>&1
+  conferir_volume > $R/conferir.log 2>&1 \
+    || diagnostico_volume inicio corrompido "$(tail -n 1 $R/conferir.log 2>/dev/null)"
   marca retomada_conferida
   return 0
 }
@@ -401,6 +426,31 @@ guardar_local() {
   echo "disco de volume gravado ($VERSAO)"
 }
 
+# a cópia para o disco de volume só numa montagem persistente e que comporta tudo (17/10/2026): sem isso, nada
+# de marcador, e o orquestrador encerra o pod em vez de hibernar um disco que voltaria vazio ou pela metade
+gravar_volume() {
+  local precisa
+  if ! volpy persistente --local "$L"; then
+    echo "AVISO: $L não está numa montagem persistente: nada gravado" > $R/guardar_local.log
+    diagnostico_volume gravacao sem_montagem
+    return 1
+  fi
+  precisa=$(du -sbc /opt/venv /opt/comfyui /usr/local/bin/ollama /usr/local/lib/ollama "$OLLAMA_MODELS" \
+    2>/dev/null | tail -n 1 | cut -f1)
+  if ! volpy cabe --local "$L" --bytes "${precisa:-0}"; then
+    echo "AVISO: o disco de volume não comporta ${precisa:-?} bytes: nada gravado" > $R/guardar_local.log
+    diagnostico_volume gravacao sem_espaco "" "$precisa"
+    return 1
+  fi
+  if guardar_local > $R/guardar_local.log 2>&1; then
+    diagnostico_volume gravacao ok "" "$precisa"
+  else
+    echo "AVISO: disco de volume incompleto" >> $R/guardar_local.log
+    diagnostico_volume gravacao copia_falhou "$(tail -n 2 $R/guardar_local.log | head -n 1)" "$precisa"
+    return 1
+  fi
+}
+
 # depois do PRONTO, no pod gravador: o que falta no volume (tudo já conferido no disco local)
 guardar() {
   [[ -n "$CACHE" && $GRAVA == 1 ]] || return 0
@@ -428,8 +478,11 @@ principal() {
     exit 0
   fi
   if [[ -n "$L" ]]; then  # 1ª subida (ou volume velho/incompleto): o volume só é gravado no fim
+    diagnostico_volume inicio "${MOTIVO_VOL:-sem_marcador}" "$DETALHE_VOL"
     rm -f $L/instalado
     mkdir -p $L/apt/archives/partial $L/apt/lists/partial || falha "disco de volume"
+    # a sentinela (o pod e quando) só numa montagem persistente: na volta, ela diz se o volume é o mesmo
+    volpy persistente --local "$L" && volpy sentinela --local "$L" --versao "$VERSAO"
   fi
 
   ATUALIZADO=0
@@ -464,7 +517,7 @@ principal() {
   wait $LPID  # o volume (cache e hibernação) só é gravado com o modelo da legenda já baixado (ou desistido)
   guardar > $R/guardar.log 2>&1
   if [[ -n "$L" && -n "$VERSAO" ]]; then  # pod que hiberna: copia para o disco de volume (com o pod no ar)
-    guardar_local > $R/guardar_local.log 2>&1 || echo "AVISO: disco de volume incompleto" >> $R/guardar_local.log
+    gravar_volume
     marca volume_gravado
   fi
   marca guardado

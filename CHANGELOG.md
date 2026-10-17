@@ -2,6 +2,16 @@
 
 Tudo o que mudou no projeto, do mais recente para o mais antigo. Detalhes técnicos estão nos documentos e ADRs citados, e cada item corresponde a commits no repositório.
 
+## 17/10/2026 (2): sessões dos pods no relatório, diagnóstico do disco de volume, edição de imagem (candidata), naturalidade e custos
+
+Motivo: pedido do dono de 17/10/2026 (a partir da `main` em `a19529b`): o disco de volume "vazio" depois da retomada, o tempo até a 1ª entrega, a edição de imagem que troca o cenário e preserva o produto, movimentos mais naturais, vídeos de 7 s e o custo real. Branch `claude/festive-mccarthy-sc784n`; **sem merge nem implantação; nada aberto ao público**. Detalhes: [`docs/17`](docs/17-sessoes-volume-edicao-e-custos.md) e [`worker/evals/volume-2026-10-17/`](worker/evals/volume-2026-10-17/LEIAME.md).
+
+- **Relatório de GPUs por sessão (defeito reproduzido e corrigido):** o pod que volta da hibernação tem o mesmo nome, e cada sessão contava os vídeos de todas (2 + 3 vídeos viravam 5 + 5). O job guarda a sessão (`jobs.gerador_id`); cada reivindicação vira uma linha de `tentativas` (resultado e segundos); o 1º vídeo vale só para a sessão atual; a volta de um hibernado que não ficou pronta não some mais (tinha a linha sobrescrita pela subida seguinte). Os jobs antigos vão pelo horário, com a sessão marcada como incerta.
+- **Custos e vídeos separados:** tentativas e falhas, vídeos entregues e aproveitáveis (o retorno do cliente), tempo ocioso, ocupação (soma dos tempos ÷ tempo ligado, não NVML), GPU e discos do RunPod ligados e parados (tabela de 17/10, conferida no faturamento: US$ 1,104–1,118 por hora de L40S de US$ 1,09). O painel mostra a sessão, a 1ª entrega, as tentativas, o custo com os discos e o estado do cache.
+- **Disco de volume "vazio" (diagnóstico, só leitura):** era um pod substituto. A atualização de 17/10 mudou a versão da hibernação, o orquestrador encerrou o hibernado de 12/10 (com o disco), e o pedido seguinte subiu um pod do zero. Novo `render2go_worker/volume.py`: montagem, sistema de arquivos, espaço, sentinela, marcador e o motivo de cada falta de cache, por sessão; o cache só é gravado numa montagem persistente que comporta tudo (fail-closed); o SHA-256 continua em toda volta.
+- **`render2go-servico hibernados [--runpod]`:** antes de uma atualização, o que a versão nova faria com cada hibernado (só leitura, sem tokens). Esta branch não muda a versão da hibernação (`1ada2ec01194e930`).
+- **Subida:** os tempos do bootstrap por etapa ficam em cada sessão e nas métricas do painel; o plano de `RENDER2GO_PODS_HIBERNADOS` (nada mudado) e o custo de ligar uma GPU só para traduzir no modo "revisar", com a tradução em CPU medida (p50 7,8 s).
+
 ## 17/10/2026: fidelidade ao pedido, versões com revisão pelo cliente, critérios de entrega e correções (ADR 0018, proposto)
 
 Motivo: preparação para o lançamento (pedido do dono): entregas confiáveis, menos trabalho para o cliente e fidelidade ao pedido. Branch `claude/festive-mccarthy-sc784n`, a partir da `main` em `e1c98bf`, na `main` desde 17/10/2026; nenhum pod usado nos testes. Publicação: `docs/09`, entrada 17/10/2026. Detalhes: [ADR 0018](docs/adr/0018-versoes-do-pedido-e-revisao-pelo-cliente.md), [`docs/16`](docs/16-piloto-e-lancamento.md) e `docs/09`, entrada 17/10/2026.

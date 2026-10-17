@@ -254,6 +254,8 @@ class PodInfo:
     gpus: int
     gpu: str = ""
     datacentro: str | None = None
+    # machineId do RunPod (o disco de volume fica nessa máquina; relatório do painel)
+    maquina: str | None = None
 
 
 class Provedor(Protocol):
@@ -375,6 +377,10 @@ SEM_RAPIDOS_S = 600  # sem vaga com os filtros: a próxima subida nem tenta com 
 
 
 AGENTE_CMD = 'echo "$AGENT_B64" | base64 -d > /agente.py && exec python3 /agente.py'
+# disco do contêiner de cada pod: 120 GB também no pod que hiberna (a 1ª subida instala tudo nele,
+# rápido, e só depois copia para o volume; com 40 GB, em 11/10/2026, o disco encheu). Apagado na
+# parada; cobrado com o pod ligado
+DISCO_CONTEINER_GB = 120
 
 
 class RunPod:
@@ -393,6 +399,7 @@ class RunPod:
         self.disco_min_mbs = int(os.environ.get("RENDER2GO_DISCO_MIN_MBS", DISCO_MIN_MBS))
         self._sem_rapidos_ate = 0.0
         self._dcs_cache: tuple[float, list[dict]] | None = None
+        self._maquinas: dict[str, str] = {}  # pod → machineId, lido com o datacenter na criação
         if volume:  # o pod precisa nascer no datacenter do volume
             r = runpod_pods._rest("GET", f"/networkvolumes/{volume}", self.chave)
             dc = (r.json() or {}).get("dataCenterId") if r.status_code == 200 else None
@@ -453,6 +460,7 @@ class RunPod:
                     gpus=gpus,
                     gpu=opcao.gpu,
                     datacentro=dc,
+                    maquina=self._maquinas.get(pod["id"]),
                 )
             if (
                 filtro
@@ -461,9 +469,9 @@ class RunPod:
         raise runpod_pods.SemVaga("; ".join(tentativas) or "nenhuma opção")
 
     def _corpo(self, nome, opcao, gpus, env, volume_gb, dcs, filtro, ordenar) -> dict:
-        # 120 GB também no pod que hiberna: a 1ª subida instala tudo no disco do contêiner
-        # (rápido) e só depois copia para o volume (com 40 GB, em 11/10, o disco encheu)
-        corpo = runpod_pods.corpo_pod(opcao, self.imagem, nome, 120, env, ["8888/http"])
+        corpo = runpod_pods.corpo_pod(
+            opcao, self.imagem, nome, DISCO_CONTEINER_GB, env, ["8888/http"]
+        )
         corpo["gpuCount"] = gpus
         corpo["dockerStartCmd"] = ["bash", "-c", AGENTE_CMD]
         if volume_gb and not self.volume:
@@ -582,13 +590,14 @@ class RunPod:
         return self._aceitos
 
     def _datacentro_do_pod(self, pod_id: str) -> str | None:
-        q = f'{{ pod(input:{{podId:"{pod_id}"}}) {{ machine {{ dataCenterId }} }} }}'
+        q = f'{{ pod(input:{{podId:"{pod_id}"}}) {{ machineId machine {{ dataCenterId }} }} }}'
         try:
-            return (
-                (runpod_pods._graphql(q, self.chave).get("pod") or {}).get("machine") or {}
-            ).get("dataCenterId")
+            pod = runpod_pods._graphql(q, self.chave).get("pod") or {}
         except runpod_pods.RunPodError:
             return None
+        if pod.get("machineId"):
+            self._maquinas[pod_id] = str(pod["machineId"])[:64]
+        return (pod.get("machine") or {}).get("dataCenterId")
 
 
 # --- comandos no pod ------------------------------------------------------------------
@@ -1244,6 +1253,8 @@ class Orquestrador:
         ag.put(WORKER_DIR / "scripts" / "bootstrap_pod.sh", f"{r.raiz}/bootstrap_pod.sh")
         if pod.hibernavel:  # o bootstrap marca o disco de volume com esta versão (ADR 0011)
             self._enviar_texto(pod, versao_hibernacao() + "\n", "versao_hib")
+            # e se a subida é fria ou retomada: o volume vazio é esperado num pod novo, não na volta
+            self._enviar_texto(pod, ("retomada" if pod.retomado else "fria") + "\n", "subida")
         if getattr(self.a, "legenda", False):  # legenda por foto (ADR 0014): o modelo de visão
             self._enviar_texto(pod, "1\n", "legenda")
         esp = getattr(self.a, "espelho", None)

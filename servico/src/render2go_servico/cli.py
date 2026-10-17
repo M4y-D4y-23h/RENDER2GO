@@ -5,6 +5,8 @@
     render2go-servico analisar                    filtro das fotos e aviso de pessoas (RENDER2GO_ANALISE=separada)
     render2go-servico montar                      montagem de vídeos (ADR 0015): ffmpeg em CPU, fora da API
     render2go-servico limpar                      encerra pods registrados pelo orquestrador
+    render2go-servico hibernados [--runpod]       os hibernados e o que esta versão faria com eles (só leitura;
+        antes de uma atualização: docker compose run --rm --no-deps orquestrador render2go-servico hibernados)
     render2go-servico totp-novo                   segredo do autenticador da chave do painel (RENDER2GO_ADMIN_TOTP)
     render2go-servico admin-convite --usuario NOME [--papel dono|operador]
         convite de uso único (24 h) para um acesso ao painel: o 1º acesso do dono, pelo terminal do servidor
@@ -148,6 +150,44 @@ def admin_convite(banco, usuario: str, papel: str) -> int:
     return 0
 
 
+def hibernados(runpod: bool) -> int:
+    """Antes de uma atualização (docs/09): com a imagem nova e o .env do servidor, os hibernados que ela encerraria
+    (o disco de volume vai junto) e por quê. Não muda nada; nunca mostra os tokens dos agentes."""
+    import time
+
+    from render2go_servico.orquestrador import inventario_hibernados
+
+    pods = None
+    if runpod:
+        from render2go_worker import runpod_pods
+
+        r = runpod_pods._rest("GET", "/pods", runpod_pods._chave())
+        pods = r.json() if r.ok and isinstance(r.json(), list) else None
+        if pods is None:
+            print(f"AVISO: a lista do RunPod não veio ({r.status_code}); só o conjunto em disco")
+    inv = inventario_hibernados(pods_runpod=pods, api_url=os.environ.get("RENDER2GO_API_URL", ""))
+    print(f"versão deste código: {inv['versao']}; RENDER2GO_PODS_HIBERNADOS={inv['maximo']}")
+    if not inv["hibernados"]:
+        print("nenhum pod hibernado no conjunto")
+    for h in inv["hibernados"]:
+        parado = time.strftime("%d/%m %H:%M UTC", time.gmtime(h["parado_em"])) if h.get("parado_em") else "?"
+        destino = f"SERIA ENCERRADO ({h['sairia']}): o disco de volume vai junto" if h["sairia"] else "fica"
+        print(
+            f"  {h['id']}  {h.get('gpu') or '?'}  {h.get('datacentro') or '?'}  parado desde {parado}  "
+            f"voltas {h.get('voltas') or 0}  falhas {h.get('falhas') or 0}  versão {h.get('versao')}  "
+            f"~US$ {h['usd_dia_parado']:.2f}/dia parado  → {destino}"
+        )
+    for o in inv["orfaos"]:
+        print(f"  {o['id']} ({o['nome']}): parado no RunPod e fora do conjunto: a partida do orquestrador o encerra")
+    sairiam = [h for h in inv["hibernados"] if h["sairia"]] + inv["orfaos"]
+    print(
+        f"{len(sairiam)} pod(s) seriam encerrados com esta versão no ar; o 1º pedido depois disso sobe um pod do zero"
+        if sairiam
+        else "com esta versão no ar, nenhum pod hibernado é encerrado"
+    )
+    return 0
+
+
 def socket_da_api(host: str, porta: int):
     """Socket de escuta da API, criado aqui e não pelo uvicorn: com IPPROTO_TCP e TCP_NODELAY. O do
     uvicorn (protocolo 0) faz o asyncio não desligar o algoritmo de Nagle nas conexões aceitas, e com
@@ -217,6 +257,10 @@ def main(argv: list[str] | None = None) -> int:
     s_email.add_argument("email")
     sub.add_parser("orquestrar", help="sobe e encerra pods conforme a fila")
     sub.add_parser("limpar", help="encerra os pods registrados pelo orquestrador")
+    s_hib = sub.add_parser(
+        "hibernados", help="os pods hibernados e o que esta versão do código faria com eles (só leitura)"
+    )
+    s_hib.add_argument("--runpod", action="store_true", help="confere também a lista de pods do RunPod (só leitura)")
     s_cli = sub.add_parser("cliente", help="cadastra um cliente e mostra o token (uma vez)")
     s_cli.add_argument("nome")
     s_cli.add_argument("--plano", choices=["pago", "teste", "interno"], default="pago")
@@ -239,6 +283,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cmd == "api":
         return api(a.host, a.porta, a.workers)
+    if a.cmd == "hibernados":
+        return hibernados(a.runpod)
     if a.cmd == "admin-convite":
         return admin_convite(_banco(), a.usuario, a.papel)
     if a.cmd == "totp-novo":

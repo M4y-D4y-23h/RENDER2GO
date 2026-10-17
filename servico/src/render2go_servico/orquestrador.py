@@ -71,7 +71,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from render2go_worker import filtro_imagem, runpod_pods
+from render2go_worker import filtro_imagem, runpod_pods, volume
 from render2go_worker import lote_nuvem as ln
 
 from render2go_servico import capacidade as cap
@@ -112,6 +112,50 @@ def _volume_completo(saida: str) -> bool:
     linhas = saida.splitlines()
     versao = ln.versao_hibernacao()
     return any(x.strip() == "GUARDADO" for x in linhas) and any(x.split()[:1] == [versao] for x in linhas)
+
+
+def inventario_hibernados(
+    estado: Path | None = None, maximo: int | None = None, pods_runpod: list[dict] | None = None, api_url: str = ""
+) -> dict:
+    """O conjunto de pods hibernados (ADR 0011) e o que ESTE código faria com eles, sem mudar nada (17/10/2026): para
+    conferir antes de subir uma atualização (`render2go-servico hibernados`, com a imagem nova e o .env do servidor).
+    Na atualização de 17/10/2026, a versão mudou (Dockerfile, models.lock.json e pod_agente.py) e o orquestrador
+    encerrou o hibernado de 12/10 com o disco de volume: o 1º pedido depois dela subiu um pod do zero.
+
+    Simula a regra de `_estado_runpod`: sai quem é de outra versão; depois, acima de RENDER2GO_PODS_HIBERNADOS, os
+    parados há mais tempo. Com `pods_runpod` (a lista do RunPod), também os pods parados deste serviço fora do conjunto,
+    que a partida do orquestrador encerra (`_conferir_hibernados`). Sem os tokens dos agentes."""
+    from render2go_servico.db import HORAS_MES, VOLUME_PARADO_USD_GB_MES
+
+    arq = (estado or ln.CACHE / "orquestrador") / HIBERNADOS
+    try:
+        dados = json.loads(arq.read_text()) if arq.is_file() else {}
+    except (OSError, ValueError):
+        dados = {}
+    versao = ln.versao_hibernacao()
+    maximo = max(0, int(os.environ.get("RENDER2GO_PODS_HIBERNADOS", 0))) if maximo is None else maximo
+    campos = ("id", "gpu", "usd_h", "datacentro", "criado", "parado_em", "voltas", "falhas", "ultima_falha", "versao",
+              "volume_gb", "maquina")  # fmt: skip
+    itens = [{k: h.get(k) for k in campos} | {"compativel": h.get("versao") == versao} for h in dados.values()]
+    sai: dict[str, str] = {i["id"]: f"versão anterior ({i['versao']} → {versao})" for i in itens if not i["compativel"]}
+    ficam = sorted((i for i in itens if i["compativel"]), key=lambda i: i.get("parado_em") or 0)
+    for i in ficam[: max(0, len(ficam) - maximo)]:
+        sai[i["id"]] = "acima de RENDER2GO_PODS_HIBERNADOS"
+    for i in itens:
+        i["sairia"] = sai.get(i["id"])
+        gb = i.get("volume_gb") or 70
+        i["usd_dia_parado"] = round(gb * VOLUME_PARADO_USD_GB_MES / HORAS_MES * 24, 4)
+    orfaos = []
+    if pods_runpod is not None:
+        prefixo = "render2go-fila-" + hashlib.sha256(api_url.rstrip("/").encode()).hexdigest()[:6]
+        orfaos = [
+            {"id": p.get("id"), "nome": p.get("name"), "volume_gb": p.get("volumeInGb")}
+            for p in pods_runpod
+            if str(p.get("name", "")).startswith(prefixo)
+            and p.get("desiredStatus") == "EXITED"
+            and p.get("id") not in dados
+        ]
+    return {"versao": versao, "maximo": maximo, "hibernados": itens, "orfaos": orfaos}
 
 
 def _gpus_do_ambiente() -> list[str]:
@@ -193,6 +237,7 @@ class PodFila:
     # pega a vez marca `atendido` com a trava, e a trava fica com ele até a parada ou o encerramento acabar
     trava: threading.RLock = field(default_factory=threading.RLock, repr=False)
     atendido: bool = False
+    diagnostico: str = ""  # tempos da subida e o diagnóstico do volume, lidos com o fim do worker (_terminou)
 
     def pegar_vez(self) -> bool:
         """Chamar com `trava`: True se este caminho fecha o pod (ninguém fechou antes)."""
@@ -418,7 +463,13 @@ class Orquestrador:
                 with self.lock:  # a reserva vira o pod (no teto conta um ou outro, nunca os dois)
                     if reserva in self.reservas:
                         self.reservas[reserva]["pod"] = info.id
-                self._registrar("gerador_criado", gerador, f"pod-{info.id}", info.gpu, info.usd_h, info.datacentro)
+                    h = dict(self.hib.get(info.id) or {})
+                # discos da sessão (o custo do armazenamento no relatório) e a máquina do RunPod (17/10/2026)
+                vol = int(h.get("volume_gb") or self.cfg.volume_gb) if tipo == "retomada" or self.cfg.hibernados else 0
+                self._registrar(
+                    "gerador_criado", gerador, f"pod-{info.id}", info.gpu, info.usd_h, info.datacentro,
+                    disco_gb=ln.DISCO_CONTEINER_GB, volume_gb=vol, maquina=info.maquina or h.get("maquina"),
+                )  # fmt: skip
                 self._registrar("gerador_subida", gerador, tipo, versao=ln.versao_hibernacao())
 
             def agente(pod: ln.Pod) -> None:  # o agente respondeu (métricas) e o prazo com o preço real
@@ -465,6 +516,9 @@ class Orquestrador:
             with self.lock:
                 self.subindo -= 1
                 self.reservas.pop(reserva, None)  # o pod (se existe) conta pelo inventário do lote_nuvem
+        # como o disco de volume estava nesta subida (17/10/2026); depois de soltar a vaga e a reserva (uma consulta
+        # ao agente, que pode demorar)
+        self._diagnostico(pod, gerador)
 
     # -- pods hibernados (ADR 0011) --------------------------------------------------------------
 
@@ -596,7 +650,7 @@ class Orquestrador:
                 tentados.add(h["id"])
             info = ln.PodInfo(
                 h["id"], h["url"], h["token"], float(h["usd_h"]), h.get("descricao", ""),
-                int(h.get("gpus", 1)), h.get("gpu", ""), h.get("datacentro"),
+                int(h.get("gpus", 1)), h.get("gpu", ""), h.get("datacentro"), h.get("maquina"),
             )  # fmt: skip
             try:
                 pod = self.pods_ln.retomar_pod(
@@ -647,8 +701,47 @@ class Orquestrador:
             aceito = self.pods_ln.encerrar_por_id(pod_id, motivo)
         if aceito:
             _log(f"pod hibernado {pod_id} encerrado ({motivo})")
+            self._volume_fim(pod_id, motivo)
         else:
             _log(f"AVISO: encerrar o pod hibernado {pod_id} falhou; fica no inventário e é tentado de novo")
+
+    def _volume_fim(self, pod_id: str, motivo: str) -> None:
+        """O disco de volume do pod deixou de existir: o fim do custo parado no relatório (17/10/2026)."""
+        try:
+            self.banco.volume_encerrado(f"pod-{pod_id}", motivo)
+        except Exception as e:  # noqa: BLE001 (só o relatório depende disso)
+            _log(f"AVISO: registro do fim do disco de volume de {pod_id}: {e}")
+
+    def _diagnostico(self, pod: ln.Pod, gerador: str | None, saida: str | None = None) -> None:
+        """Os tempos da subida por etapa e o diagnóstico do disco de volume (render2go_worker.volume), para o relatório
+        de GPUs (17/10/2026). `saida`: o que o pod já mandou junto com o fim do worker (`_terminou`); sem ela, uma
+        consulta ao agente. Nunca derruba o fluxo; o diagnóstico passa por `volume.ler_diagnostico` (só os campos
+        conhecidos)."""
+        if not gerador:
+            return
+        r = self.remoto.raiz
+        try:
+            if saida is None:
+                _, saida = pod.agente.exec(
+                    f"echo '#R2G-TEMPOS'; cat {r}/tempos 2>/dev/null; echo '#R2G-VOL'; cat {r}/volume.json 2>/dev/null",
+                    30,
+                )
+            tempos, _, vol = saida.partition("#R2G-VOL")
+            etapas: dict[str, float] = {}
+            for linha in tempos.replace("#R2G-TEMPOS", "").splitlines():
+                partes = linha.split()
+                if len(partes) == 2:
+                    try:
+                        etapas[partes[0]] = float(partes[1])
+                    except ValueError:
+                        continue
+            if etapas:
+                self.banco.gerador_etapas(gerador, etapas)
+            diag = volume.ler_diagnostico(vol.strip()) if vol.strip() else None
+            if diag:
+                self.banco.gerador_volume(gerador, diag)
+        except Exception as e:  # noqa: BLE001 (só o relatório depende disso)
+            _log(f"AVISO: diagnóstico do pod {pod.nome}: {e}")
 
     def _fechamento(self, pod: ln.Pod) -> None:
         """O estado do fechamento de um pod mudou (lote_nuvem): vai para o relatório de GPUs (14/10/2026). Só o
@@ -681,13 +774,21 @@ class Orquestrador:
         conferir = pf.pod.hibernavel and not pf.pod.volume_ok
         if conferir:
             cmd += f"; echo '#volume'; cat {r}/guardado {self.remoto.local_hib}/instalado 2>/dev/null"
+        # com o worker já fora: os tempos da subida e o diagnóstico do volume, na mesma consulta (17/10/2026)
+        cmd += (
+            f"; if [ -f {r}/fila.fim ]; then echo '#R2G-TEMPOS'; cat {r}/tempos 2>/dev/null; echo '#R2G-VOL';"
+            f" cat {r}/volume.json 2>/dev/null; fi"
+        )
         try:
             _, out = pf.pod.agente.exec(cmd, 30)
         except (ln.NuvemError, OSError) as e:
             _log(f"pod {pf.pod.nome}: agente inacessível ({e})")
             return "agente"
-        fila, _, volume = out.partition("#volume")
-        if conferir and _volume_completo(volume):
+        out, marca, diag = out.partition("#R2G-TEMPOS")
+        if marca:
+            pf.diagnostico = marca + diag
+        fila, _, guardado = out.partition("#volume")
+        if conferir and _volume_completo(guardado):
             pf.pod.volume_ok = True
         if "FIM" not in fila:
             return None
@@ -704,6 +805,8 @@ class Orquestrador:
             with self.lock:
                 self.ativos.pop(pid, None)
             texto = MOTIVOS.get(motivo, "agente inacessível")
+            if pf.diagnostico:  # o que o pod mandou com o fim do worker (tempos e volume)
+                self._diagnostico(pf.pod, pf.gerador, pf.diagnostico)
             pf.pod.drenando_em = time.monotonic()  # não pega mais vídeos; pode estar terminando o cache
             # o worker saiu: o pod já não gera vídeos (a previsão não pode contar com ele)
             self._registrar("gerador_fim", pf.gerador, texto)
@@ -791,6 +894,7 @@ class Orquestrador:
                         "id": i.id, "url": i.url, "token": i.token, "usd_h": i.usd_h, "descricao": i.descricao,
                         "gpus": i.gpus, "gpu": i.gpu, "datacentro": i.datacentro, "em_uso": False,
                         "versao": ln.versao_hibernacao(), "parado_em": time.time(),
+                        "maquina": i.maquina or h.get("maquina"), "volume_gb": h.get("volume_gb") or self.cfg.volume_gb,
                     }  # fmt: skip
                     self._salvar_hibernados()
                 texto = f"hibernado ({texto})"
@@ -950,9 +1054,11 @@ class Orquestrador:
                     _log(f"AVISO: prazo de um pod novo: {e}")
         versao = ln.versao_hibernacao()
         with self.lock:
-            velhos = [k for k, h in self.hib.items() if h.get("versao") != versao and not h.get("em_uso")]
-        for pid in velhos:
-            self._descartar_hibernado(pid, "versão anterior do ambiente ou dos modelos")
+            velhos = [
+                (k, h.get("versao")) for k, h in self.hib.items() if h.get("versao") != versao and not h.get("em_uso")
+            ]
+        for pid, antiga in velhos:  # com as duas versões no motivo: o relatório mostra que foi uma atualização
+            self._descartar_hibernado(pid, f"versão anterior do ambiente ou dos modelos ({antiga} → {versao})")
         # parados a mais saem, os parados há mais tempo primeiro; o que está ligado agora é encerrado
         # (em vez de hibernado) quando a fila esvaziar, porque o conjunto já está cheio
         with self.lock:
@@ -1084,6 +1190,7 @@ class Orquestrador:
             sumiram = [k for k in self.hib if existem.get(k, {}).get("desiredStatus") in (None, "TERMINATED")]
         for pid in sumiram:
             self._tirar_hibernado(pid)
+            self._volume_fim(pid, "o pod não existe mais no RunPod")
             _log(f"pod hibernado {pid} não existe mais no RunPod: saiu do conjunto")
         for pid, p in existem.items():
             nome = str(p.get("name", ""))

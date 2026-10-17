@@ -1283,7 +1283,7 @@ def test_small_photo_warning_order_help_and_gpu_report(ambiente, navegador, tmp_
     assert "pod-abc123" in tabela and "EU-RO-1" in tabela and "1,09" in tabela and "10 min" in tabela
     assert "falhou na subida: não subiu" in tabela
     resumo = _texto(adm, "#resumo-gpus")
-    assert "GPUs ligadas\n2" in resumo and "Custo estimado\nUS$ 0,18" in resumo
+    assert "GPUs ligadas\n2" in resumo and "Custo de GPU\nUS$ 0,18" in resumo
     adm.click("#filtros-gpus button[data-dias='7']")
     pw.expect(adm.locator("#filtros-gpus button[data-dias='7']")).to_have_attribute("aria-pressed", "true")
     with adm.expect_download() as baixado:

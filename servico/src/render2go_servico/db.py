@@ -249,6 +249,14 @@ ESQUEMA = [
         cliente_id TEXT NOT NULL REFERENCES clientes(id), versao_id TEXT, motivo TEXT NOT NULL, criterio TEXT,
         comentario TEXT, status TEXT NOT NULL, classificacao TEXT, nota TEXT, credito BIGINT, decidido_por TEXT,
         decidido_em DOUBLE PRECISION, criado DOUBLE PRECISION NOT NULL)""",
+    # cada reivindicação de um job (17/10/2026): a sessão do pod que a pegou (geradores.id), quando começou, quando
+    # foi para a GPU, quando acabou e como ("ok", "erro", "repetir", "transporte", "prazo", "cancelado", "devolvido").
+    # O job guarda só a última; aqui ficam as que falharam, para o custo por tentativa e por sessão. Só números e
+    # identificadores: nada do pedido, da foto ou do cliente
+    """CREATE TABLE IF NOT EXISTS tentativas (
+        id TEXT PRIMARY KEY, job_id TEXT NOT NULL, lote_id TEXT NOT NULL, tipo TEXT NOT NULL, n INTEGER NOT NULL,
+        gerador_id TEXT, worker TEXT, inicio DOUBLE PRECISION NOT NULL, gpu_em DOUBLE PRECISION,
+        fim DOUBLE PRECISION, resultado TEXT, segundos DOUBLE PRECISION)""",
 ]
 # índices: depois das colunas novas (um banco antigo ganha a coluna antes do índice que a usa)
 INDICES = [
@@ -294,6 +302,11 @@ INDICES = [
     "CREATE INDEX IF NOT EXISTS correcoes_lote ON correcoes (lote_id)",
     "CREATE INDEX IF NOT EXISTS montagens_status ON montagens (status, criado)",
     "CREATE INDEX IF NOT EXISTS jobs_versao ON jobs (versao_id)",
+    "CREATE INDEX IF NOT EXISTS jobs_gerador ON jobs (gerador_id)",
+    "CREATE INDEX IF NOT EXISTS geradores_worker ON geradores (worker, criado)",
+    "CREATE INDEX IF NOT EXISTS tentativas_job ON tentativas (job_id, n)",
+    "CREATE INDEX IF NOT EXISTS tentativas_gerador ON tentativas (gerador_id)",
+    "CREATE INDEX IF NOT EXISTS tentativas_abertas ON tentativas (job_id) WHERE fim IS NULL",
 ]
 # vídeos já iniciados (ou prontos) de cada cliente nos pedidos em andamento: a vez na fila é por cliente
 INICIADOS_POR_CLIENTE = (
@@ -348,6 +361,7 @@ TRAVA_ESQUEMA = 20261008
 # Ficam de fora, de propósito: clientes, sessões, aceites dos termos, registros de acesso (Marco
 # Civil: 6 meses), movimentos e pagamentos (registro financeiro) e a auditoria do painel.
 HISTORICO = (
+    "tentativas",
     "jobs",
     "versoes",
     "criterios_avaliados",
@@ -484,7 +498,38 @@ COLUNAS_NOVAS = [
     # a versão com que o vídeo foi para o pod e o SHA-256 do prompt que foi (o que o vídeo executou de fato)
     ("jobs", "versao_id", "TEXT"),
     ("jobs", "prompt_sha", "TEXT"),
+    # sessão do pod (17/10/2026): cada subida (fria ou volta da hibernação) é uma linha de `geradores`, e o pod que
+    # volta tem o mesmo nome (pod-<id>). Até aqui o relatório ligava os jobs pelo nome e contava os mesmos vídeos em
+    # todas as sessões do pod; agora o job guarda a sessão da tentativa atual. NULL: o job de antes (o relatório
+    # atribui pelo horário quando o pod tem mais de uma sessão, e marca a atribuição como incerta)
+    ("jobs", "gerador_id", "TEXT"),
+    # discos da sessão (GB do contêiner e do volume), para o custo do armazenamento, e a máquina do RunPod
+    ("geradores", "disco_gb", "INTEGER"),
+    ("geradores", "volume_gb", "INTEGER"),
+    ("geradores", "maquina", "TEXT"),
+    # diagnóstico do disco de volume nesta sessão (JSON do bootstrap: montagem, sistema de arquivos, espaço, marcador,
+    # sentinela e o motivo de não usar o cache; sem segredos) e os tempos da subida por etapa (JSON, só números)
+    ("geradores", "volume", "TEXT"),
+    ("geradores", "etapas", "TEXT"),
+    # o disco de volume do pod deixou de existir (o hibernado foi encerrado) e por quê: o fim do custo parado
+    ("geradores", "volume_fim_em", "DOUBLE PRECISION"),
+    ("geradores", "volume_fim_motivo", "TEXT"),
 ]
+# armazenamento do RunPod (https://docs.runpod.io/pods/storage/types, consultado em 17/10/2026): disco do contêiner e
+# de volume a US$ 0,10/GB/mês com o pod ligado; o de volume, US$ 0,20/GB/mês parado. O mês de 720 h confere com o
+# faturamento real (70 GB parados: US$ 0,019444/h em 12–17/10/2026). Mudou a tabela: as variáveis do .env
+DISCO_USD_GB_MES = float(os.environ.get("RENDER2GO_RUNPOD_DISCO_USD_GB_MES", 0.10))
+VOLUME_PARADO_USD_GB_MES = float(os.environ.get("RENDER2GO_RUNPOD_VOLUME_PARADO_USD_GB_MES", 0.20))
+HORAS_MES = 720
+# como uma tentativa terminou: as que contam como falha no custo por tentativa
+FALHAS_TENTATIVA = ("erro", "repetir", "transporte", "prazo")
+# etapas do bootstrap (worker/scripts/bootstrap_pod.sh, `marca`) que as métricas da subida resumem: a do zero (apt,
+# ambiente, compilador, modelos, PRONTO, cópia para o volume) e a volta da hibernação (links, apt, conferência)
+ETAPAS_SUBIDA = (
+    "apt_download", "modelos_volume", "modelos_inicio", "apt", "ambiente_imagem", "ambiente_instalado",
+    "ambiente_volume", "compilador", "ambiente_pronto", "modelos_conferidos", "pronto", "volume_gravado", "guardado",
+    "retomada_links", "retomada_apt", "retomada_conferida",
+)  # fmt: skip
 MODELO_PADRAO = "wan2.2-i2v"
 # "mfa": o passo do aplicativo autenticador na entrada do cliente (vale minutos, nunca é uma sessão de uso)
 SESSAO_TIPOS = ("cliente", "admin", "mfa")
@@ -528,6 +573,13 @@ def sha(token: str) -> str:
 
 def novo_id(prefixo: str) -> str:
     return f"{prefixo}_{secrets.token_hex(8)}"
+
+
+def _json_ou_none(texto: str | None) -> Any:
+    try:
+        return json.loads(texto) if texto else None
+    except ValueError:
+        return None
 
 
 class Banco:
@@ -2773,7 +2825,8 @@ class Banco:
         """As métricas do piloto (docs/16) desde `desde`: os pedidos com versões e as decisões que pediram do cliente,
         os vídeos entregues com e sem retorno, a 1ª entrega utilizável, as correções e os créditos, os tempos (de
         relógio, não de atenção do cliente) e o custo de GPU por vídeo utilizável. O que o banco não sabe (taxas,
-        armazenamento, trabalho da equipe) não entra como número: vai em `nao_medido`."""
+        armazenamento no R2, trabalho da equipe) não entra como número: vai em `nao_medido`. Os discos do RunPod entram
+        desde 17/10/2026 (`gpu_e_discos_usd`, do relatório de GPUs)."""
 
         def tempos(v: list[float]) -> dict[str, Any]:
             v = sorted(x for x in v if x is not None and x >= 0)
@@ -2821,7 +2874,8 @@ class Banco:
         for x in cors:
             if x["classificacao"]:
                 classes[x["classificacao"]] = classes.get(x["classificacao"], 0) + 1
-        gpu = self.relatorio_geradores(desde)["totais"]["custo_usd"]
+        rel = self.relatorio_geradores(desde)["totais"]
+        gpu, total = rel["custo_usd"], rel["custo_total_usd"]  # só a GPU; com os discos do RunPod (17/10/2026)
         return {
             "desde": desde,
             "pedidos": {
@@ -2849,8 +2903,10 @@ class Banco:
                 "gpu_usd": gpu,
                 "gpu_usd_por_video_entregue": round(gpu / len(jobs), 4) if jobs else None,
                 "gpu_usd_por_video_utilizavel": round(gpu / len(usaveis), 4) if usaveis else None,
+                "gpu_e_discos_usd": total,
+                "gpu_e_discos_usd_por_video_utilizavel": round(total / len(usaveis), 4) if usaveis else None,
             },
-            "nao_medido": ["tempo ativo do cliente na página", "taxas do Pix", "armazenamento",
+            "nao_medido": ["tempo ativo do cliente na página", "taxas do Pix", "armazenamento no R2",
                            "trabalho da equipe (revisão e correções)"],
         }  # fmt: skip
 
@@ -3070,14 +3126,68 @@ class Banco:
         return gid
 
     def gerador_criado(
-        self, gid: str, worker: str, gpu: str | None, usd_h: float | None, datacentro: str | None = None
+        self,
+        gid: str,
+        worker: str,
+        gpu: str | None,
+        usd_h: float | None,
+        datacentro: str | None = None,
+        disco_gb: int | None = None,
+        volume_gb: int | None = None,
+        maquina: str | None = None,
     ) -> None:
-        """O RunPod criou o pod: id, GPU, preço e datacenter, antes da instalação (que pode falhar)."""
+        """O RunPod criou o pod (ou o ligou de novo, na volta da hibernação: outra sessão do mesmo pod): id, GPU,
+        preço, datacenter e discos, antes da instalação (que pode falhar). `pod_criado_em` é o começo da cobrança
+        desta sessão.
+
+        A mesma subida pode ligar mais de um pod: a volta de um hibernado que não ficou pronta (ele é parado de novo)
+        e, depois, outro hibernado ou um pod do zero. Até 17/10/2026, o segundo sobrescrevia o primeiro nesta linha, e
+        o tempo de GPU da volta que falhou sumia do relatório; agora ela fica numa sessão própria, encerrada."""
+        agora = time.time()
         with self.tx() as c:
+            g = c.one("SELECT * FROM geradores WHERE id = ?" + (" FOR UPDATE" if self.pg else ""), (gid,))
+            if g is not None and g["pod_criado_em"] is not None and g["worker"]:
+                c.run(
+                    "INSERT INTO geradores (id, worker, gpu, usd_h, estado, criado, encerrado_em, motivo,"
+                    " datacentro, pod_criado_em, desligado_em, subida_tipo, agente_em, versao, disco_gb, volume_gb,"
+                    " maquina, volume)"
+                    " VALUES (?, ?, ?, ?, 'falhou', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        novo_id("ger"), g["worker"], g["gpu"], g["usd_h"], g["criado"], agora,
+                        "a volta da hibernação não ficou pronta (o pod foi parado de novo)", g["datacentro"],
+                        g["pod_criado_em"], agora, g.get("subida_tipo"), g.get("agente_em"), g.get("versao"),
+                        g.get("disco_gb"), g.get("volume_gb"), g.get("maquina"), g.get("volume"),
+                    ),
+                )  # fmt: skip
             c.run(
-                "UPDATE geradores SET worker = ?, gpu = ?, usd_h = ?, datacentro = ?, pod_criado_em = ? WHERE id = ?",
-                (worker, gpu, usd_h, datacentro, time.time(), gid),
+                "UPDATE geradores SET worker = ?, gpu = ?, usd_h = ?, datacentro = ?, pod_criado_em = ?,"
+                " disco_gb = ?, volume_gb = ?, maquina = ?, agente_em = NULL, volume = NULL WHERE id = ?",
+                (worker, gpu, usd_h, datacentro, agora, disco_gb, volume_gb, maquina, gid),
             )
+
+    def gerador_volume(self, gid: str, diagnostico: dict) -> None:
+        """O diagnóstico do disco de volume desta sessão (JSON do bootstrap, `render2go_worker.volume`): montagem,
+        sistema de arquivos, espaço, marcador, sentinela e o motivo de o cache não ter sido usado. Só o painel vê."""
+        with self.tx() as c:
+            c.run("UPDATE geradores SET volume = ? WHERE id = ?", (json.dumps(diagnostico)[:8000], gid))
+
+    def gerador_etapas(self, gid: str, etapas: dict[str, float]) -> None:
+        """Os tempos da subida por etapa (s desde o começo do bootstrap; só números)."""
+        limpo = {str(k)[:40]: float(v) for k, v in etapas.items() if isinstance(v, int | float)}
+        with self.tx() as c:
+            c.run("UPDATE geradores SET etapas = ? WHERE id = ?", (json.dumps(limpo), gid))
+
+    def volume_encerrado(self, worker: str, motivo: str) -> None:
+        """O disco de volume do pod `worker` deixou de existir (o hibernado foi encerrado, ADR 0011): o fim do custo
+        parado, na última sessão do pod, com o motivo (ex.: "versão anterior do ambiente ou dos modelos")."""
+        with self.tx() as c:
+            g = c.one("SELECT id FROM geradores WHERE worker = ? ORDER BY criado DESC LIMIT 1", (worker,))
+            if g:
+                c.run(
+                    "UPDATE geradores SET volume_fim_em = COALESCE(volume_fim_em, ?), volume_fim_motivo = ?"
+                    " WHERE id = ?",
+                    (time.time(), motivo[:300], g["id"]),
+                )
 
     def gerador_desligado(self, gid: str) -> None:
         """O pod foi encerrado no RunPod (fim da cobrança). Com o fechamento registrado pelo ciclo de vida
@@ -3155,35 +3265,124 @@ class Banco:
             )
 
     def relatorio_geradores(self, desde: float, limite: int = 200) -> dict[str, Any]:
-        """Relatório de cada pod para o painel: identificação, horários, vídeos e custo estimado.
+        """Relatório de cada sessão de pod para o painel: identificação, horários, tentativas e vídeos, tempo ocioso e
+        custos (17/10/2026).
 
-        Tempo ligado: da criação do pod (ou da decisão de subir, nos registros antigos) até o
-        desligamento; sem o desligamento registrado (orquestrador que caiu), até o fim da fila,
-        marcado como estimado. Custo = preço por hora × tempo ligado (o RunPod cobra por tempo)."""
+        Sessão: cada linha de `geradores` é uma subida (do zero ou volta da hibernação, ADR 0011). O pod que volta tem
+        o mesmo nome (pod-<id>): até 17/10/2026 os jobs eram ligados pelo nome, e cada sessão do pod contava os vídeos
+        de todas. Agora o job vai para a sessão pela `jobs.gerador_id`. Os jobs de antes não têm a sessão: com uma
+        sessão só do pod, fica a atribuição de sempre; com mais de uma, ela é pelo horário da tentativa, e a sessão
+        sai marcada (`incertezas`). Cada job conta numa sessão só.
+
+        Tempo ligado: do começo da sessão (o RunPod criou ou ligou o pod; nos registros antigos, a decisão de subir)
+        até o fim observado; sem ele (orquestrador que caiu), até o fim da fila, marcado como estimado.
+
+        Vídeos: `tentativas_render` (cada reivindicação, desde 17/10/2026), `videos_ok` (o job final certo, entregue
+        ao cliente; o barrado pelo filtro nunca é "ok"), `videos_erro` (o job que falhou de vez), `aproveitaveis` (o
+        cliente respondeu "pode usar como está") e `recusados_cliente` (respondeu que não).
+
+        Custos (US$): `custo_usd` = preço por hora × tempo ligado (só a GPU, como antes); `disco_ligado_usd` =
+        (contêiner + volume) × DISCO_USD_GB_MES; `disco_parado_usd` = volume × VOLUME_PARADO_USD_GB_MES, entre as
+        sessões do pod e depois da última se ele ficou hibernado (até o fim do disco ou agora). O RunPod cobra o disco à
+        parte do preço da GPU (faturamento de 13–14/10/2026: US$ 1,104–1,112 por hora faturada de uma L40S de
+        US$ 1,09/h). Ficam de fora, e vão em `nao_incluido`: servidor, R2, pagamentos e revisão (docs/11).
+        `ocupacao` = soma dos tempos das tentativas ÷ tempo ligado: não é a utilização medida da GPU (NVML)."""
         agora = time.time()
-        por_worker = (
-            "SELECT {expr} FROM jobs j WHERE j.worker = g.worker AND g.worker IS NOT NULL AND j.tipo = '{tipo}'{extra}"
-        )
-        campos = {
-            "videos_ok": por_worker.format(expr="COUNT(*)", tipo="render", extra=" AND j.status = 'ok'"),
-            "videos_erro": por_worker.format(expr="COUNT(*)", tipo="render", extra=" AND j.status = 'erro'"),
-            "videos_andamento": por_worker.format(
-                expr="COUNT(*)", tipo="render", extra=" AND j.status = 'em_andamento'"
-            ),
-            "traducoes": por_worker.format(expr="COUNT(*)", tipo="compilar", extra=" AND j.status = 'ok'"),
-            "lotes": por_worker.format(expr="COUNT(DISTINCT j.lote_id)", tipo="render", extra=""),
-            "segundos_render": por_worker.format(
-                expr="COALESCE(SUM(j.segundos), 0)", tipo="render", extra=" AND j.status = 'ok'"
-            ),
-        }
-        sub = ", ".join(f"({q}) AS {nome}" for nome, q in campos.items())
         with self.tx() as c:
             linhas = c.all(
-                f"SELECT g.*, {sub} FROM geradores g WHERE g.criado >= ? ORDER BY g.criado DESC LIMIT ?",
-                (desde, limite),
+                "SELECT g.* FROM geradores g WHERE g.criado >= ? ORDER BY g.criado DESC LIMIT ?", (desde, limite)
             )
+            workers = sorted({g["worker"] for g in linhas if g["worker"]})
+            ids = [g["id"] for g in linhas]
+            todas, jobs, tents = [], [], []
+            if workers:
+                m = ", ".join("?" * len(workers))
+                todas = c.all(
+                    "SELECT id, worker, criado, pod_criado_em, desligado_em, encerrado_em FROM geradores"
+                    f" WHERE worker IN ({m})",
+                    tuple(workers),
+                )
+                jobs = c.all(
+                    "SELECT j.id, j.lote_id, j.tipo, j.status, j.worker, j.gerador_id, j.segundos, j.tentativa_em,"
+                    " j.atualizado, r.usavel FROM jobs j LEFT JOIN retornos r ON r.job_id = j.id"
+                    f" WHERE j.worker IN ({m}) AND j.status IN ('ok', 'erro', 'em_andamento')",
+                    tuple(workers),
+                )
+            if ids:
+                m = ", ".join("?" * len(ids))
+                tents = c.all(
+                    "SELECT gerador_id, tipo, resultado, inicio, gpu_em, fim, segundos FROM tentativas"
+                    f" WHERE gerador_id IN ({m})",
+                    tuple(ids),
+                )
+        # as sessões de cada pod em ordem: a atribuição dos jobs de antes e o tempo parado entre elas
+        sessoes: dict[str, list[dict]] = {}
+        for s in todas:
+            sessoes.setdefault(s["worker"], []).append(s)
+        for v in sessoes.values():
+            v.sort(key=lambda s: (float(s["pod_criado_em"] or s["criado"]), s["id"]))
+        ordem = {s["id"]: (n, v) for v in sessoes.values() for n, s in enumerate(v)}
+        agg: dict[str, dict[str, Any]] = {
+            g["id"]: {"videos_ok": 0, "videos_erro": 0, "videos_andamento": 0, "traducoes": 0, "lotes": set(),
+                      "segundos_render": 0.0, "por_horario": 0, "aproveitaveis": 0, "recusados_cliente": 0,
+                      "primeira_entrega": None, "tentativas_render": 0, "tentativas_falhas": 0,
+                      "tentativas_traducao": 0, "segundos_tentativas": 0.0, "segundos_traducao": 0.0}
+            for g in linhas
+        }  # fmt: skip
+        sem_sessao = 0
+        for j in jobs:
+            gid, incerto = j["gerador_id"], False
+            if not gid:  # job de antes de 17/10/2026
+                ss = sessoes.get(j["worker"]) or []
+                if len(ss) == 1:
+                    gid = ss[0]["id"]
+                elif ss:
+                    t = float(j["tentativa_em"] or j["atualizado"])
+                    antes = [s for s in ss if float(s["pod_criado_em"] or s["criado"]) <= t]
+                    gid, incerto = (antes[-1]["id"] if antes else None), True
+            a = agg.get(gid) if gid else None
+            if a is None:
+                sem_sessao += gid is None
+                continue
+            a["por_horario"] += incerto
+            if j["tipo"] == "compilar":
+                a["traducoes"] += j["status"] == "ok"
+                continue
+            a["lotes"].add(j["lote_id"])
+            if j["status"] == "ok":
+                a["videos_ok"] += 1
+                a["segundos_render"] += float(j["segundos"] or 0)
+                if j["usavel"] is not None:
+                    a["aproveitaveis" if int(j["usavel"]) else "recusados_cliente"] += 1
+                fim = float(j["atualizado"])
+                a["primeira_entrega"] = fim if a["primeira_entrega"] is None else min(a["primeira_entrega"], fim)
+            else:
+                a["videos_erro" if j["status"] == "erro" else "videos_andamento"] += 1
+        for t in tents:
+            a = agg.get(t["gerador_id"])
+            if a is None or t["resultado"] in ("devolvido", "cancelado"):  # nunca foram para a GPU
+                continue
+            if t["segundos"] is not None:
+                dur = float(t["segundos"])
+            elif t["fim"] is not None:
+                dur = max(0.0, float(t["fim"]) - float(t["gpu_em"] or t["inicio"]))
+            else:  # em andamento
+                dur = max(0.0, agora - float(t["gpu_em"] or t["inicio"]))
+            if t["tipo"] == "render":
+                a["tentativas_render"] += 1
+                a["tentativas_falhas"] += t["resultado"] in FALHAS_TENTATIVA
+                a["segundos_tentativas"] += dur
+            else:
+                a["tentativas_traducao"] += 1
+                a["segundos_traducao"] += dur
+        tem_tentativas = {t["gerador_id"] for t in tents}
+
+        def usd_disco(gb: float, usd_gb_mes: float, s: float) -> float:
+            return gb * usd_gb_mes / HORAS_MES * s / 3600
+
         geradores = []
         for g in linhas:
+            a = agg[g["id"]]
             inicio = float(g["pod_criado_em"] or g["criado"])
             # o fechamento não observado (14/10/2026) conta como ligado: o RunPod pode estar cobrando
             ativo = g["estado"] in ("subindo", "pronto") or g.get("fechamento") in ("pedido", "falhou", "aceito")
@@ -3194,10 +3393,47 @@ class Banco:
             sem_pod = g["pod_criado_em"] is None and g["pronto_em"] is None  # o RunPod nem criou o pod
             custo = None if g["usd_h"] is None else round(float(g["usd_h"]) * segundos / 3600, 4)
             subida = None if g["primeiro_video_em"] is None else round(float(g["primeiro_video_em"]) - inicio, 1)
+            entrega = None if a["primeira_entrega"] is None else round(a["primeira_entrega"] - inicio, 1)
+            n, irmas = ordem.get(g["id"], (0, [g]))
+            # disco: ligado (contêiner + volume) e parado (o volume, até a próxima sessão do pod, o fim dele ou agora)
+            incertezas = []
+            disco_gb, volume_gb = g.get("disco_gb"), g.get("volume_gb")
+            ligado_s = 0.0 if sem_pod else segundos
+            disco_ligado = parado_s = disco_parado = None
+            if disco_gb is not None:
+                disco_ligado = round(usd_disco(disco_gb + (volume_gb or 0), DISCO_USD_GB_MES, ligado_s), 4)
+            elif not sem_pod:
+                incertezas.append("disco_desconhecido")
+            if volume_gb and g["desligado_em"] and not ativo:
+                proxima = float(irmas[n + 1]["pod_criado_em"] or irmas[n + 1]["criado"]) if n + 1 < len(irmas) else None
+                parado = (
+                    proxima is not None
+                    or g.get("volume_fim_em")
+                    or str(g["motivo"] or "").startswith(("hibernado", "a volta da hibernação"))
+                )
+                if parado:
+                    ate = min(x for x in (proxima, g.get("volume_fim_em"), agora) if x is not None)
+                    parado_s = max(0.0, float(ate) - float(g["desligado_em"]))
+                    disco_parado = round(usd_disco(volume_gb, VOLUME_PARADO_USD_GB_MES, parado_s), 4)
+            if a["por_horario"]:
+                incertezas.append("atribuicao_por_horario")
+            if estimado:
+                incertezas.append("fim_estimado")
+            ocupados = a["segundos_tentativas"] + a["segundos_traducao"]
+            if g["id"] not in tem_tentativas:  # sessão de antes do registro por tentativa: só os vídeos certos
+                ocupados = a["segundos_render"]
+                if a["videos_ok"] or a["videos_erro"]:
+                    incertezas.append("sem_tentativas")
+            total = None
+            if custo is not None:
+                total = round((0.0 if sem_pod else custo) + (disco_ligado or 0) + (disco_parado or 0), 4)
             geradores.append(
                 {
                     "id": g["id"],
                     "pod": g["worker"],
+                    "sessao": n + 1,  # 1 = a criação do pod; 2 em diante = voltas da hibernação
+                    "subida_tipo": g.get("subida_tipo"),
+                    "maquina": g.get("maquina"),
                     "gpu": g["gpu"],
                     "datacentro": g["datacentro"],
                     "usd_h": None if g["usd_h"] is None else float(g["usd_h"]),
@@ -3210,36 +3446,93 @@ class Banco:
                     "desligado_em": g["desligado_em"],
                     "fechamento": g.get("fechamento"),
                     "confirmacao": g.get("confirmacao"),
-                    "ligado_s": 0.0 if sem_pod else round(segundos, 1),
+                    "ligado_s": round(ligado_s, 1),
                     "ligado_estimado": estimado,
+                    # até o 1º vídeo começar (a reivindicação), não até a entrega: inclui a subida, o download, a
+                    # tradução do pedido e a espera dos modelos; a 1ª entrega vem em `primeira_entrega_s`
                     "subida_s": subida,
+                    "agente_s": None if not g.get("agente_em") else round(float(g["agente_em"]) - inicio, 1),
+                    "pronto_s": None if not g["pronto_em"] else round(float(g["pronto_em"]) - inicio, 1),
+                    "primeira_entrega_s": entrega,
                     "custo_usd": 0.0 if sem_pod else custo,
-                    "videos_ok": int(g["videos_ok"]),
-                    "videos_erro": int(g["videos_erro"]),
-                    "videos_andamento": int(g["videos_andamento"]),
-                    "traducoes": int(g["traducoes"]),
-                    "lotes": int(g["lotes"]),
-                    "segundos_render": round(float(g["segundos_render"]), 1),
+                    "disco_gb": disco_gb,
+                    "volume_gb": volume_gb,
+                    "disco_ligado_usd": disco_ligado,
+                    "parado_s": None if parado_s is None else round(parado_s, 1),
+                    "disco_parado_usd": disco_parado,
+                    "custo_total_usd": total,
+                    "volume_fim_em": g.get("volume_fim_em"),
+                    "volume_fim_motivo": g.get("volume_fim_motivo"),
+                    "volume": _json_ou_none(g.get("volume")),
+                    "etapas": _json_ou_none(g.get("etapas")),
+                    "videos_ok": a["videos_ok"],
+                    "videos_erro": a["videos_erro"],
+                    "videos_andamento": a["videos_andamento"],
+                    "traducoes": a["traducoes"],
+                    "lotes": len(a["lotes"]),
+                    "segundos_render": round(a["segundos_render"], 1),
+                    "tentativas_render": a["tentativas_render"] if g["id"] in tem_tentativas else None,
+                    "tentativas_falhas": a["tentativas_falhas"] if g["id"] in tem_tentativas else None,
+                    "tentativas_traducao": a["tentativas_traducao"] if g["id"] in tem_tentativas else None,
+                    "segundos_tentativas": round(a["segundos_tentativas"], 1),
+                    "segundos_traducao": round(a["segundos_traducao"], 1),
+                    "ocupacao": round(min(1.0, ocupados / ligado_s), 3) if ligado_s > 0 else None,
+                    "ocioso_s": round(max(0.0, ligado_s - ocupados), 1),
+                    "aproveitaveis": a["aproveitaveis"],
+                    "recusados_cliente": a["recusados_cliente"],
+                    "sem_retorno": a["videos_ok"] - a["aproveitaveis"] - a["recusados_cliente"],
+                    "jobs_por_horario": a["por_horario"],
+                    "incertezas": incertezas,
                 }
             )
         custos = [x["custo_usd"] for x in geradores if x["custo_usd"] is not None]
         videos = sum(x["videos_ok"] for x in geradores)
+        aproveitaveis = sum(x["aproveitaveis"] for x in geradores)
         custo = round(sum(custos), 4)
+        disco_ligado = round(sum(x["disco_ligado_usd"] or 0 for x in geradores), 4)
+        disco_parado = round(sum(x["disco_parado_usd"] or 0 for x in geradores), 4)
+        total = round(custo + disco_ligado + disco_parado, 4)
         return {
             "desde": desde,
             "geradores": geradores,
             "totais": {
                 "pods": sum(1 for x in geradores if x["pod"]),
+                "sessoes": len(geradores),
+                "retomadas": sum(1 for x in geradores if x["sessao"] > 1),
                 "falharam": sum(1 for x in geradores if x["estado"] == "falhou"),
                 "ligados_agora": sum(1 for x in geradores if x["estado"] in ("subindo", "pronto")),
                 # fechamento pedido e ainda não observado: pode estar cobrando (a reconciliação insiste)
                 "fechando": sum(1 for x in geradores if x["fechamento"] in ("pedido", "falhou", "aceito")),
                 "horas": round(sum(x["ligado_s"] for x in geradores) / 3600, 3),
-                "custo_usd": custo,
+                "ocioso_h": round(sum(x["ocioso_s"] for x in geradores) / 3600, 3),
+                "custo_usd": custo,  # só a GPU (preço por hora × tempo ligado), como antes
+                "disco_ligado_usd": disco_ligado,
+                "disco_parado_usd": disco_parado,
+                "custo_total_usd": total,  # GPU + discos; sem servidor, R2, pagamentos e revisão
                 "sem_preco": len(geradores) - len(custos),
                 "videos_ok": videos,
                 "videos_erro": sum(x["videos_erro"] for x in geradores),
-                "custo_por_video_usd": round(custo / videos, 4) if videos else None,
+                "tentativas_render": sum(x["tentativas_render"] or 0 for x in geradores),
+                "tentativas_falhas": sum(x["tentativas_falhas"] or 0 for x in geradores),
+                "aproveitaveis": aproveitaveis,
+                "recusados_cliente": sum(x["recusados_cliente"] for x in geradores),
+                "sem_retorno": sum(x["sem_retorno"] for x in geradores),
+                "custo_por_video_usd": round(custo / videos, 4) if videos else None,  # só a GPU
+                "custo_total_por_video_usd": round(total / videos, 4) if videos else None,
+                "custo_total_por_aproveitavel_usd": round(total / aproveitaveis, 4) if aproveitaveis else None,
+                "jobs_sem_sessao": sem_sessao,
+                "sessoes_incertas": sum(1 for x in geradores if x["incertezas"]),
+                "precos_disco": {
+                    "ligado_usd_gb_mes": DISCO_USD_GB_MES,
+                    "parado_usd_gb_mes": VOLUME_PARADO_USD_GB_MES,
+                    "horas_mes": HORAS_MES,
+                },  # fmt: skip
+                "nao_incluido": [
+                    "servidor",
+                    "R2 (armazenamento e operações)",
+                    "taxas de pagamento",
+                    "revisão e correções pela equipe",
+                ],  # fmt: skip
             },
         }
 
@@ -3258,8 +3551,9 @@ class Banco:
         histórico que a capacidade da fila usa (render2go_servico.capacidade.Tempos), os mais recentes primeiro."""
         with self.tx() as c:
             linhas = c.all(
-                "SELECT j.id, j.segundos, l.pedido, (SELECT g.gpu FROM geradores g WHERE g.worker = j.worker"
-                " ORDER BY g.criado DESC LIMIT 1) AS gpu FROM jobs j JOIN lotes l ON l.id = j.lote_id"
+                "SELECT j.id, j.segundos, l.pedido, COALESCE((SELECT g.gpu FROM geradores g WHERE g.id = j.gerador_id),"
+                " (SELECT g.gpu FROM geradores g WHERE g.worker = j.worker ORDER BY g.criado DESC LIMIT 1)) AS gpu"
+                " FROM jobs j JOIN lotes l ON l.id = j.lote_id"
                 " WHERE j.tipo = 'render' AND j.status = 'ok' AND j.segundos IS NOT NULL AND j.atualizado >= ?"
                 " ORDER BY j.atualizado DESC LIMIT ?",
                 (desde, limite),
@@ -3294,13 +3588,14 @@ class Banco:
 
         with self.tx() as c:
             pods = c.all(
-                "SELECT gpu, datacentro, subida_tipo, versao, pod_criado_em, agente_em, primeiro_video_em"
+                "SELECT gpu, datacentro, subida_tipo, versao, pod_criado_em, agente_em, primeiro_video_em, etapas"
                 " FROM geradores WHERE criado >= ? AND pod_criado_em IS NOT NULL",
                 (desde,),
             )
             jobs = c.all(
                 "SELECT j.etapas, j.tentativas, j.falhas_envio, j.tentativa_em, j.criado, l.pedido,"
-                " (SELECT g.gpu FROM geradores g WHERE g.worker = j.worker ORDER BY g.criado DESC LIMIT 1) AS gpu"
+                " COALESCE((SELECT g.gpu FROM geradores g WHERE g.id = j.gerador_id),"
+                " (SELECT g.gpu FROM geradores g WHERE g.worker = j.worker ORDER BY g.criado DESC LIMIT 1)) AS gpu"
                 " FROM jobs j JOIN lotes l ON l.id = j.lote_id WHERE j.tipo = 'render' AND j.status = 'ok'"
                 " AND j.atualizado >= ?",
                 (desde,),
@@ -3313,6 +3608,10 @@ class Banco:
                 d["primeiro_video_s"].append(float(g["primeiro_video_em"]) - float(g["pod_criado_em"]))
             if g["agente_em"]:
                 d["agente_s"].append(float(g["agente_em"]) - float(g["pod_criado_em"]))
+            # as etapas do bootstrap (s desde o começo dele; 17/10/2026): onde a subida gasta o tempo
+            for nome, v in (_json_ou_none(g.get("etapas")) or {}).items():
+                if nome in ETAPAS_SUBIDA and isinstance(v, int | float):
+                    d.setdefault(f"bootstrap_{nome}_s", []).append(float(v))
         videos: dict[str, dict[str, Any]] = {}
         for j in jobs:
             p = json.loads(j["pedido"])
@@ -3989,7 +4288,8 @@ class Banco:
         agora = time.time()
         trava = " FOR UPDATE OF j SKIP LOCKED" if self.pg else ""
         with self.tx() as c:
-            # prazos vencidos: volta para a fila ou falha de vez
+            # prazos vencidos: a tentativa termina ("prazo") e o job volta para a fila ou falha de vez
+            self._vencer_tentativas(c, agora)
             esgotados = c.all(
                 "SELECT DISTINCT lote_id FROM jobs WHERE status = 'em_andamento' AND lease_ate < ? AND tentativas >= ?",
                 (agora, MAX_TENTATIVAS),
@@ -4002,7 +4302,7 @@ class Banco:
             for r in esgotados:
                 self._fechar_lote(c, r["lote_id"])
             c.run(
-                "UPDATE jobs SET status = 'pendente', worker = NULL, atualizado = ?"
+                "UPDATE jobs SET status = 'pendente', worker = NULL, gerador_id = NULL, atualizado = ?"
                 " WHERE status = 'em_andamento' AND lease_ate < ?",
                 (agora, agora),
             )
@@ -4069,22 +4369,54 @@ class Banco:
                 return None
             tentativa = secrets.token_hex(8)  # só esta reivindicação conclui o job (14/10/2026)
             prazo = agora + PRAZO_TENTATIVA_S
+            # a sessão do pod que pega o job (17/10/2026): a linha mais recente de `geradores` com este nome. O pod que
+            # volta da hibernação tem o mesmo nome e ganha uma linha nova antes do worker começar; um pod nunca tem
+            # duas sessões no ar ao mesmo tempo
+            s = c.one("SELECT id FROM geradores WHERE worker = ? ORDER BY criado DESC LIMIT 1", (worker,))
+            sessao = s["id"] if s else None
             c.run(
                 "UPDATE jobs SET status = 'em_andamento', worker = ?, lease_ate = ?, tentativas = tentativas + 1,"
                 " atualizado = ?, tentativa_id = ?, tentativa_em = ?, prazo_tentativa = ?, progresso = NULL,"
-                " progresso_em = ?, gpu_em = NULL, versao_id = ?, prompt_sha = NULL WHERE id = ?",
-                (worker, min(agora + lease_s, prazo), agora, tentativa, agora, prazo, agora, versao, job["id"]),
+                " progresso_em = ?, gpu_em = NULL, versao_id = ?, prompt_sha = NULL, gerador_id = ? WHERE id = ?",
+                (worker, min(agora + lease_s, prazo), agora, tentativa, agora, prazo, agora, versao, sessao, job["id"]),
             )
-            if job["tipo"] == "render":  # fim da subida deste pod (previsão para o cliente)
+            c.run(
+                "INSERT INTO tentativas (id, job_id, lote_id, tipo, n, gerador_id, worker, inicio)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (novo_id("ten"), job["id"], job["lote_id"], job["tipo"], job["tentativas"] + 1, sessao, worker, agora),
+            )
+            if job["tipo"] == "render" and sessao:  # fim da subida desta sessão (previsão para o cliente)
+                # só a sessão atual: até 17/10/2026 valia para todas as linhas do pod, e a sessão anterior sem vídeo
+                # ganhava o 1º vídeo da seguinte
                 c.run(
-                    "UPDATE geradores SET primeiro_video_em = ? WHERE worker = ? AND primeiro_video_em IS NULL",
-                    (agora, worker),
+                    "UPDATE geradores SET primeiro_video_em = ? WHERE id = ? AND primeiro_video_em IS NULL",
+                    (agora, sessao),
                 )
             job.update(
                 status="em_andamento", worker=worker, tentativas=job["tentativas"] + 1, tentativa_id=tentativa,
-                tentativa_em=agora, prazo_tentativa=prazo, versao_id=versao,
+                tentativa_em=agora, prazo_tentativa=prazo, versao_id=versao, gerador_id=sessao,
             )  # fmt: skip
             return job
+
+    def _vencer_tentativas(self, c, agora: float) -> None:
+        """As tentativas com o prazo (lease) vencido e sem conclusão terminam como "prazo" (17/10/2026). O job volta
+        para a fila ou falha de vez na mesma transação; uma conclusão atrasada, antes disso, ainda vale
+        (`_fim_tentativa`)."""
+        c.run(
+            "UPDATE tentativas SET fim = ?, resultado = 'prazo' WHERE fim IS NULL AND job_id IN"
+            " (SELECT id FROM jobs WHERE status = 'em_andamento' AND lease_ate < ?)",
+            (agora, agora),
+        )
+
+    def _fim_tentativa(self, c, job: dict, resultado: str, agora: float, segundos: Any = None) -> None:
+        """Fecha a tentativa atual do job (a de número `job["tentativas"]`), com o resultado e os segundos que o pod
+        informou. A que tinha vencido o prazo e foi concluída antes de o job voltar para a fila fica com o resultado
+        de verdade."""
+        c.run(
+            "UPDATE tentativas SET fim = ?, resultado = ?, segundos = COALESCE(?, segundos)"
+            " WHERE job_id = ? AND n = ? AND (fim IS NULL OR resultado = 'prazo')",
+            (agora, resultado, segundos, job["id"], int(job["tentativas"] or 0)),
+        )
 
     def _da_tentativa(self, c, job_id: str, worker: str, tentativa: str | None) -> dict:
         """O job, travado (Postgres), se está com este worker e com esta tentativa; senão BancoError. Sem
@@ -4164,6 +4496,8 @@ class Banco:
                     job_id,
                 ),
             )
+            resultado = "transporte" if transporte and repetir else ("repetir" if repetir else novo)
+            self._fim_tentativa(c, job, resultado, agora, campos.get("segundos"))
             if barrado:  # fica no histórico do pedido (auditoria) mesmo depois da limpeza dos arquivos
                 self.evento(
                     c, job["lote_id"], "video_barrado",
@@ -4209,8 +4543,8 @@ class Banco:
         agora = time.time()
         with self.tx() as c:
             job = c.one(
-                "SELECT j.id, j.lote_id, j.worker, j.status, j.tentativa_id, j.prazo_tentativa, l.interrompido_em,"
-                " l.interrompido_por FROM jobs j JOIN lotes l ON l.id = j.lote_id WHERE j.id = ?"
+                "SELECT j.id, j.lote_id, j.worker, j.status, j.tentativa_id, j.prazo_tentativa, j.tentativas,"
+                " l.interrompido_em, l.interrompido_por FROM jobs j JOIN lotes l ON l.id = j.lote_id WHERE j.id = ?"
                 + (" FOR UPDATE OF j" if self.pg else ""),
                 (job_id,),
             )
@@ -4227,12 +4561,17 @@ class Banco:
                     " progresso_em = ?, gpu_em = ? WHERE id = ?",
                     (min(agora + lease_s, prazo), agora, prazo, agora, agora, job_id),
                 )
+                c.run(
+                    "UPDATE tentativas SET gpu_em = ? WHERE job_id = ? AND n = ? AND fim IS NULL",
+                    (agora, job_id, int(job["tentativas"] or 0)),
+                )
                 return True
             c.run(
                 "UPDATE jobs SET status = 'cancelado', erro = ?, worker = NULL, lease_ate = NULL, atualizado = ?"
                 " WHERE id = ?",
                 (erro_interrompido(job["interrompido_por"]), agora, job_id),
             )
+            self._fim_tentativa(c, job, "cancelado", agora)
             self.evento(c, job["lote_id"], "interrompido_resto", {"cancelados": 1})
             self._fechar_lote(c, job["lote_id"])
             return False
@@ -4241,11 +4580,13 @@ class Banco:
         """Vídeo pego adiantado que o pod não vai gerar (o laço dele parou: limite de tempo, GPU ou filtro): volta
         para a fila sem contar tentativa, porque nunca foi para a GPU."""
         with self.tx() as c:
-            self._da_tentativa(c, job_id, worker, tentativa)
+            job = self._da_tentativa(c, job_id, worker, tentativa)
+            agora = time.time()
+            self._fim_tentativa(c, job, "devolvido", agora)  # antes de a contagem voltar: é a tentativa n
             c.run(
-                "UPDATE jobs SET status = 'pendente', worker = NULL, lease_ate = NULL, atualizado = ?,"
-                " tentativas = CASE WHEN tentativas > 0 THEN tentativas - 1 ELSE 0 END WHERE id = ?",
-                (time.time(), job_id),
+                "UPDATE jobs SET status = 'pendente', worker = NULL, gerador_id = NULL, lease_ate = NULL,"
+                " atualizado = ?, tentativas = CASE WHEN tentativas > 0 THEN tentativas - 1 ELSE 0 END WHERE id = ?",
+                (agora, job_id),
             )
 
     def vencer_pedidos(self) -> int:
@@ -4260,6 +4601,7 @@ class Banco:
         cancelado, sem custo (nos pedidos por vídeo, nada foi cobrado; nos de antes, `_fechar_lote` devolve), e o
         pedido fecha quando o que está num pod terminar. Devolve quantos pedidos tiveram vídeos cancelados."""
         n = 0
+        self._vencer_tentativas(c, agora)  # o vídeo com o prazo do pod vencido pode ser cancelado aqui
         for lt in c.all(
             "SELECT id, interrompido_em, interrompido_por FROM lotes WHERE status IN ('aprovado', 'processando')"
             " AND (criado < ? OR interrompido_em IS NOT NULL)",
@@ -4299,6 +4641,7 @@ class Banco:
                 raise BancoError("lote não encontrado")
             if lt["status"] not in ("aprovado", "processando"):
                 raise BancoError("o pedido não está gerando")
+            self._vencer_tentativas(c, agora)
             n = c.run(
                 "UPDATE jobs SET status = 'cancelado', erro = ?, worker = NULL, lease_ate = NULL, atualizado = ?"
                 " WHERE lote_id = ? AND (status = 'pendente' OR (status = 'em_andamento' AND lease_ate < ?))",

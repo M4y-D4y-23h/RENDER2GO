@@ -27,16 +27,70 @@ type Gerador = {
   traducoes: number;
   lotes: number;
   segundos_render: number;
+  // sessões (17/10/2026): cada subida (do zero ou volta da hibernação) é uma linha, com os vídeos dela
+  sessao?: number;
+  subida_tipo?: string | null;
+  primeira_entrega_s?: number | null;
+  tentativas_render?: number | null;
+  tentativas_falhas?: number | null;
+  ocupacao?: number | null;
+  ocioso_s?: number;
+  custo_total_usd?: number | null;
+  aproveitaveis?: number;
+  incertezas?: string[];
+  volume?: { inicio?: { motivo: string } | null; gravacao?: { motivo: string } | null } | null;
+  volume_fim_motivo?: string | null;
 };
-type RelatorioGpus = {
-  desde: number;
-  geradores: Gerador[];
-  totais: { pods: number; falharam: number; ligados_agora: number; horas: number; custo_usd: number; sem_preco: number; videos_ok: number; videos_erro: number; custo_por_video_usd: number | null };
+type TotaisGpus = {
+  pods: number;
+  falharam: number;
+  ligados_agora: number;
+  horas: number;
+  custo_usd: number;
+  sem_preco: number;
+  videos_ok: number;
+  videos_erro: number;
+  custo_por_video_usd: number | null;
+  custo_total_usd?: number;
+  custo_total_por_video_usd?: number | null;
+  custo_total_por_aproveitavel_usd?: number | null;
+  tentativas_render?: number;
+  tentativas_falhas?: number;
+  aproveitaveis?: number;
+  retomadas?: number;
+  ocioso_h?: number;
+  sessoes_incertas?: number;
 };
+type RelatorioGpus = { desde: number; geradores: Gerador[]; totais: TotaisGpus };
 type Pagamento = { id: string; cliente_id: string; email: string | null; valor: number; provedor: string; status: string; criado: number; creditado_em: number | null; documento: string | null };
 
 const SITUACAO_POD: Record<string, string> = { subindo: "subindo", pronto: "ligado" };
 const SITUACAO_GPU: Record<string, string> = { subindo: "subindo", pronto: "ligada", encerrado: "desligada", falhou: "falhou na subida" };
+// o disco de volume nesta sessão (render2go_worker.volume, MOTIVOS): por que o cache foi ou não usado
+const CACHE_GPU: Record<string, string> = {
+  ok: "usado",
+  primeira: "1ª subida",
+  sem_local: "sem volume",
+  sem_montagem: "sem montagem",
+  vazio: "volume vazio",
+  sem_marcador: "cópia incompleta",
+  outra_versao: "outra versão",
+  repo: "código não abriu",
+  incompleto: "modelo faltando",
+  ambiente_incompleto: "ambiente faltando",
+  corrompido: "arquivo corrompido",
+  outro_pod: "de outro pod",
+  sem_espaco: "sem espaço",
+  copia_falhou: "cópia falhou",
+};
+
+function cacheDaSessao(g: Gerador): string {
+  const inicio = g.volume?.inicio?.motivo;
+  const gravacao = g.volume?.gravacao?.motivo;
+  if (!inicio && !gravacao) return "—";
+  const partes = [inicio ? (CACHE_GPU[inicio] ?? inicio) : null, gravacao && gravacao !== "ok" ? `gravação: ${CACHE_GPU[gravacao] ?? gravacao}` : null];
+  return partes.filter(Boolean).join("; ");
+}
 const COMANDOS: Record<string, string> = { desligar_pod: "Desligar pod", emergencia: "Parada de emergência", retomar: "Retomar" };
 const SITUACAO_PIX: Record<string, string> = {
   criando: "criando",
@@ -248,19 +302,23 @@ export function criarGpus(): Controle {
     trocar(
       partes.resumo,
       [
-        item("GPUs ligadas", `${t.pods}${t.ligados_agora ? ` (${t.ligados_agora} agora)` : ""}`),
-        item("Tempo ligado", duracao(t.horas * 3600)),
-        item("Custo estimado", dolares(t.custo_usd) + (t.sem_preco ? " *" : "")),
-        item("Vídeos entregues", String(t.videos_ok)),
-        item("Custo por vídeo", dolares(t.custo_por_video_usd)),
+        item("GPUs ligadas", `${t.pods}${t.ligados_agora ? ` (${t.ligados_agora} agora)` : ""}${t.retomadas ? ` · ${plural(t.retomadas, "volta", "voltas")} da hibernação` : ""}`),
+        item("Tempo ligado", duracao(t.horas * 3600) + (t.ocioso_h ? ` (${duracao(t.ocioso_h * 3600)} sem trabalho)` : "")),
+        item("Custo de GPU", dolares(t.custo_usd) + (t.sem_preco ? " *" : "")),
+        item("Com os discos", t.custo_total_usd == null ? "—" : dolares(t.custo_total_usd)),
+        item("Vídeos entregues", `${t.videos_ok}${t.aproveitaveis ? ` (${t.aproveitaveis} aproveitáveis)` : ""}`),
+        item("Custo por vídeo", `${dolares(t.custo_por_video_usd)} de GPU${t.custo_total_por_video_usd != null ? ` · ${dolares(t.custo_total_por_video_usd)} com os discos` : ""}`),
+        item("Tentativas", t.tentativas_render ? `${t.tentativas_render} · ${plural(t.tentativas_falhas ?? 0, "falhou", "falharam")}` : "—"),
         item("Falhas", `${plural(t.falharam, "subida", "subidas")} · ${plural(t.videos_erro, "vídeo", "vídeos")}`),
       ],
       assinatura,
     );
-    const nota =
-      r.geradores.some((g) => g.ligado_estimado) || t.sem_preco
-        ? criar("p", { className: "fraco nota-tabela", textContent: "* Estimado: o orquestrador parou sem registrar o desligamento (o desligamento automático do pod encerra no máximo 2 h depois) ou a GPU não informou o preço." })
-        : null;
+    const notas = [
+      "Cada linha é uma sessão: a subida do pod do zero (1ª) ou uma volta da hibernação (2ª em diante), com os vídeos dela. Ocupação: a soma dos tempos dos vídeos e das traduções sobre o tempo ligado (não é a medida da GPU). Com os discos: a GPU mais o disco do contêiner e o de volume (ligado e parado), pela tabela do RunPod; sem servidor, R2, pagamentos e revisão.",
+    ];
+    if (r.geradores.some((g) => g.ligado_estimado) || t.sem_preco) notas.push("* Estimado: o orquestrador parou sem registrar o desligamento (o desligamento automático do pod encerra no máximo 2 h depois) ou a GPU não informou o preço.");
+    if (t.sessoes_incertas) notas.push("† Atribuição incerta: vídeos de antes de 17/10/2026, divididos entre as sessões do pod pelo horário, ou sessão sem os discos registrados.");
+    const nota = criar("div", {}, notas.map((x) => criar("p", { className: "fraco nota-tabela", textContent: x })));
     trocar(
       partes.tabela,
       [
@@ -269,36 +327,48 @@ export function criarGpus(): Controle {
               [
                 ["Ligou em", false],
                 ["Pod", false],
+                ["Sessão", true],
                 ["GPU", false],
                 ["Datacenter", false],
                 ["US$/h", true],
-                ["Até o 1º vídeo", true],
+                ["Até começar o 1º vídeo", true],
+                ["Até a 1ª entrega", true],
                 ["Tempo ligado", true],
                 ["Vídeos", true],
-                ["Falhas", true],
+                ["Tentativas", true],
                 ["Pedidos", true],
-                ["Uso da GPU", true],
-                ["Custo", true],
+                ["Ocupação", true],
+                ["Custo de GPU", true],
+                ["Com os discos", true],
+                ["Cache", false],
                 ["Situação", false],
               ],
               r.geradores.map((g) => {
-                const uso = g.ligado_s > 0 ? `${Math.min(100, Math.round((g.segundos_render / g.ligado_s) * 100))}%` : "—";
-                const situacao = [SITUACAO_GPU[g.estado] ?? g.estado, g.motivo && g.estado !== "pronto" ? g.motivo : ""].filter(Boolean).join(": ");
+                const ocupacao = g.ocupacao ?? (g.ligado_s > 0 ? g.segundos_render / g.ligado_s : null);
+                const uso = ocupacao == null ? "—" : `${Math.min(100, Math.round(ocupacao * 100))}%`;
+                const fim = g.volume_fim_motivo ? `disco de volume encerrado: ${g.volume_fim_motivo}` : "";
+                const situacao = [SITUACAO_GPU[g.estado] ?? g.estado, g.motivo && g.estado !== "pronto" ? g.motivo : "", fim].filter(Boolean).join(": ");
+                const sessao = g.sessao ? `${g.sessao}ª${g.sessao > 1 ? " (volta)" : ""}` : "—";
+                const tentativas = g.tentativas_render == null ? "—" : `${g.tentativas_render}${g.tentativas_falhas ? ` (${g.tentativas_falhas} falha${g.tentativas_falhas > 1 ? "s" : ""})` : ""}`;
                 return {
                   classe: g.estado === "falhou" ? "sinal" : "",
                   celulas: [
                     tempoCurto(g.inicio),
                     g.pod ?? "—",
+                    sessao,
                     g.gpu ?? "—",
                     g.datacentro ?? "—",
                     usdh(g.usd_h),
                     duracao(g.subida_s),
+                    duracao(g.primeira_entrega_s ?? null),
                     duracao(g.ligado_s) + (g.ligado_estimado ? " *" : ""),
-                    g.videos_ok + (g.videos_andamento ? ` (+${g.videos_andamento})` : ""),
-                    g.videos_erro,
+                    `${g.videos_ok}${g.videos_andamento ? ` (+${g.videos_andamento})` : ""}${g.videos_erro ? ` · ${g.videos_erro} com falha` : ""}${g.incertezas?.length ? " †" : ""}`,
+                    tentativas,
                     g.lotes,
                     uso,
                     dolares(g.custo_usd),
+                    g.custo_total_usd == null ? "—" : dolares(g.custo_total_usd),
+                    cacheDaSessao(g),
                     situacao,
                   ],
                 };

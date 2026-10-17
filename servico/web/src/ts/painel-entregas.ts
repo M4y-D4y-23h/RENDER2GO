@@ -28,7 +28,7 @@ type Piloto = {
   primeira_entrega: { pedidos_respondidos: number; utilizaveis: number };
   correcoes: { total: number; abertas: number; creditos: number };
   tempos: { ate_aprovacao_do_cliente: Tempo; ate_peca_utilizavel: Tempo };
-  custo: { gpu_usd: number; gpu_usd_por_video_entregue: number | null; gpu_usd_por_video_utilizavel: number | null };
+  custo: { gpu_usd: number; gpu_usd_por_video_entregue: number | null; gpu_usd_por_video_utilizavel: number | null; gpu_e_discos_usd?: number; gpu_e_discos_usd_por_video_utilizavel?: number | null };
   conferencia: Record<string, number>;
   nao_medido: string[];
 };
@@ -223,6 +223,7 @@ function resumoPiloto(m: Piloto): HTMLElement[] {
     `Correções: ${m.correcoes.total} (${m.correcoes.abertas} abertas) · créditos: ${reais(m.correcoes.creditos)}`,
     `Tempo até a aprovação do cliente: ${t(m.tempos.ate_aprovacao_do_cliente)} · até a peça utilizável: ${t(m.tempos.ate_peca_utilizavel)}`,
     `GPU: ${dolares(m.custo.gpu_usd)} · por vídeo entregue: ${dolares(m.custo.gpu_usd_por_video_entregue)} · por vídeo utilizável: ${dolares(m.custo.gpu_usd_por_video_utilizavel)}`,
+    `GPU e discos do RunPod: ${m.custo.gpu_e_discos_usd == null ? "—" : dolares(m.custo.gpu_e_discos_usd)} · por vídeo utilizável: ${dolares(m.custo.gpu_e_discos_usd_por_video_utilizavel ?? null)}`,
   ];
   return [criar("ul", { className: "fraco" }, linhas.map((x) => criar("li", { textContent: x }))), criar("p", { className: "fraco", textContent: `Não medido aqui: ${m.nao_medido.join(", ")}.` })];
 }
