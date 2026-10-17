@@ -1,6 +1,6 @@
 # ADR 0018: versões do pedido, revisão pelo cliente, critérios de entrega e correções
 
-- **Status:** proposto (17/10/2026). Implementado na branch `claude/festive-mccarthy-sc784n`, a partir da `main` em `e1c98bf`, com testes locais (SQLite e Postgres, navegador); nada publicado, nenhum pod usado. A revisão pelo cliente fica ligada por padrão no código (`RENDER2GO_REVISAO_CLIENTE=1`), mas só chega aos clientes com a publicação, que é decisão do dono (`docs/09`, entrada 17/10/2026).
+- **Status:** proposto (17/10/2026). Implementado na branch `claude/festive-mccarthy-sc784n`, a partir da `main` em `e1c98bf`, com testes locais (SQLite e Postgres, navegador; nenhum pod usado); na `main` desde 17/10/2026. A revisão pelo cliente fica ligada por padrão (`RENDER2GO_REVISAO_CLIENTE=1`) e chega aos clientes com a atualização do servidor (`docs/09`, entrada 17/10/2026).
 - **Contexto:** a análise de 17/10/2026 (pedido do dono, preparação para o lançamento) achou:
   1. **perda silenciosa da intenção** em `render2go_worker/traducao.py`: "Gire lentamente o produto." (imperativo), "Que o letreiro brilhe suavemente." (subjuntivo) e "Mantenha tudo imóvel, sem movimento." viravam o movimento padrão da categoria, e "sem pessoas" desligava a regra da pessoa inventada. Reproduzido em teste em `e1c98bf` e corrigido (`render2go_worker/intencao.py`; `worker/tests/test_intencao.py`);
   2. o cliente não via o que foi entendido do pedido nem o texto que ia para o gerador; não havia como revisar antes de gerar, nem um registro que ligasse o vídeo à versão do pedido que o gerou;

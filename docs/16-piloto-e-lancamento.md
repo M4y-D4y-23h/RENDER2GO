@@ -1,6 +1,6 @@
 # 16 — Piloto e lançamento (17/10/2026)
 
-Como abrir o Render2Go para os primeiros clientes com entregas confiáveis, pouco trabalho para o cliente e fidelidade ao pedido: o que conferir antes, o ensaio completo, o que medir, o suporte e os limites. As mudanças de código estão no [ADR 0018](adr/0018-versoes-do-pedido-e-revisao-pelo-cliente.md) (proposto) e na entrada 17/10/2026 do `docs/09`. **Nada disto foi publicado nem testado em produção ou em GPU:** os números abaixo são os já medidos em rodadas anteriores (com a fonte) ou ficam em branco para o piloto preencher.
+Como abrir o Render2Go para os primeiros clientes com entregas confiáveis, pouco trabalho para o cliente e fidelidade ao pedido: o que conferir antes, o ensaio completo, o que medir, o suporte e os limites. As mudanças de código estão no [ADR 0018](adr/0018-versoes-do-pedido-e-revisao-pelo-cliente.md) (proposto) e na entrada 17/10/2026 do `docs/09`. **Na `main` desde 17/10/2026, mas ainda não testado em produção nem em GPU:** os números abaixo são os já medidos em rodadas anteriores (com a fonte) ou ficam em branco para o piloto preencher.
 
 ## 1. O que o piloto oferece (e o que não oferece)
 
@@ -81,4 +81,4 @@ A entrada pela página aceita só os provedores confiáveis (Gmail, Outlook/Hotm
 - Quem revisa no piloto, quantos vídeos por dia e por quanto tempo a revisão do vídeo inteiro continua obrigatória.
 - O custo da hora da equipe para o "custo por entrega aprovada".
 - Quando um avaliador automático sai da observação (rodada medida, critérios escritos antes).
-- A publicação (o `docs/09`, entrada 17/10/2026): é do dono; nada deste trabalho foi publicado.
+- A abertura para clientes depois da atualização do servidor (o `docs/09`, entrada 17/10/2026) e do ensaio da seção 3.
