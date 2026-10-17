@@ -547,9 +547,16 @@ class WorkerFila:
             tentativas=tr.tentativas,
             pessoas_recusadas=list(tr.pessoas_recusadas),
             legenda=leg.como_dict() if leg is not None else None,
+            # a intenção do texto (17/10/2026): sem a instrução no prompt, a API não gera o vídeo
+            intencao=tr.intencao,
+            restricoes=list(tr.restricoes),
+            restrito=tr.restrito,
+            substituiu=tr.substituiu,
         )
         self._concluir(job, "ok")
-        como = " (movimento padrão)" if tr.padrao else ""
+        como = ""
+        if tr.padrao or tr.restrito:
+            como = " (movimento padrão)" if tr.padrao else " (texto fixo das restrições)"
         _log(f"lote {job['lote']}: prompt compilado ({tr.word_count} palavras{como})")
 
     def _concluir(self, job: dict, status: str, **campos: Any) -> str:
