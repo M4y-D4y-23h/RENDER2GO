@@ -479,6 +479,7 @@ input[type="radio"] {
   display: flex;
   gap: var(--esp-3);
   align-items: flex-start;
+  min-height: var(--alvo);
   padding: var(--esp-4);
   border: 1px solid var(--cor-borda);
   border-radius: var(--raio-lg);

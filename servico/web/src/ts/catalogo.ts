@@ -51,6 +51,10 @@ export type Receitas = {
   ampliacao_aviso?: number;
   qualidades: string[];
   limites: { fotos: number | null; por_envio?: number; bytes_foto: number; tipos: string[] };
+  // ADR 0018: o modo "revisar antes de gerar" (desligável no servidor), os usos e o "Não pode acontecer"
+  revisao_cliente?: boolean;
+  usos?: { id: string; texto: string }[];
+  restricoes?: { id: string; texto: string }[];
 };
 
 let pedido: Promise<Receitas> | null = null;

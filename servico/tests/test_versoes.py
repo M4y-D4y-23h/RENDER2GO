@@ -164,6 +164,7 @@ def test_editing_the_text_invalidates_the_approval_and_goes_back_to_content_revi
     _aprovar_conteudo(api, lid)
     _traduzir(api)
     vista = _cartao(api, tok, lid)["entendimento"]["versao"]
+    assert _cartao(api, tok, lid)["editavel"] is True
     assert _aprovar(api, tok, lid).status_code == 200  # aprovada, mas nenhum vídeo começou
     corpo = {"numero": vista["numero"], "hash": vista["hash"], "grupo": "pedido", "texto": "a câmera gira em volta"}
     r = api.post(f"/api/lotes/{lid}/texto", json=corpo, headers=h(tok))
@@ -174,8 +175,12 @@ def test_editing_the_text_invalidates_the_approval_and_goes_back_to_content_revi
     assert api.banco.jobs(lid) == []  # nada sobrou para um pod
     card = _cartao(api, tok, lid)["entendimento"]
     assert card["versao"]["editada"] and card["versao"]["anterior"]["texto"].startswith("a câmera se aproxima")
-    # a versão de antes não vale mais (a aba que ainda a mostra recebe 409)
-    assert api.post(f"/api/lotes/{lid}/texto", json=corpo, headers=h(tok)).status_code == 409
+    # a versão de antes não vale mais: a aba que ainda a mostra recebe 409 "versao" (e não "não está esperando"),
+    # para editar e para aprovar, mesmo com o pedido de volta à revisão de conteúdo
+    r = api.post(f"/api/lotes/{lid}/texto", json=corpo, headers=h(tok))
+    assert r.status_code == 409 and r.headers["X-Render2Go-Motivo"] == "versao"
+    r = _aprovar(api, tok, lid, numero=vista["numero"], hash_=vista["hash"])
+    assert r.status_code == 409 and r.headers["X-Render2Go-Motivo"] == "versao"
     _aprovar_conteudo(api, lid)
     _traduzir(api, "The camera orbits around the product.")
     assert _job(api) is None  # a versão nova também espera o cliente
@@ -189,6 +194,7 @@ def test_the_text_cannot_change_after_a_video_started(api):  # noqa: F811
     _traduzir(api)
     assert _aprovar(api, tok, lid).status_code == 200
     assert _job(api)["tipo"] == "render"  # um vídeo já está num pod
+    assert _cartao(api, tok, lid)["editavel"] is False  # a página não oferece "Mudar o texto"
     v = _cartao(api, tok, lid)["entendimento"]["versao"]
     corpo = {"numero": v["numero"], "hash": v["hash"], "grupo": "pedido", "texto": "a câmera gira em volta"}
     r = api.post(f"/api/lotes/{lid}/texto", json=corpo, headers=h(tok))

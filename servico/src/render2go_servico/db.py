@@ -3512,11 +3512,13 @@ class Banco:
                 raise BancoError("lote não encontrado")
             if not lt.get("versao_atual"):
                 raise BancoError("este pedido não tem versões para aprovar")
-            if lt["status"] not in ("aprovado", "processando") or lt.get("interrompido_em"):
-                raise BancoError("o pedido não está esperando a sua aprovação")
+            # a versão antes do estado: a outra aba que mudou o texto devolveu o pedido à revisão de conteúdo, e quem
+            # aprova a versão de antes precisa saber que ela mudou
             v = c.one("SELECT * FROM versoes WHERE id = ?", (lt["versao_atual"],))
             if int(v["numero"]) != int(numero) or not hmac.compare_digest(str(v["hash"]), str(hash_)):
                 raise VersaoMudou("o pedido mudou depois que você o abriu: confira a versão nova antes de aprovar")
+            if lt["status"] not in ("aprovado", "processando") or lt.get("interrompido_em"):
+                raise BancoError("o pedido não está esperando a sua aprovação")
             if lt["versao_liberada"] == lt["versao_atual"]:
                 return {"numero": int(v["numero"]), "ja": True}
             if lt["revisao"] == "revisar":

@@ -2849,6 +2849,11 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             cartao is not None and not cartao["versao"]["liberada"] and lt["status"] in ("aprovado", "processando")
             and not lt.get("interrompido_em") and pendente
         )  # fmt: skip
+        # o texto ainda pode mudar (`Banco.editar_texto`): nenhum vídeo começou e o pedido não foi parado
+        editavel = (
+            cartao is not None and lt["status"] in ("aguardando_aprovacao", "aprovado", "processando")
+            and not lt.get("interrompido_em") and all(j["status"] in ("pendente", "cancelado") for j in jobs)
+        )  # fmt: skip
         if espera_cliente:
             previsao = {"fase": "decisao" if cartao["decisoes"] else "revisao", "pronto": cartao["aprovar"]}
         else:
@@ -2890,6 +2895,7 @@ def criar_app(cfg: Config | None = None) -> FastAPI:
             "revisao": lt.get("revisao"),
             "entendimento": cartao,
             "espera_cliente": espera_cliente,
+            "editavel": editavel,
         }
 
     def _previsao(c: Config, lt: dict, jobs: list[dict]) -> dict | None:

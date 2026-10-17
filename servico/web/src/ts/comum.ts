@@ -17,6 +17,9 @@ export const ESTADOS: Record<string, string> = {
   recusado: "Recusado",
 };
 
+/** A resolução de cada qualidade do pedido. */
+export const RESOLUCAO: Record<string, string> = { rapida: "480p", alta: "720p" };
+
 // -- DOM -----------------------------------------------------------------------------------------
 
 export function el<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -271,6 +274,8 @@ export class ErroApi extends Error {
     // por que a API recusou, quando a página pode resolver (X-Render2Go-Motivo): "confirmar" (confirme que é
     // você, configurações da conta) ou "aceite" (termos ou privacidade em versão nova)
     readonly motivo: string | null = null,
+    // o `detail` da resposta como veio (ex.: as pendências do texto, que a página mostra uma a uma)
+    readonly detalhe: unknown = null,
   ) {
     super(mensagem);
   }
@@ -285,6 +290,7 @@ function mensagemDeErro(detalhe: unknown, status: number): string {
   if (detalhe && typeof detalhe === "object" && "problemas" in detalhe && Array.isArray(detalhe.problemas)) {
     return `algumas fotos não chegaram ao armazenamento (${detalhe.problemas.slice(0, 5).join("; ")}); tente enviar de novo`;
   }
+  if (detalhe && typeof detalhe === "object" && "pendencias" in detalhe) return "o texto precisa de uma decisão sua antes de enviar";
   if (status === 429) return "muitas tentativas seguidas; espere um pouco e tente de novo";
   if (status >= 500) return "o serviço está com um problema agora; tente de novo em instantes";
   return detalhe ? JSON.stringify(detalhe) : `erro ${status}`;
@@ -327,7 +333,10 @@ export async function api<T>(caminho: string, init: RequestInit = {}): Promise<T
     throw new ErroApi("sem conexão com o serviço; confira a internet e tente de novo", 0);
   }
   const corpo = await r.json().catch(() => ({}));
-  if (!r.ok) throw new ErroApi(mensagemDeErro((corpo as { detail?: unknown }).detail, r.status), r.status, r.headers.get("X-Render2Go-Motivo"));
+  if (!r.ok) {
+    const detalhe = (corpo as { detail?: unknown }).detail ?? null;
+    throw new ErroApi(mensagemDeErro(detalhe, r.status), r.status, r.headers.get("X-Render2Go-Motivo"), detalhe);
+  }
   return corpo as T;
 }
 

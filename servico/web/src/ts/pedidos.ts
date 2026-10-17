@@ -7,6 +7,7 @@ import {
   ErroApi,
   type ItemLista,
   NOTAS_SATISFACAO,
+  RESOLUCAO,
   anunciar,
   api,
   aviso,
@@ -33,6 +34,7 @@ import {
 } from "./comum";
 import { pedirAceite } from "./confirmacao";
 import { type Conta, aoMudarConta, atualizarConta } from "./conta";
+import { type Entendimento, type Pendencia, type Previa, cartaoEntendimento, listaPendencias, pendenciasDe, previaEntendimento } from "./entendimento";
 import { botaoInteresse } from "./interesse";
 import { abrirVideo } from "./player";
 import { criarSequencia } from "./sequencia";
@@ -40,8 +42,9 @@ import { criarSequencia } from "./sequencia";
 type Movimento = { quando: number; tipo: string; valor: number; lote_id: string | null; descricao: string | null };
 type Saldo = { pre_pago: boolean; saldo?: number; precos?: Record<string, number>; extrato?: Movimento[] };
 type Video = { id?: string; arquivo: string; status: string; aviso: string | null; url?: string; baixar?: string; texto?: string | null; excluido?: boolean; motivo?: string };
-// previsão em segundos; o cliente vê só o tempo, não as etapas internas
-type Previsao = { fase: "analise" | "fila" | "gerando" | "saldo"; inicio_max_s?: number; inicio_s?: number; fim_s?: number } | null;
+// previsão em segundos; o cliente vê só o tempo, não as etapas internas. "revisao" e "decisao" (ADR 0018): o pedido
+// espera o cliente (aprovar a versão, ou decidir sobre uma mudança na adaptação); `pronto`: já dá para aprovar
+type Previsao = { fase: "analise" | "fila" | "gerando" | "saldo" | "revisao" | "decisao"; inicio_max_s?: number; inicio_s?: number; fim_s?: number; pronto?: boolean } | null;
 type Lote = {
   lote: string;
   status: string;
@@ -70,6 +73,12 @@ type Lote = {
   nao_sairam?: { motivo: string; texto: string; videos: number }[];
   interrompido_em?: number | null;
   interrompido_por?: "cliente" | "equipe" | null;
+  // versões do pedido (ADR 0018): o modo, o cartão "Entendemos seu pedido assim", se espera o cliente e se o texto
+  // ainda pode mudar (nenhum vídeo começou)
+  revisao?: "seguir" | "revisar" | null;
+  entendimento?: Entendimento | null;
+  espera_cliente?: boolean;
+  editavel?: boolean;
 };
 type Envio = { original: string; url: string; tipo: string };
 
@@ -81,7 +90,6 @@ const MAX_MEDIDAS = 500; // fotos medidas para o aviso de foto pequena (pedido g
 // envio (válidos por 1 h) não vencem enquanto as partes anteriores sobem
 const BYTES_POR_PARTE = 512 * 1024 ** 2;
 const NICHOS: Record<string, string> = { geral: "Geral", produto: "Produtos", imovel: "Imóveis", comida: "Comida e bebida", pessoa: "Pessoas" };
-const RESOLUCAO: Record<string, string> = { rapida: "480p", alta: "720p" };
 const MOVIMENTOS: Record<string, string> = { recarga: "Recarga", ajuste: "Ajuste", pedido: "Pedido", estorno: "Devolvido", video: "Vídeo entregue" };
 const ROTULO_TEXTO = {
   unico: ["O que deve acontecer nos vídeos?", "Escreva em português, do seu jeito. O texto vale para cada foto, uma de cada vez: descreva o que acontece numa foto só. Pode ser simples ou detalhado."],
@@ -250,6 +258,9 @@ function textoPrevisao(p: NonNullable<Previsao>): string {
   if (p.fase === "analise") return `Recebemos seu pedido. Ele começa em até ${minutos(p.inicio_max_s ?? 3600)}.`;
   if (p.fase === "fila") return (p.inicio_s ?? 0) < 60 ? "Seus vídeos começam em instantes." : `Seus vídeos começam em ${minutos(p.inicio_s ?? 0)}.`;
   if (p.fase === "saldo") return "Aguardando saldo: adicione saldo e o pedido continua sozinho de onde parou (as fotos ficam guardadas por 7 dias).";
+  if (p.fase === "decisao") return "Esperando a sua decisão: a adaptação mudou algo do seu pedido. Nada é gerado nem cobrado antes da sua resposta.";
+  if (p.fase === "revisao")
+    return p.pronto ? "Esperando a sua aprovação: confira o texto abaixo e aprove para gerar." : "Preparando o texto final para você revisar. Nada é gerado antes da sua aprovação.";
   return `Gerando seus vídeos · termina em ${minutos(p.fim_s ?? 0)}.`;
 }
 
@@ -376,6 +387,8 @@ function cartaoLote(l: Lote): HTMLElement {
   if (l.pedido.textos_por_foto)
     cartao.append(criar("p", { className: "fraco", textContent: `Pedido em sequência: ${plural(l.pedido.textos_por_foto, "texto próprio", "textos próprios")} além do texto padrão.` }));
   if (l.previsao) cartao.append(criar("div", { className: "previsao" }, [criar("span", { className: "pulso", attrs: { "aria-hidden": "true" } }), textoPrevisao(l.previsao)]));
+  const entendido = l.entendimento;
+  if (entendido) cartao.append(cartaoEntendimento({ ...l, entendimento: entendido }, () => recarregarLista()));
   if (l.total) {
     const barra = criar("progress", { max: l.total, value: l.prontos });
     barra.setAttribute("aria-label", `Vídeos prontos do pedido`);
@@ -619,7 +632,19 @@ export function criarPedidos(ctx: {
     const itens: ItemLista[] = lotes.map((l) => ({
       chave: l.lote,
       // sem as URLs assinadas (mudam a cada consulta): o cartão só é refeito quando algo muda de fato
-      assinatura: JSON.stringify([l.status, l.prontos, l.total, l.motivo, l.previsao && textoPrevisao(l.previsao), l.pedir_avaliacao, l.interrompido_em, l.nao_sairam, l.videos.map((v) => [v.arquivo, v.status, !!v.url, !!v.excluido])]),
+      assinatura: JSON.stringify([
+        l.status,
+        l.prontos,
+        l.total,
+        l.motivo,
+        l.previsao && textoPrevisao(l.previsao),
+        l.pedir_avaliacao,
+        l.interrompido_em,
+        l.nao_sairam,
+        l.videos.map((v) => [v.arquivo, v.status, !!v.url, !!v.excluido]),
+        // a versão (o hash muda a cada passo) e o que o cliente pode fazer com ela
+        l.entendimento && [l.entendimento.versao.numero, l.entendimento.versao.hash, l.entendimento.versao.liberada, l.entendimento.aprovar, l.espera_cliente, l.editavel],
+      ]),
       criar: () => cartaoLote(l),
     }));
     reconciliar(lotesAlvo, itens, () => vazio("Nenhum pedido ainda", "Quando você enviar fotos, os pedidos aparecem aqui."));
@@ -959,7 +984,79 @@ export function criarPedidos(ctx: {
     prompt.setSelectionRange(prompt.value.length, prompt.value.length);
     anunciar("Texto pronto do estilo copiado para o pedido. Você pode editar o texto.");
   });
-  prompt.addEventListener("input", () => marcarErro(prompt, false));
+  prompt.addEventListener("input", () => {
+    marcarErro(prompt, false);
+    textoMudou();
+  });
+
+  // -- detalhamento, modo de revisão, pendências e prévia (ADR 0018) --------------------------------
+  const selUso = el<HTMLSelectElement>("uso");
+  const caixaRestricoes = el("restricoes-pedido");
+  const campoManter = el<HTMLInputElement>("manter");
+  const campoOutros = el<HTMLInputElement>("outros");
+  const pendencias = el("pendencias");
+  const previaAlvo = el("entendimento-previa");
+  // "Seguir com o texto como está" vale só para os textos que a pessoa viu nas pendências
+  let confirmadoPara: string | null = null;
+  const textosProprios = () => [...new Set([...arquivos.keys()].map((k) => seq.textoDe(k)).filter((t): t is string => !!t))];
+  const assinaturaTextos = () => JSON.stringify([prompt.value.trim(), ...textosProprios()]);
+  const briefing = () => {
+    const evitar = Array.from(caixaRestricoes.querySelectorAll<HTMLInputElement>("input:checked"), (x) => x.value);
+    const b = { uso: selUso.value || null, manter: campoManter.value.trim() || null, outros: campoOutros.value.trim() || null, evitar };
+    return b.uso || b.manter || b.outros || evitar.length ? b : null;
+  };
+  function textoMudou() {
+    // a prévia e as pendências eram do texto de antes
+    aviso(pendencias, "");
+    previaAlvo.hidden = true;
+    previaAlvo.replaceChildren();
+  }
+  el("detalhes-pedido").addEventListener("change", textoMudou);
+  const mostrarPendencias = (p: { pendencias: Pendencia[]; confirmavel: boolean }) => {
+    const itens: (Node | string)[] = [
+      criar("p", {}, [criar("strong", { textContent: p.confirmavel ? "Confira o texto antes de enviar:" : "Mude o texto antes de enviar:" })]),
+      listaPendencias(p.pendencias),
+    ];
+    if (p.confirmavel) {
+      const seguir = criar("button", { type: "button", className: "botao pequeno", dados: { foco: "pendencias:seguir" } }, ["Seguir com o texto como está"]);
+      seguir.addEventListener("click", () => {
+        confirmadoPara = assinaturaTextos();
+        form.requestSubmit();
+      });
+      itens.push(criar("p", { textContent: "Ou mude o texto acima e envie de novo." }), seguir);
+    }
+    aviso(pendencias, itens, "alerta");
+    pendencias.focus();
+  };
+  el("ver-entendimento").addEventListener("click", async () => {
+    const botao = el<HTMLButtonElement>("ver-entendimento");
+    const erro = (texto: string) => {
+      const caixa = criar("div", { className: "aviso" });
+      aviso(caixa, texto, "erro");
+      previaAlvo.replaceChildren(caixa);
+      previaAlvo.hidden = false;
+    };
+    if (prompt.value.trim().length < 3) {
+      marcarErro(prompt, true);
+      erro("Escreva o texto do pedido primeiro (pelo menos 3 letras).");
+      return;
+    }
+    ocupado(botao, true);
+    try {
+      const r = await api<Previa>("/api/pedido/entendimento", {
+        method: "POST",
+        body: JSON.stringify({ prompt: prompt.value.trim(), receita: selReceita.value, duracao: duracaoEscolhida(), briefing: briefing(), textos: textosProprios() }),
+      });
+      previaAlvo.replaceChildren(...previaEntendimento(r));
+      previaAlvo.hidden = false;
+      anunciar("Prévia pronta, abaixo do botão.");
+    } catch (e) {
+      erro(textoErro(e));
+      anunciar(textoErro(e), true);
+    } finally {
+      ocupado(botao, false);
+    }
+  });
   let marcadoEm: string | null = null; // momento do clique na caixa de autorização (vai no registro)
   consentimento.addEventListener("change", () => {
     marcadoEm = consentimento.checked ? new Date().toISOString() : null;
@@ -1038,6 +1135,12 @@ export function criarPedidos(ctx: {
       g.append(opcao);
     }
     selReceita.replaceChildren(...opcoes);
+    // detalhamento opcional e "Antes de gerar" (ADR 0018); o formulário ainda está escondido (sem CLS)
+    selUso.append(...(receitas.usos ?? []).map((u) => criar("option", { value: u.id, textContent: u.texto })));
+    caixaRestricoes.replaceChildren(
+      ...(receitas.restricoes ?? []).map((r) => criar("label", { className: "marcacao" }, [criar("input", { type: "checkbox", name: "evitar", value: r.id }), criar("span", { textContent: r.texto })])),
+    );
+    el("passo-revisao").hidden = !receitas.revisao_cliente;
     if (receitas.autorizacao) el("texto-autorizacao").textContent = receitas.autorizacao.texto;
     desenharBlocos(); // o pedido começa pela escolha do que criar (o modelo vem da finalidade)
     el("finalidades").hidden = escolhida !== null; // no mesmo quadro em que o esqueleto sai
@@ -1095,7 +1198,7 @@ export function criarPedidos(ctx: {
 
   /** Cria o pedido; termos em versão nova (428): pede o aceite e tenta uma vez de novo. */
   const criarPedido = async (corpo: unknown) => {
-    const pedir = () => api<{ lote: string; envios: Envio[] }>("/api/lotes", { method: "POST", body: JSON.stringify(corpo) });
+    const pedir = () => api<{ lote: string; envios: Envio[]; revisao?: string | null }>("/api/lotes", { method: "POST", body: JSON.stringify(corpo) });
     try {
       return await pedir();
     } catch (e) {
@@ -1126,6 +1229,9 @@ export function criarPedidos(ctx: {
       modelo: selModelo.value,
       navegador: sinaisNavegador(consentimento.checked ? marcadoEm : null),
       fotos: [] as { nome: string; tipo: string; bytes: number; prompt?: string }[],
+      revisao: form.querySelector<HTMLInputElement>('input[name="revisao"]:checked')?.value ?? "seguir",
+      briefing: briefing(),
+      confirmar_texto: confirmadoPara === assinaturaTextos(),
     };
     // pedido grande (12/10/2026): sem limite de fotos no pago e no interno; a página cria o pedido com a 1ª parte e
     // acrescenta cada parte seguinte só quando a anterior terminou de subir (o teste gratuito vai numa parte só)
@@ -1146,6 +1252,7 @@ export function criarPedidos(ctx: {
       aviso(msg, "Criando o pedido…");
       const r = await criarPedido(corpo);
       aviso(msg, "");
+      aviso(pendencias, "");
       area.hidden = false;
       barra.max = 1;
       barra.value = 0;
@@ -1160,7 +1267,7 @@ export function criarPedidos(ctx: {
         const envios =
           i === 0
             ? r.envios
-            : (await api<{ envios: Envio[] }>(`/api/lotes/${r.lote}/fotos`, { method: "POST", body: JSON.stringify({ fotos: parte }) })).envios;
+            : (await api<{ envios: Envio[] }>(`/api/lotes/${r.lote}/fotos`, { method: "POST", body: JSON.stringify({ fotos: parte, confirmar_texto: corpo.confirmar_texto }) })).envios;
         await enviarArquivos(
           envios,
           arquivos,
@@ -1188,12 +1295,20 @@ export function criarPedidos(ctx: {
       el("progresso-texto").textContent = "Conferindo o envio…";
       await api(`/api/lotes/${r.lote}/enviado`, { method: "POST" });
       window.removeEventListener("beforeunload", avisarSaida);
-      aviso(msg, "Pedido enviado. Ele passa por uma revisão rápida e entra na fila; acompanhe em “Seus pedidos”.", "ok");
+      aviso(
+        msg,
+        r.revisao === "revisar"
+          ? "Pedido enviado. Depois da revisão de conteúdo, o texto final aparece em “Seus pedidos” para você aprovar; nada é gerado antes disso."
+          : "Pedido enviado. Ele passa por uma revisão rápida e entra na fila; acompanhe em “Seus pedidos”.",
+        "ok",
+      );
       anunciar("Pedido enviado. Acompanhe em Seus pedidos.");
       arquivos.clear();
       miniaturas.clear();
       seq.limpar();
       form.reset();
+      textoMudou();
+      confirmadoPara = null;
       marcadoEm = null;
       atualizarContador();
       void desenharPrevia();
@@ -1209,9 +1324,17 @@ export function criarPedidos(ctx: {
       if (matchMedia("(max-width: 79.99em)").matches) el("titulo-pedidos").focus();
     } catch (e) {
       for (const li of miniaturas.values()) li.classList.remove("enviando", "enviada");
-      aviso(msg, textoErro(e), "erro");
-      anunciar(textoErro(e), true);
       campos.disabled = receitas?.plano?.disponivel === false;
+      const p = pendenciasDe(e);
+      if (p) {
+        // o texto precisa de uma decisão (ADR 0018): as pendências, uma a uma, e o "seguir como está" quando cabe
+        aviso(msg, "");
+        mostrarPendencias(p);
+        anunciar(`${textoErro(e)}.`, true);
+      } else {
+        aviso(msg, textoErro(e), "erro");
+        anunciar(textoErro(e), true);
+      }
     } finally {
       enviando = false;
       window.removeEventListener("beforeunload", avisarSaida);

@@ -2317,6 +2317,232 @@ html:not([data-convite]) #convite {
   margin-top: var(--esp-2);
 }
 
+/* ADR 0018: o detalhamento opcional, "Antes de gerar", a prévia e as pendências do texto no formulário */
+.detalhes-pedido summary,
+.entendimento > summary {
+  min-height: var(--alvo);
+  padding-block: var(--esp-3);
+  color: var(--cor-marca-texto);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.detalhes-pedido > .pilha {
+  padding-bottom: var(--esp-2);
+}
+
+.restricoes-pedido {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.restricoes-pedido > legend {
+  padding: 0;
+  font-weight: 650;
+}
+
+.marcacoes,
+.modos-revisao {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--esp-2);
+  margin-top: var(--esp-2);
+}
+
+.marcacoes .marcacao {
+  align-items: center;
+  padding: var(--esp-2) var(--esp-3);
+}
+
+.modos-revisao .marcacao > span {
+  display: grid;
+  gap: var(--esp-1);
+}
+
+.previa-entendimento {
+  display: grid;
+  justify-items: start;
+  gap: var(--esp-2);
+}
+
+.entendimento-previa {
+  display: grid;
+  gap: var(--esp-3);
+  width: 100%;
+  padding: var(--esp-4);
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie-2);
+}
+
+.entendimento-previa h3,
+.entendimento-previa p {
+  margin: 0;
+}
+
+.pendencias-lista {
+  margin: var(--esp-1) 0;
+  padding-left: 1.25rem;
+}
+
+#pendencias {
+  margin-top: var(--esp-3);
+}
+
+/* o cartão "Entendemos seu pedido assim" em cada pedido com versões */
+.entendimento {
+  border-top: 1px solid var(--cor-borda);
+}
+
+.entendimento > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-2) var(--esp-3);
+}
+
+.entendimento-titulo {
+  color: var(--cor-texto);
+  font-size: var(--texto-md);
+  font-weight: 650;
+}
+
+.entendimento-corpo {
+  display: grid;
+  gap: var(--esp-3);
+  padding-bottom: var(--esp-2);
+}
+
+.entendimento-corpo p,
+.secao-entendimento :is(h3, h4) {
+  margin: 0;
+}
+
+.secao-entendimento {
+  display: grid;
+  gap: var(--esp-2);
+}
+
+.secao-entendimento :is(h3, h4) {
+  font-family: var(--fonte-texto);
+  font-size: var(--texto-sm);
+  font-weight: 650;
+}
+
+.pedido-original {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--esp-1);
+  margin: 0;
+}
+
+.pedido-original dt {
+  color: var(--cor-texto-3);
+  font-size: var(--texto-xs);
+  font-weight: 650;
+}
+
+.pedido-original dd {
+  margin: 0 0 var(--esp-1);
+  overflow-wrap: anywhere;
+}
+
+.grupo-entendido {
+  display: grid;
+  justify-items: start;
+  gap: var(--esp-2);
+  padding: var(--esp-3) var(--esp-4);
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie-2);
+}
+
+.grupo-entendido > * {
+  max-width: 100%;
+}
+
+.ajustes,
+.preservar {
+  display: grid;
+  gap: var(--esp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--texto-sm);
+}
+
+.ajustes li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--esp-2);
+}
+
+.preservar {
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+.origem {
+  flex: none;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--raio-pilula);
+  font-size: var(--texto-xs);
+  font-weight: 650;
+}
+
+.origem-cliente {
+  background: var(--cor-marca-suave);
+  color: var(--cor-marca-texto);
+}
+
+.origem-estilo {
+  background: var(--cor-acento-suave);
+  color: var(--cor-acento-texto);
+}
+
+.origem-sistema {
+  background: var(--cor-superficie);
+  color: var(--cor-texto-2);
+}
+
+.texto-tecnico summary,
+.limites-video summary {
+  min-height: var(--alvo);
+  padding-block: var(--esp-3);
+  color: var(--cor-marca-texto);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.texto-tecnico {
+  display: grid;
+  gap: var(--esp-1);
+}
+
+.prompt-en {
+  padding: var(--esp-2) var(--esp-3);
+  border-radius: var(--raio-sm);
+  background: var(--cor-superficie);
+  font-family: var(--fonte-mono);
+  font-size: var(--texto-xs);
+  overflow-wrap: anywhere;
+}
+
+.limites-video ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+@media (forced-colors: active) {
+  .origem,
+  .grupo-entendido,
+  .entendimento-previa {
+    border: 1px solid CanvasText;
+  }
+}
+
 /* painel: os vídeos que não saíram e o vídeo barrado na quarentena (desfocado até o dono pedir; ADR 0005) */
 .lista-falhas {
   display: grid;

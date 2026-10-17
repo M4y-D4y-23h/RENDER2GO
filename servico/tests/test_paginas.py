@@ -610,10 +610,12 @@ def test_mobile_layout_has_no_side_scroll_and_large_touch_targets(ambiente, nave
         assert largura_pagina <= largura, (estado, "fonte larga", largura_pagina, _transbordando(pg, largura))
         # alvos de toque: botões, campos e a navegação com pelo menos 44 px de altura (WCAG 2.5.5)
         alvos = ".navegacao :is(a, button), .botao, .filtros button, .menu-conta a, [role=tab], .botao-linha"
-        alvos += ", .cartao-resumo, select, textarea, input"
+        # (a opção dentro de uma caixa de marcar conta pela caixa inteira, que também entra na conta)
+        alvos += ", .cartao-resumo, select, textarea, input, .marcacao"
         pequenos = pg.evaluate(
             """(alvos) => [...document.querySelectorAll(alvos)]
                 .filter((e) => e.offsetParent !== null && !['file', 'checkbox'].includes(e.type))
+                .filter((e) => !(e.type === 'radio' && e.closest('.marcacao')))
                 .map((e) => [e.id || e.className || e.tagName, Math.round(e.getBoundingClientRect().height)])
                 .filter(([, h]) => h < 44)""",
             alvos,
@@ -1011,8 +1013,8 @@ def test_stop_an_order_and_see_why_videos_did_not_come_out(ambiente, navegador):
         "1 vídeo: barrado pelo filtro de imagem: o vídeo gerado mostrava conteúdo impróprio"
     )
     pw.expect(falhas).to_contain_text("1 vídeo: não ficou fiel à foto")
-    falhas.locator("summary:has-text('Ver quais')").click()
-    pw.expect(falhas.locator("details")).to_contain_text(f"{b['arquivo']}: não ficou fiel à foto")
+    falhas.locator(".nao-sairam summary:has-text('Ver quais')").click()
+    pw.expect(falhas.locator(".nao-sairam details")).to_contain_text(f"{b['arquivo']}: não ficou fiel à foto")
     assert "0.91" not in falhas.inner_text() and "deriva" not in falhas.inner_text()  # o técnico fica no painel
     assert _axe(pg) == []
     # o painel: o resumo por motivo, a lista com o texto técnico e o vídeo barrado (só o dono), desfocado
@@ -1543,3 +1545,100 @@ def test_panel_does_not_shift_when_the_api_answers_after_the_first_paint(ambient
     pg.wait_for_selector("#msg-painel:not([hidden])")
     assert pg.locator("#esqueleto-pedido").is_hidden() and pg.locator("#finalidades").is_hidden()
     ctx.close()
+
+
+def _traduzido(amb, lid, prompt_en):
+    """A tradução do texto do pedido chegou do pod (simulada no banco): a versão ganha o prompt final."""
+    amb.banco.definir_prompt(lid, prompt_en, "i2v@6", traducao={"intencao": "acao", "sem_pessoas": True})
+    with amb.banco.tx() as c:
+        c.run("UPDATE jobs SET status = 'ok' WHERE lote_id = ? AND tipo = 'compilar'", (lid,))
+
+
+def test_understanding_card_review_before_generating_and_two_tabs(ambiente, navegador, tmp_path):  # noqa: F811
+    """ADR 0018: o detalhamento opcional e "Antes de gerar" no formulário; a pendência do texto ambíguo com "Seguir
+    com o texto como está" (nada é criado antes); a prévia; e, no pedido, o cartão "Entendemos seu pedido assim" com
+    o original, o que entendemos e o texto usado na geração (com a versão). No modo "revisar", nada vai para um pod
+    antes de "Aprovar e gerar"; a aprovação de uma versão velha (outra aba, depois de mudar o texto) não vale."""
+    erros: list[str] = []
+    tok = _cliente(ambiente)
+    ctx = navegador.new_context()
+    _com_sessao(ctx, ambiente, tok)
+    pg = _pagina(ctx, erros)
+    pg.goto(ambiente.url)
+    _escolher_finalidade(pg)
+    fotos = [_salvar(tmp_path, f"vitrine-{i}.png", _png((40 * i, 90, 160), "circulo")) for i in (1, 2)]
+    pg.set_input_files("#fotos", [str(f) for f in fotos])
+    pg.fill("#prompt", "que a marca resplenda")
+    pg.locator("#detalhes-pedido summary").click()
+    pg.select_option("#uso", "redes")
+    pg.locator("#restricoes-pedido label", has_text="Sem pessoas na cena").click()
+    pg.fill("#manter", "o rótulo da embalagem")
+    pg.locator("#passo-revisao label", has_text="Quero revisar antes de gerar").click()
+    pg.click("#ver-entendimento")
+    previa = pg.locator("#entendimento-previa")
+    pw.expect(previa).to_contain_text("Não entendemos com segurança")
+    pw.expect(previa).to_contain_text("o rótulo da embalagem")
+    pw.expect(previa).to_contain_text("Uso: Post, reels ou stories (só contexto: não entra na cena)")
+    assert _axe(pg) == []
+    # o envio para nas pendências: nada é criado até a pessoa decidir
+    pg.click("#enviar")
+    pendencias = pg.locator("#pendencias")
+    pw.expect(pendencias).to_contain_text("Texto do pedido: Não entendemos com segurança")
+    pw.expect(pendencias).to_be_focused()
+    assert ambiente.banco.lotes() == []
+    pendencias.locator("button", has_text="Seguir com o texto como está").click()
+    pw.expect(pg.locator("#msg")).to_contain_text("o texto final aparece em “Seus pedidos” para você aprovar")
+    (lt,) = ambiente.banco.lotes()
+    lid = lt["id"]
+    pedido = json.loads(ambiente.banco.lote(lid)["pedido"])
+    assert ambiente.banco.lote(lid)["revisao"] == "revisar" and pedido["texto_confirmado"] is True
+    assert pedido["briefing"] == {"uso": "redes", "manter": "o rótulo da embalagem", "evitar": ["sem_pessoas"]}
+    # a equipe revisa o conteúdo e a tradução chega: o pedido espera o cliente, sem nenhum vídeo para os pods
+    _api(ambiente, "POST", f"{PAINEL}/api/lotes/{lid}/aprovar")
+    _traduzido(ambiente, lid, "The brand sign glows softly.")
+    pg.reload()
+    cartao = pg.locator(f"#lotes .lote:has([data-foco='{lid}:entendimento'])")
+    pw.expect(cartao.locator(".previsao")).to_contain_text("Esperando a sua aprovação")
+    entendido = cartao.locator("details.entendimento")
+    pw.expect(entendido).to_have_attribute("open", "")  # espera o cliente: já vem aberto
+    pw.expect(entendido).to_contain_text("Aguardando a sua aprovação")
+    pw.expect(entendido.locator(".pedido-original")).to_contain_text("que a marca resplenda")
+    pw.expect(entendido).to_contain_text("Sem pessoas na cena")
+    entendido.locator("summary", has_text="Ver texto usado na geração").click()
+    pw.expect(entendido.locator(".prompt-en")).to_have_text("The brand sign glows softly.")
+    pw.expect(entendido.locator(".texto-tecnico")).to_contain_text("tradutor i2v@6")
+    assert ambiente.banco.reivindicar("pod-1") is None  # nada vai para um pod sem a aprovação
+    assert _axe(pg) == []
+    # outra aba muda o texto; a aprovação na 1ª aba (versão velha) é recusada e não libera nada
+    aba = _pagina(ctx, erros)
+    aba.goto(ambiente.url)
+    aba.locator(f"[data-foco='{lid}:editar:pedido']").click()
+    janela = aba.locator("dialog.texto-proprio[open]")
+    janela.locator("textarea").fill("o produto gira devagar")
+    janela.locator("button", has_text="Salvar o texto novo").click()
+    pw.expect(janela).to_have_count(0)
+    pw.expect(aba.locator(f"#lotes .lote:has([data-foco='{lid}:entendimento'])")).to_contain_text(
+        "Texto novo salvo: o pedido volta para a revisão de conteúdo."
+    )
+    cartao.locator(f"[data-foco='{lid}:aprovar-versao']").click()
+    pw.expect(cartao).to_contain_text("O pedido mudou depois que você abriu esta versão")
+    lt = ambiente.banco.lote(lid)
+    assert lt["status"] == "aguardando_aprovacao" and lt["versao_liberada"] != lt["versao_atual"]
+    assert ambiente.banco.reivindicar("pod-1") is None
+    # a versão nova passa pela revisão de conteúdo e pela tradução; aprovada, os vídeos vão para a fila
+    _api(ambiente, "POST", f"{PAINEL}/api/lotes/{lid}/aprovar")
+    _traduzido(ambiente, lid, "The product slowly rotates.")
+    pg.reload()
+    cartao = pg.locator(f"#lotes .lote:has([data-foco='{lid}:entendimento'])")
+    pw.expect(cartao.locator(".pedido-original")).to_contain_text("o produto gira devagar")
+    pw.expect(cartao.locator(".pedido-original")).to_contain_text("que a marca resplenda")  # o texto de antes
+    cartao.locator(f"[data-foco='{lid}:aprovar-versao']").click()
+    pw.expect(cartao).to_contain_text("Aprovado por você")
+    lt = ambiente.banco.lote(lid)
+    assert lt["versao_liberada"] == lt["versao_atual"]
+    job = ambiente.banco.reivindicar("pod-1")
+    assert job is not None and job["tipo"] == "render" and job["versao_id"] == lt["versao_atual"]
+    assert lt["prompt_en"] == "The product slowly rotates."
+    ctx.close()
+    # as recusas esperadas da API (a pendência, 422; a versão velha, 409) aparecem no console como recursos
+    assert [e for e in erros if not re.search(r"status of (409|422)", e)] == [], erros

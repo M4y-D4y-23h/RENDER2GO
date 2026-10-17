@@ -16,7 +16,7 @@
 <meta name="format-detection" content="telephone=no">
 <meta name="application-name" content="Render2Go">
 <meta name="apple-mobile-web-app-title" content="Render2Go">
-<link rel="stylesheet" href="/estatico/estilo.css?v=17e7e76a0f37" integrity="sha384-JzCS3RcOVz+XIBv29czmukRXQEq1HSmM4vRClu0l8u47aPCTZ/VQ0YzKFo9SGLwf">
+<link rel="stylesheet" href="/estatico/estilo.css?v=eed4e3fb6b5e" integrity="sha384-2foUiOUL4xGUijZVn4OUU/F/sYNbmc9iPVjsotGPGVi7Sd+D11nTJdajM9NUdXag">
 <link rel="icon" href="/favicon.ico?v=a76ac3848262" sizes="48x48">
 <link rel="icon" href="/estatico/icone.svg?v=5320513ad899" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/estatico/icone-180.png?v=38a4f26beacf">
@@ -30,7 +30,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Render2Go: suas fotos viram vídeos curtos, prontos para postar">
 <meta name="twitter:card" content="summary_large_image">
-<script src="/estatico/cliente.js?v=b1a89f91def4" integrity="sha384-AnoUsgrCGO1Oapj+y0DB1SgmLv5s10NIZ/VEJ6Uo1SE+2SgBtiiDGJZCdRs1fBuc" defer></script>
+<script src="/estatico/cliente.js?v=b89cc29854d0" integrity="sha384-0dYq2apPg8itRO66gHi8oOo6dkGCMdTx3/cqH3yy6t5iH+fg61Sd9t86aWwKa8F5" defer></script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
 {"@type":"Organization","@id":"https://app.render2go.com/#organizacao","name":"Render2Go","url":"https://app.render2go.com/","logo":"https://app.render2go.com/estatico/icone-512.png?v=d75fd84aa2d1"},
@@ -337,6 +337,38 @@
 </div>
 </div>
 </div>
+<details class="detalhes-pedido" id="detalhes-pedido">
+<summary>Detalhar o pedido (opcional)</summary>
+<div class="pilha">
+<div class="campo">
+<label for="uso">Onde o vídeo vai ser usado?</label>
+<select id="uso" aria-describedby="uso-dica">
+<option value="">Prefiro não dizer</option>
+</select>
+<p class="dica" id="uso-dica">Só para entender o pedido: não entra na cena nem no texto do gerador.</p>
+</div>
+<fieldset class="restricoes-pedido" aria-describedby="restricoes-dica">
+<legend>Não pode acontecer</legend>
+<p class="dica" id="restricoes-dica">Vale na geração e na conferência do resultado.</p>
+<div class="marcacoes" id="restricoes-pedido"></div>
+</fieldset>
+<div class="campo">
+<label for="manter">O que precisa continuar igual?</label>
+<input id="manter" type="text" maxlength="200" autocomplete="off" spellcheck="true" aria-describedby="manter-dica">
+<p class="dica" id="manter-dica">Ex.: o rótulo, a cor da embalagem, o letreiro da fachada. Conferimos no resultado; não vai para o gerador.</p>
+</div>
+<div class="campo">
+<label for="outros">Mais alguma coisa que não pode mudar?</label>
+<input id="outros" type="text" maxlength="200" autocomplete="off" spellcheck="true" aria-describedby="outros-dica">
+<p class="dica" id="outros-dica">Também vale na conferência do resultado. Textos, preços e logotipos não são escritos no vídeo.</p>
+</div>
+</div>
+</details>
+<div class="previa-entendimento">
+<button type="button" class="botao pequeno" id="ver-entendimento" aria-describedby="ver-entendimento-dica"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l1.9 5 5 1.9-5 1.9-1.9 5-1.9-5-5-1.9 5-1.9z"/></svg>Ver como vamos entender</button>
+<p class="dica" id="ver-entendimento-dica">Mostra o que lemos no seu texto e o que o serviço acrescenta, antes de enviar. Nada é criado nem cobrado.</p>
+<div class="entendimento-previa" id="entendimento-previa" aria-live="polite" hidden></div>
+</div>
 </fieldset>
 <fieldset class="passo">
 <legend>Ajustes</legend>
@@ -373,6 +405,19 @@
 </label>
 <p class="dica" id="consentimento-dica">Obrigatória quando aparecem pessoas nas fotos. Ao marcar, a declaração fica registrada com a sua conta, a data, o endereço de internet e este dispositivo.</p>
 </fieldset>
+<fieldset class="passo" id="passo-revisao" hidden>
+<legend>Antes de gerar</legend>
+<div class="modos-revisao">
+<label class="marcacao">
+<input type="radio" name="revisao" value="seguir" checked aria-describedby="revisao-seguir-dica">
+<span><strong>Seguir com a adaptação (recomendado)</strong><span class="dica" id="revisao-seguir-dica">Os vídeos começam depois da revisão de conteúdo. Se a adaptação precisar mudar algo importante do seu pedido, perguntamos antes de gerar.</span></span>
+</label>
+<label class="marcacao">
+<input type="radio" name="revisao" value="revisar" aria-describedby="revisao-revisar-dica">
+<span><strong>Quero revisar antes de gerar</strong><span class="dica" id="revisao-revisar-dica">Mostramos o texto final de cada grupo de fotos e só geramos depois que você aprovar. Sem a sua aprovação, nada é gerado nem cobrado; as fotos ficam guardadas por 7 dias.</span></span>
+</label>
+</div>
+</fieldset>
 <div class="enviar">
 <p class="custo" id="custo" hidden></p>
 <button type="submit" class="botao primario largo" id="enviar" aria-describedby="custo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>Enviar pedido</button>
@@ -383,6 +428,7 @@
 </div>
 </fieldset>
 <p id="msg" class="aviso" hidden></p>
+<div id="pendencias" class="aviso alerta" tabindex="-1" hidden></div>
 </form>
 </section>
 <section class="pedidos" aria-labelledby="titulo-pedidos">
